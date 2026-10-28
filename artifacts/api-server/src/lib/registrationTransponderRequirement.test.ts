@@ -53,7 +53,7 @@ test("does not accept a rental that the event does not offer", () => {
   assert.equal(
     isRegistrationTransponderRequirementSatisfied(
       {
-        timingTechnology: "mylaps",
+        timingTechnology: "active_transponder",
         requireTransponder: true,
         transponderRentalEnabled: false,
       },

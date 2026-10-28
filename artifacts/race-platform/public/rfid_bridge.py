@@ -407,187 +407,6 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-# ── Legacy active timing decoder TCP protocol ───────────────────────────────────
-# Record format for compatible decoders on port 3601 (13 bytes each):
-#   [0]     Record type  — 0x02 = transponder crossing; others = status/ignored
-#   [1..6]  Transponder  — 48-bit big-endian integer (decoder serial number)
-#   [7..10] Time         — 32-bit big-endian uint, centiseconds since local midnight
-#   [11]    Loop/antenna — antenna number (informational)
-#   [12]    RSSI/battery — signal quality (informational)
-#
-# Compatible: legacy active timing decoders that emit the standard
-#             13-byte crossing record.
-# NOTE: a small number of older decoders use 10-byte records; contact support
-# if crossings aren't appearing and we can adjust AMB_RECORD_SIZE for your model.
-AMB_DECODER_PORT  = 3601
-AMB_RECORD_SIZE   = 13
-AMB_TYPE_CROSSING = 0x02
-
-
-def _system_local_timezone():
-    """Return the host's DST-aware local timezone and its IANA name when known."""
-    name = os.environ.get("TZ")
-    if not name:
-        try:
-            target = os.path.realpath("/etc/localtime")
-            marker = "/zoneinfo/"
-            if marker in target:
-                name = target.split(marker, 1)[1]
-        except OSError:
-            pass
-    if name and ZoneInfo is not None:
-        try:
-            return ZoneInfo(name), name
-        except Exception:
-            pass
-    local = datetime.now().astimezone().tzinfo or timezone.utc
-    return local, getattr(local, "key", None) or name
-
-
-def _decode_local_centiseconds(centiseconds: int, received_at: datetime,
-                               local_timezone=None) -> datetime:
-    """Interpret time-of-day on the nearest local calendar date, returning UTC."""
-    if received_at.tzinfo is None:
-        received_at = received_at.replace(tzinfo=timezone.utc)
-    received_at = received_at.astimezone(timezone.utc)
-    local_timezone = local_timezone or _system_local_timezone()[0]
-    local_receipt = received_at.astimezone(local_timezone)
-    seconds, centis = divmod(centiseconds, 100)
-    hours, remainder = divmod(seconds, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    if hours > 23:
-        return received_at
-
-    candidates = []
-    for day_offset in (-1, 0, 1):
-        local_date = (local_receipt + timedelta(days=day_offset)).date()
-        for fold in (0, 1):
-            wall = datetime(
-                local_date.year, local_date.month, local_date.day,
-                hours, minutes, seconds, centis * 10000,
-                tzinfo=local_timezone, fold=fold,
-            )
-            candidate = wall.astimezone(timezone.utc)
-            # Round-tripping rejects nonexistent spring-forward wall times.
-            roundtrip = candidate.astimezone(local_timezone)
-            if (roundtrip.date(), roundtrip.hour, roundtrip.minute,
-                    roundtrip.second, roundtrip.microsecond) != (
-                    local_date, hours, minutes, seconds, centis * 10000):
-                continue
-            if all(existing != candidate for existing in candidates):
-                candidates.append(candidate)
-    if not candidates:
-        return received_at
-    nearest = min(candidates, key=lambda candidate:
-                  abs((candidate - received_at).total_seconds()))
-    if abs((nearest - received_at).total_seconds()) > 5 * 60:
-        return received_at
-    return nearest
-
-
-def _parse_amb_crossing(record: bytes, received_at=None, local_timezone=None):
-    """Parse a single AMB binary record.
-    Returns (transponder_id: str, crossing_time: datetime) for crossing events,
-    or None for status/heartbeat records."""
-    if len(record) < AMB_RECORD_SIZE:
-        return None
-    if record[0] != AMB_TYPE_CROSSING:
-        return None
-
-    transponder_id = str(int.from_bytes(record[1:7], "big"))
-
-    centiseconds = int.from_bytes(record[7:11], "big")
-    received_at = received_at or datetime.now(timezone.utc)
-    crossing_time = _decode_local_centiseconds(
-        centiseconds, received_at, local_timezone)
-    if crossing_time == received_at and centiseconds:
-        log.warning(
-            "Active Timing: decoder timestamp replaced with receive time "
-            "(decoder=%s receive=%s)",
-            centiseconds,
-            received_at.isoformat(),
-        )
-
-    return transponder_id, crossing_time
-
-
-def run_mylaps_bridge(decoder_ip: str, api_url: str, club_id: str,
-                       db: sqlite3.Connection, db_lock: threading.Lock,
-                       stop: threading.Event, retry: int = 10):
-    """Connect to a legacy active timing decoder via TCP and stream crossings to the API.
-
-    Opens a persistent TCP connection to port 3601 on the decoder.  Each
-    transponder crossing is cached locally and forwarded to the cloud API.
-    On disconnect the bridge reconnects automatically after `retry` seconds.
-    """
-    cloud_path = f"/api/timing/active/crossing?clubId={club_id}"
-
-    while not stop.is_set():
-        try:
-            log.info("Active Timing: connecting to decoder at %s:%d…", decoder_ip, AMB_DECODER_PORT)
-            with socket.create_connection((decoder_ip, AMB_DECODER_PORT), timeout=10) as sock:
-                sock.settimeout(2.0)
-                log.info("Active Timing: connected — streaming crossings from %s", decoder_ip)
-                buf = b""
-                while not stop.is_set():
-                    try:
-                        chunk = sock.recv(4096)
-                        if not chunk:
-                            log.warning("Active Timing: decoder closed connection — reconnecting")
-                            break
-                        buf += chunk
-                        while len(buf) >= AMB_RECORD_SIZE:
-                            record = buf[:AMB_RECORD_SIZE]
-                            buf = buf[AMB_RECORD_SIZE:]
-                            received_at = datetime.now(timezone.utc)
-                            result = _parse_amb_crossing(record, received_at)
-                            if result is None:
-                                continue
-                            transponder_id, crossing_time = result
-                            payload = {
-                                "transponder": transponder_id,
-                                "passingTime": crossing_time.isoformat(),
-                                "receivedAt": received_at.isoformat(),
-                                "receivedAtUtc": received_at.isoformat(),
-                                "source": "bridge_live_tcp",
-                                "timeSource": "bridge_live_tcp",
-                            }
-                            device_timezone = _system_local_timezone()[1]
-                            if device_timezone:
-                                payload["deviceTimezone"] = device_timezone
-                            log.info("Active Timing: crossing — transponder=%-10s  time=%s",
-                                     transponder_id, crossing_time.strftime("%H:%M:%S"))
-                            with db_lock:
-                                cursor = db.execute(
-                                    "INSERT INTO crossings (payload, cloud_path, received_at) "
-                                    "VALUES (?, ?, ?)",
-                                    (json.dumps(payload), cloud_path,
-                                     received_at.isoformat()),
-                                )
-                                row_id = cursor.lastrowid
-                                db.commit()
-                            if forward_to_cloud(api_url, cloud_path, payload):
-                                with db_lock:
-                                    db.execute("UPDATE crossings SET sent_at=? WHERE id=?",
-                                               (_now(), row_id))
-                                    db.commit()
-                    except socket.timeout:
-                        continue
-                    except OSError as e:
-                        log.warning("Active Timing: socket error: %s — reconnecting", e)
-                        break
-        except (OSError, ConnectionRefusedError) as e:
-            log.warning("Active Timing: could not reach %s — %s (retry in %ds)",
-                        decoder_ip, e, retry)
-        except Exception as e:
-            log.error("Active Timing: unexpected error: %s (retry in %ds)", e, retry)
-
-        if not stop.is_set():
-            stop.wait(retry)
-
-    log.info("Active Timing bridge stopped.")
-
-
 # ── HTTP request handler ────────────────────────────────────────────────────────
 class BridgeHandler(http.server.BaseHTTPRequestHandler):
     # Injected by main() before server starts
@@ -1104,15 +923,8 @@ def main():
         "--club-id",
         default=os.getenv("RMMX_CLUB_ID", ""),
         metavar="N",
-        help="Club ID — required with --mylaps and --mode practice. "
+        help="Club ID — required with --mode practice. "
              "Find yours in the organizer portal URL (e.g. /organizer → clubs/3 → ID is 3).",
-    )
-    parser.add_argument(
-        "--mylaps",
-        default=os.getenv("RMMX_MYLAPS_IP", ""),
-        metavar="DECODER_IP",
-        help="Run in MyLaps/AMB TCP mode — connect to decoder at this IP on port 3601. "
-             "Requires --club-id.  Example: --mylaps 192.168.1.50",
     )
     parser.add_argument(
         "--rmonitor",
@@ -1139,20 +951,6 @@ def main():
         print()
         print("Example:")
         print("  python rfid_bridge.py --api-url https://your-app.replit.app")
-        print()
-        sys.exit(1)
-
-    if args.mylaps and not args.club_id:
-        print()
-        print("ERROR: --club-id is required when using --mylaps")
-        print()
-        print("Find your Club ID in the organizer portal URL")
-        print("(e.g. your-app.replit.app/organizer → clubs/3 → Club ID is 3).")
-        print()
-        print("Example:")
-        print(f"  python rfid_bridge.py --mylaps {args.mylaps} \\")
-        print(f"                        --club-id 1 \\")
-        print(f"                        --api-url {args.api_url or 'https://your-app.replit.app'}")
         print()
         sys.exit(1)
 
@@ -1205,25 +1003,16 @@ def main():
         local_endpoint = f"http://localhost:{args.port}/timing/crossing"
 
     log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    if args.mylaps:
-        log.info("  RMMX MyLaps / AMB TCP Bridge")
-    else:
-        log.info("  RMMX Local RFID Bridge")
+    log.info("  RMMX Local RFID Bridge")
     log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     log.info("  Cloud API  : %s", args.api_url)
-    if args.mylaps:
-        log.info("  Mode       : MyLaps / AMB TCP")
-        log.info("  Decoder IP : %s:%d", args.mylaps, AMB_DECODER_PORT)
+    log.info("  Bridge mode: %s", args.mode.upper())
+    log.info("  Reader mode: %s", reader_labels.get(args.reader, args.reader))
+    if args.mode == "practice":
         log.info("  Club ID    : %s", args.club_id)
-        log.info("  → Crossings routed to active moto for club %s", args.club_id)
-    else:
-        log.info("  Bridge mode: %s", args.mode.upper())
-        log.info("  Reader mode: %s", reader_labels.get(args.reader, args.reader))
-        if args.mode == "practice":
-            log.info("  Club ID    : %s", args.club_id)
-            log.info("  → Crossings route to active practice session for club %s", args.club_id)
-        elif args.event_id:
-            log.info("  Event ID   : %s", args.event_id)
+        log.info("  → Crossings route to active practice session for club %s", args.club_id)
+    elif args.event_id:
+        log.info("  Event ID   : %s", args.event_id)
     log.info("  Reader token: %s", "set" if READER_TOKEN else "NOT SET (required once your club enforces ingest auth)")
     log.info("  Local port : %d", args.port)
     log.info("  Cache file : %s", args.db)
@@ -1231,10 +1020,7 @@ def main():
     if args.rmonitor:
         log.info("  RMonitor   : tcp://YOUR-LAPTOP-IP:%d  (scoreboards / Race Monitor)", args.rmonitor)
     log.info("")
-    if args.mylaps:
-        log.info("  Decoder TCP → connecting to %s:%d", args.mylaps, AMB_DECODER_PORT)
-    else:
-        log.info("  Reader endpoint → %s", local_endpoint)
+    log.info("  Reader endpoint → %s", local_endpoint)
     log.info("  Status page     → http://localhost:%d", args.port)
     if args.rmonitor:
         log.info("  RMonitor TCP    → connect scoreboard to tcp://YOUR-LAPTOP-IP:%d", args.rmonitor)
@@ -1257,16 +1043,6 @@ def main():
         name="retry-loop",
     )
     retry_thread.start()
-
-    # ── Start MyLaps / AMB TCP bridge thread (if --mylaps) ────────────────────
-    if args.mylaps:
-        mylaps_thread = threading.Thread(
-            target=run_mylaps_bridge,
-            args=(args.mylaps, args.api_url, args.club_id, db, db_lock, stop_event, args.retry),
-            daemon=True,
-            name="mylaps-bridge",
-        )
-        mylaps_thread.start()
 
     BridgeHandler.api_url = args.api_url
     BridgeHandler.local_port = args.port

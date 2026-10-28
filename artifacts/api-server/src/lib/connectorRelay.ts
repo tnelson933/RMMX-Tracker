@@ -173,7 +173,7 @@ export function attachConnectorWebSocket(httpServer: Server): void {
             status: {
               readerId: reader.id,
               readerName: reader.name,
-               readerType: reader.type === "mylaps" ? "active_transponder" : reader.type as "rfid" | "active_transponder",
+               readerType: reader.type as "rfid" | "active_transponder",
               connectorVersion: null,
               connectedAt: new Date().toISOString(),
               hardware: {
@@ -287,7 +287,7 @@ export function attachConnectorWebSocket(httpServer: Server): void {
                 ? msg.connectorVersion.slice(0, 40)
                 : conn.status.connectorVersion;
               conn.status.hardware = {
-                 kind: msg.hardware === "mylaps" || msg.hardware === "active_transponder"
+                 kind: msg.hardware === "active_transponder"
                    ? "active_transponder"
                    : ["impinj", "zebra", "generic"].includes(msg.hardware) ? msg.hardware : null,
                 connected: !!msg.connected,

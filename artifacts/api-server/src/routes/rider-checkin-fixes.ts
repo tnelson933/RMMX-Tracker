@@ -192,7 +192,7 @@ router.post("/rider/registrations/:regId/transponder", requireRiderAuth, async (
   const owned = await loadOwnedRegistration(req, res);
   if (!owned) return;
   const { rider, event } = owned;
-  if (!["active_transponder", "mylaps"].includes(event.timingTechnology)) {
+  if (event.timingTechnology !== "active_transponder") {
     return res.status(400).json({ error: "This event doesn't use active transponders." });
   }
   const number = normalizeActiveTransponderIdentifier(String(req.body?.transponderNumber ?? ""));

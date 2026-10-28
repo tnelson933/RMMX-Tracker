@@ -191,7 +191,7 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
 
     // Active transponder events must have a registration-level or rider-level number.
     // Like RFID: only riders with a transponder number already on file can skip the gate.
-    if (eligible && ["active_transponder", "mylaps"].includes(r.timingTechnology)) {
+    if (eligible && r.timingTechnology === "active_transponder") {
       const hasRegTransponder = !!r.myLapsTransponderNumber;
       const hasRiderTransponder = !!transponderByRiderId.get(r.riderId);
       if (!hasRegTransponder && !hasRiderTransponder) {
@@ -389,7 +389,7 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
   }
 
   // Active transponder eligibility (including legacy stored values).
-  if (["active_transponder", "mylaps"].includes(event.timingTechnology)) {
+  if (event.timingTechnology === "active_transponder") {
     const riderRow = familyRiders.find(r => r.id === riderId);
     if (!reg.myLapsTransponderNumber && !riderRow?.transponderId) {
       return res.status(400).json({ error: "Active transponder number not assigned — contact the organizer" });

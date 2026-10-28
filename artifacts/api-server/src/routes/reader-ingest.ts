@@ -146,7 +146,7 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
 
   const serverReceivedAt = new Date();
   const isActiveTransponderReader =
-    reader.type === "active_transponder" || reader.type === "mylaps";
+    reader.type === "active_transponder";
   const originalReceipt = parseTrustworthyReceivedAt(
     body.receivedAtUtc ?? body.receivedAt,
     serverReceivedAt,

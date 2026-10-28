@@ -13,9 +13,7 @@ export function isRegistrationTransponderRequirementSatisfied(
   event: RegistrationTransponderRequirement,
   selection: RegistrationTransponderSelection,
 ): boolean {
-  const usesActiveTiming =
-    event.timingTechnology === "active_transponder" ||
-    event.timingTechnology === "mylaps";
+  const usesActiveTiming = event.timingTechnology === "active_transponder";
 
   if (!usesActiveTiming || !event.requireTransponder) return true;
 

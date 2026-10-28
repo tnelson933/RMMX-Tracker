@@ -1557,66 +1557,6 @@ router.post("/timing/zebra-crossing", async (req, res) => {
   return res.json({ ok: true, processed: tags.length, motoId: moto.id, results });
 });
 
-// POST /timing/mylaps-crossing?eventId=N — legacy endpoint for Active Transponder Timing.
-// Body: { transponder: "12345", passingTime: "2026-05-27T14:32:01.123Z", loopId?: "finish-line-1" }
-//   rfidNumber is accepted as an alias for legacy bridge compatibility.
-router.post("/timing/mylaps-crossing", async (req, res) => {
-  const eventId = Number(req.query.eventId);
-  if (!eventId || isNaN(eventId)) {
-    return res.status(400).json({ error: "eventId query param is required" });
-  }
-
-  if (!(await authorizeIngest(req, res, await clubIdForEvent(eventId), "active_legacy_crossing"))) return;
-
-  const body = req.body as any;
-  // Accept common active-transponder field names.
-  const transponder: string | undefined =
-    body?.transponder ?? body?.rfidNumber ?? body?.transponderId ?? body?.id;
-
-  if (!transponder) {
-    return res.status(400).json({
-      error: "Missing transponder field — expected 'transponder', 'rfidNumber', or 'transponderId'",
-    });
-  }
-
-  // Accept: passingTime / crossingTime / timestamp / passTime
-  const rawTime: string | undefined =
-    body?.passingTime ?? body?.crossingTime ?? body?.timestamp ?? body?.passTime;
-
-  const crossingTime = ingestDirectActiveCrossingTime(rawTime, body, "legacy_active_ingest");
-
-  const moto = await getActiveMotoForEvent(eventId);
-  if (!moto) {
-    return res.status(409).json({ error: "No moto currently in progress for this event" });
-  }
-
-  const readerId: string = body?.loopId ?? body?.readerId ?? "active-transponder";
-
-  try {
-    const result = await processCrossing({
-      rfidNumber: String(transponder),
-      motoId: moto.id,
-      crossingTime,
-      readerId,
-    });
-
-    if (result.debounced) {
-      return res.json({ ok: true, debounced: true, motoId: moto.id });
-    }
-
-    return res.json({
-      ok: true,
-      motoId: moto.id,
-      crossingId: result.crossing?.id,
-      lapNumber: result.lapNumber,
-      lapTime: result.lapTimeMs != null ? formatLapTime(result.lapTimeMs) : null,
-      lapTimeMs: result.lapTimeMs,
-    });
-  } catch (err: any) {
-    return res.status(409).json({ error: err.message });
-  }
-});
-
 // POST /timing/manual-crossing — record a lap for a rider by riderId (no RFID required)
 router.post("/timing/manual-crossing", async (req, res) => {
   try {

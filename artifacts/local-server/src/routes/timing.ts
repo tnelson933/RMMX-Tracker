@@ -617,7 +617,7 @@ router.post("/timing/crossing", rejectForeignBrowserIngest, (req, res) => {
 });
 
 // POST /timing/active/crossing?clubId=N — stable facility endpoint
-// Accepts all hardware formats: Generic/RFID bridge, AMBrc, Impinj R700, Zebra FX7500
+// Accepts all hardware formats: Generic JSON bridge, Impinj R700, Zebra FX7500
 // In the local server, clubId is accepted for compatibility but ignored (only one club).
 router.post("/timing/active/crossing", rejectForeignBrowserIngest, (req, res) => {
   const ingestStartedAt = new Date().toISOString();
@@ -683,7 +683,7 @@ router.post("/timing/active/crossing", rejectForeignBrowserIngest, (req, res) =>
     return res.json({ ok: true, processed: zebraTags.length, practiceSessionId: practiceZebra!.id, results });
   }
 
-  // Generic / AMBrc timing-decoder format
+  // Generic JSON format (tag/transponder ID plus optional time)
   const rfidNumber: string | undefined = body?.rfidNumber ?? body?.transponder ?? body?.transponderId ?? body?.id;
   if (!rfidNumber) {
     return res.status(400).json({ error: "Cannot extract tag/transponder ID — expected rfidNumber, transponder, transponderId, Impinj events[], or Zebra tags[]" });
@@ -721,9 +721,8 @@ router.post("/timing/active/crossing", rejectForeignBrowserIngest, (req, res) =>
   return res.json({ ok: true, practiceSessionId: practiceGeneric!.id, crossingId: practiceResult.id, lapNumber: practiceResult.lapNumber, lapTimeMs: practiceResult.lapTimeMs });
 });
 
-// POST /timing/transponder-crossing?eventId=N — AMBrc timing-decoder format.
-// The former endpoint remains available as a compatibility alias.
-router.post(["/timing/transponder-crossing", "/timing/mylaps-crossing"], rejectForeignBrowserIngest, (req, res) => {
+// POST /timing/transponder-crossing?eventId=N — generic active-transponder JSON format.
+router.post("/timing/transponder-crossing", rejectForeignBrowserIngest, (req, res) => {
   const ingestStartedAt = new Date().toISOString();
   const eventId = Number(req.query.eventId);
   if (!eventId || isNaN(eventId)) return res.status(400).json({ error: "eventId query param is required" });

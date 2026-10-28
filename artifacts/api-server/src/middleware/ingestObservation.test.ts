@@ -11,7 +11,6 @@ test("ingest routes are recognized only for POST", () => {
   assert.equal(classifyIngestRoute("POST", "/timing/ping"), "ping");
   assert.equal(classifyIngestRoute("POST", "/timing/impinj-crossing"), "impinj_crossing");
   assert.equal(classifyIngestRoute("POST", "/timing/zebra-crossing"), "zebra_crossing");
-  assert.equal(classifyIngestRoute("POST", "/timing/mylaps-crossing"), "active_legacy_crossing");
   assert.equal(classifyIngestRoute("POST", "/practice/active/crossing"), "practice_active_crossing");
   assert.equal(classifyIngestRoute("GET", "/timing/crossing"), null);
 });

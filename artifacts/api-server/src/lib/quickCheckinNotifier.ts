@@ -148,7 +148,7 @@ async function notifyForEvent(event: EventRow): Promise<void> {
     if (!email) continue;
     if (checkedInSet.has(`${r.riderId}:${r.raceClass ?? "Unknown"}`)) continue;
     if (event.timingTechnology === "rfid" && !rfidSet.has(r.riderId)) continue;
-    if ((event.timingTechnology === "active_transponder" || event.timingTechnology === "mylaps") && !r.myLapsTransponderNumber && !r.riderTransponder) continue;
+    if (event.timingTechnology === "active_transponder" && !r.myLapsTransponderNumber && !r.riderTransponder) continue;
     if (event.requireWaiver && !event.requireLiabilityWaiver && !r.waiverAcknowledgedAt) continue;
     if (event.requireLiabilityWaiver && !waiverRiderIds.has(r.riderId)) continue;
     eligibleEmails.add(email);

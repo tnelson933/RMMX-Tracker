@@ -55,7 +55,7 @@ type ExportRider = {
   emergencyPhone?: string | null;
 };
 
-type SortKey = "name" | "bib" | "cityState" | "bike" | "ama" | "rfid" | "mylaps";
+type SortKey = "name" | "bib" | "cityState" | "bike" | "ama" | "rfid" | "transponder";
 type SortDir = "asc" | "desc";
 
 function toExportRows(riders: ExportRider[]) {
@@ -176,7 +176,7 @@ function sortRiders<T extends ExportRider>(riders: T[], key: SortKey, dir: SortD
         const hasB = b.rfidNumber ? 1 : 0;
         return (hasA - hasB) * d;
       }
-      case "mylaps":
+      case "transponder":
         return nullLast(
           ((a as any).mylapsTransponderId ?? "").toLowerCase(),
           ((b as any).mylapsTransponderId ?? "").toLowerCase(),
@@ -475,10 +475,10 @@ export default function RidersList() {
                 </TableHead>
                 <TableHead
                   className={`w-36 text-center ${thSortable}`}
-                  onClick={() => handleSort("mylaps")}
+                  onClick={() => handleSort("transponder")}
                 >
                   <span className="inline-flex items-center justify-center w-full">
-                    Active Timing Transponder <SortIcon col="mylaps" sortKey={sortKey} sortDir={sortDir} />
+                    Active Timing Transponder <SortIcon col="transponder" sortKey={sortKey} sortDir={sortDir} />
                   </span>
                 </TableHead>
                 <TableHead className="w-8"></TableHead>

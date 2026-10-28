@@ -22,7 +22,6 @@ const INGEST_ROUTES: Array<[RegExp, string]> = [
   [/^\/timing\/ping\/?$/, "ping"],
   [/^\/timing\/impinj-crossing\/?$/, "impinj_crossing"],
   [/^\/timing\/zebra-crossing\/?$/, "zebra_crossing"],
-  [/^\/timing\/mylaps-crossing\/?$/, "active_legacy_crossing"],
   [/^\/practice\/active\/crossing\/?$/, "practice_active_crossing"],
 ];
 
