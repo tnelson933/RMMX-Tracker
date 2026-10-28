@@ -13,11 +13,13 @@ import { builtInCloudUrl, migrateCloudUrl } from "./cloud-url";
 export type { ConnectorSettings, ReaderConfig, Hardware, ActiveTimingConfig } from "./settings-migrations";
 
 const SETTINGS_FILE = () => path.join(app.getPath("userData"), "connector-settings.json");
+const LAPTOP_KEY_FILE = () => path.join(app.getPath("userData"), "laptop.enc");
+// Older releases stored an organizer password and session; both are retired.
 const PASSWORD_FILE = () => path.join(app.getPath("userData"), "credentials.enc");
 const SESSION_FILE = () => path.join(app.getPath("userData"), "session.enc");
 
 function defaultSettings(): ConnectorSettings {
-  return { cloudUrl: builtInCloudUrl(), email: "", clubId: null, readers: [], autoConnect: true };
+  return { cloudUrl: builtInCloudUrl(), email: "", clubId: null, clubName: "", readers: [], autoConnect: true };
 }
 
 export function loadSettings(): ConnectorSettings {
@@ -58,25 +60,26 @@ function loadEncrypted(file: string): string | null {
   }
 }
 
-export function savePassword(password: string): void {
-  saveEncrypted(PASSWORD_FILE(), password);
+/** This laptop's key from pairing, encrypted with the OS keychain. */
+export function saveLaptopKey(key: string): void {
+  saveEncrypted(LAPTOP_KEY_FILE(), key);
 }
-export function loadPassword(): string | null {
-  return loadEncrypted(PASSWORD_FILE());
+export function loadLaptopKey(): string | null {
+  return loadEncrypted(LAPTOP_KEY_FILE());
 }
-export function clearPassword(): void {
-  try { if (fs.existsSync(PASSWORD_FILE())) fs.unlinkSync(PASSWORD_FILE()); } catch { /* ignore */ }
+export function clearLaptopKey(): void {
+  try { if (fs.existsSync(LAPTOP_KEY_FILE())) fs.unlinkSync(LAPTOP_KEY_FILE()); } catch { /* ignore */ }
 }
 
-export function saveSessionCookie(cookie: string): void {
-  saveEncrypted(SESSION_FILE(), cookie);
-}
-export function loadSessionCookie(): string | null {
-  return loadEncrypted(SESSION_FILE());
+/** Delete the organizer password and session older releases saved. */
+export function clearLegacyCredentials(): void {
+  for (const f of [PASSWORD_FILE(), SESSION_FILE()]) {
+    try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch { /* ignore */ }
+  }
 }
 
 export function clearAll(): void {
-  for (const f of [PASSWORD_FILE(), SESSION_FILE(), SETTINGS_FILE()]) {
+  for (const f of [LAPTOP_KEY_FILE(), PASSWORD_FILE(), SESSION_FILE(), SETTINGS_FILE()]) {
     try {
       if (fs.existsSync(f)) fs.unlinkSync(f);
     } catch {

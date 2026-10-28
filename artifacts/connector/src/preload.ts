@@ -3,8 +3,8 @@ import { contextBridge, ipcRenderer } from "electron";
 contextBridge.exposeInMainWorld("connector", {
   getStatus: () => ipcRenderer.invoke("status:get"),
   getSettings: () => ipcRenderer.invoke("settings:get"),
-  login: (input: { cloudUrl: string; email: string; password: string }) =>
-    ipcRenderer.invoke("auth:login", input),
+  pair: (input: { cloudUrl: string; code: string; laptopName: string }) =>
+    ipcRenderer.invoke("auth:pair", input),
   listCloudReaders: () => ipcRenderer.invoke("readers:cloud"),
   scanNetwork: () => ipcRenderer.invoke("network:scan"),
   probeAddress: (address: string) => ipcRenderer.invoke("network:probe", address),

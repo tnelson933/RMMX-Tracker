@@ -18,6 +18,7 @@ import {
   useGetRecentTags, useClearRecentTags, getGetRecentTagsQueryKey,
 } from "@workspace/api-client-react";
 import { ConnectionModeChooser } from "@/components/organizer/OfflineHardwareSetup";
+import { ConnectLaptop } from "@/components/organizer/ConnectLaptop";
 
 const BASE_URL = window.location.origin;
 const PING_ENDPOINT_BASE = `${BASE_URL}/api/timing/ping`;
@@ -984,12 +985,13 @@ export default function ReaderSetup() {
         </div>
         <div className="space-y-2 text-sm">
           <div className="flex gap-2"><MiniStep n={1} /><p>Install RM Connect on the laptop you take to the track.</p></div>
-          <div className="flex gap-2"><MiniStep n={2} /><p>Power on your readers and connect the laptop to the same network (a router, or a cable straight to the reader). Sign in with your organizer email.</p></div>
-          <div className="flex gap-2"><MiniStep n={3} /><p>Click <strong>Find readers</strong>. RM Connect lists every reader it finds; name each one after where it sits (for example "Finish line" or "Section 3 start") and click <strong>Add</strong>. Click <strong>Test</strong> and pass a tag or transponder to check it.</p></div>
+          <div className="flex gap-2"><MiniStep n={2} /><p>Click <strong>Get a pairing code</strong> below and type the 6-digit code into RM Connect. No password is needed on the laptop.</p></div>
+          <div className="flex gap-2"><MiniStep n={3} /><p>Power on your readers and connect the laptop to the same network (a router, or a cable straight to the reader). Click <strong>Find readers</strong>. RM Connect lists every reader it finds; name each one after where it sits (for example "Finish line" or "Section 3 start") and click <strong>Add</strong>. Click <strong>Test</strong> and pass a tag or transponder to check it.</p></div>
         </div>
         <p className="text-xs text-muted-foreground">
           One laptop can run several readers. Leave RM Connect running on race day: readers start and stop with each moto, and reconnect on their own if the network drops.
         </p>
+        {!isDesktop && <ConnectLaptop />}
         <div className="flex flex-wrap gap-2">
           <a href={connectorDl.windows} title="Windows 10/11">
             <Button size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">

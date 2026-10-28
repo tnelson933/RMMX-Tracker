@@ -21,19 +21,19 @@ import {
   shell,
 } from "electron";
 import fs from "fs";
+import os from "os";
 import path from "path";
 import { pathToFileURL } from "url";
 import { ReaderSession } from "./reader-session";
 import { scanLocalNetwork, probeAddress, type DiscoveredDevice } from "./discovery";
-import { cloudLogin, fetchReaders, createReader, updateReader, type CloudReader } from "./cloud";
+import { pairLaptop, fetchReaders, createReader, updateReader, type CloudReader } from "./cloud";
 import {
   loadSettings,
   saveSettings,
-  savePassword,
-  loadPassword,
-  clearPassword,
-  saveSessionCookie,
-  loadSessionCookie,
+  saveLaptopKey,
+  loadLaptopKey,
+  clearLaptopKey,
+  clearLegacyCredentials,
   clearAll,
   type ConnectorSettings,
   type ReaderConfig,
@@ -53,7 +53,6 @@ declare const __CONNECTOR_PACKAGE_VERSION__: string;
 // loadSettings() fills in the built-in cloud URL, migrates retired hosts, and
 // turns an older single-reader settings file into a reader list.
 let settings: ConnectorSettings = loadSettings();
-let sessionCookie: string | null = null;
 const sessions = new Map<number, ReaderSession>();
 let identifying = false;
 let identifyTimer: NodeJS.Timeout | null = null;
@@ -89,9 +88,9 @@ function adoptLegacyQueue(readerId: number): void {
 
 function getAppStatus(): AppStatus {
   return {
-    signedIn: !!settings.email,
-    signInRequired,
-    email: settings.email,
+    signedIn: !!laptopKey,
+    signInRequired: pairingRequired,
+    email: settings.clubName,
     cloudUrl: settings.cloudUrl,
     readers: settings.readers.map(r => sessions.get(r.readerId)?.getStatus()).filter((s): s is NonNullable<typeof s> => !!s),
     identifying,
@@ -267,62 +266,36 @@ function setIdentifying(enabled: boolean): void {
   pushStatus();
 }
 
-// ── Cloud session ─────────────────────────────────────────────────────────────
+// ── Laptop pairing ────────────────────────────────────────────────────────────
 
-// When the saved password stops working, RM Connect asks the organizer to sign
-// in again instead of retrying it: repeated automatic tries would only trip
-// RM Roost's sign-in limit. Readers keep timing meanwhile (they use their own
-// reader tokens, not this session).
-let signInRequired: string | null = null;
-let sessionRefresh: Promise<string> | null = null;
+// The laptop is paired with RM Roost once (a 6-digit code from Reader Setup)
+// and uses its own laptop key from then on. No organizer password is stored.
+// If RM Roost stops accepting the key (the laptop was removed on Reader Setup),
+// RM Connect asks for a new code; readers keep timing meanwhile because they
+// use their own reader tokens.
+let laptopKey: string | null = null;
+let pairingRequired: string | null = null;
 
-/** Return a valid session cookie, signing in once with the saved password if needed. */
-function ensureSession(): Promise<string> {
-  if (signInRequired) return Promise.reject(new Error(signInRequired));
-  // Several actions can need the session at once; share one sign-in.
-  sessionRefresh ??= refreshSession().finally(() => { sessionRefresh = null; });
-  return sessionRefresh;
-}
-
-async function refreshSession(): Promise<string> {
-  if (sessionCookie) {
-    try {
-      await fetchReaders(settings.cloudUrl, sessionCookie);
-      return sessionCookie;
-    } catch (err: any) {
-      // Only an expired session means signing in again; a network problem doesn't.
-      if (err?.status !== 401) throw err;
-      sessionCookie = null;
-    }
-  }
-  const password = loadPassword();
-  if (!settings.cloudUrl || !settings.email || !password) {
-    return requireSignIn("Sign in to RM Roost again to add or rename readers.");
-  }
-  try {
-    const { cookie } = await cloudLogin(settings.cloudUrl, settings.email, password);
-    sessionCookie = cookie;
-    saveSessionCookie(cookie);
-    return cookie;
-  } catch (err: any) {
-    if (err?.status === 401 || err?.status === 403) {
-      clearPassword();
-      return requireSignIn("RM Roost didn't accept the saved password (it may have changed). Sign in again to add or rename readers. Your readers keep timing.");
-    }
-    if (err?.status === 429) return requireSignIn(err.message);
-    throw err;
-  }
-}
-
-function requireSignIn(reason: string): never {
-  signInRequired = reason;
-  sessionCookie = null;
+function requirePairing(reason: string): never {
+  pairingRequired = reason;
   pushStatus();
   throw new Error(reason);
 }
 
-async function withSession<T>(fn: (cookie: string) => Promise<T>): Promise<T> {
-  return fn(await ensureSession());
+/** Run a call that needs the laptop key; a rejected key asks for a new code. */
+async function withSession<T>(fn: (key: string) => Promise<T>): Promise<T> {
+  if (pairingRequired) throw new Error(pairingRequired);
+  if (!laptopKey) return requirePairing("Connect this laptop to RM Roost with a pairing code from Reader Setup.");
+  try {
+    return await fn(laptopKey);
+  } catch (err: any) {
+    if (err?.status === 401) {
+      laptopKey = null;
+      clearLaptopKey();
+      return requirePairing("RM Roost no longer recognizes this laptop (it was removed on Reader Setup). Enter a new pairing code. Your readers keep timing.");
+    }
+    throw err;
+  }
 }
 
 function summarize(readers: CloudReader[]): CloudReaderSummary[] {
@@ -354,34 +327,33 @@ function registerIpc(): void {
 
   ipcMain.handle("settings:get", () => ({
     cloudUrl: settings.cloudUrl,
-    email: settings.email,
+    clubName: settings.clubName,
+    laptopName: os.hostname(),
     readers: settings.readers.map(r => ({ readerId: r.readerId, activeTiming: r.activeTiming })),
   }));
 
   ipcMain.handle(
-    "auth:login",
-    async (_e, input: { cloudUrl: string; email: string; password: string }): Promise<LoginResult> => {
+    "auth:pair",
+    async (_e, input: { cloudUrl: string; code: string; laptopName: string }): Promise<LoginResult> => {
       try {
         // A blank field means the built-in RM Roost cloud; "host.com" gets https://.
         const cloudUrl = normalizeCloudUrl(input.cloudUrl) || builtInCloudUrl();
         if (!/^https?:\/\//i.test(cloudUrl)) throw new Error("Server address must start with https:// (or http:// for a local server)");
-        const { cookie, clubId } = await cloudLogin(cloudUrl, input.email.trim(), input.password);
-        const cloudChanged = cloudUrl !== settings.cloudUrl;
-        sessionCookie = cookie;
-        signInRequired = null;
-        settings = { ...settings, cloudUrl, email: input.email.trim(), clubId };
-        if (cloudChanged) {
-          // Readers belong to one RM Roost server; don't carry them to another.
+        const paired = await pairLaptop(cloudUrl, input.code, input.laptopName?.trim() || os.hostname());
+        // Readers belong to one club on one RM Roost server; don't carry them elsewhere.
+        if (cloudUrl !== settings.cloudUrl || paired.clubId !== settings.clubId) {
           stopAllSessions();
           settings = { ...settings, readers: [] };
         }
+        laptopKey = paired.laptopKey;
+        saveLaptopKey(paired.laptopKey);
+        pairingRequired = null;
+        settings = { ...settings, cloudUrl, clubId: paired.clubId, clubName: paired.clubName ?? "" };
         saveSettings(settings);
-        savePassword(input.password);
-        saveSessionCookie(cookie);
         pushStatus();
         return { ok: true };
       } catch (err: any) {
-        return { ok: false, error: err?.message ?? "Sign-in failed" };
+        return { ok: false, error: err?.message ?? "Pairing failed" };
       }
     },
   );
@@ -538,8 +510,8 @@ function registerIpc(): void {
   ipcMain.handle("logout", () => {
     setIdentifying(false);
     stopAllSessions();
-    sessionCookie = null;
-    signInRequired = null;
+    laptopKey = null;
+    pairingRequired = null;
     clearAll();
     settings = loadSettings();
     pushStatus();
@@ -568,7 +540,9 @@ if (!gotLock) {
     updateTray();
     registerIpc();
 
-    sessionCookie = loadSessionCookie();
+    laptopKey = loadLaptopKey();
+    // Older releases kept an organizer password here; it is no longer used.
+    clearLegacyCredentials();
 
     // Keep "retry in Ns" and "last read Ns ago" fresh in the window.
     setInterval(() => pushStatus(), 2_000);

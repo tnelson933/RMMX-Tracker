@@ -20,8 +20,11 @@ export interface ReaderConfig {
 
 export interface ConnectorSettings {
   cloudUrl: string;
+  /** Unused since pairing (1.0.20); kept so older files load. */
   email: string;
   clubId: number | null;
+  /** Club this laptop is paired with. */
+  clubName: string;
   readers: ReaderConfig[];
   /** Reconnect hardware + cloud automatically when the app launches. */
   autoConnect: boolean;
@@ -93,6 +96,7 @@ export function migrateSettings(raw: unknown, migrateCloudUrl: (url: unknown) =>
     cloudUrl: migrateCloudUrl(value.cloudUrl),
     email: typeof value.email === "string" ? value.email : "",
     clubId: Number.isInteger(value.clubId) ? value.clubId : null,
+    clubName: typeof value.clubName === "string" ? value.clubName : "",
     readers,
     autoConnect: value.autoConnect !== false,
   };

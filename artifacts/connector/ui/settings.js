@@ -39,12 +39,16 @@ function el(tag, props = {}, ...children) {
 
 function render(st) {
   status = st;
-  // Asked to sign in again: show the sign-in card above the readers, which keep timing.
+  // Not paired (or RM Roost dropped this laptop): show the pairing card above
+  // the readers, which keep timing with their own reader tokens.
   $("loginCard").classList.toggle("hidden", st.signedIn && !st.signInRequired);
   $("signInReason").textContent = st.signInRequired || "";
-  $("mainView").classList.toggle("hidden", !st.signedIn);
-  if (!st.signedIn) return;
-  $("txtAccount").textContent = "Signed in as " + st.email;
+  const showReaders = st.signedIn || st.readers.length > 0;
+  $("mainView").classList.toggle("hidden", !showReaders);
+  if (!showReaders) return;
+  $("txtAccount").textContent = st.signedIn ? "Connected to " + (st.email || "your club") : "Not connected to RM Roost";
+  $("btnFind").disabled = !st.signedIn;
+  $("btnLogout").classList.toggle("hidden", !st.signedIn);
   $("identifyBanner").classList.toggle("hidden", !st.identifying);
   $("btnIdentify").classList.toggle("hidden", st.identifying || st.readers.length === 0);
   renderReaders(st.readers);
@@ -319,28 +323,29 @@ $("btnStopIdentify").addEventListener("click", () => api.setIdentifying(false));
 
 $("btnLogin").addEventListener("click", async () => {
   $("errLogin").textContent = "";
-  if (!$("inEmail").value.trim() || !$("inPassword").value) {
-    $("errLogin").textContent = "Enter your organizer email and password.";
+  const code = $("inCode").value.replace(/D/g, "");
+  if (code.length !== 6) {
+    $("errLogin").textContent = "Enter the 6-digit code from Reader Setup → Connect a laptop.";
     return;
   }
   $("btnLogin").disabled = true;
-  $("btnLogin").textContent = "Signing in…";
-  const res = await api.login({ cloudUrl: $("inCloudUrl").value, email: $("inEmail").value, password: $("inPassword").value });
+  $("btnLogin").textContent = "Connecting…";
+  const res = await api.pair({ cloudUrl: $("inCloudUrl").value, code, laptopName: $("inLaptopName").value });
   $("btnLogin").disabled = false;
-  $("btnLogin").textContent = "Sign in";
+  $("btnLogin").textContent = "Connect";
   if (!res.ok) { $("errLogin").textContent = res.error; return; }
-  $("inPassword").value = "";
+  $("inCode").value = "";
   render(await api.getStatus());
 });
 
-for (const id of ["inCloudUrl", "inEmail", "inPassword"]) {
+for (const id of ["inCloudUrl", "inCode", "inLaptopName"]) {
   $(id).addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !$("btnLogin").disabled) $("btnLogin").click();
   });
 }
 
 $("btnLogout").addEventListener("click", async () => {
-  if (!confirm("Sign out? Readers on this laptop stop sending reads until you sign in and add them again.")) return;
+  if (!confirm("Disconnect this laptop from RM Roost? Readers on it stop sending reads until you connect it again with a new code and add them.")) return;
   await api.logout();
   location.reload();
 });
@@ -350,7 +355,7 @@ $("btnLogout").addEventListener("click", async () => {
 async function init() {
   const s = await api.getSettings();
   if (s.cloudUrl) $("inCloudUrl").value = s.cloudUrl;
-  if (s.email) $("inEmail").value = s.email;
+  if (s.laptopName) $("inLaptopName").value = s.laptopName;
   render(await api.getStatus());
   api.onStatus(render);
 }

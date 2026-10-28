@@ -43,6 +43,7 @@ export const PUBLIC_RULES: PublicRule[] = [
 
   // Read-only race data shown on public pages, gate pages, widgets and the rider app.
   { pattern: /^\/config\/(desktop|connector)-release$/, methods: READ, reason: "download links" },
+  { pattern: /^\/connector\/pair$/, methods: ["POST"], reason: "RM Connect pairing (code-authenticated, rate limited)" },
   { pattern: /^\/events$/, methods: READ, reason: "public results list" },
   { pattern: /^\/events\/\d+$/, methods: READ, reason: "public event page" },
   { pattern: /^\/events\/\d+\/(motos|results|penalty-summary)$/, methods: READ, reason: "public schedule/results/penalties (unpublished shown to the owning club only)" },
@@ -61,6 +62,8 @@ export const PUBLIC_RULES: PublicRule[] = [
 ];
 
 const BEARER_SYNC_ROUTE = /^\/clubs\/\d+\/(sync|sync-pull|desktop-push)$/;
+// Paired RM Connect laptops send their laptop key; the handler validates it.
+const BEARER_LAPTOP_ROUTE = /^\/connector\/laptop\//;
 
 export function isPublicRoute(path: string, method: string): boolean {
   const m = method.toUpperCase() as HttpMethod;
@@ -79,6 +82,7 @@ export async function accessControlMiddleware(req: Request, res: Response, next:
     if (isPublic) return next();
     const auth = req.headers.authorization ?? "";
     if (BEARER_SYNC_ROUTE.test(path) && auth.startsWith("Bearer ")) return next();
+    if (BEARER_LAPTOP_ROUTE.test(path) && auth.startsWith("Bearer ")) return next();
     return res.status(401).json({ error: "Not authenticated" });
   }
 

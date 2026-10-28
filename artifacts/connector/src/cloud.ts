@@ -331,78 +331,70 @@ export interface CloudReader {
   } | null;
 }
 
-/** Login with organizer credentials; returns the session cookie + clubId. */
-export async function cloudLogin(
+// ── Laptop pairing and the club's reader list ────────────────────────────────
+
+async function apiError(res: Response, fallback: string): Promise<Error & { status: number }> {
+  const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+  return Object.assign(new Error(data.error ?? data.message ?? `${fallback} (${res.status})`), { status: res.status });
+}
+
+/** Trade a 6-digit pairing code from Reader Setup for this laptop's own key. */
+export async function pairLaptop(
   cloudUrl: string,
-  email: string,
-  password: string,
-): Promise<{ cookie: string; clubId: number | null }> {
+  code: string,
+  laptopName: string,
+): Promise<{ laptopKey: string; clubId: number; clubName: string | null }> {
   const base = cloudUrl.replace(/\/+$/, "");
-  const res = await fetch(`${base}/api/auth/login`, {
+  const res = await fetch(`${base}/api/connector/pair`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    // Long-lived session, so the laptop isn't signed out between race days.
-    body: JSON.stringify({ email, password, rememberMe: true }),
+    body: JSON.stringify({ code: code.replace(/\D/g, ""), laptopName }),
   });
-  if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
-    // Some rejections carry a code in `error` and the readable text in `message`
-    // (e.g. CLUB_INACTIVE).
-    throw Object.assign(new Error(data.message ?? data.error ?? `Login failed (${res.status})`), { status: res.status });
-  }
-  // Pick the session cookie itself; a proxy (e.g. Cloudflare) may add others.
-  const cookies = typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [res.headers.get("set-cookie") ?? ""];
-  const pairs = cookies.map(c => c.split(";")[0]).filter(Boolean);
-  const cookie = pairs.find(p => p.startsWith("connect.sid=")) ?? pairs[0] ?? "";
-  if (!cookie) throw new Error("Login succeeded but no session cookie was returned");
-  const data = (await res.json().catch(() => ({}))) as { clubId?: number; user?: { clubId?: number } };
-  const clubId = data.clubId ?? data.user?.clubId ?? null;
-  return { cookie, clubId: clubId ?? null };
+  if (!res.ok) throw await apiError(res, "Pairing failed");
+  return (await res.json()) as { laptopKey: string; clubId: number; clubName: string | null };
+}
+
+function laptopHeaders(laptopKey: string, json = false): Record<string, string> {
+  return { Authorization: `Bearer ${laptopKey}`, ...(json ? { "Content-Type": "application/json" } : {}) };
 }
 
 /** Register a reader for the club (RM Connect does this when it finds new hardware). */
 export async function createReader(
   cloudUrl: string,
-  cookie: string,
+  laptopKey: string,
   input: { name: string; type: "rfid" | "active_transponder"; hardwareAddress: string },
 ): Promise<CloudReader> {
   const base = cloudUrl.replace(/\/+$/, "");
-  const res = await fetch(`${base}/api/readers`, {
+  const res = await fetch(`${base}/api/connector/laptop/readers`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Cookie: cookie },
+    headers: laptopHeaders(laptopKey, true),
     body: JSON.stringify(input),
   });
-  if (res.status === 401) throw new Error("Session expired — sign in again");
-  const data = (await res.json().catch(() => ({}))) as CloudReader & { error?: string };
-  if (!res.ok) throw new Error(data.error ?? `Couldn't add the reader (${res.status})`);
-  return data;
+  if (!res.ok) throw await apiError(res, "Couldn't add the reader");
+  return (await res.json()) as CloudReader;
 }
 
 /** Rename a reader and/or save the address RM Connect found it at. */
 export async function updateReader(
   cloudUrl: string,
-  cookie: string,
+  laptopKey: string,
   readerId: number,
-  input: { name: string; hardwareAddress?: string },
+  input: { name?: string; hardwareAddress?: string },
 ): Promise<CloudReader> {
   const base = cloudUrl.replace(/\/+$/, "");
-  const res = await fetch(`${base}/api/readers/${readerId}`, {
+  const res = await fetch(`${base}/api/connector/laptop/readers/${readerId}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", Cookie: cookie },
+    headers: laptopHeaders(laptopKey, true),
     body: JSON.stringify(input),
   });
-  if (res.status === 401) throw new Error("Session expired — sign in again");
-  const data = (await res.json().catch(() => ({}))) as CloudReader & { error?: string };
-  if (!res.ok) throw new Error(data.error ?? `Couldn't update the reader (${res.status})`);
-  return data;
+  if (!res.ok) throw await apiError(res, "Couldn't update the reader");
+  return (await res.json()) as CloudReader;
 }
 
-/** Fetch the club's registered readers using a session cookie. */
-export async function fetchReaders(cloudUrl: string, cookie: string): Promise<CloudReader[]> {
+/** The club's registered readers. */
+export async function fetchReaders(cloudUrl: string, laptopKey: string): Promise<CloudReader[]> {
   const base = cloudUrl.replace(/\/+$/, "");
-  const res = await fetch(`${base}/api/readers`, { headers: { Cookie: cookie } });
-  if (res.status === 401) throw Object.assign(new Error("Session expired — sign in again"), { status: 401 });
-  if (!res.ok) throw Object.assign(new Error(`Failed to load readers (${res.status})`), { status: res.status });
+  const res = await fetch(`${base}/api/connector/laptop/readers`, { headers: laptopHeaders(laptopKey) });
+  if (!res.ok) throw await apiError(res, "Couldn't load your readers");
   return (await res.json()) as CloudReader[];
 }
-

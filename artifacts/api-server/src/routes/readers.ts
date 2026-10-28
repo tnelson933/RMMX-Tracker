@@ -8,9 +8,9 @@ import { forgetReaderToken } from "../lib/ingestAuth";
 import { getRecentTags, clearRecentTags } from "../lib/recentTags";
 
 const router = Router();
-const normalizeReaderType = (type: unknown) =>
+export const normalizeReaderType = (type: unknown) =>
   type === "mylaps" || type === "active_transponder" ? "active_transponder" : "rfid";
-const publicReader = <T extends { type: string }>(reader: T) => ({
+export const publicReader = <T extends { type: string }>(reader: T) => ({
   ...reader,
   type: normalizeReaderType(reader.type),
 });

@@ -112,19 +112,23 @@
 
   <!-- SIGN IN -->
   <div class="card hidden" id="loginCard">
-    <h2>Sign in</h2>
+    <h2>Connect this laptop to RM Roost</h2>
     <div class="err" id="signInReason" style="margin:0 0 6px;"></div>
-    <label for="inEmail">Organizer email</label>
-    <input id="inEmail" type="email" placeholder="you@yourclub.com" autocomplete="username" />
-    <label for="inPassword">Password</label>
-    <input id="inPassword" type="password" autocomplete="current-password" />
+    <div class="sub" style="line-height:1.5;">
+      On the RM Roost website, open <b>Reader Setup</b> and click <b>Connect a laptop</b>. Type the 6-digit code it shows here. No password is needed or saved on this laptop.
+    </div>
+    <label for="inCode">Pairing code</label>
+    <input id="inCode" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="123456" spellcheck="false"
+      style="font-size:22px; letter-spacing:0.3em; text-align:center; font-family:Consolas, 'SF Mono', Menlo, monospace;" />
+    <label for="inLaptopName">Laptop name <span class="muted">(shown on Reader Setup)</span></label>
+    <input id="inLaptopName" maxlength="60" placeholder="e.g. Timing tent laptop" />
     <details style="margin-top:8px;">
       <summary class="muted" style="cursor:pointer;">Server</summary>
       <label for="inCloudUrl">RM Roost server</label>
       <input id="inCloudUrl" type="url" placeholder="https://www.rmroost.com" spellcheck="false" />
       <div class="hint">Leave this as is unless your club runs its own server.</div>
     </details>
-    <div class="row" style="margin-top:12px;"><button id="btnLogin">Sign in</button></div>
+    <div class="row" style="margin-top:12px;"><button id="btnLogin">Connect</button></div>
     <div class="err" id="errLogin"></div>
   </div>
 
@@ -163,7 +167,7 @@
 
     <div class="footer">
       <span class="grow" id="txtAccount"></span>
-      <button id="btnLogout" class="link">Sign out</button>
+      <button id="btnLogout" class="link">Disconnect this laptop</button>
     </div>
   </div>
 
