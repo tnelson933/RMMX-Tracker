@@ -250,8 +250,8 @@ export function QuickCheckinCard() {
               <View key={r.registrationId} style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 4 }}>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>{r.riderName}</Text>
-                  <Text style={{ fontSize: 12, color: r.eligible ? colors.mutedForeground : colors.warning, fontFamily: "Inter_400Regular" }}>
-                    {r.raceClass ?? ""}{!r.eligible && r.ineligibleReason ? ` · ${REASONS[r.ineligibleReason] ?? "See the organizer at the gate."}` : ""}
+                  <Text style={{ fontSize: 12, color: r.eligible || r.checkedIn ? colors.mutedForeground : colors.warning, fontFamily: "Inter_400Regular" }}>
+                    {r.raceClass ?? ""}{!r.checkedIn && !r.eligible && r.ineligibleReason ? ` · ${REASONS[r.ineligibleReason] ?? "See the organizer at the gate."}` : ""}
                   </Text>
                 </View>
                 {r.checkedIn ? (
