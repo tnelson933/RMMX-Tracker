@@ -7,7 +7,7 @@ import { UnpublishedResultsDialog } from "@/components/organizer/UnpublishedResu
 import { ProductTour } from "@/components/organizer/ProductTour";
 import { AIAssistant } from "@/components/organizer/AIAssistant";
 import { LocalSyncBadge } from "@/components/LocalSyncBadge";
-import { useBroadcast } from "@/contexts/BroadcastContext";
+import { useBroadcast, isStreaming, formatDuration } from "@/contexts/BroadcastContext";
 import {
   LayoutDashboard,
   CalendarDays,
@@ -57,8 +57,12 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
   const { user, permissions } = useAuth();
   const logout = useLogout();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { broadcastState, micEnabled, camEnabled, duration, activeEventId, toggleMic, toggleCam, stopBroadcast } = useBroadcast();
-  const isLive = broadcastState === "live";
+  const { cameras, now, toggleMic, toggleCam, stopAll } = useBroadcast();
+  const streaming = cameras.filter(isStreaming);
+  const isLive = streaming.length > 0;
+  const soleCamera = streaming.length === 1 ? streaming[0] : null;
+  const anyReconnecting = streaming.some(c => c.state === "reconnecting");
+  const liveSince = Math.min(...streaming.map(c => c.liveSince ?? now));
   // Set while a super admin is mirroring this organizer.
   const mirror = ((user as any)?.mirror ?? null) as MirrorInfo | null;
   const showTour = user !== null && user !== undefined && !user.tourCompleted && !mirror;
@@ -89,13 +93,6 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
   const eventRouteMatch = location.match(/^\/events\/(\d+)/);
   const currentEventId = eventRouteMatch ? parseInt(eventRouteMatch[1]) : undefined;
 
-  const formatDuration = (s: number) => {
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    const sec = s % 60;
-    if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-    return `${m}:${String(sec).padStart(2, "0")}`;
-  };
 
   const handleLogout = () => {
     logout.mutate(undefined, {
@@ -336,42 +333,44 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
           {/* Live indicator */}
           <span className="flex items-center gap-1.5 text-white text-xs font-bold font-heading uppercase tracking-wider">
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${anyReconnecting ? "bg-amber-400" : "bg-red-500"}`} />
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${anyReconnecting ? "bg-amber-400" : "bg-red-500"}`} />
             </span>
-            LIVE · {formatDuration(duration)}
+            {anyReconnecting ? "Reconnecting" : "LIVE"}
+            {streaming.length > 1 && ` · ${streaming.length} cameras`} · {formatDuration(now - liveSince)}
           </span>
 
+          {soleCamera && (
+            <>
+              <span className="w-px h-4 bg-white/20" />
+              <button
+                onClick={() => toggleMic(soleCamera.key)}
+                title={soleCamera.micEnabled ? "Mute mic" : "Unmute mic"}
+                className={`p-1.5 rounded-full transition-colors ${soleCamera.micEnabled ? "text-white hover:bg-white/10" : "text-red-400 hover:bg-red-400/10"}`}
+              >
+                {soleCamera.micEnabled ? <Mic size={14} /> : <MicOff size={14} />}
+              </button>
+              <button
+                onClick={() => toggleCam(soleCamera.key)}
+                title={soleCamera.camEnabled ? "Hide camera" : "Show camera"}
+                className={`p-1.5 rounded-full transition-colors ${soleCamera.camEnabled ? "text-white hover:bg-white/10" : "text-red-400 hover:bg-red-400/10"}`}
+              >
+                {soleCamera.camEnabled ? <Video size={14} /> : <VideoOff size={14} />}
+              </button>
+            </>
+          )}
+
           <span className="w-px h-4 bg-white/20" />
 
-          {/* Mic toggle */}
-          <button
-            onClick={toggleMic}
-            title={micEnabled ? "Mute mic" : "Unmute mic"}
-            className={`p-1.5 rounded-full transition-colors ${micEnabled ? "text-white hover:bg-white/10" : "text-red-400 hover:bg-red-400/10"}`}
-          >
-            {micEnabled ? <Mic size={14} /> : <MicOff size={14} />}
-          </button>
-
-          {/* Cam toggle */}
-          <button
-            onClick={toggleCam}
-            title={camEnabled ? "Hide camera" : "Show camera"}
-            className={`p-1.5 rounded-full transition-colors ${camEnabled ? "text-white hover:bg-white/10" : "text-red-400 hover:bg-red-400/10"}`}
-          >
-            {camEnabled ? <Video size={14} /> : <VideoOff size={14} />}
-          </button>
-
-          <span className="w-px h-4 bg-white/20" />
-
-          {/* End stream */}
           <Button
             size="sm"
             variant="ghost"
-            onClick={stopBroadcast}
+            onClick={() => {
+              if (streaming.length === 1 || window.confirm(`End all ${streaming.length} live cameras?`)) stopAll();
+            }}
             className="h-7 text-xs font-heading uppercase tracking-wider text-red-400 hover:bg-red-500/20 hover:text-red-300 px-3"
           >
-            End Stream
+            {streaming.length > 1 ? "End all" : "End Stream"}
           </Button>
         </div>
       )}

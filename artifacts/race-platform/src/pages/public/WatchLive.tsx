@@ -18,7 +18,15 @@ import {
 import { LiveRaceViews, type LeaderboardData } from "./LiveLeaderboard";
 import { isPlaybackStalled, isVideoQueueOverLimit } from "@/lib/videoPlaybackPolicy";
 
-type ViewerState = "connecting" | "buffering" | "playing" | "offline" | "ended" | "error";
+// "reconnecting": the camera's connection dropped and it may come back.
+// "unsupported": this browser has no MediaSource (older iPhones).
+type ViewerState = "connecting" | "buffering" | "playing" | "reconnecting" | "offline" | "ended" | "error" | "unsupported";
+type LiveCamera = { id: string; name: string; reconnecting?: boolean };
+
+// iPhones (iOS 17.1+) only offer ManagedMediaSource.
+const MediaSourceImpl: typeof MediaSource | undefined = typeof window === "undefined"
+  ? undefined
+  : (window.MediaSource ?? (window as unknown as { ManagedMediaSource?: typeof MediaSource }).ManagedMediaSource);
 
 function WatchLiveCountdown({ startedAt, timeLimitMs, plusLaps }: { startedAt: string; timeLimitMs: number; plusLaps: number | null }) {
   const [remaining, setRemaining] = useState(0);
@@ -43,11 +51,12 @@ function WatchLiveCountdown({ startedAt, timeLimitMs, plusLaps }: { startedAt: s
   );
 }
 
-function getWsUrl(eventId: number): string {
+function getWsUrl(eventId: number, cameraId: string | null): string {
   const origin = getPublicOrigin();
   const proto = origin.startsWith("https:") ? "wss:" : "ws:";
   const host = origin.replace(/^https?:\/\//, "");
-  return `${proto}//${host}/api/video/watch/${eventId}`;
+  // Without a camera the relay picks the event's first live camera.
+  return `${proto}//${host}/api/video/watch/${eventId}${cameraId ? `/${encodeURIComponent(cameraId)}` : ""}`;
 }
 
 type LeaderboardEntry = LeaderboardData["leaderboard"][number];
@@ -62,6 +71,13 @@ export default function WatchLive() {
   const [connectingSlow, setConnectingSlow] = useState(false);
 
   const [viewerCount, setViewerCount] = useState<number | null>(null);
+  // Every live camera of the event, and the one being watched.
+  const [cameraList, setCameraList] = useState<LiveCamera[]>([]);
+  const [currentCamera, setCurrentCamera] = useState<LiveCamera | null>(null);
+  // The camera the viewer picked; null lets the relay choose.
+  const selectedCameraRef = useRef<string | null>(null);
+  // Delay before the next reconnect; set to 0 to switch cameras at once.
+  const nextReconnectDelayRef = useRef<number | null>(null);
   const [is360, setIs360] = useState(false);
   const [isDualFisheye, setIsDualFisheye] = useState(false);
   const [videoNaturalDims, setVideoNaturalDims] = useState({ w: 0, h: 0 });
@@ -382,8 +398,11 @@ export default function WatchLive() {
       return;
     }
 
-    const ms = new MediaSource();
+    if (!MediaSourceImpl) { setViewerStateSynced("unsupported"); return; }
+    const ms = new MediaSourceImpl();
     msRef.current = ms;
+    // ManagedMediaSource only plays with AirPlay turned off for the element.
+    (videoRef.current as HTMLVideoElement & { disableRemotePlayback?: boolean }).disableRemotePlayback = true;
     const objUrl = URL.createObjectURL(ms);
     logEvent(`initMSE q:${queueRef.current.length}`);
     videoRef.current.src = objUrl;
@@ -412,9 +431,11 @@ export default function WatchLive() {
         return;
       }
 
-      if (!MediaSource.isTypeSupported(mime)) {
+      if (!MediaSourceImpl!.isTypeSupported(mime)) {
         logEvent(`mime not supported: ${mime}`);
-        setViewerStateSynced("error");
+        setViewerStateSynced("unsupported");
+        cleaningUpRef.current = true; // retrying won't help
+        wsRef.current?.close();
         return;
       }
 
@@ -573,11 +594,12 @@ export default function WatchLive() {
   }
 
   function connect() {
+    if (!MediaSourceImpl) { setViewerStateSynced("unsupported"); return; }
     cleaningUpRef.current = false;
     bytesRef.current = 0;
     eventLogRef.current = [];
-    setViewerStateSynced("connecting");
-    const ws = new WebSocket(getWsUrl(eventId));
+    if (viewerStateRef.current !== "ended") setViewerStateSynced("connecting");
+    const ws = new WebSocket(getWsUrl(eventId, selectedCameraRef.current));
     wsRef.current = ws;
     ws.binaryType = "arraybuffer";
 
@@ -648,8 +670,17 @@ export default function WatchLive() {
           if (typeof jsonMsg.viewers === "number") {
             setViewerCount(jsonMsg.viewers);
           }
+          if (Array.isArray(jsonMsg.cameras)) setCameraList(jsonMsg.cameras as LiveCamera[]);
+        } else if (jsonMsg.type === "reconnecting") {
+          // The camera dropped; the relay keeps this viewer and resumes it on
+          // the camera's next keyframe, which rebuilds the player.
+          teardownMSE();
+          setViewerStateSynced("reconnecting");
         } else if (jsonMsg.type === "offline") {
-          setViewerStateSynced("offline");
+          if (Array.isArray(jsonMsg.cameras)) setCameraList(jsonMsg.cameras as LiveCamera[]);
+          setCurrentCamera(null);
+          // After a stream ends, keep saying so rather than "not started".
+          if (viewerStateRef.current !== "ended") setViewerStateSynced("offline");
           // Poll the REST status endpoint every 8 s while offline so we reconnect
           // promptly when the stream goes live, even if the push notification is
           // missed (e.g. the proxy dropped the WS in the interim).
@@ -660,6 +691,7 @@ export default function WatchLive() {
                 const body = await r.json() as { live: boolean };
                 if (body.live) {
                   clearInterval(offlinePollId);
+                  nextReconnectDelayRef.current = 0;
                   // Close this WS — onclose will re-open it and the server will
                   // now send the init + initSegment since the stream is live.
                   ws.close();
@@ -670,9 +702,24 @@ export default function WatchLive() {
           // Stop polling when this WS connection closes (cleanup).
           ws.addEventListener("close", () => clearInterval(offlinePollId), { once: true });
         } else if (jsonMsg.type === "ended") {
-          setViewerStateSynced("ended");
+          const others = Array.isArray(jsonMsg.cameras) ? jsonMsg.cameras as LiveCamera[] : [];
+          setCameraList(others);
+          if (others.length > 0) {
+            // This camera stopped but others are live: switch to the next one.
+            selectedCameraRef.current = others[0].id;
+            formatLockedRef.current = false;
+            nextReconnectDelayRef.current = 0;
+            setViewerStateSynced("connecting");
+          } else {
+            selectedCameraRef.current = null;
+            setCurrentCamera(null);
+            setViewerStateSynced("ended");
+          }
           wsRef.current?.close();
         } else if (jsonMsg.type === "init") {
+          if (typeof jsonMsg.cameraId === "string") {
+            setCurrentCamera({ id: jsonMsg.cameraId, name: String(jsonMsg.cameraName ?? "") });
+          }
           const newMime = jsonMsg.mimeType as string;
           mimeTypeRef.current = newMime;
           // Formats are mutually exclusive — isDualFisheye takes priority if both are somehow set.
@@ -748,12 +795,24 @@ export default function WatchLive() {
         // Always tear down MSE on unexpected disconnect so reconnect gets a clean slate.
         // This eliminates the fragile REUSE path (stale currentTime + SB updating race).
         teardownMSE();
-        setViewerStateSynced("buffering");
-        // Back off longer after a clean stream-end to avoid hammering the server.
-        const delay = wasEnded ? 8000 : 3000;
+        // Keep showing "ended" (and check back slowly) until a camera goes live again.
+        if (!wasEnded) setViewerStateSynced("buffering");
+        const delay = nextReconnectDelayRef.current ?? (wasEnded ? 8000 : 3000);
+        nextReconnectDelayRef.current = null;
         reconnectTimer.current = setTimeout(() => connect(), delay);
       }
     };
+  }
+
+  function selectCamera(id: string) {
+    if (id === currentCamera?.id) return;
+    selectedCameraRef.current = id;
+    // The next camera may be a different format; its init message says which.
+    formatLockedRef.current = false;
+    setIs360(false);
+    setIsDualFisheye(false);
+    cleanup();
+    connect();
   }
 
   async function handleTap() {
@@ -1096,6 +1155,25 @@ export default function WatchLive() {
           data-viewer-state={viewerState}
           className="relative flex min-h-[18rem] flex-1 items-center justify-center bg-black md:min-h-0"
         >
+          {cameraList.length > 1 && (
+            <div className="absolute top-3 left-3 right-3 z-20 flex gap-1.5 overflow-x-auto pb-1">
+              {cameraList.map(c => {
+                const active = c.id === currentCamera?.id;
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => selectCamera(c.id)}
+                    className={`shrink-0 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold font-heading uppercase tracking-wider border transition-colors ${active ? "bg-red-600 border-red-500 text-white" : "bg-black/60 border-white/20 text-white/70 hover:text-white hover:bg-black/80"}`}
+                    title={c.reconnecting ? `${c.name} (reconnecting)` : c.name}
+                  >
+                    <span className={`h-1.5 w-1.5 rounded-full ${c.reconnecting ? "bg-amber-400" : active ? "bg-white" : "bg-red-500"}`} />
+                    {c.name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {/* 360 split view: front + back lenses side-by-side via canvas */}
           {is360 && <SplitView360 videoRef={videoRef} />}
 
@@ -1180,7 +1258,7 @@ export default function WatchLive() {
                 <Button
                   variant="outline"
                   className="border-white/20 text-white/60 hover:text-white font-heading uppercase text-xs mt-2"
-                  onClick={() => connect()}
+                  onClick={() => { cleanup(); connect(); }}
                 >
                   Check Again
                 </Button>
@@ -1191,7 +1269,7 @@ export default function WatchLive() {
                 <Radio size={52} className="text-white/20" />
                 <h2 className="font-heading text-2xl uppercase font-bold">Stream Ended</h2>
                 <p className="text-white/40 text-sm text-center max-w-sm">
-                  The broadcast was interrupted. Reconnecting automatically…
+                  The live stream has ended. This page picks it up again by itself if the organizer goes back live.
                 </p>
                 <Link href={resultsUrl}>
                   <Button variant="outline" className="border-white/20 text-white/60 hover:text-white font-heading uppercase text-xs mt-2">
@@ -1218,6 +1296,31 @@ export default function WatchLive() {
                     </Button>
                   </>
                 )}
+              </>
+            )}
+            {viewerState === "reconnecting" && (
+              <>
+                <Radio size={52} className="text-white/20 animate-pulse" />
+                <h2 className="font-heading text-2xl uppercase font-bold">Camera Reconnecting</h2>
+                <p className="text-white/40 text-sm text-center max-w-sm">
+                  {currentCamera?.name ? `${currentCamera.name} lost its connection.` : "The camera lost its connection."} The video picks up again as soon as it's back.
+                </p>
+              </>
+            )}
+            {viewerState === "buffering" && (
+              <>
+                <Radio size={52} className="text-white/20 animate-pulse" />
+                <p className="text-white/40 text-sm font-heading uppercase tracking-widest animate-pulse">Loading video…</p>
+              </>
+            )}
+            {viewerState === "unsupported" && (
+              <>
+                <WifiOff size={52} className="text-white/20" />
+                <h2 className="font-heading text-2xl uppercase font-bold text-center">Can't Play Here</h2>
+                <p className="text-white/40 text-sm text-center max-w-sm px-4">
+                  This browser can't play the live video. Update the phone's software, or watch in Chrome or on a computer.
+                  Live timing below still works.
+                </p>
               </>
             )}
             {viewerState === "error" && (

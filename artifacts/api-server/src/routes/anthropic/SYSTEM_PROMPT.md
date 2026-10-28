@@ -562,21 +562,27 @@ Staff also have a phone-friendly **Gate Schedule Link** (`/gate-mobile?club=…`
 
 ## Live Broadcast
 
-**Live Broadcast** streams a webcam feed from the organizer's device so spectators can watch remotely.
+**Live Broadcast** streams video from one or more cameras so spectators can watch remotely. An event can have up to 8 cameras live at once (for example the start, a rhythm section and the finish), and spectators switch between them.
 
 ### Starting a broadcast
-1. Open the event → **Motos** tab → click **Live Video Feed**. The **Live Video Broadcast** panel opens.
+1. Open the event → **Motos** tab → click **Live Video Feed**. The **Live Video Broadcast** panel opens with a camera card.
 2. Allow camera and microphone access when the browser asks.
-3. Pick a **Camera** if there's more than one.
-4. Click **Go Live**.
+3. Name the camera (e.g. "Finish line"); viewers see this name. Pick which camera to use if the device has more than one.
+4. Click **Go Live** on that card.
+
+### More cameras
+- **On the same computer:** with two or more cameras plugged in, click **Add a camera on this computer** (up to 4 per device) and go live on each card.
+- **Elsewhere on the track:** sign in on another phone (Chrome on Android) or laptop, open the same event's Race Day page, and go live there. Each device's cameras are separate.
+- iPhones and iPads can't send live video (Safari can't record the video format).
 
 ### While live
-- A duration timer shows how long you've been live; the state shows **Live**, **Reconnecting**, or **Idle**.
-- Toggle the microphone or camera without stopping the stream; **End Stream** stops it.
-- A floating **LIVE** bar with mic, camera, and End Stream controls stays visible on every organizer page while streaming, so you can keep working.
+- Each card shows **Live** with a timer, **Reconnecting** (the connection dropped; the camera keeps recording and reconnects by itself), or an error.
+- Toggle the microphone or camera per card without stopping; **End** stops that camera.
+- A floating **LIVE** bar stays visible on every organizer page while streaming. With one camera it has mic, camera and End Stream controls; with several it shows the count and **End all**.
+- Phones keep their screen on while live. If a camera drops for up to 30 seconds, viewers see "Camera reconnecting" and pick back up automatically.
 
 ### How spectators watch
-Spectators open the event's watch page (`/watch/[eventId]`), linked from the public home page and the public event results page. No login needed.
+Spectators open the event's watch page (`/watch/[eventId]`), linked from the public home page and the public event results page, and shown with a copy button on the broadcast panel. No login needed. With several cameras live, buttons along the top of the video switch cameras; if the camera they're watching ends, they move to another live one automatically.
 
 ### Desktop app note
 In the desktop app, broadcasting needs cloud sync set up ("Go to Settings → Cloud Sync") and an internet connection.

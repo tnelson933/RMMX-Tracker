@@ -1,595 +1,439 @@
 import { WebSocketServer, WebSocket } from "ws";
-import type { IncomingMessage } from "http";
-import type { Server } from "http";
+import type { IncomingMessage, Server } from "http";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { logger } from "./logger";
+import { WebmStreamParser } from "./webmStream";
 
-interface StreamState {
+/**
+ * Live video relay: browsers record WebM with MediaRecorder and send it here
+ * over a WebSocket; viewers receive it over a WebSocket and play it with
+ * MediaSource.
+ *
+ * An event can have several cameras, each with its own broadcaster. The relay
+ * reads the WebM structure (lib/webmStream.ts) rather than trusting where the
+ * browser happened to slice the recording, so it always knows where a viewer
+ * can start: the setup segment ("init"), then the Cluster holding the latest
+ * keyframe and everything recorded since. Late joiners start there at once.
+ *
+ * Broadcasting needs a short-lived ticket from POST /video/broadcast-ticket,
+ * which checks the organizer's session. Watching is public.
+ */
+
+interface Camera {
+  eventId: number;
+  cameraId: string;
+  name: string;
   broadcasterWs: WebSocket | null;
-  // Viewers actively receiving the live stream
   viewers: Set<WebSocket>;
-  // Viewers that have joined but are waiting for the next keyframe before
-  // being graduated to the live stream.  They hold the JSON init message but
-  // no binary data yet — their MediaSource has not been created.
+  // Viewers waiting for a keyframe before they can start decoding.
   pendingViewers: Set<WebSocket>;
-  // WebM initialization segment (first chunk from broadcaster — contains EBML
-  // header + Tracks element + first Cluster with the broadcast's first I-frame).
-  // Must be sent before any cluster chunks so the decoder can initialize.
+  parser: WebmStreamParser;
   initSegment: Buffer | null;
-  // Most recent chunk that contained a VP8/VP9 keyframe (I-frame).
-  lastKeyframeChunk: Buffer | null;
-  // P-frame chunks since the last keyframe (current GOP tail) — kept for
-  // future use but NOT sent to late joiners to avoid proxy burst.
-  gopTail: Buffer[];
+  // Media since the latest keyframe Cluster, starting with that Cluster.
+  gop: Buffer[];
+  gopBytes: number;
+  gopStartedAt: number;
+  keyframeRequested: boolean;
   mimeType: string;
-  live: boolean;
-  startedAt: Date | null;
   is360: boolean;
   isDualFisheye: boolean;
-  eventId: number;
-  chunksSinceKeyframe: number;
-  keyframeRefreshRequested: boolean;
+  startedAt: Date;
+  // Set while the broadcaster's connection dropped and it may come back.
+  reconnectTimer: ReturnType<typeof setTimeout> | null;
 }
 
-const streams = new Map<number, StreamState>();
 export const MAX_VIEWER_BUFFERED_BYTES = 2 * 1024 * 1024;
-export const MAX_GOP_TAIL_BYTES = 1024 * 1024;
-const MAX_GOP_TAIL_FRAMES = 60;
+export const MAX_GOP_BYTES = 6 * 1024 * 1024;
+/** Ask the broadcaster for a fresh keyframe when none came for this long. */
+export const KEYFRAME_STALE_MS = 6_000;
+/** How long a dropped broadcaster has to reconnect before viewers see "ended". */
+export const BROADCASTER_GRACE_MS = 30_000;
+export const MAX_CAMERAS_PER_EVENT = 8;
+const TICKET_TTL_MS = 2 * 60_000;
+const DEFAULT_CAMERA = "main";
+
+const cameras = new Map<string, Camera>();
+const keyOf = (eventId: number, cameraId: string) => `${eventId}:${cameraId}`;
 
 export function canRelayToViewer(bufferedAmount: number, nextBytes: number): boolean {
   return bufferedAmount + nextBytes <= MAX_VIEWER_BUFFERED_BYTES;
 }
 
-/**
- * Detect whether a WebM buffer from Chrome MediaRecorder contains a VP8/VP9
- * keyframe (IDR).
- *
- * IMPORTANT: Do NOT scan all bytes for 0xA3 (SimpleBlock ID).  0xA3 is common
- * in compressed video payloads and produces a 100% false-positive rate — every
- * P-frame chunk incorrectly looks like a keyframe, emptying gopTail constantly
- * and breaking late-joiner graduation.
- *
- * Instead, parse top-down from known EBML structure:
- *
- *   Case 1 — initSegment (EBML magic 1A 45 DF A3):
- *     The first chunk from MediaRecorder always starts with EBML magic and
- *     always contains the codec IDR.  Return true immediately.
- *
- *   Case 2 — Cluster chunk (Cluster ID 1F 43 B6 75):
- *     Chrome MediaRecorder timeslice chunks are individual Clusters.
- *     Parse: Cluster ID (4) → size VINT (1–8) → Timecode element (E7) →
- *     first SimpleBlock (A3) → check flags bit 7.
- *     Only read the first ~128 bytes of the cluster body so we never touch
- *     VP9 payload bytes.
- */
-function containsKeyframe(buf: Buffer): boolean {
-  if (buf.length < 4) return false;
-
-  // Case 1: initSegment starts with EBML magic and always has a keyframe.
-  if (buf[0] === 0x1A && buf[1] === 0x45 && buf[2] === 0xDF && buf[3] === 0xA3) {
-    return true;
-  }
-
-  // Case 2: Cluster chunk — must start with Cluster ID 1F 43 B6 75.
-  if (buf[0] !== 0x1F || buf[1] !== 0x43 || buf[2] !== 0xB6 || buf[3] !== 0x75) {
-    return false;
-  }
-
-  // Skip Cluster ID (4 bytes) + Cluster size VINT (1–8 bytes).
-  // Chrome live streams use "unknown" size = 01 FF FF FF FF FF FF FF (8 bytes).
-  let pos = 4;
-  if (pos >= buf.length) return false;
-  const csb = buf[pos];
-  let csLen: number;
-  if      ((csb & 0x80) !== 0) csLen = 1;
-  else if ((csb & 0x40) !== 0) csLen = 2;
-  else if ((csb & 0x20) !== 0) csLen = 3;
-  else if ((csb & 0x10) !== 0) csLen = 4;
-  else if ((csb & 0x08) !== 0) csLen = 5;
-  else if ((csb & 0x04) !== 0) csLen = 6;
-  else if ((csb & 0x02) !== 0) csLen = 7;
-  else if ((csb & 0x01) !== 0) csLen = 8;
-  else return false;
-  pos += csLen;
-
-  // Scan the first 128 bytes of the cluster body.
-  // We expect: optional Timecode (E7), then the first SimpleBlock (A3).
-  // Stopping at 128 bytes guarantees we never read VP9 frame payload data.
-  const bodyLimit = Math.min(pos + 128, buf.length);
-
-  while (pos + 1 < bodyLimit) {
-    const elementId = buf[pos];
-    pos++;
-
-    // Parse element size VINT.
-    if (pos >= bodyLimit) break;
-    const esb = buf[pos];
-    let esLen: number;
-    if      ((esb & 0x80) !== 0) esLen = 1;
-    else if ((esb & 0x40) !== 0) esLen = 2;
-    else if ((esb & 0x20) !== 0) esLen = 3;
-    else if ((esb & 0x10) !== 0) esLen = 4;
-    else return false;  // Unexpectedly large size VINT in the cluster header area
-
-    let dataSize = esb & ~(0x80 >> (esLen - 1));
-    for (let k = 1; k < esLen; k++) {
-      if (pos + k >= buf.length) return false;
-      dataSize = (dataSize << 8) | buf[pos + k];
-    }
-    pos += esLen;  // pos now points to the first byte of element data
-
-    if (elementId === 0xE7) {
-      // Timecode element — skip data bytes and move to next element.
-      pos += dataSize;
-      continue;
-    }
-
-    if (elementId === 0xA3) {
-      // SimpleBlock — read track-number VINT + 2-byte relative timecode + flags.
-      if (pos >= buf.length) break;
-      const tv = buf[pos];
-      let tvLen: number;
-      if      ((tv & 0x80) !== 0) tvLen = 1;
-      else if ((tv & 0x40) !== 0) tvLen = 2;
-      else if ((tv & 0x20) !== 0) tvLen = 3;
-      else break;
-      pos += tvLen + 2;  // skip track VINT + 2-byte relative timecode
-      if (pos < buf.length) {
-        // Bit 7 of the flags byte = keyframe (IDR) flag.
-        return (buf[pos] & 0x80) !== 0;
-      }
-      break;
-    }
-
-    // Any other element (e.g. 0xAB BlockGroup, 0xFB DiscardPadding):
-    // skip its data and continue.  Bound-check to avoid runaway advance.
-    if (pos + dataSize > buf.length) break;
-    pos += dataSize;
-  }
-
-  return false;
+export function normalizeCameraId(raw: unknown): string | null {
+  if (raw == null || raw === "") return DEFAULT_CAMERA;
+  const id = String(raw).toLowerCase();
+  return /^[a-z0-9-]{1,24}$/.test(id) ? id : null;
 }
 
-function getOrCreate(eventId: number): StreamState {
-  if (!streams.has(eventId)) {
-    streams.set(eventId, {
-      broadcasterWs: null,
-      viewers: new Set(),
-      pendingViewers: new Set(),
-      initSegment: null,
-      lastKeyframeChunk: null,
-      gopTail: [],
-      mimeType: 'video/webm; codecs="vp8,opus"',
-      live: false,
-      startedAt: null,
-      is360: false,
-      isDualFisheye: false,
-      eventId,
-      chunksSinceKeyframe: 0,
-      keyframeRefreshRequested: false,
+export function normalizeCameraName(raw: unknown, cameraId: string): string {
+  const name = typeof raw === "string" ? raw.replace(/[\u0000-\u001f]/g, "").trim().slice(0, 40) : "";
+  return name || (cameraId === DEFAULT_CAMERA ? "Main camera" : "Camera");
+}
+
+// ── Broadcast tickets ───────────────────────────────────────────────────────
+
+const ticketSecret = process.env.SESSION_SECRET || randomBytes(32).toString("hex");
+
+function sign(payload: string): string {
+  return createHmac("sha256", ticketSecret).update(`video-broadcast:${payload}`).digest("base64url");
+}
+
+/** A ticket letting its holder broadcast one camera of one event for 2 minutes. */
+export function createBroadcastTicket(eventId: number, cameraId: string, now = Date.now()): string {
+  const payload = `${eventId}.${cameraId}.${now + TICKET_TTL_MS}`;
+  return `${payload}.${sign(payload)}`;
+}
+
+export function verifyBroadcastTicket(ticket: string, eventId: number, cameraId: string, now = Date.now()): boolean {
+  const parts = ticket.split(".");
+  if (parts.length !== 4) return false;
+  const [ev, cam, exp, sig] = parts;
+  if (ev !== String(eventId) || cam !== cameraId || !(Number(exp) > now)) return false;
+  const expected = Buffer.from(sign(`${ev}.${cam}.${exp}`));
+  const given = Buffer.from(sig);
+  return expected.length === given.length && timingSafeEqual(expected, given);
+}
+
+// ── Status ──────────────────────────────────────────────────────────────────
+
+export type LiveCamera = { id: string; name: string; viewers: number; startedAt: string; reconnecting: boolean };
+
+export function getLiveCameras(eventId: number): LiveCamera[] {
+  const list: LiveCamera[] = [];
+  for (const cam of cameras.values()) {
+    if (cam.eventId !== eventId) continue;
+    list.push({
+      id: cam.cameraId,
+      name: cam.name,
+      viewers: cam.viewers.size + cam.pendingViewers.size,
+      startedAt: cam.startedAt.toISOString(),
+      reconnecting: cam.broadcasterWs === null,
     });
   }
-  return streams.get(eventId)!;
+  return list.sort((a, b) => a.startedAt.localeCompare(b.startedAt));
 }
 
 export function isEventLive(eventId: number): boolean {
-  return streams.get(eventId)?.live ?? false;
+  return getLiveCameras(eventId).length > 0;
 }
 
 export function getLiveEvents(): number[] {
-  return Array.from(streams.entries())
-    .filter(([, s]) => s.live)
-    .map(([id]) => id);
+  return Array.from(new Set(Array.from(cameras.values(), c => c.eventId)));
 }
+
+// ── WebSocket plumbing ──────────────────────────────────────────────────────
 
 export function attachVideoWebSocket(httpServer: Server) {
   const wss = new WebSocketServer({ noServer: true });
 
   httpServer.on("upgrade", (req: IncomingMessage, socket, head) => {
-    const url = req.url ?? "";
+    const url = new URL(req.url ?? "", "http://relay");
+    const broadcast = url.pathname.match(/^\/api\/video\/broadcast\/(\d+)(?:\/([^/]+))?\/?$/);
+    const watch = url.pathname.match(/^\/api\/video\/watch\/(\d+)(?:\/([^/]+))?\/?$/);
+    if (!broadcast && !watch) return;
 
-    const broadcastMatch = url.match(/^\/api\/video\/broadcast\/(\d+)/);
-    const watchMatch = url.match(/^\/api\/video\/watch\/(\d+)/);
+    const eventId = parseInt((broadcast ?? watch)![1], 10);
+    const cameraId = normalizeCameraId((broadcast ?? watch)![2]);
+    if (!cameraId) {
+      socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
+      socket.destroy();
+      return;
+    }
 
-    if (broadcastMatch || watchMatch) {
-      wss.handleUpgrade(req, socket as any, head, (ws) => {
-        if (broadcastMatch) {
-          handleBroadcaster(ws, parseInt(broadcastMatch[1], 10));
-        } else if (watchMatch) {
-          handleViewer(ws, parseInt(watchMatch[1], 10));
-        }
-      });
+    if (broadcast) {
+      const ticket = url.searchParams.get("ticket") ?? "";
+      if (!verifyBroadcastTicket(ticket, eventId, cameraId)) {
+        socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      const name = normalizeCameraName(url.searchParams.get("name"), cameraId);
+      wss.handleUpgrade(req, socket as any, head, ws => handleBroadcaster(ws, eventId, cameraId, name));
+    } else {
+      // Without a camera in the path, watch the first live camera.
+      const explicit = watch![2] !== undefined;
+      wss.handleUpgrade(req, socket as any, head, ws => handleViewer(ws, eventId, explicit ? cameraId : null));
     }
   });
 
   logger.info("Video WebSocket relay attached");
 }
 
-/**
- * Graduate all pending viewers into the live stream.
- *
- * Called every time a keyframe chunk arrives from the broadcaster.
- * Each pending viewer receives exactly two frames:
- *   1. initSegment  — EBML header + Tracks (decoder setup, sent only if different from keyframeChunk)
- *   2. keyframeChunk — fresh I-frame at a clean GOP boundary
- *
- * Returns the set of newly graduated viewers so the caller can add them to
- * state.viewers AFTER the live-forward loop runs.  This prevents the keyframe
- * from being sent a second time — the double-send would corrupt the MSE
- * sequence-mode timeline and could leave the client showing a black frame.
- *
- * Total bytes burst per viewer: ≤ 2 × ~35 KB = ~70 KB, sent as two separate
- * send() calls, not one large burst.  This keeps us well within the Replit
- * proxy's per-connection buffer limits.
- */
-function flushPendingViewers(state: StreamState, keyframeChunk: Buffer): Set<WebSocket> {
-  const graduated = new Set<WebSocket>();
-  if (state.pendingViewers.size === 0) return graduated;
-
-  for (const pending of state.pendingViewers) {
-    if (pending.readyState !== WebSocket.OPEN) continue;
-
-    // Send initSegment first so the viewer's MSE can initialize the decoder.
-    // Skip this send if keyframeChunk IS the initSegment (i.e. the very first
-    // broadcast chunk, which is both the EBML init AND the first keyframe) —
-    // we'd otherwise send the same buffer twice.
-    const burstBytes = (state.initSegment && state.initSegment !== keyframeChunk ? state.initSegment.length : 0)
-      + keyframeChunk.length;
-    if (!canRelayToViewer(pending.bufferedAmount, burstBytes)) {
-      pending.close(1013, "Viewer too slow");
-      continue;
-    }
-    if (state.initSegment && state.initSegment !== keyframeChunk) {
-      pending.send(state.initSegment, { binary: true });
-    }
-
-    // Send the fresh keyframe.  The client will call initMSE on the first
-    // binary frame and queue the rest — both sends happen before the MSE
-    // sourceopen fires, so both chunks will be flushed in order.
-    pending.send(keyframeChunk, { binary: true });
-
-    graduated.add(pending);
-  }
-
-  state.pendingViewers.clear();
-  if (graduated.size > 0) {
-    logger.info({ eventId: state.eventId, count: graduated.size }, "Pending viewers graduated via keyframe");
-  }
-  // NOTE: do NOT call state.viewers.add() here.  The caller must add them
-  // AFTER the live-forward loop so this keyframe isn't forwarded a second time.
-  return graduated;
+function sendJson(ws: WebSocket, msg: Record<string, unknown>) {
+  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
 }
 
-function handleBroadcaster(ws: WebSocket, eventId: number) {
-  const state = getOrCreate(eventId);
+function cameraList(eventId: number) {
+  return getLiveCameras(eventId).map(c => ({ id: c.id, name: c.name, reconnecting: c.reconnecting }));
+}
 
-  if (state.broadcasterWs) {
-    try { state.broadcasterWs.close(1001, "New broadcaster connected"); } catch {}
+function initMessage(cam: Camera) {
+  return { type: "init", mimeType: cam.mimeType, is360: cam.is360, isDualFisheye: cam.isDualFisheye, cameraId: cam.cameraId, cameraName: cam.name };
+}
+
+/** Sends `parts` unless the viewer is already too far behind; then drops it. */
+function sendOrEvict(cam: Camera, viewer: WebSocket, parts: Buffer[]): boolean {
+  if (viewer.readyState !== WebSocket.OPEN) return false;
+  const bytes = parts.reduce((sum, p) => sum + p.length, 0);
+  if (!canRelayToViewer(viewer.bufferedAmount, bytes)) {
+    logger.warn({ eventId: cam.eventId, cameraId: cam.cameraId, bufferedBytes: viewer.bufferedAmount }, "Evicting slow video viewer");
+    cam.viewers.delete(viewer);
+    cam.pendingViewers.delete(viewer);
+    viewer.close(1013, "Viewer too slow");
+    return false;
+  }
+  for (const p of parts) viewer.send(p, { binary: true });
+  return true;
+}
+
+/** Starts a viewer at the latest keyframe, or parks it until the next one. */
+function startViewer(cam: Camera, viewer: WebSocket) {
+  if (cam.initSegment && cam.gop.length > 0) {
+    cam.pendingViewers.delete(viewer);
+    if (sendOrEvict(cam, viewer, [Buffer.concat([cam.initSegment, ...cam.gop])])) cam.viewers.add(viewer);
+    return;
+  }
+  cam.pendingViewers.add(viewer);
+  requestKeyframe(cam, "viewer waiting");
+}
+
+function requestKeyframe(cam: Camera, reason: string) {
+  if (cam.keyframeRequested || !cam.broadcasterWs || !cam.initSegment) return;
+  cam.keyframeRequested = true;
+  sendJson(cam.broadcasterWs, { type: "request-keyframe" });
+  logger.info({ eventId: cam.eventId, cameraId: cam.cameraId, reason }, "Requested broadcaster keyframe");
+}
+
+function resetMedia(cam: Camera) {
+  cam.parser.reset();
+  cam.initSegment = null;
+  cam.gop = [];
+  cam.gopBytes = 0;
+  cam.gopStartedAt = Date.now();
+  cam.keyframeRequested = false;
+}
+
+function endCamera(cam: Camera, reason: string) {
+  if (cam.reconnectTimer) clearTimeout(cam.reconnectTimer);
+  cameras.delete(keyOf(cam.eventId, cam.cameraId));
+  const msg = { type: "ended", cameras: cameraList(cam.eventId) };
+  for (const v of [...cam.viewers, ...cam.pendingViewers]) sendJson(v, msg);
+  cam.viewers.clear();
+  cam.pendingViewers.clear();
+  logger.info({ eventId: cam.eventId, cameraId: cam.cameraId, reason }, "Camera ended");
+}
+
+function handleMedia(cam: Camera, chunk: Buffer) {
+  let units;
+  try {
+    units = cam.parser.push(chunk);
+  } catch (err) {
+    // Unreadable data: start over at the broadcaster's next recorder restart.
+    logger.warn({ eventId: cam.eventId, cameraId: cam.cameraId, err: err instanceof Error ? err.message : String(err) }, "Unreadable video data; asking for a restart");
+    resetMedia(cam);
+    if (cam.broadcasterWs) sendJson(cam.broadcasterWs, { type: "request-keyframe" });
+    return;
   }
 
-  state.broadcasterWs = ws;
-  state.live = true;
-  state.startedAt = new Date();
-  state.initSegment = null;
-  state.lastKeyframeChunk = null;
-  state.gopTail = [];
-
-  logger.info({ eventId }, "Broadcaster connected");
-
-  const broadcasterHeartbeat = setInterval(() => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "heartbeat" }));
+  // Everything from this slice goes out as one message per viewer (a frame-by-frame
+  // stream would be dozens of messages a second). Waiting viewers join at the
+  // first keyframe in it.
+  const batch: Buffer[] = [];
+  let joinAt = -1;
+  for (const unit of units) {
+    if (unit.kind === "init") {
+      cam.initSegment = unit.data;
+      cam.gop = [];
+      cam.gopBytes = 0;
+      cam.gopStartedAt = Date.now();
+      // Viewers already playing append the new setup segment and carry on.
+      batch.push(unit.data);
+      continue;
     }
-  }, 1_000);
 
-  ws.on("message", (data: Buffer | string, isBinary: boolean) => {
+    if (unit.keyframe) {
+      cam.gop = [unit.data];
+      cam.gopBytes = unit.data.length;
+      cam.gopStartedAt = Date.now();
+      cam.keyframeRequested = false;
+      if (joinAt < 0) joinAt = batch.length;
+    } else if (cam.gop.length > 0) {
+      cam.gop.push(unit.data);
+      cam.gopBytes += unit.data.length;
+      if (cam.gopBytes > MAX_GOP_BYTES) {
+        // Too long since a keyframe to replay: late joiners wait for the next one.
+        cam.gop = [];
+        cam.gopBytes = 0;
+      }
+    }
+    batch.push(unit.data);
+  }
+
+  if (batch.length > 0) {
+    const message = batch.length === 1 ? batch[0] : Buffer.concat(batch);
+    for (const v of [...cam.viewers]) sendOrEvict(cam, v, [message]);
+  }
+  if (joinAt >= 0 && cam.initSegment && cam.pendingViewers.size > 0) {
+    const start = batch.slice(joinAt);
+    // An init segment inside the batch already precedes the keyframe.
+    const parts = start[0] === cam.initSegment ? start : [cam.initSegment, ...start];
+    const message = Buffer.concat(parts);
+    for (const v of [...cam.pendingViewers]) {
+      cam.pendingViewers.delete(v);
+      if (sendOrEvict(cam, v, [message])) cam.viewers.add(v);
+    }
+  }
+
+  if (cam.initSegment && Date.now() - cam.gopStartedAt > KEYFRAME_STALE_MS) {
+    requestKeyframe(cam, "no recent keyframe");
+  }
+}
+
+function handleBroadcaster(ws: WebSocket, eventId: number, cameraId: string, name: string) {
+  const key = keyOf(eventId, cameraId);
+  let cam = cameras.get(key);
+
+  if (!cam) {
+    const liveHere = getLiveCameras(eventId).length;
+    if (liveHere >= MAX_CAMERAS_PER_EVENT) {
+      sendJson(ws, { type: "error", message: `This event already has ${MAX_CAMERAS_PER_EVENT} cameras live.` });
+      ws.close(4003, "Too many cameras");
+      return;
+    }
+    cam = {
+      eventId, cameraId, name,
+      broadcasterWs: null,
+      viewers: new Set(),
+      pendingViewers: new Set(),
+      parser: new WebmStreamParser(),
+      initSegment: null,
+      gop: [],
+      gopBytes: 0,
+      gopStartedAt: Date.now(),
+      keyframeRequested: false,
+      mimeType: 'video/webm; codecs="vp8,opus"',
+      is360: false,
+      isDualFisheye: false,
+      startedAt: new Date(),
+      reconnectTimer: null,
+    };
+    cameras.set(key, cam);
+  }
+  const state = cam;
+
+  if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
+  if (state.broadcasterWs) {
+    try { state.broadcasterWs.close(4001, "Another device took over this camera"); } catch {}
+  }
+  state.broadcasterWs = ws;
+  state.name = name;
+  resetMedia(state);
+  logger.info({ eventId, cameraId }, "Broadcaster connected");
+
+  // Keeps the server→broadcaster direction of proxies alive.
+  const heartbeat = setInterval(() => sendJson(ws, { type: "heartbeat" }), 1_000);
+
+  ws.on("message", (data: Buffer | ArrayBuffer | Buffer[], isBinary: boolean) => {
     if (state.broadcasterWs !== ws) return;
-    const chunk: Buffer = typeof data === "string"
-      ? Buffer.from(data, "utf8")
-      : (Buffer.isBuffer(data) ? data : Buffer.from(data as unknown as ArrayBuffer));
+    const chunk = Buffer.isBuffer(data) ? data : Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data);
 
-    if (chunk.length > 0 && chunk[0] === 0x7b) {
-      try {
-        const msg = JSON.parse(chunk.toString("utf8")) as Record<string, unknown>;
+    // Control messages are JSON. Some proxies turn text frames into binary, so
+    // look at the content; WebM never starts with "{".
+    if (!isBinary || (chunk.length > 0 && chunk[0] === 0x7b)) {
+      let msg: Record<string, unknown> | null = null;
+      try { msg = JSON.parse(chunk.toString("utf8")); } catch {}
+      if (msg) {
         if (msg.type === "init" && typeof msg.mimeType === "string") {
           const formatChanged = state.mimeType !== msg.mimeType
             || state.is360 !== (msg.is360 === true)
             || state.isDualFisheye !== (msg.isDualFisheye === true);
-          state.mimeType = msg.mimeType;
+          state.mimeType = msg.mimeType.slice(0, 100);
           state.is360 = msg.is360 === true;
           state.isDualFisheye = msg.isDualFisheye === true;
-          state.initSegment = null;
-          state.lastKeyframeChunk = null;
-          state.gopTail = [];
-          state.chunksSinceKeyframe = 0;
-          state.keyframeRefreshRequested = false;
-          // A recorder rotation uses the same format and its next binary chunk is
-          // a valid WebM initialization segment. Let active SourceBuffers append
-          // that segment in-place instead of making every viewer rebuild MSE,
-          // which causes a visible black flash at each forced keyframe refresh.
+          // A new recorder follows: its first bytes are a fresh WebM file.
+          resetMedia(state);
           if (formatChanged) {
-            const initMsg = JSON.stringify({ type: "init", mimeType: state.mimeType, is360: state.is360, isDualFisheye: state.isDualFisheye });
-            for (const viewer of state.viewers) {
-              if (viewer.readyState === WebSocket.OPEN) viewer.send(initMsg);
-            }
+            // Viewers rebuild their player for the new format, then wait for a keyframe.
+            for (const v of [...state.viewers, ...state.pendingViewers]) sendJson(v, initMessage(state));
+            for (const v of state.viewers) state.pendingViewers.add(v);
+            state.viewers.clear();
           }
-          // Pending viewers have not started playback, so re-sending init is safe
-          // and ensures they have the current format before their first frame.
-          const initMsg = JSON.stringify({ type: "init", mimeType: state.mimeType, is360: state.is360, isDualFisheye: state.isDualFisheye });
-          for (const pending of state.pendingViewers) {
-            if (pending.readyState === WebSocket.OPEN) pending.send(initMsg);
-          }
+        } else if (msg.type === "stop") {
+          endCamera(state, "broadcaster stopped");
+          state.broadcasterWs = null;
+          ws.close(1000, "Stopped");
         }
         return;
-      } catch {
-        // Not valid JSON — fall through and treat as binary video data
       }
+      if (!isBinary) return;
     }
 
-    // ── Binary frame = video chunk ──────────────────────────────────────────
-
-    let justGraduated = new Set<WebSocket>();
-
-    if (!state.initSegment) {
-      // First binary chunk: EBML header + Tracks + first I-frame.
-      // Store as initSegment AND as lastKeyframeChunk (it always contains a keyframe).
-      state.initSegment = chunk;
-      state.lastKeyframeChunk = chunk;
-      state.gopTail = [];
-      state.chunksSinceKeyframe = 0;
-      state.keyframeRefreshRequested = false;
-      // Flush any viewers who joined before the stream started.
-      // keyframeChunk === initSegment here, so flushPendingViewers sends it once.
-      justGraduated = flushPendingViewers(state, chunk);
-    } else if (containsKeyframe(chunk)) {
-      // New I-frame: start of a fresh GOP.
-      const prevTailLen = state.gopTail.length;
-      state.lastKeyframeChunk = chunk;
-      state.gopTail = [];
-      state.chunksSinceKeyframe = 0;
-      state.keyframeRefreshRequested = false;
-      logger.info({ eventId, chunkSize: chunk.length, prevGopTailFrames: prevTailLen }, "Periodic keyframe detected — GOP boundary");
-      // Flush pending viewers exactly at this keyframe boundary — their
-      // decoder will have initSegment (codec setup) + this I-frame, and
-      // every P-frame that follows will reference exactly this I-frame.
-      justGraduated = flushPendingViewers(state, chunk);
-    } else {
-      state.gopTail.push(chunk);
-      state.chunksSinceKeyframe++;
-      // Keep enough P-frames to cover up to ~30 s at 500 ms timeslices.
-      // With videoKeyFrameIntervalDuration: 2_000 the tail should stay at 4 frames,
-      // but a larger cap protects against missed keyframe detection.
-      let tailBytes = state.gopTail.reduce((sum, frame) => sum + frame.length, 0);
-      while (state.gopTail.length > MAX_GOP_TAIL_FRAMES || tailBytes > MAX_GOP_TAIL_BYTES) {
-        tailBytes -= state.gopTail.shift()!.length;
-      }
-      // Some browsers ignore MediaRecorder's keyframe interval option. Ask the
-      // broadcaster to rotate its recorder before the GOP dependency chain can
-      // grow beyond a practical late-join/recovery window.
-      if (state.chunksSinceKeyframe >= 20 && !state.keyframeRefreshRequested) {
-        state.keyframeRefreshRequested = true;
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "request-keyframe" }));
-          logger.warn({ eventId, chunksSinceKeyframe: state.chunksSinceKeyframe }, "Requested broadcaster keyframe refresh");
-        }
-      }
-    }
-
-    // Forward to ACTIVE viewers only — pending viewers are waiting for their keyframe.
-    // justGraduated are NOT in state.viewers yet, so they don't receive this chunk again.
-    for (const viewer of state.viewers) {
-      if (viewer.readyState === WebSocket.OPEN) {
-        if (!canRelayToViewer(viewer.bufferedAmount, chunk.length)) {
-          logger.warn({ eventId, bufferedBytes: viewer.bufferedAmount }, "Evicting slow video viewer");
-          state.viewers.delete(viewer);
-          viewer.close(1013, "Viewer too slow");
-        } else {
-          viewer.send(chunk, { binary: true });
-        }
-      }
-    }
-
-    // Graduate newly flushed viewers AFTER the live-forward loop.
-    // They already received initSegment + keyframe from flushPendingViewers.
-    // Their first live chunk will be the NEXT broadcast message — a P-frame
-    // that correctly references the keyframe they just received.
-    for (const ws of justGraduated) {
-      state.viewers.add(ws);
-    }
+    handleMedia(state, chunk);
   });
 
-  ws.on("close", () => {
-    clearInterval(broadcasterHeartbeat);
-    if (state.broadcasterWs !== ws) {
-      logger.info({ eventId }, "Superseded broadcaster disconnected (ignored)");
-      return;
-    }
-    state.live = false;
+  const onGone = () => {
+    clearInterval(heartbeat);
+    if (state.broadcasterWs !== ws) return; // replaced or already stopped
     state.broadcasterWs = null;
-    logger.info({ eventId }, "Broadcaster disconnected — stream ended");
-
-    const endMsg = JSON.stringify({ type: "ended" });
-    for (const viewer of state.viewers) {
-      if (viewer.readyState === WebSocket.OPEN) viewer.send(endMsg);
-    }
-    // Also notify pending viewers so they don't wait indefinitely
-    for (const pending of state.pendingViewers) {
-      if (pending.readyState === WebSocket.OPEN) pending.send(endMsg);
-    }
-    state.pendingViewers.clear();
-  });
-
-  ws.on("error", (err) => {
-    clearInterval(broadcasterHeartbeat);
-    logger.error({ eventId, current: state.broadcasterWs === ws, err: err.message }, "Broadcaster WebSocket error");
+    if (cameras.get(key) !== state) return;
+    // Keep viewers for a while: phones on a track's cell signal drop often.
+    logger.info({ eventId, cameraId }, "Broadcaster dropped; waiting for it to reconnect");
+    for (const v of [...state.viewers, ...state.pendingViewers]) sendJson(v, { type: "reconnecting" });
+    for (const v of state.viewers) state.pendingViewers.add(v);
+    state.viewers.clear();
+    resetMedia(state);
+    state.reconnectTimer = setTimeout(() => {
+      if (state.broadcasterWs === null && cameras.get(key) === state) endCamera(state, "broadcaster did not return");
+    }, BROADCASTER_GRACE_MS);
+  };
+  ws.on("close", onGone);
+  ws.on("error", err => {
+    logger.warn({ eventId, cameraId, err: err.message }, "Broadcaster WebSocket error");
   });
 }
 
-function handleViewer(ws: WebSocket, eventId: number) {
-  const state = getOrCreate(eventId);
-  // Do NOT add to state.viewers yet — the viewer will be graduated when the
-  // next keyframe arrives, guaranteeing a clean GOP start point.
+function handleViewer(ws: WebSocket, eventId: number, requestedCamera: string | null) {
+  let cam: Camera | undefined;
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
 
-  logger.info({ eventId, viewers: state.viewers.size, pending: state.pendingViewers.size + 1 }, "Viewer connected");
+  // Viewers send "hello" pings to keep proxies open; nothing else is expected.
+  ws.on("message", () => {});
 
-  let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
-  let firstHeartbeatTimer: ReturnType<typeof setTimeout> | null = null;
-  // Fallback: if no keyframe arrives within 5 s (stalled broadcaster), flush
-  // the viewer with the best available data so they aren't waiting forever.
-  let pendingFlushTimer: ReturnType<typeof setTimeout> | null = null;
-
-  const startHeartbeat = () => {
-    if (heartbeatInterval || firstHeartbeatTimer) return;
-    firstHeartbeatTimer = setTimeout(() => {
-      firstHeartbeatTimer = null;
-      if (ws.readyState === WebSocket.OPEN) {
-        const count = state.viewers.size + state.pendingViewers.size;
-        ws.send(JSON.stringify({ type: "heartbeat", viewers: count }));
-      }
-      heartbeatInterval = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          const count = state.viewers.size + state.pendingViewers.size;
-          ws.send(JSON.stringify({ type: "heartbeat", viewers: count }));
-        }
-      }, 1_000);
-    }, 150);
+  const detach = () => {
+    if (heartbeat) clearInterval(heartbeat);
+    cam?.viewers.delete(ws);
+    cam?.pendingViewers.delete(ws);
   };
+  ws.on("close", detach);
+  ws.on("error", detach);
 
-  const stopHeartbeat = () => {
-    if (firstHeartbeatTimer) { clearTimeout(firstHeartbeatTimer); firstHeartbeatTimer = null; }
-    if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
-  };
-
-  const stopPendingFlush = () => {
-    if (pendingFlushTimer) { clearTimeout(pendingFlushTimer); pendingFlushTimer = null; }
-  };
-
+  // A short pause lets the browser finish its open handshake before data flows.
   setTimeout(() => {
     if (ws.readyState !== WebSocket.OPEN) return;
+    const live = getLiveCameras(eventId);
+    const id = requestedCamera ?? live[0]?.id;
+    cam = id ? cameras.get(keyOf(eventId, id)) : undefined;
 
-    if (state.live) {
-      // Always send the JSON init message first so the client knows the mimeType
-      // and format flags before any binary data arrives.
-      ws.send(JSON.stringify({ type: "init", mimeType: state.mimeType, is360: state.is360, isDualFisheye: state.isDualFisheye }));
-
-      if (state.initSegment) {
-        // The broadcaster is already mid-stream — graduate this viewer immediately.
-        //
-        // VP9 P-frames form a CHAIN: each P-frame references the previously decoded
-        // frame, not the keyframe directly.  Sending only initSegment + lastKeyframeChunk
-        // is not enough — the live P-frames that follow reference frames in the gopTail
-        // (P-frames between the last keyframe and the current live edge).  Without the
-        // full chain the decoder cannot reconstruct anything → video freezes at first frame.
-        //
-        // We therefore send:  initSegment → lastKeyframeChunk → gopTail (in order).
-        // The gopTail brings the decoder to the same state as the broadcaster, so the
-        // very next live P-frame is decodable.
-        try {
-          const replayBytes = (state.initSegment !== state.lastKeyframeChunk ? state.initSegment.length : 0)
-            + (state.lastKeyframeChunk?.length ?? 0)
-            + state.gopTail.reduce((sum, frame) => sum + frame.length, 0);
-          if (!canRelayToViewer(ws.bufferedAmount, replayBytes)) {
-            state.pendingViewers.add(ws);
-            schedulePendingFlush();
-            startHeartbeat();
-            return;
-          }
-          if (state.initSegment !== state.lastKeyframeChunk) {
-            ws.send(state.initSegment, { binary: true });
-          }
-          if (state.lastKeyframeChunk) {
-            ws.send(state.lastKeyframeChunk, { binary: true });
-          }
-          for (const frame of state.gopTail) {
-            ws.send(frame, { binary: true });
-          }
-          state.viewers.add(ws);
-          logger.info({
-            eventId,
-            viewers: state.viewers.size,
-            gopTailFrames: state.gopTail.length,
-            separateKeyframe: state.initSegment !== state.lastKeyframeChunk,
-          }, "Viewer graduated immediately (stream already live)");
-        } catch (err) {
-          logger.error({ eventId, err: err instanceof Error ? err.message : String(err) }, "Immediate graduation error — falling back to pending queue");
-          state.pendingViewers.add(ws);
-          schedulePendingFlush();
-        }
-      } else {
-        // No data yet — broadcaster just connected but hasn't sent the first chunk.
-        // Park this viewer until the initSegment arrives (normally < 500 ms).
-        state.pendingViewers.add(ws);
-        schedulePendingFlush();
-      }
+    if (!cam) {
+      sendJson(ws, { type: "offline", cameras: cameraList(eventId) });
     } else {
-      ws.send(JSON.stringify({ type: "offline" }));
-    }
-
-    startHeartbeat();
-  }, 150);
-
-  function schedulePendingFlush() {
-    pendingFlushTimer = setTimeout(() => {
-      try {
-        pendingFlushTimer = null;
-        logger.warn({ eventId, hasInit: !!state.initSegment, hasKeyframe: !!state.lastKeyframeChunk }, "Pending viewer flushed via 2s fallback (no initSegment from broadcaster)");
-
-        if (!state.pendingViewers.has(ws)) return;
-        if (ws.readyState !== WebSocket.OPEN) {
-          state.pendingViewers.delete(ws);
-          return;
-        }
-        if (state.initSegment) {
-          const replayBytes = state.initSegment.length
-            + (state.lastKeyframeChunk && state.lastKeyframeChunk !== state.initSegment ? state.lastKeyframeChunk.length : 0)
-            + state.gopTail.reduce((sum, frame) => sum + frame.length, 0);
-          if (!canRelayToViewer(ws.bufferedAmount, replayBytes)) {
-            logger.warn({ eventId, bufferedBytes: ws.bufferedAmount }, "Evicting stalled pending viewer");
-            state.pendingViewers.delete(ws);
-            ws.close(1013, "Viewer too slow");
-            return;
-          }
-          ws.send(state.initSegment, { binary: true });
-          if (state.lastKeyframeChunk && state.lastKeyframeChunk !== state.initSegment) {
-            ws.send(state.lastKeyframeChunk, { binary: true });
-          }
-          for (const frame of state.gopTail) {
-            ws.send(frame, { binary: true });
-          }
-        }
-        state.pendingViewers.delete(ws);
-        state.viewers.add(ws);
-      } catch (err) {
-        logger.error({ eventId, err: err instanceof Error ? err.message : String(err) }, "Pending viewer fallback error — removing from pending");
-        state.pendingViewers.delete(ws);
+      sendJson(ws, initMessage(cam));
+      if (cam.broadcasterWs === null) {
+        sendJson(ws, { type: "reconnecting" });
+        cam.pendingViewers.add(ws);
+      } else {
+        startViewer(cam, ws);
       }
-    }, 2_000);
-  }
-
-  ws.on("message", (data: Buffer | string) => {
-    const chunk: Buffer = typeof data === "string"
-      ? Buffer.from(data, "utf8")
-      : (Buffer.isBuffer(data) ? data : Buffer.from(data as unknown as ArrayBuffer));
-    if (chunk.length > 0 && chunk[0] === 0x7b) {
-      try {
-        const msg = JSON.parse(chunk.toString("utf8")) as Record<string, unknown>;
-        if (msg.type === "pong" || msg.type === "hello") return;
-      } catch { /* ignore */ }
+      logger.info({ eventId, cameraId: cam.cameraId, viewers: cam.viewers.size, pending: cam.pendingViewers.size }, "Viewer connected");
     }
-  });
 
-  ws.on("close", () => {
-    stopHeartbeat();
-    stopPendingFlush();
-    state.viewers.delete(ws);
-    state.pendingViewers.delete(ws);
-    logger.info({ eventId, viewers: state.viewers.size }, "Viewer disconnected");
-  });
-
-  ws.on("error", (err) => {
-    stopHeartbeat();
-    stopPendingFlush();
-    logger.error({ eventId, err: err.message }, "Viewer WebSocket error");
-    state.viewers.delete(ws);
-    state.pendingViewers.delete(ws);
-  });
+    heartbeat = setInterval(() => {
+      const current = cam && cameras.get(keyOf(cam.eventId, cam.cameraId)) === cam ? cam : null;
+      sendJson(ws, {
+        type: "heartbeat",
+        viewers: current ? current.viewers.size + current.pendingViewers.size : 0,
+        cameras: cameraList(eventId),
+      });
+    }, 1_000);
+  }, 150);
 }
