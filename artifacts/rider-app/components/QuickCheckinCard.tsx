@@ -1,3 +1,4 @@
+import { QuickCheckinFix } from "@/components/QuickCheckinFix";
 import { Feather } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -39,10 +40,10 @@ type Row = {
 };
 
 const REASONS: Record<string, string> = {
-  missing_rfid: "RFID sticker not assigned. See the organizer at the gate.",
-  missing_transponder: "No transponder number on file. See the organizer at the gate.",
-  missing_waiver: "Waiver not signed. Sign it at the gate.",
-  payment_required: "Payment not complete. Pay at the gate.",
+  missing_rfid: "No RFID sticker on file.",
+  missing_transponder: "No transponder number on file.",
+  missing_waiver: "Waiver not signed yet.",
+  payment_required: "Payment not complete.",
 };
 
 const REFRESH_MS = 60_000;
@@ -68,7 +69,7 @@ export function QuickCheckinCard() {
   const [position, setPosition] = useState<{ lat: number; lng: number } | null>(null);
   const [locationFailed, setLocationFailed] = useState(false);
   const [busy, setBusy] = useState<number | "all" | null>(null);
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [message, setMessage] = useState<{ eventId: number; ok: boolean; text: string } | null>(null);
   const announced = useRef(new Set<number>());
   const [alwaysDismissed, setAlwaysDismissed] = useState(true);
   useEffect(() => {
@@ -168,7 +169,7 @@ export function QuickCheckinCard() {
           break;
         }
       }
-      setMessage(failed ? { ok: false, text: failed } : { ok: true, text: targets.length > 1 ? "Everyone's checked in. See you on the gate!" : "You're checked in. See you on the gate!" });
+      setMessage(failed ? { eventId: targets[0].eventId, ok: false, text: failed } : { eventId: targets[0].eventId, ok: true, text: targets.length > 1 ? "Everyone's checked in. See you on the gate!" : "You're checked in. See you on the gate!" });
       await refresh();
     } finally {
       setBusy(null);
@@ -247,7 +248,8 @@ export function QuickCheckinCard() {
             )}
 
             {eventRows.map(r => (
-              <View key={r.registrationId} style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 4 }}>
+              <View key={r.registrationId} style={{ paddingVertical: 4 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>{r.riderName}</Text>
                   <Text style={{ fontSize: 12, color: r.eligible || r.checkedIn ? colors.mutedForeground : colors.warning, fontFamily: "Inter_400Regular" }}>
@@ -267,6 +269,10 @@ export function QuickCheckinCard() {
                   </Pressable>
                 ) : null}
               </View>
+              {!r.checkedIn && !r.eligible && r.ineligibleReason && (
+                <QuickCheckinFix registrationId={r.registrationId} reason={r.ineligibleReason} onFixed={() => void refresh()} />
+              )}
+              </View>
             ))}
 
             {atTrack && pending.length > 1 && (
@@ -277,7 +283,7 @@ export function QuickCheckinCard() {
               </Pressable>
             )}
 
-            {message && (
+            {message?.eventId === info.eventId && (
               <Text style={{ fontSize: 13, color: message.ok ? colors.success : colors.destructive, fontFamily: "Inter_600SemiBold" }}>{message.text}</Text>
             )}
           </View>
