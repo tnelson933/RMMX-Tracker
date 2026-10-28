@@ -106,6 +106,8 @@ async function sendRaceNotifications(eventId: number): Promise<void> {
 
 const router = Router();
 
+const MOTO_STATUSES = new Set(["scheduled", "in_progress", "completed", "cancelled"]);
+
 /** Returns the staff user's club restriction, or null for organizer/admin. */
 function getStaffClubId(res: Response): number | null {
   const id = res.locals.staffClubId;
@@ -127,6 +129,19 @@ async function getMotoClubId(motoId: number): Promise<number | null> {
 async function getEventClubId(eventId: number): Promise<number | null> {
   const [ev] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
   return ev?.clubId ?? null;
+}
+
+/**
+ * Sends 404/403 and returns true when the caller may not modify this event
+ * (wrong club). Organizers and staff are both scoped through staffClubId.
+ */
+async function rejectOtherClubEvent(res: Response, eventId: number): Promise<boolean> {
+  const scopedClubId = getStaffClubId(res);
+  if (scopedClubId === null) return false;
+  const eventClubId = await getEventClubId(eventId);
+  if (eventClubId === null) { res.status(404).json({ error: "Event not found" }); return true; }
+  if (eventClubId !== scopedClubId) { res.status(403).json({ error: "Forbidden" }); return true; }
+  return false;
 }
 
 // Helper: check if event uses Supercross format (mainEventOnly=true)
@@ -358,6 +373,9 @@ router.patch("/motos/:motoId", async (req, res) => {
     updates.plusLaps = resultingPlusLaps;
   }
   if (req.body.status !== undefined) {
+    if (!MOTO_STATUSES.has(req.body.status)) {
+      return res.status(400).json({ error: `status must be one of: ${[...MOTO_STATUSES].join(", ")}` });
+    }
     updates.status = req.body.status;
     if (req.body.status === "in_progress") {
       // Idempotent start: only anchor startedAt the first time a moto goes live.
@@ -606,6 +624,7 @@ router.delete("/motos/:motoId/stagger", async (req, res) => {
   const id = Number(req.params.motoId);
   const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, id));
   if (!moto) return res.status(404).json({ error: "Not found" });
+  if (await rejectOtherClubEvent(res, moto.eventId)) return;
   if (!moto.staggeredGroupId) return res.json({ ok: true });
 
   // Find remaining group members (excluding this moto), sorted by current order
@@ -641,6 +660,7 @@ router.delete("/motos/:motoId/stagger", async (req, res) => {
 // Bulk-delete all non-completed motos for an event
 router.delete("/events/:eventId/motos", async (req, res) => {
   const eventId = Number(req.params.eventId);
+  if (await rejectOtherClubEvent(res, eventId)) return;
 
   // Collect the IDs first so we can clean up FK-dependent rows
   const targets = await db
@@ -663,6 +683,7 @@ router.delete("/events/:eventId/motos", async (req, res) => {
 
 router.post("/events/:eventId/generate-lineups", async (req, res) => {
   const eventId = Number(req.params.eventId);
+  if (await rejectOtherClubEvent(res, eventId)) return;
 
   // Guard: do not allow generating motos after the race date has passed.
   const [eventDateRow] = await db
@@ -1280,6 +1301,7 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
 // Auto-assign checked-in riders to scheduled practice sessions
 router.post("/events/:eventId/generate-practice-sessions", async (req, res) => {
   const eventId = Number(req.params.eventId);
+  if (await rejectOtherClubEvent(res, eventId)) return;
   const {
     raceClass, raceClasses, maxRidersPerSession, timeLimitMs, scheduledTime,
     name: customName, lapCount, countdownSeconds, practiceMode,
@@ -1379,6 +1401,7 @@ router.post("/events/:eventId/generate-practice-sessions", async (req, res) => {
 // Bulk reorder motos for an event by reassigning motoNumber values
 router.post("/events/:eventId/motos/reorder", async (req, res) => {
   const eventId = Number(req.params.eventId);
+  if (await rejectOtherClubEvent(res, eventId)) return;
   const { motoIds } = req.body as { motoIds: number[] };
   if (!Array.isArray(motoIds) || motoIds.length === 0) {
     return res.status(400).json({ error: "motoIds array is required" });
@@ -1463,6 +1486,7 @@ router.post("/events/:eventId/motos/reorder", async (req, res) => {
 // Regenerate lineup for a single moto
 router.post("/events/:eventId/motos/:motoId/generate-lineup", async (req, res) => {
   const eventId = Number(req.params.eventId);
+  if (await rejectOtherClubEvent(res, eventId)) return;
   const motoId = Number(req.params.motoId);
   const { gatePickMethod = "random" } = req.body;
 
@@ -1658,6 +1682,7 @@ router.post("/events/:eventId/motos/:motoId/generate-lineup", async (req, res) =
 // Advance top heat finishers into the Main Event lineup (manual trigger)
 router.post("/events/:eventId/advance-to-main", async (req, res) => {
   const eventId = Number(req.params.eventId);
+  if (await rejectOtherClubEvent(res, eventId)) return;
   const { raceClass, topPerHeat = 5 } = req.body;
   if (!raceClass) return res.status(400).json({ error: "raceClass is required" });
 

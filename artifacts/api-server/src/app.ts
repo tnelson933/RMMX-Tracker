@@ -134,4 +134,29 @@ if (webDist) {
   });
 }
 
+// Unknown API paths answer in JSON, like every other API response.
+app.use("/api", (_req, res) => {
+  res.status(404).json({ error: "Not found" });
+});
+
+// Last-resort error handler. Express 5 routes thrown errors (including async
+// ones) here; without it, the default handler returns an HTML page with SQL and
+// file paths. Bad input that reaches Postgres is the caller's mistake, not a 500.
+const CLIENT_ERROR_PG_CODES = new Set([
+  "22P02", // invalid text representation (e.g. "abc" as an id)
+  "22007", // invalid datetime format
+  "22008", // datetime out of range
+  "22003", // numeric value out of range
+  "23503", // foreign key violation (referenced record doesn't exist)
+  "23502", // not-null violation
+]);
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (res.headersSent) return next(err);
+  const pgCode = err?.code ?? err?.cause?.code;
+  const clientError = typeof pgCode === "string" && CLIENT_ERROR_PG_CODES.has(pgCode);
+  const status = clientError ? 400 : typeof err?.status === "number" && err.status < 500 ? err.status : 500;
+  if (status >= 500) (req as any).log?.error({ err }, "Unhandled API error");
+  res.status(status).json({ error: status === 500 ? "Something went wrong. Please try again." : clientError ? "Invalid request." : err?.message ?? "Request failed." });
+});
+
 export default app;

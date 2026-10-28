@@ -2687,30 +2687,24 @@ router.put("/rider/maintenance/:riderId/:itemKey", requireRiderAuth, async (req,
   const { itemName, intervalDesc, intervalDays, lastServicedAt, notes, serviceNotes, sortOrder } = req.body;
   const itemKey = req.params.itemKey;
 
-  const [upserted] = await db
-    .insert(riderMaintenanceTable)
-    .values({
-      riderId,
-      itemKey,
-      itemName: itemName ?? itemKey,
-      intervalDesc: intervalDesc ?? null,
-      intervalDays: typeof intervalDays === "number" ? intervalDays : null,
-      lastServicedAt: lastServicedAt ?? null,
-      notes: notes ?? null,
-      sortOrder: typeof sortOrder === "number" ? sortOrder : 0,
-    })
-    .onConflictDoUpdate({
-      target: [riderMaintenanceTable.riderId, riderMaintenanceTable.itemKey],
-      set: {
-        itemName: sql`EXCLUDED.item_name`,
-        intervalDesc: sql`EXCLUDED.interval_desc`,
-        intervalDays: sql`EXCLUDED.interval_days`,
-        lastServicedAt: sql`EXCLUDED.last_serviced_at`,
-        notes: sql`EXCLUDED.notes`,
-        sortOrder: sql`EXCLUDED.sort_order`,
-      },
-    })
+  // Update the rider's existing item, or insert it. (No unique index exists on
+  // rider_id + item_key, so ON CONFLICT can't be used.)
+  const fields = {
+    itemName: itemName ?? itemKey,
+    intervalDesc: intervalDesc ?? null,
+    intervalDays: typeof intervalDays === "number" ? intervalDays : null,
+    lastServicedAt: lastServicedAt ?? null,
+    notes: notes ?? null,
+    sortOrder: typeof sortOrder === "number" ? sortOrder : 0,
+  };
+  const [updated] = await db
+    .update(riderMaintenanceTable)
+    .set(fields)
+    .where(and(eq(riderMaintenanceTable.riderId, riderId), eq(riderMaintenanceTable.itemKey, itemKey)))
     .returning();
+  const [upserted] = updated
+    ? [updated]
+    : await db.insert(riderMaintenanceTable).values({ riderId, itemKey, ...fields }).returning();
 
   // Write a history record whenever lastServicedAt is being set.
   // Use serviceNotes (the user's per-log input) if provided; fall back to notes only when

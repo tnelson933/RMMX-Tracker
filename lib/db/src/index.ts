@@ -10,7 +10,17 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
+// Timestamps are stored "without time zone" and read back as UTC, so every
+// session must run in UTC. Production already does; this keeps a database with
+// a different default (e.g. local Postgres on Mountain time) from shifting lap
+// times and createdAt values by hours.
 export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+pool.on("connect", (client) => {
+  // Queued ahead of the client's first query.
+  client.query("SET TIME ZONE 'UTC'").catch((error) => {
+    console.error("Could not set PostgreSQL session time zone to UTC", error);
+  });
+});
 // node-postgres emits an "error" event when an idle pooled connection is
 // terminated by the database. Without a listener, Node treats that event as
 // unhandled and exits the whole API process. The pool already removes the dead

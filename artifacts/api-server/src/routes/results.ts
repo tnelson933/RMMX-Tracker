@@ -623,7 +623,8 @@ router.get("/events/:eventId/ama-export", async (req, res) => {
   if (riderIds.length > 0) {
     const { sql: sqlTag } = await import("drizzle-orm");
     const homeStateRows = await db.execute(
-      sqlTag`SELECT id, home_state FROM riders WHERE id = ANY(${riderIds})`
+      // Build "IN ($1, $2, …)": interpolating the array directly made "ANY(($1,$2))", which Postgres rejects.
+      sqlTag`SELECT id, home_state FROM riders WHERE id IN (${sqlTag.join(riderIds.map(id => sqlTag`${id}`), sqlTag`, `)})`
     );
     for (const row of homeStateRows.rows as Array<{ id: number; home_state: string | null }>) {
       riderHomeStateMap.set(Number(row.id), row.home_state ?? "");

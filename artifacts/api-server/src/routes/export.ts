@@ -34,6 +34,11 @@ router.get("/clubs/:clubId/export", async (req, res) => {
   if (!requestingUser || requestingUser.clubId !== clubId) {
     return res.status(403).json({ error: "Access denied" });
   }
+  // The export holds every rider's contact details, so staff accounts (limited
+  // page access) can't download it; club organizers and admins can.
+  if (requestingUser.role === "staff") {
+    return res.status(403).json({ error: "Only club organizers can export club data" });
+  }
 
   const [club] = await db
     .select()
@@ -43,8 +48,17 @@ router.get("/clubs/:clubId/export", async (req, res) => {
     return res.status(404).json({ error: "Club not found" });
   }
 
+  // Never export credentials: no password hashes or offline sync tokens.
   const users = await db
-    .select()
+    .select({
+      id: usersTable.id,
+      email: usersTable.email,
+      name: usersTable.name,
+      role: usersTable.role,
+      clubId: usersTable.clubId,
+      permissions: usersTable.permissions,
+      createdAt: usersTable.createdAt,
+    })
     .from(usersTable)
     .where(eq(usersTable.clubId, clubId));
 

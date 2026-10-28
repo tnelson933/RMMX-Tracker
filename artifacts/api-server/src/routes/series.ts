@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { seriesTable, seriesPointsTable, raceResultsTable, ridersTable, eventsTable, motosTable, registrationsTable, pointsTablesTable, clubsTable, eventPublicationTable } from "@workspace/db";
+import { seriesTable, seriesPointsTable, raceResultsTable, ridersTable, eventsTable, motosTable, registrationsTable, pointsTablesTable, clubsTable, eventPublicationTable, usersTable } from "@workspace/db";
 import { eq, inArray, and } from "drizzle-orm";
 
 const router = Router();
@@ -8,6 +8,16 @@ const router = Router();
 function getStaffClubId(res: any): number | null {
   const v = res.locals?.staffClubId;
   return typeof v === "number" ? v : null;
+}
+
+/** Event IDs from `eventIds` that don't belong to `clubId` (a series may only use its own club's events). */
+async function foreignEventIds(eventIds: unknown, clubId: number): Promise<number[]> {
+  if (!Array.isArray(eventIds) || eventIds.length === 0) return [];
+  const ids = eventIds.map(Number);
+  const rows = await db.select({ id: eventsTable.id, clubId: eventsTable.clubId })
+    .from(eventsTable).where(inArray(eventsTable.id, ids));
+  const own = new Set(rows.filter(r => r.clubId === clubId).map(r => r.id));
+  return ids.filter(id => !own.has(id));
 }
 
 router.get("/series", async (req, res) => {
@@ -23,6 +33,8 @@ router.post("/series", async (req, res) => {
   const { name, clubId: rawClubId, season, classes, pointsSystem, scoringTableId, eventIds } = req.body;
   const clubId = staffCId !== null ? staffCId : rawClubId;
   if (!name || !clubId || !season) return res.status(400).json({ error: "name, clubId, season required" });
+  const foreignOnCreate = await foreignEventIds(eventIds, Number(clubId));
+  if (foreignOnCreate.length > 0) return res.status(400).json({ error: `Events ${foreignOnCreate.join(", ")} don't belong to this club.` });
   const [series] = await db.insert(seriesTable).values({
     name,
     clubId,
@@ -45,6 +57,9 @@ router.patch("/series/:seriesId", async (req, res) => {
   if (staffCId !== null && existingSeries.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
 
   const { name, season, classes, scoringTableId, eventIds } = req.body;
+
+  const foreignOnUpdate = await foreignEventIds(eventIds, existingSeries.clubId);
+  if (foreignOnUpdate.length > 0) return res.status(400).json({ error: `Events ${foreignOnUpdate.join(", ")} don't belong to this club.` });
 
   // Validate events match scoring format when eventIds is being updated
   if (eventIds !== undefined && eventIds.length > 0) {
@@ -80,10 +95,23 @@ router.get("/series/:seriesId/leaderboard", async (req, res) => {
   const [series] = await db.select().from(seriesTable).where(eq(seriesTable.id, seriesId));
   if (!series) return res.status(404).json({ error: "Not found" });
 
-  const staffCId = getStaffClubId(res);
-  if (staffCId !== null && series.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
+  // This route is public (embed widgets), so access control doesn't scope it.
+  // The series' own club (and platform admins) see live standings from every
+  // completed moto; everyone else sees only events whose results are published.
+  const sessionUserId = (req.session as any)?.userId;
+  const [viewer] = sessionUserId
+    ? await db.select({ role: usersTable.role, clubId: usersTable.clubId }).from(usersTable).where(eq(usersTable.id, sessionUserId))
+    : [];
+  const canSeeUnpublished = !!viewer && (viewer.role === "super_admin" || viewer.clubId === series.clubId);
 
-  const eventIds = series.eventIds as number[];
+  let eventIds = series.eventIds as number[];
+  if (!canSeeUnpublished && eventIds.length > 0) {
+    const publishedRows = await db.select({ eventId: eventPublicationTable.eventId })
+      .from(eventPublicationTable)
+      .where(and(inArray(eventPublicationTable.eventId, eventIds), eq(eventPublicationTable.published, true)));
+    const publishedIds = new Set(publishedRows.map(r => r.eventId));
+    eventIds = eventIds.filter(id => publishedIds.has(id));
+  }
   if (eventIds.length === 0) return res.json([]);
 
   const events = await db.select({ id: eventsTable.id, name: eventsTable.name })
