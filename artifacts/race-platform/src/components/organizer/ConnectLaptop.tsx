@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { Laptop, Loader2, KeyRound, Trash2, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Laptop, Loader2, KeyRound, Trash2, RefreshCw, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 
@@ -24,11 +24,24 @@ export function ConnectLaptop() {
   const [busy, setBusy] = useState(false);
   const [laptops, setLaptops] = useState<LaptopRow[]>([]);
   const [loadFailed, setLoadFailed] = useState(false);
+  // Laptops already connected when the code was made, so a new one can be spotted.
+  const knownIds = useRef<Set<number> | null>(null);
+  const [justConnected, setJustConnected] = useState<string | null>(null);
 
   const loadLaptops = useCallback(() => {
     fetch("/api/readers/laptops", { credentials: "include" })
       .then(r => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
-      .then(rows => { setLaptops(rows); setLoadFailed(false); })
+      .then((rows: LaptopRow[]) => {
+        setLaptops(rows);
+        setLoadFailed(false);
+        // The code was used: hide it and say which laptop connected.
+        const fresh = knownIds.current && rows.find(r => !knownIds.current!.has(r.id));
+        if (fresh) {
+          knownIds.current = null;
+          setCode(null);
+          setJustConnected(fresh.name);
+        }
+      })
       .catch(() => setLoadFailed(true));
   }, []);
 
@@ -52,6 +65,8 @@ export function ConnectLaptop() {
       const res = await fetch("/api/readers/pairing-codes", { method: "POST", credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Couldn't create a code");
+      knownIds.current = new Set(laptops.map(l => l.id));
+      setJustConnected(null);
       setCode(data);
       setNow(Date.now());
     } catch (err) {
@@ -81,12 +96,23 @@ export function ConnectLaptop() {
         </Button>
       </div>
 
-      {code && (
-        <div className={`rounded-lg border-2 p-4 text-center ${expired ? "border-dashed opacity-60" : "border-primary/40 bg-primary/5"}`}>
+      {justConnected && !code && (
+        <div className="rounded-lg border border-green-600/30 bg-green-50 px-4 py-3 flex items-center gap-2 text-sm text-green-800">
+          <CheckCircle2 size={16} className="shrink-0" />
+          <span><strong>{justConnected}</strong> is connected. Its readers show up on this page once RM Connect finds them.</span>
+        </div>
+      )}
+
+      {code && expired && (
+        <p className="text-xs text-muted-foreground">That code expired. Get a new code if you need to connect another laptop.</p>
+      )}
+
+      {code && !expired && (
+        <div className="rounded-lg border-2 p-4 text-center border-primary/40 bg-primary/5">
           <p className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Type this code into RM Connect</p>
           <p className="font-mono text-4xl font-bold tracking-[0.3em] mt-1 select-all">{code.code.slice(0, 3)} {code.code.slice(3)}</p>
           <p className="text-xs text-muted-foreground mt-1">
-            {expired ? "Expired. Get a new code." : `Works once, for ${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")} more.`}
+            {`Works once, for ${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")} more.`}
           </p>
         </div>
       )}

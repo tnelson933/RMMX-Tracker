@@ -134,7 +134,7 @@ export function SuperAdminRail({ mirror, organizerName, organizerEmail }: { mirr
     </button>
   );
   return (
-    <aside className="hidden md:flex w-56 shrink-0 flex-col bg-gray-950 text-white border-r border-white/10">
+    <aside className="hidden md:flex w-56 shrink-0 flex-col bg-gray-950 text-white border-r border-white/10 h-[100dvh] sticky top-0 overflow-y-auto">
       <div className="h-16 px-4 flex items-center gap-2 border-b border-white/10">
         <ShieldCheck size={16} className="text-green-400" />
         <div className="min-w-0">

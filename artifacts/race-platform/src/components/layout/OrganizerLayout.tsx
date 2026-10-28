@@ -138,7 +138,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      <nav className="flex-1 py-4 flex flex-col gap-1 px-3 overflow-y-auto">
+      <nav className="flex-1 min-h-0 py-4 flex flex-col gap-1 px-3 overflow-y-auto">
         {visibleNavItems.map((item) => {
           const isActive = location.startsWith(item.href);
           const Icon = item.icon;
@@ -277,13 +277,13 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="min-h-[100dvh] flex bg-gray-50">
+    <div className="h-[100dvh] flex bg-gray-50 overflow-hidden">
 
       {/* Super admin menu stays on the far left while mirroring an organizer */}
       {mirror && <SuperAdminRail mirror={mirror} organizerName={user?.name} organizerEmail={user?.email} />}
 
       {/* Desktop sidebar — always visible */}
-      <aside className="hidden md:flex w-64 bg-sidebar text-sidebar-foreground flex-col border-r border-sidebar-border shrink-0">
+      <aside className="hidden md:flex w-64 bg-sidebar text-sidebar-foreground flex-col border-r border-sidebar-border shrink-0 h-[100dvh] sticky top-0">
         {SidebarContent()}
       </aside>
 
