@@ -1,3 +1,4 @@
+import { rejectIfThrottled, recordFailedLogin, clearFailedLogins } from "../lib/loginThrottle";
 import { Router } from "express";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
@@ -22,11 +23,13 @@ router.post("/auth/login", async (req, res) => {
     return res.status(400).json({ error: "Enter both your email address and your password." });
   }
 
+  if (rejectIfThrottled(req, res, "organizer", email)) return;
   const normalizedEmail = String(email).toLowerCase().trim();
   const users = await db.select().from(usersTable).where(eq(usersTable.email, normalizedEmail));
   const user = users[0];
 
   if (!user) {
+    recordFailedLogin(req, "organizer", email);
     // Point riders who landed on the organizer login to the right place.
     const [riderAccount] = await db.select({ id: riderAccountsTable.id }).from(riderAccountsTable)
       .where(eq(riderAccountsTable.email, normalizedEmail));
@@ -45,6 +48,7 @@ router.post("/auth/login", async (req, res) => {
 
   const valid = await bcrypt.compare(password, user.passwordHash);
   if (!valid) {
+    recordFailedLogin(req, "organizer", email);
     return res.status(401).json({
       error: "That password doesn't match this account. Check that Caps Lock is off, or use \"Forgot your password?\" below to reset it.",
     });
@@ -61,6 +65,7 @@ router.post("/auth/login", async (req, res) => {
     }
   }
 
+  clearFailedLogins("organizer", email);
   (req.session as any).userId = user.id;
 
   if (rememberMe) {

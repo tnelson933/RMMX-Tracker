@@ -1,3 +1,4 @@
+import { validateEventInput } from "../lib/validateInput";
 import { advanceEventStatuses, todayInMountainTime } from "../lib/eventStatus";
 import { Router, type Response } from "express";
 import { db } from "@workspace/db";
@@ -127,6 +128,8 @@ router.get("/events", async (req, res) => {
 });
 
 router.post("/events", async (req, res) => {
+  const invalid = validateEventInput(req.body ?? {});
+  if (invalid) return res.status(400).json({ error: invalid });
   const { name, date, state, location, trackName, raceClasses, raceClassLimits, raceClassSeriesMap, registrationOpen, registrationClose, paymentEnabled, requireAma, entryFee, earlyBirdFee, earlyBirdEndsAt, maxRiders, timingTechnology, transponderRentalEnabled, transponderRentalFee, rfidStickerFee, purchaseOptions, scoringTableId, endDate, requireWaiver, requireLiabilityWaiver, requireTransponder, raceStyle } = req.body;
   // Staff are always scoped to their own club; ignore any caller-supplied clubId.
   const staffCId = getStaffClubId(res);
@@ -290,6 +293,8 @@ router.get("/events/:eventId", async (req, res) => {
 });
 
 router.patch("/events/:eventId", async (req, res) => {
+  const invalid = validateEventInput(req.body ?? {});
+  if (invalid) return res.status(400).json({ error: invalid });
   const id = Number(req.params.eventId);
 
   // Capture previous status before update; also check club ownership for staff.

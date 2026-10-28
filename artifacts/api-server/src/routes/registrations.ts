@@ -1,3 +1,4 @@
+import { checkMoney, checkOneOf } from "../lib/validateInput";
 import { eventDateReached } from "../lib/eventStatus";
 import { Router } from "express";
 import { db } from "@workspace/db";
@@ -12,6 +13,14 @@ import { includesRmTrackr, markRmTrackrPurchased, fulfillRmTrackr } from "../lib
 import { RM_TRACKR_NAME, RM_TRACKR_PRICE } from "@workspace/db";
 import { canManageRider } from "../lib/riderAccess";
 import { riderMobileTokensTable } from "@workspace/db";
+
+/** Payment-check failures: an unknown/invalid Stripe session is the caller's error (404), anything else a 500 without Stripe's internals. */
+function sendPaymentCheckError(res: any, err: any) {
+  if (err?.type === "StripeInvalidRequestError") {
+    return res.status(404).json({ error: "Payment session not found" });
+  }
+  return res.status(500).json({ error: "Couldn't confirm the payment. Please try again." });
+}
 
 const router = Router();
 
@@ -491,6 +500,11 @@ router.post("/events/:eventId/registrations", async (req, res) => {
 router.patch("/registrations/:registrationId", async (req, res) => {
   const id = Number(req.params.registrationId);
   const { status, paymentStatus, raceClass, bibNumber, amountPaid, paymentMethod, displayFirstName, displayLastName, riderId: newRiderId } = req.body;
+  const invalid =
+    checkOneOf(req.body, "status", ["pending", "confirmed", "void"]) ??
+    checkOneOf(req.body, "paymentStatus", ["unpaid", "paid", "refunded"]) ??
+    checkMoney(req.body, ["amountPaid"]);
+  if (invalid) return res.status(400).json({ error: invalid });
   const updates: Record<string, unknown> = {};
   if (status !== undefined) updates.status = status;
   if (paymentStatus !== undefined) {
@@ -502,7 +516,8 @@ router.patch("/registrations/:registrationId", async (req, res) => {
   }
   if (raceClass !== undefined) updates.raceClass = raceClass;
   if (bibNumber !== undefined) updates.bibNumber = bibNumber;
-  if (amountPaid !== undefined) updates.amountPaid = String(amountPaid);
+  // null / "" clears the amount (String(null) used to store the text "null").
+  if (amountPaid !== undefined) updates.amountPaid = amountPaid === null || amountPaid === "" ? null : String(amountPaid);
   if (paymentMethod !== undefined) updates.paymentMethod = paymentMethod;
   if (displayFirstName !== undefined) updates.displayFirstName = displayFirstName;
   if (displayLastName !== undefined) updates.displayLastName = displayLastName;
@@ -888,7 +903,7 @@ router.post("/public/registrations/:id/verify-rm-trackr", async (req, res) => {
     return res.json({ paid: true });
   } catch (err: any) {
     req.log?.error({ err: err?.message }, "[verify-rm-trackr] Error");
-    return res.status(500).json({ error: err?.message ?? "Verification failed" });
+    return sendPaymentCheckError(res, err);
   }
 });
 
@@ -920,7 +935,7 @@ router.post("/public/registrations/:id/verify-rfid-sticker", async (req, res) =>
     return res.json({ paid: true });
   } catch (err: any) {
     req.log?.error({ err: err?.message }, "[verify-rfid-sticker] Error");
-    return res.status(500).json({ error: err?.message ?? "Verification failed" });
+    return sendPaymentCheckError(res, err);
   }
 });
 
@@ -951,7 +966,7 @@ router.post("/public/registrations/:id/verify-transponder-rental", async (req, r
     return res.json({ paid: true });
   } catch (err: any) {
     req.log?.error({ err: err?.message }, "[verify-transponder-rental] Error");
-    return res.status(500).json({ error: err?.message ?? "Verification failed" });
+    return sendPaymentCheckError(res, err);
   }
 });
 
@@ -2026,7 +2041,7 @@ router.post("/public/registrations/:id/verify-payment", async (req, res) => {
     });
   } catch (err: any) {
     req.log?.error({ err: err?.message }, "[verify-payment] Error");
-    return res.status(500).json({ error: err?.message ?? "Verification failed" });
+    return sendPaymentCheckError(res, err);
   }
 });
 

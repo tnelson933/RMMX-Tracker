@@ -1,3 +1,5 @@
+import { checkBirthDate, isEmail } from "../lib/validateInput";
+import { rejectIfThrottled, recordFailedLogin, clearFailedLogins } from "../lib/loginThrottle";
 import { eventDateReached } from "../lib/eventStatus";
 import { Router } from "express";
 import bcrypt from "bcryptjs";
@@ -259,6 +261,9 @@ router.post("/rider/auth/register", async (req, res) => {
   if (String(password).length < 8) {
     return res.status(400).json({ error: "Password must be at least 8 characters" });
   }
+  if (!isEmail(email)) {
+    return res.status(400).json({ error: "Enter a valid email address, like name@example.com" });
+  }
 
   const normalized = String(email).toLowerCase().trim();
   const existing = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.email, normalized));
@@ -290,9 +295,11 @@ router.post("/rider/auth/login", async (req, res) => {
     return res.status(400).json({ error: "Enter both your email address and your password." });
   }
 
+  if (rejectIfThrottled(req, res, "rider", email)) return;
   const normalized = String(email).toLowerCase().trim();
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.email, normalized));
   if (!account) {
+    recordFailedLogin(req, "rider", email);
     // Point organizers who landed on the rider login to the right place.
     const [organizer] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, normalized));
     return res.status(401).json({
@@ -304,11 +311,13 @@ router.post("/rider/auth/login", async (req, res) => {
 
   const valid = await bcrypt.compare(String(password), account.passwordHash);
   if (!valid) {
+    recordFailedLogin(req, "rider", email);
     return res.status(401).json({
       error: "That password doesn't match this account. Check that Caps Lock is off, or use \"Forgot password\" to reset it.",
     });
   }
 
+  clearFailedLogins("rider", email);
   (req.session as any).riderAccountId = account.id;
   req.session.cookie.maxAge = 30 * 24 * 60 * 60 * 1000;
 
@@ -1050,6 +1059,9 @@ router.patch("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
     return res.status(403).json({ error: "Access denied" });
   }
 
+  const invalidDob = checkBirthDate(req.body?.dateOfBirth);
+  if (invalidDob) return res.status(400).json({ error: invalidDob });
+
   const allowed = [
     "firstName", "lastName", "phone", "dateOfBirth",
     "emergencyContact", "emergencyPhone",
@@ -1310,6 +1322,8 @@ router.post("/rider/profiles", requireRiderAuth, async (req, res) => {
 
   const { firstName, lastName, phone, dateOfBirth, bibNumber, amaNumber,
     bikeManufacturer, sponsors, streetAddress, city, homeState, zip, myLapsTransponderNumber } = req.body;
+  const invalidNewDob = checkBirthDate(dateOfBirth);
+  if (invalidNewDob) return res.status(400).json({ error: invalidNewDob });
 
   if (!firstName?.trim() || !lastName?.trim()) {
     return res.status(400).json({ error: "First and last name are required" });

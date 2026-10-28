@@ -1,3 +1,4 @@
+import { checkOneOf } from "../lib/validateInput";
 import { Router } from "express";
 import { db } from "@workspace/db";
 import {
@@ -428,6 +429,8 @@ router.patch("/practice/:id", async (req, res) => {
   }
   if (req.body.debounceMs !== undefined) updates.debounceMs = Number(req.body.debounceMs);
   if (req.body.status !== undefined) {
+    const invalidStatus = checkOneOf(req.body, "status", ["idle", "active", "ended"]);
+    if (invalidStatus) return res.status(400).json({ error: invalidStatus });
     updates.status = req.body.status;
     if (req.body.status === "active" && !existing.startedAt) updates.startedAt = new Date();
     if (req.body.status === "ended") updates.endedAt = new Date();
