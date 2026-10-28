@@ -209,4 +209,5 @@ export * from './updateTeamMemberInput';
 export * from './uploadUrlRequest';
 export * from './uploadUrlResponse';
 export * from './user';
+export * from './userMirror';
 export * from './userRole';

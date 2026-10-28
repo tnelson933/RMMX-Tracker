@@ -1007,13 +1007,26 @@ export default function ReaderSetup() {
             </Button>
           </a>
         </div>
-        <details className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-          <summary className="cursor-pointer font-semibold text-amber-700 dark:text-amber-400">RFID reader not found? Turn on LLRP</summary>
-          <ol className="list-decimal ml-5 mt-2 space-y-0.5 text-muted-foreground">
-            <li><strong>Impinj R700</strong>: open the reader's web page (<span className="font-mono text-xs">http://impinj-xx-xx-xx.local</span>, the last 6 characters of the MAC on its label), log in, change <strong>RFID interface</strong> to <strong>LLRP</strong>, and reboot when prompted.</li>
-            <li><strong>Zebra FX7500 / FX9600</strong>: LLRP is on from the factory. If it was changed, set the operating mode back to <strong>LLRP</strong> on the reader's web page.</li>
-            <li>Only one program can talk to a reader at a time. Close ItemTest or other reader software before RM Connect connects.</li>
-          </ol>
+        <details className="rounded-lg border bg-muted/30 p-3 text-sm">
+          <summary className="cursor-pointer font-semibold">Reader not showing up in RM Connect?</summary>
+          <div className="mt-3 space-y-3 text-muted-foreground">
+            <div>
+              <p className="font-semibold text-foreground">RM TrackR</p>
+              <ul className="list-disc ml-5 mt-1 space-y-0.5">
+                <li>Make sure it's powered on and plugged into the same router as the laptop (or cabled straight to the laptop).</li>
+                <li>On the RM TrackR, open <strong>Config → Network</strong> and choose <strong>TCP mode</strong>. Its address is under <strong>Config → About</strong>; you can type it into RM Connect under "Or enter the reader's address".</li>
+                <li>Close any other timing software connected to it, then click <strong>Search again</strong>.</li>
+              </ul>
+            </div>
+            <div>
+              <p className="font-semibold text-foreground">RFID readers (Impinj, Zebra)</p>
+              <ul className="list-disc ml-5 mt-1 space-y-0.5">
+                <li><strong>Impinj R700</strong>: open the reader's web page (<span className="font-mono text-xs">http://impinj-xx-xx-xx.local</span>, the last 6 characters of the MAC on its label), log in, change <strong>RFID interface</strong> to <strong>LLRP</strong>, and reboot when prompted.</li>
+                <li><strong>Zebra FX7500 / FX9600</strong>: LLRP is on from the factory. If it was changed, set the operating mode back to <strong>LLRP</strong> on the reader's web page.</li>
+                <li>Only one program can talk to a reader at a time. Close ItemTest or other reader software first.</li>
+              </ul>
+            </div>
+          </div>
         </details>
       </section>
 

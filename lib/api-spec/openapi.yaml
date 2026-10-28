@@ -3422,6 +3422,20 @@ components:
             type: string
         createdAt:
           type: string
+        mirror:
+          description: Set while a super admin is mirroring (acting as) this organizer.
+          type: ["object", "null"]
+          properties:
+            adminId:
+              type: integer
+            adminName:
+              type: string
+            adminEmail:
+              type: ["string", "null"]
+            clubName:
+              type: ["string", "null"]
+            startedAt:
+              type: ["string", "null"]
 
     PurchaseOption:
       type: object

@@ -56,7 +56,14 @@ export const LoginResponse = zod.object({
   "clubId": zod.number().nullish(),
   "tourCompleted": zod.boolean(),
   "permissions": zod.array(zod.string()),
-  "createdAt": zod.string().optional()
+  "createdAt": zod.string().optional(),
+  "mirror": zod.object({
+  "adminId": zod.number().optional(),
+  "adminName": zod.string().optional(),
+  "adminEmail": zod.string().nullish(),
+  "clubName": zod.string().nullish(),
+  "startedAt": zod.string().nullish()
+}).nullish().describe('Set while a super admin is mirroring (acting as) this organizer.')
 }),
   "token": zod.string()
 })
@@ -73,7 +80,14 @@ export const GetMeResponse = zod.object({
   "clubId": zod.number().nullish(),
   "tourCompleted": zod.boolean(),
   "permissions": zod.array(zod.string()),
-  "createdAt": zod.string().optional()
+  "createdAt": zod.string().optional(),
+  "mirror": zod.object({
+  "adminId": zod.number().optional(),
+  "adminName": zod.string().optional(),
+  "adminEmail": zod.string().nullish(),
+  "clubName": zod.string().nullish(),
+  "startedAt": zod.string().nullish()
+}).nullish().describe('Set while a super admin is mirroring (acting as) this organizer.')
 })
 
 
@@ -92,7 +106,14 @@ export const UpdateMeResponse = zod.object({
   "clubId": zod.number().nullish(),
   "tourCompleted": zod.boolean(),
   "permissions": zod.array(zod.string()),
-  "createdAt": zod.string().optional()
+  "createdAt": zod.string().optional(),
+  "mirror": zod.object({
+  "adminId": zod.number().optional(),
+  "adminName": zod.string().optional(),
+  "adminEmail": zod.string().nullish(),
+  "clubName": zod.string().nullish(),
+  "startedAt": zod.string().nullish()
+}).nullish().describe('Set while a super admin is mirroring (acting as) this organizer.')
 })
 
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLogout } from "@workspace/api-client-react";
@@ -32,8 +32,10 @@ import {
   UsersRound,
   Bell,
   Monitor,
+  Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { MirrorDialog, SuperAdminRail, MirrorBanner, quitMirror, type MirrorInfo } from "./MirrorControls";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permKey: "dashboard", tourId: undefined },
@@ -57,7 +59,14 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { broadcastState, micEnabled, camEnabled, duration, activeEventId, toggleMic, toggleCam, stopBroadcast } = useBroadcast();
   const isLive = broadcastState === "live";
-  const showTour = user !== null && user !== undefined && !user.tourCompleted;
+  // Set while a super admin is mirroring this organizer.
+  const mirror = ((user as any)?.mirror ?? null) as MirrorInfo | null;
+  const showTour = user !== null && user !== undefined && !user.tourCompleted && !mirror;
+  const [mirrorDialogOpen, setMirrorDialogOpen] = useState(false);
+  // "Mirror someone else" from the mirror rail lands here with ?mirror=1.
+  useEffect(() => {
+    if (user?.role === "super_admin" && new URLSearchParams(window.location.search).get("mirror") === "1") setMirrorDialogOpen(true);
+  }, [user?.role]);
 
   const isStaff = user?.role === "staff";
   const isAdmin = user?.role === "super_admin";
@@ -204,6 +213,14 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
               <Building2 size={18} />
               Clubs
             </Link>
+            <button
+              onClick={() => { close(); setMirrorDialogOpen(true); }}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-md font-medium text-sm transition-colors text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              title="See and work in RM Roost as an organizer"
+            >
+              <Eye size={18} />
+              Mirror
+            </button>
             <Link
               href="/admin/notifications"
               onClick={close}
@@ -221,21 +238,35 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
       </nav>
 
       <div className="p-4 border-t border-sidebar-border/50 shrink-0">
-        <Button
-          variant="ghost"
-          className="w-full justify-start gap-3 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground border-transparent bg-transparent"
-          onClick={handleLogout}
-          disabled={logout.isPending}
-        >
-          <LogOut size={18} />
-          Logout
-        </Button>
+        {mirror ? (
+          <Button
+            variant="ghost"
+            className="w-full justify-start gap-3 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground border-transparent bg-transparent"
+            onClick={() => void quitMirror()}
+          >
+            <LogOut size={18} />
+            Quit mirror
+          </Button>
+        ) : (
+          <Button
+            variant="ghost"
+            className="w-full justify-start gap-3 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground border-transparent bg-transparent"
+            onClick={handleLogout}
+            disabled={logout.isPending}
+          >
+            <LogOut size={18} />
+            Logout
+          </Button>
+        )}
       </div>
     </>
   );
 
   return (
     <div className="min-h-[100dvh] flex bg-gray-50">
+
+      {/* Super admin menu stays on the far left while mirroring an organizer */}
+      {mirror && <SuperAdminRail mirror={mirror} organizerName={user?.name} organizerEmail={user?.email} />}
 
       {/* Desktop sidebar — always visible */}
       <aside className="hidden md:flex w-64 bg-sidebar text-sidebar-foreground flex-col border-r border-sidebar-border shrink-0">
@@ -274,6 +305,8 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
             <LocalSyncBadge />
           </div>
         </div>
+
+        {mirror && <MirrorBanner mirror={mirror} organizerEmail={user?.email} />}
 
         <main className="flex-1 overflow-y-auto">
           {children}
@@ -328,6 +361,8 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
           </Button>
         </div>
       )}
+
+      {isAdmin && <MirrorDialog open={mirrorDialogOpen} onOpenChange={setMirrorDialogOpen} />}
 
       {/* First-login product tour */}
       {showTour && <ProductTour onComplete={() => {}} />}

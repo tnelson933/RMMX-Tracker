@@ -5,6 +5,7 @@
  * RM Roost API
  * OpenAPI spec version: 0.1.0
  */
+import type { UserMirror } from './userMirror';
 import type { UserRole } from './userRole';
 
 export interface User {
@@ -17,4 +18,9 @@ export interface User {
   tourCompleted: boolean;
   permissions: string[];
   createdAt?: string;
+  /**
+     * Set while a super admin is mirroring (acting as) this organizer.
+     * @nullable
+     */
+  mirror?: UserMirror;
 }

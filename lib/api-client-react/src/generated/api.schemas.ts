@@ -111,6 +111,21 @@ export const UserRole = {
   public: 'public',
 } as const;
 
+/**
+ * Set while a super admin is mirroring (acting as) this organizer.
+ * @nullable
+ */
+export type UserMirror = {
+  adminId?: number;
+  adminName?: string;
+  /** @nullable */
+  adminEmail?: string | null;
+  /** @nullable */
+  clubName?: string | null;
+  /** @nullable */
+  startedAt?: string | null;
+} | null;
+
 export interface User {
   id: number;
   email: string;
@@ -121,6 +136,11 @@ export interface User {
   tourCompleted: boolean;
   permissions: string[];
   createdAt?: string;
+  /**
+     * Set while a super admin is mirroring (acting as) this organizer.
+     * @nullable
+     */
+  mirror?: UserMirror;
 }
 
 export interface AuthResponse {

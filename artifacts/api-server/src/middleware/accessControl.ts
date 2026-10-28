@@ -82,6 +82,16 @@ export async function accessControlMiddleware(req: Request, res: Response, next:
     return res.status(401).json({ error: "Not authenticated" });
   }
 
+  // Mirroring (a super admin acting as an organizer): Quit always works, the
+  // mirror picker answers the super admin, and the desktop app's offline sign-in
+  // and sync can't be used to take the organizer's credentials or data away.
+  if ((req.session as any)?.mirrorBy) {
+    if (path === "/admin/mirror/stop" || path === "/admin/mirror/organizers") return next();
+    if (path === "/auth/offline-token" || /^\/clubs\/\d+\/(sync-pull|desktop-push)$/.test(path)) {
+      return res.status(403).json({ error: "Not available while mirroring an organizer" });
+    }
+  }
+
   const [user] = await db
     .select({ role: usersTable.role, permissions: usersTable.permissions, clubId: usersTable.clubId })
     .from(usersTable)

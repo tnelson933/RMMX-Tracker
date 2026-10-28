@@ -1,4 +1,5 @@
 import { rejectIfThrottled, recordFailedLogin, clearFailedLogins } from "../lib/loginThrottle";
+import { mirrorInfo } from "./admin-mirror";
 import { Router } from "express";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
@@ -115,6 +116,8 @@ router.get("/auth/me", async (req, res) => {
     tourCompleted: user.tourCompleted,
     permissions: user.permissions ?? [],
     createdAt: user.createdAt.toISOString(),
+    // Set while a super admin is mirroring this organizer.
+    mirror: await mirrorInfo(req.session as any, user.clubId),
   });
 });
 

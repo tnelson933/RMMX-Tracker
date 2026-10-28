@@ -604,7 +604,7 @@ A club-wide list of every RFID tag or active transponder assigned to riders, at 
 ## Reader Setup
 
 **Reader Setup** (sidebar) is short; RM Connect does the setup work:
-1. **Set up with RM Connect** — three steps (install, connect the laptop to the readers' network and sign in, click **Find readers**), the download buttons, and "RFID reader not found? Turn on LLRP".
+1. **Set up with RM Connect** — three steps (install, connect the laptop to the readers' network and sign in, click **Find readers**), the download buttons, and "Reader not showing up in RM Connect?".
 2. **Your readers** — every reader with live status from RM Connect (see "RM Connect"). Icons on each row: gear (RM TrackR settings), pencil (rename), key (new token), trash (remove). **Identify reader** at the top highlights the reader that sees the next tag or transponder while a moto or practice is running.
 3. **Live Tag Scanner** — click **Start Scanning**, pass a tag or transponder by a reader, and its number appears with "Assigned to [rider]" or "Not assigned to any rider". Copy the number to assign it; **Clear** empties the list.
 4. **Advanced** (collapsed) — add a reader by hand, readers that send reads without RM Connect, and RFID signal settings.
@@ -637,7 +637,7 @@ The event's **Course Map** tab places readers on the course. Readers come from R
 
 **Where sector times show:** the public live page's **Sectors** tab (best per sector, fastest in green), the Race Day Management leaderboard (**Last lap sectors** and **Best sectors** under the leaderboard), expanded motos on the public results page, and the rider app's race results (**Best sectors** card).
 
-**Desktop app / offline:** the Course Map tab works in the desktop app and syncs with the cloud. Split readers need RM Connect, which needs internet, so sector times are recorded only at tracks with internet; offline timing uses the finish line as before.
+**Desktop app / offline:** the Course Map tab works in the desktop app and syncs with the cloud. The desktop app connects to readers itself (it never uses RM Connect); today it times the finish line, and timing split readers offline is not available yet.
 
 ### Readers and enduro checkpoints
 
