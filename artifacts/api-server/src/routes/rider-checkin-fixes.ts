@@ -11,7 +11,7 @@ import {
   rfidAssignmentsTable,
   liabilityWaiverSignaturesTable,
 } from "@workspace/db";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, ilike, ne, or } from "drizzle-orm";
 import { eventTimeZone, normalizeActiveTransponderIdentifier, todayInZone } from "@workspace/api-zod";
 import { requireRiderAuth } from "./rider-portal";
 import { canManageRider } from "../lib/riderAccess";
@@ -66,7 +66,10 @@ router.post("/rider/registrations/:regId/checkout", requireRiderAuth, async (req
   if (!owned) return;
   const { rider, event } = owned;
 
-  const pending = (await riderRegsForEvent(rider.id, event.id)).filter(r => r.status === "pending");
+  if (event.status === "completed" || event.status === "results_published") {
+    return res.status(409).json({ error: "This event is over. Contact the organizer about payment." });
+  }
+  const pending = (await riderRegsForEvent(rider.id, event.id)).filter(r => r.status === "pending" && r.paymentStatus !== "paid");
   if (pending.length === 0) return res.status(409).json({ error: "This registration is already paid." });
 
   const [club] = await db.select().from(clubsTable).where(eq(clubsTable.id, event.clubId));
@@ -100,6 +103,22 @@ router.post("/rider/registrations/:regId/checkout", requireRiderAuth, async (req
   try {
     const stripe = await getUncachableStripeClient();
     const appUrl = getAppUrl();
+    // Never start a second charge for the same entries: reuse a checkout that's
+    // still open (from registration or an earlier tap), and stop if one was paid.
+    const regIds = new Set(pending.map(r => String(r.id)));
+    const covers = (s: { metadata?: Record<string, string> | null }) =>
+      (s.metadata?.registrationIds ?? "").split(",").some(id => regIds.has(id.trim()));
+    const recentSessions = await stripe.checkout.sessions.list({
+      created: { gte: Math.floor(Date.now() / 1000) - 24 * 3600 },
+      limit: 100,
+    });
+    const mine = recentSessions.data.filter(covers);
+    if (mine.some(s => s.status === "complete" && s.payment_status === "paid")) {
+      return res.status(409).json({ error: "Your payment went through. It can take a minute to show; pull down to refresh." });
+    }
+    const open = mine.find(s => s.status === "open" && s.url);
+    if (open) return res.json({ checkoutUrl: open.url, total: lineItems.reduce((s, li) => s + li.amount, 0) });
+
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       line_items: lineItems.map(li => ({
@@ -187,6 +206,15 @@ router.post("/rider/registrations/:regId/waiver", requireRiderAuth, async (req, 
   return res.json({ ok: true });
 });
 
+/** True when another rider's profile already carries this transponder/sticker number. */
+async function numberOnAnotherProfile(number: string, riderId: number): Promise<boolean> {
+  const [hit] = await db.select({ id: ridersTable.id }).from(ridersTable).where(and(
+    ne(ridersTable.id, riderId),
+    or(ilike(ridersTable.mylapsTransponderId, number), ilike(ridersTable.rfidNumber, number)),
+  )).limit(1);
+  return !!hit;
+}
+
 // ── Active timing transponder number ─────────────────────────────────────────
 router.post("/rider/registrations/:regId/transponder", requireRiderAuth, async (req, res) => {
   const owned = await loadOwnedRegistration(req, res);
@@ -205,6 +233,15 @@ router.post("/rider/registrations/:regId/transponder", requireRiderAuth, async (
     ne(registrationsTable.riderId, rider.id),
   )).limit(1);
   if (others.length) return res.status(409).json({ error: "That transponder number is already used by another rider at this event. Check the number, or see the organizer." });
+  // A number on another rider's profile is theirs at every event.
+  if (await numberOnAnotherProfile(number, rider.id)) {
+    return res.status(409).json({ error: "That transponder number belongs to another rider. Check the number, or see the organizer." });
+  }
+  // This screen only fills in a missing number; changing one goes through the organizer.
+  const regs = await riderRegsForEvent(rider.id, event.id);
+  if (regs.some(r => r.myLapsTransponderNumber && r.myLapsTransponderNumber.toUpperCase() !== number)) {
+    return res.status(409).json({ error: "You already have a transponder number for this event. See the organizer to change it." });
+  }
 
   await db.update(registrationsTable)
     .set({ myLapsTransponderNumber: number })
@@ -229,9 +266,16 @@ router.post("/rider/registrations/:regId/rfid", requireRiderAuth, async (req, re
   if (taken && taken.riderId !== rider.id) {
     return res.status(409).json({ error: "That sticker number is already assigned to another rider at this event. Check the number, or see the organizer." });
   }
+  if (await numberOnAnotherProfile(number, rider.id)) {
+    return res.status(409).json({ error: "That sticker number belongs to another rider. Check the number, or see the organizer." });
+  }
 
-  const [existing] = await db.select({ id: rfidAssignmentsTable.id }).from(rfidAssignmentsTable)
+  const [existing] = await db.select({ id: rfidAssignmentsTable.id, rfidNumber: rfidAssignmentsTable.rfidNumber }).from(rfidAssignmentsTable)
     .where(and(eq(rfidAssignmentsTable.eventId, event.id), eq(rfidAssignmentsTable.riderId, rider.id))).limit(1);
+  // This screen only fills in a missing sticker; changing one goes through the organizer.
+  if (existing?.rfidNumber && existing.rfidNumber.toUpperCase() !== number) {
+    return res.status(409).json({ error: "You already have a sticker number for this event. See the organizer to change it." });
+  }
   if (existing) await db.update(rfidAssignmentsTable).set({ rfidNumber: number }).where(eq(rfidAssignmentsTable.id, existing.id));
   else await db.insert(rfidAssignmentsTable).values({ riderId: rider.id, eventId: event.id, rfidNumber: number });
   await db.update(ridersTable).set({ rfidNumber: number }).where(eq(ridersTable.id, rider.id));

@@ -603,6 +603,9 @@ export function LiveRaceViews({
   showRaceStatus?: boolean;
 }) {
   const [activeView, setActiveView] = useState<LiveView>("timing");
+  // A moto without split reads has no Sectors tab; don't leave its panel blank.
+  const hasSectors = !!data?.sectorNames?.length;
+  useEffect(() => { if (activeView === "sectors" && !hasSectors) setActiveView("timing"); }, [activeView, hasSectors]);
   const isLive = data?.status === "in_progress";
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-sidebar text-sidebar-foreground">
@@ -707,6 +710,9 @@ function LegacyLiveLeaderboard() {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<LiveView>("timing");
+  // A moto without split reads has no Sectors tab; don't leave its panel blank.
+  const hasSectors = !!data?.sectorNames?.length;
+  useEffect(() => { if (activeView === "sectors" && !hasSectors) setActiveView("timing"); }, [activeView, hasSectors]);
   const [correctionVisible, setCorrectionVisible] = useState(false);
   const correctionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

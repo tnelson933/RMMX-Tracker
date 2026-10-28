@@ -46,6 +46,11 @@ export function computeAutoStatus(event: EventStatusRow, now = new Date()): stri
   if (status === "race_day") return lastDay && lastDay < today ? "completed" : null;
   if (!PRE_RACE.has(status)) return null;
 
+  // An unpublished draft never goes live on its own, even once its date passes.
+  if (status === "draft") {
+    return registrationOpen && now >= new Date(registrationOpen) && !(start && start <= today) ? "registration_open" : null;
+  }
+
   // On or after the start date registration is over: the event is racing.
   if (start && start <= today) return "race_day";
 

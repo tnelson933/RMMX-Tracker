@@ -357,8 +357,11 @@ type LiveMotoView = "timing" | "analytics" | "fastest";
 
 function fmtSector(ms: number | null | undefined): string {
   if (ms == null) return "—";
-  const s = ms / 1000;
-  return s >= 60 ? `${Math.floor(s / 60)}:${(s % 60).toFixed(2).padStart(5, "0")}` : s.toFixed(2);
+  // Round to hundredths first so 119.996 s shows 2:00.00, never 1:60.00.
+  const cs = Math.round(ms / 10);
+  const minutes = Math.floor(cs / 6000);
+  const seconds = ((cs % 6000) / 100).toFixed(2);
+  return minutes > 0 ? `${minutes}:${seconds.padStart(5, "0")}` : seconds;
 }
 
 // Best sector times per rider, for motos run with split readers on the course map.

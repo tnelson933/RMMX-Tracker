@@ -57,16 +57,19 @@ function render(st) {
 function renderReaders(readers) {
   const list = $("readers");
   const seen = new Set();
-  for (const r of readers) {
+  readers.forEach((r, i) => {
     seen.add(r.readerId);
     let card = cards.get(r.readerId);
     if (!card) {
       card = createCard(r.readerId);
       cards.set(r.readerId, card);
     }
-    list.append(card.el); // keeps order in step with the reader list
+    // Move a card only when it's out of place. Re-inserting it on every status
+    // update (several a second while reads arrive) swallowed clicks and
+    // checkbox changes made at that moment.
+    if (list.children[i] !== card.el) list.insertBefore(card.el, list.children[i] ?? null);
     updateCard(card, r);
-  }
+  });
   for (const [id, card] of cards) {
     if (!seen.has(id)) { card.el.remove(); cards.delete(id); }
   }
@@ -191,7 +194,10 @@ async function onCardAction(card, action, btn) {
     btn.disabled = false;
     if (!res.ok) f.actionErr.textContent = res.error;
   } else if (action === "remove") {
-    if (!confirm(`Remove "${r.readerName}" from this laptop?\n\nIt stays registered in RM Roost, and you can add it back with Find readers.`)) return;
+    const unsent = r.pendingCrossings
+      ? `\n\n${r.pendingCrossings} crossing${r.pendingCrossings === 1 ? " hasn't" : "s haven't"} reached RM Roost yet and will be lost. If you can, wait for the internet to come back first.`
+      : "";
+    if (!confirm(`Remove "${r.readerName}" from this laptop?\n\nIt stays registered in RM Roost, and you can add it back with Find readers.${unsent}`)) return;
     await api.removeReader(r.readerId);
   } else if (action === "settings") {
     const open = f.settingsPanel.classList.toggle("hidden") === false;
@@ -203,6 +209,7 @@ async function onCardAction(card, action, btn) {
     }
   } else if (action === "applySettings" || action === "syncClock") {
     f.settingsErr.textContent = "";
+    btn.disabled = true;
     const res = await api.configureReader(r.readerId, {
       channel: parseInt(f.channel.value, 10),
       power: parseInt(f.power.value, 10),
@@ -210,7 +217,12 @@ async function onCardAction(card, action, btn) {
       loop2Enabled: f.loop2.checked,
       syncClock: action === "syncClock",
     });
-    f.settingsErr.textContent = res.ok ? "" : res.error;
+    btn.disabled = false;
+    // Say what happened either way: a silent button looks broken.
+    f.settingsErr.style.color = res.ok ? "var(--green)" : "";
+    f.settingsErr.textContent = res.ok
+      ? (action === "syncClock" ? "Clock synced to this laptop's time." : "Settings applied to the RM TrackR.")
+      : res.error;
   }
 }
 
@@ -323,7 +335,7 @@ $("btnStopIdentify").addEventListener("click", () => api.setIdentifying(false));
 
 $("btnLogin").addEventListener("click", async () => {
   $("errLogin").textContent = "";
-  const code = $("inCode").value.replace(/D/g, "");
+  const code = $("inCode").value.replace(/\D/g, "");
   if (code.length !== 6) {
     $("errLogin").textContent = "Enter the 6-digit code from Reader Setup → Connect a laptop.";
     return;

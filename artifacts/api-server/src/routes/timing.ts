@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import {
   lapCrossingsTable,
+  splitCrossingsTable,
   motosTable,
   raceResultsTable,
   rfidAssignmentsTable,
@@ -707,7 +708,7 @@ const BURST_DEBOUNCE_MS = 10_000;
 // This lock serialises all crossing processing for a given moto, preventing
 // duplicate lap numbers and position collisions under real-track load.
 const motoLocks = new Map<number, Promise<void>>();
-function withMotoLock<T>(motoId: number, fn: () => Promise<T>): Promise<T> {
+export function withMotoLock<T>(motoId: number, fn: () => Promise<T>): Promise<T> {
   let unlock!: () => void;
   const token = new Promise<void>(r => { unlock = r; });
   const prev = motoLocks.get(motoId) ?? Promise.resolve();
@@ -1856,6 +1857,24 @@ router.delete("/timing/crossings/:crossingId", async (req, res) => {
       .from(lapCrossingsTable)
       .where(and(eq(lapCrossingsTable.motoId, motoId), eq(lapCrossingsTable.rfidNumber, rfidNumber)))
       .orderBy(asc(lapCrossingsTable.crossingTime));
+
+    // Split reads are filed under the lap in progress; refile them for the new
+    // numbering (lap = finish passes before the split + 1).
+    const splits = await tx.select({ id: splitCrossingsTable.id, splitSequence: splitCrossingsTable.splitSequence, crossingTime: splitCrossingsTable.crossingTime })
+      .from(splitCrossingsTable)
+      .where(and(eq(splitCrossingsTable.motoId, motoId), eq(splitCrossingsTable.rfidNumber, rfidNumber)))
+      .orderBy(asc(splitCrossingsTable.crossingTime), asc(splitCrossingsTable.id));
+    const kept = new Map<string, { id: number; lapNumber: number }>();
+    for (const split of splits) {
+      const lapNumber = remaining.filter(c => new Date(c.crossingTime).getTime() < new Date(split.crossingTime).getTime()).length + 1;
+      const key = `${split.splitSequence}:${lapNumber}`;
+      // Two laps merged into one: keep the first pass of each split.
+      if (kept.has(key)) await tx.delete(splitCrossingsTable).where(eq(splitCrossingsTable.id, split.id));
+      else kept.set(key, { id: split.id, lapNumber });
+    }
+    // Park on unique temporary lap numbers first so moves can't collide.
+    for (const { id } of kept.values()) await tx.update(splitCrossingsTable).set({ lapNumber: -id }).where(eq(splitCrossingsTable.id, id));
+    for (const { id, lapNumber } of kept.values()) await tx.update(splitCrossingsTable).set({ lapNumber }).where(eq(splitCrossingsTable.id, id));
 
     // Renumber crossings and recalculate lap times
     for (let i = 0; i < remaining.length; i++) {

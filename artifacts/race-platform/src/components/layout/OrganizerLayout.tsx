@@ -65,8 +65,21 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
   const [mirrorDialogOpen, setMirrorDialogOpen] = useState(false);
   // "Mirror someone else" from the mirror rail lands here with ?mirror=1.
   useEffect(() => {
-    if (user?.role === "super_admin" && new URLSearchParams(window.location.search).get("mirror") === "1") setMirrorDialogOpen(true);
+    if (user?.role !== "super_admin") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("mirror") !== "1") return;
+    setMirrorDialogOpen(true);
+    // Open once: a reload shouldn't bring the dialog back.
+    params.delete("mirror");
+    const rest = params.toString();
+    window.history.replaceState(null, "", window.location.pathname + (rest ? `?${rest}` : ""));
   }, [user?.role]);
+  const [quitting, setQuitting] = useState(false);
+  const quit = async () => {
+    setQuitting(true);
+    try { await quitMirror(); }
+    catch { setQuitting(false); window.alert("Couldn't quit mirroring. Check your connection and try again."); }
+  };
 
   const isStaff = user?.role === "staff";
   const isAdmin = user?.role === "super_admin";
@@ -242,7 +255,8 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
           <Button
             variant="ghost"
             className="w-full justify-start gap-3 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground border-transparent bg-transparent"
-            onClick={() => void quitMirror()}
+            onClick={() => void quit()}
+            disabled={quitting}
           >
             <LogOut size={18} />
             Quit mirror

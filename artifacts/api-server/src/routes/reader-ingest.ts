@@ -31,7 +31,7 @@ import {
   registrationsTable,
 } from "@workspace/db/schema";
 import { eq, and, count, ilike, or, desc } from "drizzle-orm";
-import { processCrossing, handleFacilityCrossing, handlePing, buildLeaderboard, sseBroadcast } from "./timing";
+import { processCrossing, handleFacilityCrossing, handlePing, buildLeaderboard, sseBroadcast, withMotoLock } from "./timing";
 import { recordSplitCrossing, splitForReader } from "../lib/sectors";
 import { processPracticeCrossing } from "./practice";
 import { recomputeEnduroPositionsForEvent } from "./enduro-scoring";
@@ -87,9 +87,27 @@ async function resolveRider(
   return rider?.id ?? null;
 }
 
-/** Push fresh sector times to live leaderboards after a split read. */
-function broadcastLeaderboard(motoId: number) {
-  buildLeaderboard(motoId).then(snapshot => { if (snapshot) sseBroadcast(motoId, snapshot); }).catch(() => {});
+/**
+ * Record a split under the moto's lock, the same lock laps use, and publish
+ * the leaderboard from inside it so snapshots go out in order.
+ */
+function recordSplitLocked(input: Parameters<typeof recordSplitCrossing>[0]) {
+  return withMotoLock(input.motoId, async () => {
+    const result = await recordSplitCrossing(input);
+    if (result.recorded) {
+      const snapshot = await buildLeaderboard(input.motoId).catch(() => null);
+      if (snapshot) sseBroadcast(input.motoId, snapshot);
+    }
+    return result;
+  });
+}
+
+/** True when the reader is a split on any course: its reads must never become laps. */
+async function isSplitReader(readerId: number): Promise<boolean> {
+  const [row] = await db.select({ id: eventReaderAssignmentsTable.id }).from(eventReaderAssignmentsTable)
+    .where(and(eq(eventReaderAssignmentsTable.readerId, readerId), eq(eventReaderAssignmentsTable.role, "split")))
+    .limit(1);
+  return !!row;
 }
 
 /** Tag reads in any payload format the facility URL accepts. */
@@ -145,7 +163,14 @@ router.post("/timing/readers/:token/active/crossing", async (req, res) => {
     .limit(1);
   const moto = activeMoto?.moto;
   const split = moto && moto.type !== "enduro_test" ? await splitForReader(moto.eventId, reader.id) : null;
-  if (!moto || !split) return handleFacilityCrossing(req, res, reader.clubId);
+  if (!split) {
+    // A split reader with no motocross moto running must not score practice laps.
+    if (await isSplitReader(reader.id)) {
+      return res.status(409).json({ ok: false, message: "Split readers only record sector times during a moto" });
+    }
+    return handleFacilityCrossing(req, res, reader.clubId);
+  }
+  if (!moto) return res.status(409).json({ ok: false, message: "No moto in progress" });
 
   const tags = tagsFromPayload(req.body);
   const isActive = reader.type === "active_transponder";
@@ -155,10 +180,9 @@ router.post("/timing/readers/:token/active/crossing", async (req, res) => {
     const receivedAt = new Date();
     const crossingTime = canonicalizeCrossingTimestamp(tag.time ?? receivedAt, receivedAt, { source: "reader_split_direct", readerId: reader.id });
     const riderId = await resolveRider(tag.rfidNumber, moto.eventId, isActive);
-    const result = await recordSplitCrossing({ eventId: moto.eventId, motoId: moto.id, split, readerId: reader.id, rfidNumber: tag.rfidNumber, riderId, crossingTime });
+    const result = await recordSplitLocked({ eventId: moto.eventId, motoId: moto.id, split, readerId: reader.id, rfidNumber: tag.rfidNumber, riderId, crossingTime });
     if (result.recorded) recorded++;
   }
-  if (recorded) broadcastLeaderboard(moto.id);
   return res.json({ ok: true, processed: tags.length, recorded, split: split.label });
 });
 
@@ -251,6 +275,10 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
 
     if (activeMoto) {
       eventId = activeMoto.eventId;
+    } else if (await isSplitReader(reader.id)) {
+      // No moto running: a split reader's reads are not practice laps. Not a
+      // 422, so RM Connect doesn't retry them on the facility URL.
+      return res.status(409).json({ ok: false, message: "Split readers only record sector times during a moto" });
     } else {
       const [practice] = await db
         .select()
@@ -330,10 +358,9 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
         const split = await splitForReader(eventId, reader.id);
         if (!split) return res.status(422).json({ ok: false, message: "Reader has no matching checkpoint assignment" });
         const riderId = await resolveRider(rfidNumber, eventId, isActiveTransponderReader);
-        const { recorded, lapNumber } = await recordSplitCrossing({
+        const { recorded, lapNumber } = await recordSplitLocked({
           eventId, motoId: activeMoto.id, split, readerId: reader.id, rfidNumber, riderId, crossingTime,
         });
-        if (recorded) broadcastLeaderboard(activeMoto.id);
         return res.json({ ok: true, message: recorded ? `${split.label} recorded (lap ${lapNumber})` : `${split.label} already recorded for lap ${lapNumber}` });
       }
       try {

@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useParams, Link } from "wouter";
 import {
   DndContext, DragOverlay, PointerSensor, TouchSensor, KeyboardSensor, useSensor, useSensors,
-  useDraggable, useDroppable, closestCenter,
-  type DragEndEvent, type DragStartEvent,
+  useDraggable, useDroppable, pointerWithin, rectIntersection,
+  type CollisionDetection, type DragEndEvent, type DragStartEvent,
 } from "@dnd-kit/core";
 import { SortableContext, horizontalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -33,15 +33,31 @@ interface CourseState {
   splits: Split[];
   gates: Record<number, Gate>;
   timeChecks: Record<number, number | null>;
+  /**
+   * Antenna of each saved row (set on the old Schedule card), keyed by
+   * place + reader, so saving the map keeps antenna-specific gates.
+   */
+  antennas: Record<string, number | null>;
 }
 
-const EMPTY: CourseState = { finish: null, splits: [], gates: {}, timeChecks: {} };
+const EMPTY: CourseState = { finish: null, splits: [], gates: {}, timeChecks: {}, antennas: {} };
+const antennaKey = (role: string, readerId: number, place: number | string = "") => `${role}:${place}:${readerId}`;
+// One shared empty list: a fresh [] default on every render would re-run the
+// effect that loads the saved course, which sets state, which renders again.
+const NONE: any[] = [];
+// Drop where the pointer is; only fall back to overlap (keyboard drags). A
+// drop back on the tray lands nowhere instead of in the nearest slot.
+const pointerFirst: CollisionDetection = (args) => {
+  const hits = pointerWithin(args);
+  return hits.length ? hits : rectIntersection(args);
+};
 let keySeq = 0;
 const newKey = () => `split-${Date.now()}-${keySeq++}`;
 
 function fromAssignments(rows: any[]): CourseState {
-  const state: CourseState = { finish: null, splits: [], gates: {}, timeChecks: {} };
+  const state: CourseState = { finish: null, splits: [], gates: {}, timeChecks: {}, antennas: {} };
   for (const a of rows) {
+    if (a.antennaId != null) state.antennas[antennaKey(a.role, a.readerId, a.motoId ?? a.timeCheckId ?? "")] = a.antennaId;
     if (a.motoId == null && a.role === "finish") state.finish = a.readerId;
     else if (a.motoId == null && a.role === "split") state.splits.push({ key: newKey(), readerId: a.readerId, label: a.label ?? "", seq: a.sequence ?? 0 } as Split & { seq: number });
     else if (a.motoId != null && (a.role === "start" || a.role === "finish")) {
@@ -51,26 +67,31 @@ function fromAssignments(rows: any[]): CourseState {
     } else if (a.role === "time_check" && a.timeCheckId) state.timeChecks[a.timeCheckId] = a.readerId;
   }
   state.splits = (state.splits as Array<Split & { seq: number }>).sort((a, b) => a.seq - b.seq).map(({ key, readerId, label }) => ({ key, readerId, label }));
-  for (const gate of Object.values(state.gates)) gate.sameGate = gate.start != null && gate.start === gate.end;
+  // One reader is a "same gate" only when start and end also share the antenna.
+  for (const [motoId, gate] of Object.entries(state.gates)) {
+    gate.sameGate = gate.start != null && gate.start === gate.end
+      && (state.antennas[antennaKey("start", gate.start, motoId)] ?? null) === (state.antennas[antennaKey("finish", gate.start, motoId)] ?? null);
+  }
   return state;
 }
 
 function toAssignments(state: CourseState, isEnduro: boolean) {
-  const out: Array<{ readerId: number; antennaId: null; role: string; motoId: number | null; timeCheckId: number | null; sequence?: number | null; label?: string | null }> = [];
+  const out: Array<{ readerId: number; antennaId: number | null; role: string; motoId: number | null; timeCheckId: number | null; sequence?: number | null; label?: string | null }> = [];
+  const antenna = (role: string, readerId: number, place: number | string = "") => state.antennas[antennaKey(role, readerId, place)] ?? null;
   if (!isEnduro) {
-    if (state.finish) out.push({ readerId: state.finish, antennaId: null, role: "finish", motoId: null, timeCheckId: null });
+    if (state.finish) out.push({ readerId: state.finish, antennaId: antenna("finish", state.finish), role: "finish", motoId: null, timeCheckId: null });
     state.splits.forEach((s, i) => {
-      if (s.readerId) out.push({ readerId: s.readerId, antennaId: null, role: "split", motoId: null, timeCheckId: null, sequence: i + 1, label: s.label.trim() || `Split ${i + 1}` });
+      if (s.readerId) out.push({ readerId: s.readerId, antennaId: antenna("split", s.readerId), role: "split", motoId: null, timeCheckId: null, sequence: i + 1, label: s.label.trim() || `Split ${i + 1}` });
     });
   } else {
     for (const [motoId, gate] of Object.entries(state.gates)) {
       const end = gate.sameGate ? gate.start : gate.end;
-      if (gate.start) out.push({ readerId: gate.start, antennaId: null, role: "start", motoId: Number(motoId), timeCheckId: null });
-      if (end) out.push({ readerId: end, antennaId: null, role: "finish", motoId: Number(motoId), timeCheckId: null });
+      if (gate.start) out.push({ readerId: gate.start, antennaId: antenna("start", gate.start, motoId), role: "start", motoId: Number(motoId), timeCheckId: null });
+      if (end) out.push({ readerId: end, antennaId: gate.sameGate ? antenna("start", end, motoId) : antenna("finish", end, motoId), role: "finish", motoId: Number(motoId), timeCheckId: null });
     }
   }
   for (const [tcId, readerId] of Object.entries(state.timeChecks)) {
-    if (readerId) out.push({ readerId, antennaId: null, role: "time_check", motoId: null, timeCheckId: Number(tcId) });
+    if (readerId) out.push({ readerId, antennaId: antenna("time_check", readerId, tcId), role: "time_check", motoId: null, timeCheckId: Number(tcId) });
   }
   return out;
 }
@@ -181,18 +202,21 @@ export default function CourseMap() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: event } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
+  const { data: event, isError: eventFailed, refetch: refetchEvent } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
   const isEnduro = (event as any)?.raceStyle === "enduro";
-  const { data: motos = [] } = useListMotos(eventId, { query: { enabled: !!eventId } as any });
+  const { data: motos = NONE } = useListMotos(eventId, { query: { enabled: !!eventId } as any });
   const { data: timeChecksData } = useListEnduroTimeChecks(eventId, { query: { enabled: !!eventId && isEnduro } as any });
-  const { data: clubReaders = [] } = useListReaders();
-  const { data: connectorStatuses = [] } = useGetConnectorStatus({ query: { refetchInterval: 10_000 } as any });
-  const { data: saved = [], isLoading } = useListEventReaderAssignments(eventId, { query: { enabled: !!eventId } as any });
+  const { data: clubReaders = NONE } = useListReaders();
+  const { data: connectorStatuses = NONE } = useGetConnectorStatus({ query: { refetchInterval: 10_000 } as any });
+  const { data: saved = NONE, isLoading, isError: assignmentsFailed, refetch: refetchAssignments } = useListEventReaderAssignments(eventId, { query: { enabled: !!eventId } as any });
   const saveMutation = useSetEventReaderAssignments();
 
   const [state, setState] = useState<CourseState>(EMPTY);
   const [dirty, setDirty] = useState(false);
   const [draggingReader, setDraggingReader] = useState<number | null>(null);
+  // Latest state, so a save can tell whether anything changed while it ran.
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   useEffect(() => {
     if (!dirty) setState(fromAssignments(saved as any[]));
@@ -253,6 +277,11 @@ export default function CourseMap() {
       return;
     }
     const readerId = Number(activeId.slice("reader:".length));
+    // The sortable wrapper around a split shares its edge; treat it as the split's slot.
+    if (state.splits.some(s => s.key === overId)) {
+      update(s => placeOnCourse(s, readerId, { splitKey: overId }));
+      return;
+    }
     if (overId === "slot:finish") update(s => placeOnCourse(s, readerId, { finish: true }));
     else if (overId === "slot:new-split") addSplit(readerId);
     else if (overId.startsWith("slot:split:")) update(s => placeOnCourse(s, readerId, { splitKey: overId.slice("slot:split:".length) }));
@@ -262,10 +291,13 @@ export default function CourseMap() {
   };
 
   async function save() {
+    const sent = state;
     try {
-      await saveMutation.mutateAsync({ eventId, data: { assignments: toAssignments(state, isEnduro) } as any });
+      await saveMutation.mutateAsync({ eventId, data: { assignments: toAssignments(sent, isEnduro) } as any });
+      // Edits made while saving stay marked unsaved (and aren't replaced by the refetch).
+      const unchanged = stateRef.current === sent;
+      if (unchanged) setDirty(false);
       await queryClient.invalidateQueries({ queryKey: getListEventReaderAssignmentsQueryKey(eventId) });
-      setDirty(false);
       toast({ title: "Course map saved", description: "Readers start routing to these places right away." });
     } catch (err: any) {
       const message = err?.response?.data?.error ?? err?.data?.error ?? err?.message ?? "Couldn't save the course map";
@@ -295,10 +327,20 @@ export default function CourseMap() {
     return points.slice(1).map((to, i) => `${points[i]} → ${to}`);
   }, [state.splits]);
 
+  // A failed load must not show an empty map: saving it would erase the event's readers.
+  if (eventFailed || assignmentsFailed) {
+    return (
+      <div className="p-8 space-y-3">
+        <p className="font-semibold">Couldn't load the course map.</p>
+        <p className="text-sm text-muted-foreground">Check your connection and try again. Nothing was changed.</p>
+        <Button variant="outline" onClick={() => { void refetchEvent(); void refetchAssignments(); }}>Try again</Button>
+      </div>
+    );
+  }
   if (isLoading || !event) return <div className="p-8">Loading course map…</div>;
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+    <DndContext sensors={sensors} collisionDetection={pointerFirst} onDragStart={onDragStart} onDragEnd={onDragEnd}>
       <div className="p-6 md:p-8 max-w-5xl mx-auto space-y-6">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>

@@ -23,27 +23,28 @@ export function ConnectLaptop() {
   const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
   const [laptops, setLaptops] = useState<LaptopRow[]>([]);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const loadLaptops = useCallback(() => {
     fetch("/api/readers/laptops", { credentials: "include" })
-      .then(r => (r.ok ? r.json() : []))
-      .then(setLaptops)
-      .catch(() => {});
+      .then(r => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+      .then(rows => { setLaptops(rows); setLoadFailed(false); })
+      .catch(() => setLoadFailed(true));
   }, []);
 
   useEffect(() => { loadLaptops(); }, [loadLaptops]);
 
-  // Count the code down; refresh the laptop list while a code is showing so a
-  // newly paired laptop appears on its own.
+  const secondsLeft = code ? Math.max(0, Math.round((new Date(code.expiresAt).getTime() - now) / 1000)) : 0;
+  const expired = code != null && secondsLeft === 0;
+
+  // While a live code is showing, count it down and refresh the laptop list so
+  // a newly paired laptop appears on its own. Stop once the code expires.
   useEffect(() => {
-    if (!code) return;
+    if (!code || expired) return;
     const tick = setInterval(() => setNow(Date.now()), 1000);
     const poll = setInterval(loadLaptops, 4000);
     return () => { clearInterval(tick); clearInterval(poll); };
-  }, [code, loadLaptops]);
-
-  const secondsLeft = code ? Math.max(0, Math.round((new Date(code.expiresAt).getTime() - now) / 1000)) : 0;
-  const expired = code != null && secondsLeft === 0;
+  }, [code, expired, loadLaptops]);
 
   const newCode = async () => {
     setBusy(true);
@@ -90,7 +91,9 @@ export function ConnectLaptop() {
         </div>
       )}
 
-      {laptops.length > 0 ? (
+      {loadFailed && laptops.length === 0 ? (
+        <p className="text-xs text-muted-foreground">Couldn't load connected laptops. <button className="underline" onClick={loadLaptops}>Try again</button></p>
+      ) : laptops.length > 0 ? (
         <div className="rounded-md border divide-y">
           {laptops.map(l => (
             <div key={l.id} className="flex items-center gap-3 px-3 py-2">

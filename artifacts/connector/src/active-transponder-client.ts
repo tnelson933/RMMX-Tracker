@@ -72,6 +72,21 @@ export function isLoopWorking(value: string): boolean {
   return /^(1|true|enabled)$/i.test(value.trim()) || /working|running|open/i.test(value);
 }
 
+/**
+ * Explains which enabled loop isn't reporting. The usual cause is a loop that
+ * is turned on but not installed (many tracks run one loop), so say how to fix it.
+ */
+function silentLoopMessage(loopsOk: boolean[], retries: number): string {
+  const silent = loopsOk.map((ok, i) => (ok ? null : i + 1)).filter((n): n is number => n !== null);
+  const which = silent.length === 1 ? `Loop ${silent[0]} isn't` : "The loops aren't";
+  const hint = silent.length === 1 && silent.length < loopsOk.length
+    ? ` If this RM TrackR only has one loop, turn Loop ${silent[0]} off in RM TrackR settings.`
+    : " Check the loop cables at the RM TrackR.";
+  return retries >= 3
+    ? `${which} reporting as running yet.${hint} Reads still come through while this shows.`
+    : "Starting the loops; waiting for the RM TrackR to confirm they're running…";
+}
+
 function friendlyConnectionError(error: Error, host: string, port: number): string {
   const code = (error as NodeJS.ErrnoException).code;
   if (code === "ECONNREFUSED") return `The RM TrackR at ${host}:${port} refused the connection. Confirm its IP address and that TCP port ${port} is enabled.`;
@@ -193,9 +208,7 @@ export class ActiveTransponderClient extends EventEmitter {
         : !heartbeatFresh
           ? "Waiting for a fresh RM TrackR heartbeat."
           : this.desiredReading && !readersWorking
-            ? `Opening enabled loops; waiting for RM TrackR telemetry to confirm they are running.${this.readerOpenRetryCount
-              ? ` Retry ${this.readerOpenRetryCount} was last sent ${this.lastReaderOpenRetryAt ?? "recently"}.`
-              : " The open command has been sent and will be retried if needed."}`
+            ? silentLoopMessage(enabledLoops, this.readerOpenRetryCount)
             : "RM TrackR transport, heartbeat, and machine identification are ready.");
     return {
       connected, host: this.host, port: this.port, machineId: this.machineId,

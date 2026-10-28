@@ -54,6 +54,9 @@ export async function notifyArrival(event: Pick<GeofenceEvent, "eventId" | "even
   if (notified.includes(event.eventId)) return;
   // Only count it as sent when the phone can actually show it.
   if (!(await Notifications.getPermissionsAsync()).granted) return;
+  // Mark it sent before showing it: the geofence and the GPS watch can both fire
+  // for the same arrival, and the second must see the marker.
+  await AsyncStorage.setItem(NOTIFIED_KEY, JSON.stringify([...notified, event.eventId].slice(-50)));
   if (Platform.OS === "android") {
     await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL, {
       name: "Quick Check-In",
@@ -70,7 +73,6 @@ export async function notifyArrival(event: Pick<GeofenceEvent, "eventId" | "even
     // Immediate; on Android it goes to the high-importance Quick Check-In channel.
     trigger: Platform.OS === "android" ? { channelId: ANDROID_CHANNEL } : null,
   });
-  await AsyncStorage.setItem(NOTIFIED_KEY, JSON.stringify([...notified, event.eventId].slice(-50)));
 }
 
 // Must be defined at module load (imported from the root layout) so the OS can

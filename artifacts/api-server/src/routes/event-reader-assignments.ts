@@ -78,6 +78,12 @@ router.put("/events/:eventId/reader-assignments", async (req, res) => {
   if (new Set(course.map(a => a.readerId)).size !== course.length) {
     return res.status(400).json({ error: "Each reader can only be in one place on the course" });
   }
+  // Store splits as 1..N in the order given, so course positions are never
+  // duplicated or missing.
+  incoming
+    .filter(a => a.role === "split")
+    .sort((a, b) => (a.sequence ?? Number.MAX_SAFE_INTEGER) - (b.sequence ?? Number.MAX_SAFE_INTEGER))
+    .forEach((a, i) => { a.sequence = i + 1; });
 
   const saved = await db.transaction(async (tx) => {
     await tx.delete(eventReaderAssignmentsTable).where(eq(eventReaderAssignmentsTable.eventId, eventId));

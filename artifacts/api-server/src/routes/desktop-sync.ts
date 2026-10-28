@@ -37,6 +37,9 @@ import { recomputeEnduroPositionsForEvent } from "./enduro-scoring";
 
 const router = Router();
 
+/** Older desktop releases still send the retired "mylaps" name for active timing. */
+const currentTimingTechnology = (value: unknown) => (String(value) === "mylaps" ? "active_transponder" : String(value));
+
 // ─── Auth helper ─────────────────────────────────────────────────────────────
 
 /** Session or Bearer offline-sync-token caller, limited to users allowed to use offline sync. */
@@ -197,7 +200,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
           requireAma:               !!e.require_ama,
           entryFee:                 e.entry_fee             != null ? Number(e.entry_fee)             || null : null,
           maxRiders:                e.max_riders            != null ? Number(e.max_riders)            || null : null,
-          timingTechnology:         e.timing_technology     != null ? String(e.timing_technology)     : "rfid",
+          timingTechnology:         e.timing_technology     != null ? currentTimingTechnology(e.timing_technology) : "rfid",
           transponderRentalEnabled: !!e.transponder_rental_enabled,
           transponderRentalFee:     e.transponder_rental_fee != null ? Number(e.transponder_rental_fee) || null : null,
           noDuplicateBibs:          !!e.no_duplicate_bibs,
@@ -314,7 +317,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       if (e.require_ama     != null) updateSet.requireAma     = !!e.require_ama;
       if (e.entry_fee  != null) updateSet.entryFee  = Number(e.entry_fee) || null;
       if (e.max_riders != null) updateSet.maxRiders = Number(e.max_riders) || null;
-      if (e.timing_technology != null) updateSet.timingTechnology = String(e.timing_technology);
+      if (e.timing_technology != null) updateSet.timingTechnology = currentTimingTechnology(e.timing_technology);
       if (e.transponder_rental_enabled != null) updateSet.transponderRentalEnabled = !!e.transponder_rental_enabled;
       if (e.transponder_rental_fee != null) updateSet.transponderRentalFee = Number(e.transponder_rental_fee) || null;
       if (e.no_duplicate_bibs != null) updateSet.noDuplicateBibs = !!e.no_duplicate_bibs;

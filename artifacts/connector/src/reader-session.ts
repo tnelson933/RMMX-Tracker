@@ -18,6 +18,7 @@ const RECONNECT_DELAY_MS = 10_000;
 /** Failed reconnects before RM Connect looks for the reader at a new address. */
 const REDISCOVER_AFTER_FAILURES = 3;
 const RECENT_READS = 12;
+const TEST_TIMEOUT_MS = 3 * 60_000;
 
 export type SessionState = "disconnected" | "connecting" | "connected_idle" | "testing" | "race_active" | "reconnecting" | "error";
 export type TestProgress = "inactive" | "opening_loops" | "waiting_for_tag" | "sending_crossing" | "confirmed" | "unresolved";
@@ -114,7 +115,9 @@ export class ReaderSession extends EventEmitter {
   private readonly connectorVersion: string;
   private readonly rediscover?: ReaderSessionOptions["rediscover"];
 
+  private testTimer: NodeJS.Timeout | null = null;
   private wanted = false;
+  private disposed = false;
   private connecting = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private reconnectAt: number | null = null;
@@ -160,6 +163,8 @@ export class ReaderSession extends EventEmitter {
   // ── Lifecycle ───────────────────────────────────────────────────────────────
 
   start(): void {
+    if (this.disposed) return;
+    this.wanted = true;
     this.cloud.start(this.cloudUrl, this.config.readerToken);
     this.connectDevice().catch(() => this.scheduleReconnect());
   }
@@ -172,11 +177,16 @@ export class ReaderSession extends EventEmitter {
     this.active.disconnect();
     this.activeMoto = null;
     this.testMode = false;
+    if (this.testTimer) clearTimeout(this.testTimer);
+    this.testTimer = null;
     this.identifying = false;
     this.emit("change");
   }
 
   dispose(): void {
+    // Set first: a reconnect or rediscovery still in flight checks it after its
+    // await and must not reopen the reader (a reader takes only one client).
+    this.disposed = true;
     this.stop();
     this.queue.dispose();
     this.removeAllListeners();
@@ -199,12 +209,14 @@ export class ReaderSession extends EventEmitter {
   }
 
   reconnect(): Promise<void> {
+    if (this.disposed) return Promise.resolve();
     this.failures = 0;
+    this.wanted = true;
     return this.connectDevice();
   }
 
   private async connectDevice(): Promise<void> {
-    this.wanted = true;
+    if (this.disposed || !this.wanted) return;
     this.clearReconnect();
     this.connecting = true;
     this.rfidError = null;
@@ -219,11 +231,14 @@ export class ReaderSession extends EventEmitter {
           this.rfidError = friendlyRfidError(err, host);
           throw err;
         }
+        // Removed while connecting: let the reader go again.
+        if (this.disposed || !this.wanted) { await this.llrp.disconnect().catch(() => {}); return; }
         if (this.shouldReadRfid()) await this.llrp.startReading().catch(() => {});
       } else {
         await this.llrp.disconnect().catch(() => {});
         this.applyActiveTiming();
         await this.active.connect(host);
+        if (this.disposed || !this.wanted) { this.active.disconnect(); return; }
         // Keep active timing live continuously. A dropped WebSocket start
         // command must not stop the RM TrackR from recording a real crossing.
         this.active.startReading();
@@ -242,7 +257,7 @@ export class ReaderSession extends EventEmitter {
   }
 
   private scheduleReconnect(): void {
-    if (!this.wanted || this.reconnectTimer) return;
+    if (this.disposed || !this.wanted || this.reconnectTimer) return;
     this.failures++;
     this.reconnectAt = Date.now() + RECONNECT_DELAY_MS;
     this.reconnectTimer = setTimeout(async () => {
@@ -252,6 +267,7 @@ export class ReaderSession extends EventEmitter {
       // The reader may have been given a new address (router restarted, DHCP).
       if (this.failures >= REDISCOVER_AFTER_FAILURES && this.failures % REDISCOVER_AFTER_FAILURES === 0 && this.rediscover) {
         const found = await this.rediscover(this).catch(() => null);
+        if (this.disposed || !this.wanted) return;
         if (found && found !== this.config.hardwareAddress) {
           this.config = { ...this.config, hardwareAddress: found };
           this.emit("addressChanged", found);
@@ -295,6 +311,9 @@ export class ReaderSession extends EventEmitter {
 
   async setTestMode(enabled: boolean): Promise<void> {
     this.testMode = enabled;
+    // Test mode turns itself off, so it can't be left on into race day.
+    if (this.testTimer) clearTimeout(this.testTimer);
+    this.testTimer = enabled ? setTimeout(() => { void this.setTestMode(false); }, TEST_TIMEOUT_MS) : null;
     this.recentReads = enabled ? [] : this.recentReads;
     if (!enabled) {
       this.testProgress = "inactive";
@@ -367,12 +386,14 @@ export class ReaderSession extends EventEmitter {
 
     // While earlier crossings are still waiting for the cloud, queue behind
     // them so crossings arrive in order. Test reads are never queued.
-    if (!this.testMode && this.queue.size > 0) {
+    // A test read is only a test when no moto is running: race crossings always
+    // take the ordered, retried path.
+    const testing = this.testMode && !this.activeMoto;
+    if (!testing && this.queue.size > 0) {
       this.queue.enqueue(crossing, 0);
       return;
     }
 
-    const testing = this.testMode;
     try {
       if (testing) {
         this.testProgress = "sending_crossing";
@@ -382,10 +403,19 @@ export class ReaderSession extends EventEmitter {
       const result = await this.send(crossing);
       if (!testing && isRetryableCrossingResult(result)) this.queue.enqueue(crossing, 1);
       if (testing) {
-        this.testProgress = result.ok ? "confirmed" : "unresolved";
+        // RM Roost answering at all (even "no moto running, nothing timed")
+        // proves the path works. Only a rejected reader or a server/network
+        // failure means the reader isn't ready.
+        const status = result.status ?? 0;
+        const reached = result.ok || (status >= 400 && status < 500 && status !== 401 && status !== 403 && status !== 404);
+        this.testProgress = reached ? "confirmed" : "unresolved";
         this.testMessage = result.ok
           ? (result.message ?? "Read received and confirmed by RM Roost. This reader is ready.")
-          : (result.message ?? "The read reached this laptop, but RM Roost couldn't confirm it. Check the internet connection.");
+          : reached
+            ? "Read reached RM Roost. This reader is ready. (Nothing was timed because no moto or practice is running.)"
+            : status === 401 || status === 403 || status === 404
+              ? "RM Roost doesn't recognize this reader any more. Remove it here and add it again with Find readers."
+              : (result.message ?? "The read reached this laptop, but not RM Roost. Check the internet connection.");
         this.emit("change");
       }
     } catch {
@@ -453,6 +483,7 @@ export class ReaderSession extends EventEmitter {
 
   private handleCommand(cmd: CloudCommand): void {
     if (cmd.type === "start_moto" && cmd.motoId) {
+      if (this.testMode) void this.setTestMode(false);
       this.activeMoto = {
         motoId: cmd.motoId,
         name: cmd.motoName ?? `Moto ${cmd.motoId}`,

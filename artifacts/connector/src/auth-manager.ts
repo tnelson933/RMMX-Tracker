@@ -42,12 +42,13 @@ export function saveSettings(settings: ConnectorSettings): void {
 
 // ── Encrypted secrets ─────────────────────────────────────────────────────────
 
-function saveEncrypted(file: string, value: string): void {
-  if (!safeStorage.isEncryptionAvailable() || !value) return;
+function saveEncrypted(file: string, value: string): boolean {
+  if (!safeStorage.isEncryptionAvailable() || !value) return false;
   try {
     fs.writeFileSync(file, safeStorage.encryptString(value));
+    return true;
   } catch {
-    // non-fatal
+    return false;
   }
 }
 
@@ -61,8 +62,9 @@ function loadEncrypted(file: string): string | null {
 }
 
 /** This laptop's key from pairing, encrypted with the OS keychain. */
-export function saveLaptopKey(key: string): void {
-  saveEncrypted(LAPTOP_KEY_FILE(), key);
+/** False when the OS keychain can't store it (the pairing wouldn't survive a restart). */
+export function saveLaptopKey(key: string): boolean {
+  return saveEncrypted(LAPTOP_KEY_FILE(), key);
 }
 export function loadLaptopKey(): string | null {
   return loadEncrypted(LAPTOP_KEY_FILE());

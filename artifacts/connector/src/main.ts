@@ -22,6 +22,7 @@ import {
 } from "electron";
 import fs from "fs";
 import os from "os";
+import dns from "dns";
 import path from "path";
 import { pathToFileURL } from "url";
 import { ReaderSession } from "./reader-session";
@@ -232,28 +233,57 @@ function stopAllSessions(): void {
   sessions.clear();
 }
 
-/** Addresses of devices this laptop is connected to, which a scan must not probe. */
-function addressesInUse(): string[] {
-  const used = new Set<string>();
-  for (const s of sessions.values()) {
-    const connected = s.connectedAddress();
-    if (connected) used.add(connected);
-    used.add(s.host.replace(/:\d+$/, ""));
-  }
-  return [...used];
+/** Resolve a host name (e.g. impinj-xx-xx-xx.local) to its IP; null if it can't be found quickly. */
+function resolveHost(host: string): Promise<string | null> {
+  const bare = host.replace(/:\d+$/, "");
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(bare)) return Promise.resolve(bare);
+  return Promise.race([
+    dns.promises.lookup(bare, { family: 4 }).then(r => r.address).catch(() => null),
+    new Promise<null>(resolve => setTimeout(() => resolve(null), 3000)),
+  ]);
+}
+
+/**
+ * IPs of devices this laptop's readers use. Scans skip them (a reader takes
+ * one client, so even a probe can disturb it), and Find readers marks them
+ * "Already added", including readers saved by name rather than IP.
+ */
+async function addressesInUse(): Promise<Map<string, string>> {
+  const used = new Map<string, string>(); // ip → reader name
+  await Promise.all([...sessions.values()].map(async (s) => {
+    for (const host of [s.connectedAddress(), s.host]) {
+      if (!host) continue;
+      const ip = await resolveHost(host);
+      if (ip) used.set(ip, s.config.readerName);
+    }
+  }));
+  return used;
 }
 
 /**
  * Called after a reader has failed to reconnect several times. If exactly one
  * unclaimed device of the same kind is on the network, the reader most likely
- * moved there (a router restart handed out new addresses).
+ * moved there (a router restart handed out new addresses). Devices registered
+ * to other readers in RM Roost, and this laptop's own, are never candidates.
  */
-async function findMovedReader(session: ReaderSession): Promise<string | null> {
-  const { devices } = await scanLocalNetwork(addressesInUse());
-  const wantActive = session.config.hardware === "active_transponder";
-  const candidates = devices.filter(d => (d.hardware === "active_transponder") === wantActive);
-  if (candidates.length !== 1) return null;
-  return candidates[0].address;
+let rediscovery: Promise<string | null> | null = null;
+function findMovedReader(session: ReaderSession): Promise<string | null> {
+  // One network scan at a time, however many readers are retrying.
+  rediscovery ??= (async () => {
+    const used = await addressesInUse();
+    const cloudReaders = await withSession(key => fetchReaders(settings.cloudUrl, key)).catch(() => [] as CloudReader[]);
+    const claimed = new Set<string>();
+    for (const r of cloudReaders) {
+      if (r.id === session.config.readerId || !r.hardwareAddress) continue;
+      const ip = await resolveHost(r.hardwareAddress);
+      if (ip) claimed.add(ip);
+    }
+    const { devices } = await scanLocalNetwork([...used.keys()]);
+    const wantActive = session.config.hardware === "active_transponder";
+    const candidates = devices.filter(d => (d.hardware === "active_transponder") === wantActive && !claimed.has(d.address.replace(/:\d+$/, "")));
+    return candidates.length === 1 ? candidates[0].address : null;
+  })().finally(() => { rediscovery = null; });
+  return rediscovery;
 }
 
 // ── Identify ──────────────────────────────────────────────────────────────────
@@ -341,12 +371,15 @@ function registerIpc(): void {
         if (!/^https?:\/\//i.test(cloudUrl)) throw new Error("Server address must start with https:// (or http:// for a local server)");
         const paired = await pairLaptop(cloudUrl, input.code, input.laptopName?.trim() || os.hostname());
         // Readers belong to one club on one RM Roost server; don't carry them elsewhere.
-        if (cloudUrl !== settings.cloudUrl || paired.clubId !== settings.clubId) {
+        // An older install may not know its club yet (null): same readers, keep them.
+        if (cloudUrl !== settings.cloudUrl || (settings.clubId != null && paired.clubId !== settings.clubId)) {
           stopAllSessions();
           settings = { ...settings, readers: [] };
         }
+        if (!saveLaptopKey(paired.laptopKey)) {
+          throw new Error("This computer can't store the laptop key securely (its keychain isn't available), so the connection wouldn't survive a restart. Sign in to Windows or macOS normally and try again.");
+        }
         laptopKey = paired.laptopKey;
-        saveLaptopKey(paired.laptopKey);
         pairingRequired = null;
         settings = { ...settings, cloudUrl, clubId: paired.clubId, clubName: paired.clubName ?? "" };
         saveSettings(settings);
@@ -369,7 +402,7 @@ function registerIpc(): void {
   ipcMain.handle("network:scan", async (): Promise<ScanReply> => {
     try {
       const [scan, cloudReaders] = await Promise.all([
-        scanLocalNetwork(addressesInUse()),
+        addressesInUse().then(used => scanLocalNetwork([...used.keys()])),
         withSession(cookie => fetchReaders(settings.cloudUrl, cookie)).catch(() => [] as CloudReader[]),
       ]);
       return {
@@ -494,6 +527,10 @@ function registerIpc(): void {
       if (!session || session.config.hardware !== "active_transponder") throw new Error("RM TrackR settings only apply to an RM TrackR reader.");
       if (!Number.isInteger(input.channel) || input.channel < 0 || input.channel > 5) throw new Error("Channel must be a whole number from 0 to 5.");
       if (!Number.isInteger(input.power) || input.power < 0 || input.power > 100) throw new Error("Power must be a whole number from 0 to 100.");
+      if (!input.loop1Enabled && !input.loop2Enabled) throw new Error("Keep at least one loop on.");
+      if (input.syncClock && !session.getStatus().device.machineId) {
+        throw new Error("The RM TrackR hasn't identified itself yet. Wait for its ID to show on the card, then sync the clock.");
+      }
       session.setActiveTiming({ channel: input.channel, power: input.power, loop1Enabled: !!input.loop1Enabled, loop2Enabled: !!input.loop2Enabled }, !!input.syncClock);
       saveReaderConfig(session.config);
       return { ok: true };

@@ -481,7 +481,7 @@ export default function ReaderSetup() {
   // ── Identify mode: poll the readers list so lastSeenAt refreshes ──
   const [identifying, setIdentifying] = useState(false);
   const { data: readers = [] } = useListReaders({
-    query: { refetchInterval: identifying ? 1500 : false } as any,
+    query: { refetchInterval: identifying ? 1500 : 10_000 } as any,
   });
   // The timing URL card shows the URL of one RFID reader (the first by default).
   const rfidReaders = (readers as any[]).filter(r => r.type === "rfid");
@@ -977,6 +977,28 @@ export default function ReaderSetup() {
       )}
       {isDesktop && <ConnectionModeChooser tech={tech} />}
 
+      {/* The desktop app connects to the RM TrackR itself (it never uses RM Connect). */}
+      {isDesktop && tech === "active_transponder" && (
+        <details className="rounded-xl border bg-card overflow-hidden">
+          <summary className="cursor-pointer list-none px-5 py-4 flex items-center gap-3 hover:bg-muted/30 transition-colors">
+            <Activity size={18} className="text-muted-foreground shrink-0" />
+            <div className="min-w-0">
+              <p className="font-heading font-bold uppercase tracking-wider text-sm">RM TrackR diagnostic</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Connect this computer to the RM TrackR directly, check loop status, and run an RM TrackR Transponder crossing test.
+              </p>
+            </div>
+          </summary>
+          <div className="border-t px-5 pb-5">
+            <ActiveTransponderGuidedSetup
+              isDesktop={isDesktop}
+              connectorStatuses={connectorStatuses}
+              readers={readers}
+            />
+          </div>
+        </details>
+      )}
+
       {/* ── RM Connect: the one place readers are set up ── */}
       <section className="rounded-xl border-2 border-primary/25 bg-card p-5 space-y-4">
         <div className="flex items-center gap-2">
@@ -985,7 +1007,9 @@ export default function ReaderSetup() {
         </div>
         <div className="space-y-2 text-sm">
           <div className="flex gap-2"><MiniStep n={1} /><p>Install RM Connect on the laptop you take to the track.</p></div>
-          <div className="flex gap-2"><MiniStep n={2} /><p>Click <strong>Get a pairing code</strong> below and type the 6-digit code into RM Connect. No password is needed on the laptop.</p></div>
+          <div className="flex gap-2"><MiniStep n={2} /><p>{isDesktop
+            ? <>On the RM Roost website, open <strong>Reader Setup</strong> and click <strong>Get a pairing code</strong>, then type the 6-digit code into RM Connect. No password is needed on the laptop.</>
+            : <>Click <strong>Get a pairing code</strong> below and type the 6-digit code into RM Connect. No password is needed on the laptop.</>}</p></div>
           <div className="flex gap-2"><MiniStep n={3} /><p>Power on your readers and connect the laptop to the same network (a router, or a cable straight to the reader). Click <strong>Find readers</strong>. RM Connect lists every reader it finds; name each one after where it sits (for example "Finish line" or "Section 3 start") and click <strong>Add</strong>. Click <strong>Test</strong> and pass a tag or transponder to check it.</p></div>
         </div>
         <p className="text-xs text-muted-foreground">
@@ -1704,26 +1728,6 @@ export default function ReaderSetup() {
               </div>
             </div>
 
-              {isDesktop && (
-                <details className="rounded-xl border bg-card overflow-hidden">
-                  <summary className="cursor-pointer list-none px-5 py-4 flex items-center gap-3 hover:bg-muted/30 transition-colors">
-                    <Activity size={18} className="text-muted-foreground shrink-0" />
-                    <div className="min-w-0">
-                      <p className="font-heading font-bold uppercase tracking-wider text-sm">Desktop-only RM TrackR diagnostic</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Optional: connect directly, inspect loop status, or run an RM TrackR Transponder crossing test.
-                      </p>
-                    </div>
-                  </summary>
-                  <div className="border-t px-5 pb-5">
-                    <ActiveTransponderGuidedSetup
-                      isDesktop={isDesktop}
-                      connectorStatuses={connectorStatuses}
-                      readers={readers}
-                    />
-                  </div>
-                </details>
-              )}
 
           {isDesktop && (
             <div className="border rounded-xl bg-card overflow-hidden">

@@ -91,7 +91,8 @@ export async function accessControlMiddleware(req: Request, res: Response, next:
   // and sync can't be used to take the organizer's credentials or data away.
   if ((req.session as any)?.mirrorBy) {
     if (path === "/admin/mirror/stop" || path === "/admin/mirror/organizers") return next();
-    if (path === "/auth/offline-token" || /^\/clubs\/\d+\/(sync-pull|desktop-push)$/.test(path)) {
+    // Includes pairing codes: a laptop key is a lasting club credential.
+    if (path === "/auth/offline-token" || path === "/readers/pairing-codes" || /^\/clubs\/\d+\/(sync-pull|desktop-push)$/.test(path)) {
       return res.status(403).json({ error: "Not available while mirroring an organizer" });
     }
   }

@@ -24,15 +24,21 @@ import { logger } from "../lib/logger";
 const router = Router();
 
 const CODE_TTL_MS = 10 * 60_000;
-// Codes are short, so guessing is limited per address (generous for real typos).
+// Codes are short, so guessing is limited per address (generous for real typos)
+// and across everyone: wrong codes from many addresses (or forged address
+// headers) still can't add up to a meaningful share of the million codes.
 const PAIR_WINDOW_MS = 10 * 60_000;
 const PAIR_MAX_FAILURES = 20;
+const PAIR_MAX_FAILURES_ALL = 100;
 const pairFailures = new Map<string, number[]>();
+let allPairFailures: number[] = [];
 
 const hashKey = (key: string) => createHash("sha256").update(key).digest("hex");
+// The proxy's view of the caller plus the address Cloudflare forwards: a forged
+// header can't move a caller out of its real address's bucket.
 const clientAddress = (req: Request) => {
   const cf = req.headers["cf-connecting-ip"];
-  return (typeof cf === "string" && cf.trim()) || req.ip || "unknown";
+  return `${req.ip ?? "unknown"}|${typeof cf === "string" ? cf.trim() : ""}`;
 };
 
 async function callerClub(req: Request): Promise<{ userId: number; clubId: number } | null> {
@@ -73,7 +79,16 @@ router.post("/readers/pairing-codes", async (req, res) => {
   // Any unused code for this club is replaced, so only the newest one works.
   await db.update(connectorPairingCodesTable).set({ usedAt: new Date() })
     .where(and(eq(connectorPairingCodesTable.clubId, caller.clubId), isNull(connectorPairingCodesTable.usedAt)));
-  const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+  // Unique among live codes, so a code can only ever pair with one club.
+  let code = "";
+  for (let attempt = 0; attempt < 10 && !code; attempt++) {
+    const candidate = String(randomInt(0, 1_000_000)).padStart(6, "0");
+    const [clash] = await db.select({ id: connectorPairingCodesTable.id }).from(connectorPairingCodesTable)
+      .where(and(eq(connectorPairingCodesTable.code, candidate), isNull(connectorPairingCodesTable.usedAt), gt(connectorPairingCodesTable.expiresAt, new Date())))
+      .limit(1);
+    if (!clash) code = candidate;
+  }
+  if (!code) return res.status(503).json({ error: "Couldn't create a code right now. Try again." });
   const expiresAt = new Date(Date.now() + CODE_TTL_MS);
   await db.insert(connectorPairingCodesTable).values({ clubId: caller.clubId, code, createdBy: caller.userId, expiresAt });
   return res.status(201).json({ code, expiresAt: expiresAt.toISOString() });
@@ -108,7 +123,8 @@ router.post("/connector/pair", async (req, res) => {
   const address = clientAddress(req);
   const now = Date.now();
   const recent = (pairFailures.get(address) ?? []).filter(t => now - t < PAIR_WINDOW_MS);
-  if (recent.length >= PAIR_MAX_FAILURES) {
+  allPairFailures = allPairFailures.filter(t => now - t < PAIR_WINDOW_MS);
+  if (recent.length >= PAIR_MAX_FAILURES || allPairFailures.length >= PAIR_MAX_FAILURES_ALL) {
     return res.status(429).json({ error: "Too many wrong codes. Get a fresh code from Reader Setup and try again in a few minutes." });
   }
   const code = String(req.body?.code ?? "").replace(/\D/g, "");
@@ -124,15 +140,22 @@ router.post("/connector/pair", async (req, res) => {
     : [];
   if (!match) {
     pairFailures.set(address, [...recent, now]);
+    allPairFailures.push(now);
     return res.status(400).json({ error: "That code didn't work. Codes last 10 minutes; get a new one from Reader Setup → Connect a laptop." });
   }
   const key = `rmc_${randomBytes(32).toString("base64url")}`;
-  const [laptop] = await db.transaction(async (tx) => {
-    await tx.update(connectorPairingCodesTable).set({ usedAt: new Date() }).where(eq(connectorPairingCodesTable.id, match.id));
-    return tx.insert(connectorLaptopsTable)
+  const laptop = await db.transaction(async (tx) => {
+    // Claim the code atomically: of two simultaneous requests only one wins.
+    const claimed = await tx.update(connectorPairingCodesTable).set({ usedAt: new Date() })
+      .where(and(eq(connectorPairingCodesTable.id, match.id), isNull(connectorPairingCodesTable.usedAt)))
+      .returning({ id: connectorPairingCodesTable.id });
+    if (claimed.length === 0) return null;
+    const [row] = await tx.insert(connectorLaptopsTable)
       .values({ clubId: match.clubId, name: laptopName, tokenHash: hashKey(key), createdBy: match.createdBy, lastSeenAt: new Date() })
       .returning();
+    return row;
   });
+  if (!laptop) return res.status(400).json({ error: "That code was just used. Get a new one from Reader Setup → Connect a laptop." });
   const [club] = await db.select({ name: clubsTable.name }).from(clubsTable).where(eq(clubsTable.id, match.clubId));
   pairFailures.delete(address);
   logger.info({ clubId: match.clubId, laptopId: laptop.id, laptopName }, "RM Connect laptop paired");
