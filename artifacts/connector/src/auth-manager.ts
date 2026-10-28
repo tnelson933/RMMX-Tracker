@@ -64,6 +64,9 @@ export function savePassword(password: string): void {
 export function loadPassword(): string | null {
   return loadEncrypted(PASSWORD_FILE());
 }
+export function clearPassword(): void {
+  try { if (fs.existsSync(PASSWORD_FILE())) fs.unlinkSync(PASSWORD_FILE()); } catch { /* ignore */ }
+}
 
 export function saveSessionCookie(cookie: string): void {
   saveEncrypted(SESSION_FILE(), cookie);

@@ -5,9 +5,21 @@ import type { Request, Response } from "express";
 // Kept in memory: the API runs as a single instance, and a restart only resets
 // the counters.
 
-const WINDOW_MS = 15 * 60_000;
-const MAX_FAILURES_PER_ACCOUNT = 5;
-const MAX_FAILURES_PER_ADDRESS = 30;
+// Gentle on purpose: a real organizer mistyping a password never waits; only
+// sustained guessing (10+ wrong passwords on one account in 5 minutes) pauses
+// that account briefly.
+const WINDOW_MS = 5 * 60_000;
+const MAX_FAILURES_PER_ACCOUNT = 10;
+const MAX_FAILURES_PER_ADDRESS = 50;
+
+/**
+ * The caller's own address. Behind Cloudflare, req.ip is a Cloudflare edge
+ * shared by many organizers, so use the visitor address Cloudflare forwards.
+ */
+function clientAddress(req: Request): string {
+  const cf = req.headers["cf-connecting-ip"];
+  return (typeof cf === "string" && cf.trim()) || req.ip || "unknown";
+}
 
 type Bucket = { failures: number[] };
 const byAccount = new Map<string, Bucket>();
@@ -28,7 +40,7 @@ function accountKey(scope: string, email: unknown): string {
 export function rejectIfThrottled(req: Request, res: Response, scope: string, email: unknown): boolean {
   const now = Date.now();
   const accountFailures = recent(byAccount.get(accountKey(scope, email)), now);
-  const addressFailures = recent(byAddress.get(req.ip ?? "unknown"), now);
+  const addressFailures = recent(byAddress.get(clientAddress(req)), now);
   const blocked =
     accountFailures.length >= MAX_FAILURES_PER_ACCOUNT ? accountFailures :
     addressFailures.length >= MAX_FAILURES_PER_ADDRESS ? addressFailures : null;
@@ -38,14 +50,14 @@ export function rejectIfThrottled(req: Request, res: Response, scope: string, em
   const minutes = Math.max(1, Math.ceil(retryMs / 60_000));
   res.setHeader("Retry-After", String(Math.ceil(retryMs / 1000)));
   res.status(429).json({
-    error: `Too many sign-in attempts. Wait ${minutes} minute${minutes === 1 ? "" : "s"} and try again, or reset your password.`,
+    error: `Too many wrong passwords in a row. Wait ${minutes} minute${minutes === 1 ? "" : "s"} and try again, or use "Forgot your password?" to reset it.`,
   });
   return true;
 }
 
 export function recordFailedLogin(req: Request, scope: string, email: unknown): void {
   const now = Date.now();
-  for (const [map, key] of [[byAccount, accountKey(scope, email)], [byAddress, req.ip ?? "unknown"]] as const) {
+  for (const [map, key] of [[byAccount, accountKey(scope, email)], [byAddress, clientAddress(req)]] as const) {
     const failures = recent(map.get(key), now);
     failures.push(now);
     map.set(key, { failures });

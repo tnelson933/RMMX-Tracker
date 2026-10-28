@@ -31,6 +31,7 @@ import {
   saveSettings,
   savePassword,
   loadPassword,
+  clearPassword,
   saveSessionCookie,
   loadSessionCookie,
   clearAll,
@@ -89,6 +90,7 @@ function adoptLegacyQueue(readerId: number): void {
 function getAppStatus(): AppStatus {
   return {
     signedIn: !!settings.email,
+    signInRequired,
     email: settings.email,
     cloudUrl: settings.cloudUrl,
     readers: settings.readers.map(r => sessions.get(r.readerId)?.getStatus()).filter((s): s is NonNullable<typeof s> => !!s),
@@ -267,24 +269,56 @@ function setIdentifying(enabled: boolean): void {
 
 // ── Cloud session ─────────────────────────────────────────────────────────────
 
-/** Return a valid session cookie, re-logging in with stored creds if needed. */
-async function ensureSession(): Promise<string> {
+// When the saved password stops working, RM Connect asks the organizer to sign
+// in again instead of retrying it: repeated automatic tries would only trip
+// RM Roost's sign-in limit. Readers keep timing meanwhile (they use their own
+// reader tokens, not this session).
+let signInRequired: string | null = null;
+let sessionRefresh: Promise<string> | null = null;
+
+/** Return a valid session cookie, signing in once with the saved password if needed. */
+function ensureSession(): Promise<string> {
+  if (signInRequired) return Promise.reject(new Error(signInRequired));
+  // Several actions can need the session at once; share one sign-in.
+  sessionRefresh ??= refreshSession().finally(() => { sessionRefresh = null; });
+  return sessionRefresh;
+}
+
+async function refreshSession(): Promise<string> {
   if (sessionCookie) {
     try {
       await fetchReaders(settings.cloudUrl, sessionCookie);
       return sessionCookie;
-    } catch {
+    } catch (err: any) {
+      // Only an expired session means signing in again; a network problem doesn't.
+      if (err?.status !== 401) throw err;
       sessionCookie = null;
     }
   }
   const password = loadPassword();
   if (!settings.cloudUrl || !settings.email || !password) {
-    throw new Error("Not signed in — sign in again");
+    return requireSignIn("Sign in to RM Roost again to add or rename readers.");
   }
-  const { cookie } = await cloudLogin(settings.cloudUrl, settings.email, password);
-  sessionCookie = cookie;
-  saveSessionCookie(cookie);
-  return cookie;
+  try {
+    const { cookie } = await cloudLogin(settings.cloudUrl, settings.email, password);
+    sessionCookie = cookie;
+    saveSessionCookie(cookie);
+    return cookie;
+  } catch (err: any) {
+    if (err?.status === 401 || err?.status === 403) {
+      clearPassword();
+      return requireSignIn("RM Roost didn't accept the saved password (it may have changed). Sign in again to add or rename readers. Your readers keep timing.");
+    }
+    if (err?.status === 429) return requireSignIn(err.message);
+    throw err;
+  }
+}
+
+function requireSignIn(reason: string): never {
+  signInRequired = reason;
+  sessionCookie = null;
+  pushStatus();
+  throw new Error(reason);
 }
 
 async function withSession<T>(fn: (cookie: string) => Promise<T>): Promise<T> {
@@ -334,6 +368,7 @@ function registerIpc(): void {
         const { cookie, clubId } = await cloudLogin(cloudUrl, input.email.trim(), input.password);
         const cloudChanged = cloudUrl !== settings.cloudUrl;
         sessionCookie = cookie;
+        signInRequired = null;
         settings = { ...settings, cloudUrl, email: input.email.trim(), clubId };
         if (cloudChanged) {
           // Readers belong to one RM Roost server; don't carry them to another.
@@ -504,6 +539,7 @@ function registerIpc(): void {
     setIdentifying(false);
     stopAllSessions();
     sessionCookie = null;
+    signInRequired = null;
     clearAll();
     settings = loadSettings();
     pushStatus();

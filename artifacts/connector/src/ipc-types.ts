@@ -5,6 +5,8 @@ import type { Hardware } from "./settings-migrations";
 
 export interface AppStatus {
   signedIn: boolean;
+  /** Set when RM Roost needs the password again (e.g. it changed). */
+  signInRequired: string | null;
   email: string;
   cloudUrl: string;
   readers: ReaderSessionStatus[];

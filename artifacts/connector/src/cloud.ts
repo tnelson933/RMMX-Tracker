@@ -297,7 +297,7 @@ export class CloudLink extends EventEmitter {
       this.ws = null;
       if (this.stopped) return;
       if (code === 1008 || this.lastError?.includes("401")) {
-        this.lastError = "Reader token was rejected. Use Change reader to select your reader again.";
+        this.lastError = "RM Roost no longer knows this reader (it was removed or given a new token). Remove it here and add it again with Find readers.";
       }
       this.emit("disconnected", this.lastError ?? `Connection closed (${code})`);
       this.scheduleReconnect();
@@ -341,16 +341,19 @@ export async function cloudLogin(
   const res = await fetch(`${base}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    // Long-lived session, so the laptop isn't signed out between race days.
+    body: JSON.stringify({ email, password, rememberMe: true }),
   });
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
     // Some rejections carry a code in `error` and the readable text in `message`
     // (e.g. CLUB_INACTIVE).
-    throw new Error(data.message ?? data.error ?? `Login failed (${res.status})`);
+    throw Object.assign(new Error(data.message ?? data.error ?? `Login failed (${res.status})`), { status: res.status });
   }
-  const setCookie = res.headers.get("set-cookie") ?? "";
-  const cookie = setCookie.split(";")[0] ?? "";
+  // Pick the session cookie itself; a proxy (e.g. Cloudflare) may add others.
+  const cookies = typeof res.headers.getSetCookie === "function" ? res.headers.getSetCookie() : [res.headers.get("set-cookie") ?? ""];
+  const pairs = cookies.map(c => c.split(";")[0]).filter(Boolean);
+  const cookie = pairs.find(p => p.startsWith("connect.sid=")) ?? pairs[0] ?? "";
   if (!cookie) throw new Error("Login succeeded but no session cookie was returned");
   const data = (await res.json().catch(() => ({}))) as { clubId?: number; user?: { clubId?: number } };
   const clubId = data.clubId ?? data.user?.clubId ?? null;
@@ -398,8 +401,8 @@ export async function updateReader(
 export async function fetchReaders(cloudUrl: string, cookie: string): Promise<CloudReader[]> {
   const base = cloudUrl.replace(/\/+$/, "");
   const res = await fetch(`${base}/api/readers`, { headers: { Cookie: cookie } });
-  if (res.status === 401) throw new Error("Session expired — sign in again");
-  if (!res.ok) throw new Error(`Failed to load readers (${res.status})`);
+  if (res.status === 401) throw Object.assign(new Error("Session expired — sign in again"), { status: 401 });
+  if (!res.ok) throw Object.assign(new Error(`Failed to load readers (${res.status})`), { status: res.status });
   return (await res.json()) as CloudReader[];
 }
 

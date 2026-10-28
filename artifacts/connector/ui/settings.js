@@ -39,7 +39,9 @@ function el(tag, props = {}, ...children) {
 
 function render(st) {
   status = st;
-  $("loginCard").classList.toggle("hidden", st.signedIn);
+  // Asked to sign in again: show the sign-in card above the readers, which keep timing.
+  $("loginCard").classList.toggle("hidden", st.signedIn && !st.signInRequired);
+  $("signInReason").textContent = st.signInRequired || "";
   $("mainView").classList.toggle("hidden", !st.signedIn);
   if (!st.signedIn) return;
   $("txtAccount").textContent = "Signed in as " + st.email;
