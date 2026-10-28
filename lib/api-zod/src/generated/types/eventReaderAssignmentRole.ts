@@ -6,11 +6,15 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * start/finish with a motoId: an enduro test gate. finish with no motoId: the event finish line that scores laps. split: an event-wide course point that only produces sector times.
+ */
 export type EventReaderAssignmentRole = typeof EventReaderAssignmentRole[keyof typeof EventReaderAssignmentRole];
 
 
 export const EventReaderAssignmentRole = {
   start: 'start',
   finish: 'finish',
+  split: 'split',
   time_check: 'time_check',
 } as const;

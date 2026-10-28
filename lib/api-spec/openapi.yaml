@@ -6016,13 +6016,20 @@ components:
           description: Specific antenna port (1-4), or null for any antenna on this reader
         role:
           type: string
-          enum: [start, finish, time_check]
+          enum: [start, finish, split, time_check]
+          description: "start/finish with a motoId: an enduro test gate. finish with no motoId: the event finish line that scores laps. split: an event-wide course point that only produces sector times."
         motoId:
           type: ["integer", "null"]
           description: For start/finish roles — the specific test moto this reader covers
         timeCheckId:
           type: ["integer", "null"]
           description: For time_check role — the enduro_time_check this reader is positioned at
+        sequence:
+          type: ["integer", "null"]
+          description: Course order of a split (1 = first after the finish line)
+        label:
+          type: ["string", "null"]
+          description: Organizer name for the course point, e.g. "Whoops"
         createdAt:
           type: string
           format: date-time
@@ -6038,12 +6045,18 @@ components:
           nullable: true
         role:
           type: string
-          enum: [start, finish, time_check]
+          enum: [start, finish, split, time_check]
         motoId:
           type: integer
           nullable: true
         timeCheckId:
           type: integer
+          nullable: true
+        sequence:
+          type: integer
+          nullable: true
+        label:
+          type: string
           nullable: true
 
     SetEventReaderAssignmentsInput:

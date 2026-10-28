@@ -12,5 +12,6 @@ export type EventReaderAssignmentInputRole = typeof EventReaderAssignmentInputRo
 export const EventReaderAssignmentInputRole = {
   start: 'start',
   finish: 'finish',
+  split: 'split',
   time_check: 'time_check',
 } as const;

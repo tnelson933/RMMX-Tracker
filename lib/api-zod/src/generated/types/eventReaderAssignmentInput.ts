@@ -13,4 +13,6 @@ export interface EventReaderAssignmentInput {
   role: EventReaderAssignmentInputRole;
   motoId?: number | null;
   timeCheckId?: number | null;
+  sequence?: number | null;
+  label?: string | null;
 }

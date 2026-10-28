@@ -59,10 +59,25 @@ router.put("/events/:eventId/reader-assignments", async (req, res) => {
     eventId,
     readerId: Number(a.readerId),
     antennaId: a.antennaId != null ? Number(a.antennaId) : null,
-    role: ["start", "finish", "time_check"].includes(a.role) ? a.role : "start",
+    role: ["start", "finish", "split", "time_check"].includes(a.role) ? a.role : "start",
     motoId: a.motoId != null ? Number(a.motoId) : null,
     timeCheckId: a.timeCheckId != null ? Number(a.timeCheckId) : null,
+    sequence: Number.isInteger(a.sequence) ? a.sequence : null,
+    label: typeof a.label === "string" && a.label.trim() ? a.label.trim().slice(0, 60) : null,
   }));
+
+  // Course map rules: one finish line for the event, splits are event-wide,
+  // and a reader can't be two course points at once.
+  const course = incoming.filter(a => a.motoId == null && (a.role === "finish" || a.role === "split"));
+  if (incoming.some(a => a.role === "split" && a.motoId != null)) {
+    return res.status(400).json({ error: "Split readers apply to the whole event, not one moto" });
+  }
+  if (course.filter(a => a.role === "finish").length > 1) {
+    return res.status(400).json({ error: "An event has one finish-line reader" });
+  }
+  if (new Set(course.map(a => a.readerId)).size !== course.length) {
+    return res.status(400).json({ error: "Each reader can only be in one place on the course" });
+  }
 
   const saved = await db.transaction(async (tx) => {
     await tx.delete(eventReaderAssignmentsTable).where(eq(eventReaderAssignmentsTable.eventId, eventId));

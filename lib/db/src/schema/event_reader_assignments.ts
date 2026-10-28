@@ -11,9 +11,19 @@ export const eventReaderAssignmentsTable = pgTable("event_reader_assignments", {
   eventId: integer("event_id").notNull().references(() => eventsTable.id),
   readerId: integer("reader_id").notNull().references(() => readersTable.id),
   antennaId: integer("antenna_id"),
-  role: text("role", { enum: ["start", "finish", "time_check"] }).notNull(),
+  /**
+   * start/finish with a motoId: an enduro special test gate.
+   * finish without a motoId: the event-wide finish line that scores laps.
+   * split: an event-wide course point between finish passes (sector times only).
+   * time_check: an enduro time check.
+   */
+  role: text("role", { enum: ["start", "finish", "split", "time_check"] }).notNull(),
   motoId: integer("moto_id").references(() => motosTable.id),
   timeCheckId: integer("time_check_id").references(() => enduroTimeChecksTable.id),
+  /** Course order of a split (1 = first after the finish line). */
+  sequence: integer("sequence"),
+  /** Organizer's name for the course point, e.g. "Whoops" or "Halfway". */
+  label: text("label"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

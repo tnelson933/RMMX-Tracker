@@ -2,7 +2,7 @@ import { Switch, Route, Redirect, useRoute, useLocation } from "wouter";
 import { Link } from "wouter";
 import { Component, type ReactNode } from "react";
 import { useGetEvent } from "@workspace/api-client-react";
-import { ChevronLeft, Users, CheckCircle, Flag, FileText, Settings, Activity, CalendarDays, AlertTriangle, Radio, XCircle } from "lucide-react";
+import { ChevronLeft, Users, CheckCircle, Flag, FileText, Settings, Activity, CalendarDays, AlertTriangle, Radio, XCircle, Route as RouteIcon } from "lucide-react";
 
 class PageErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   constructor(props: { children: ReactNode }) {
@@ -43,6 +43,7 @@ import EventDetail from "./EventDetail";
 import Registrations from "./Registrations";
 import Checkin from "./Checkin";
 import EventSchedule from "./EventSchedule";
+import CourseMap from "./CourseMap";
 import Motos from "./Motos";
 import EnterResults from "./EnterResults";
 import Report from "./Report";
@@ -90,6 +91,7 @@ export default function EventLayout() {
           <NavLink href={`${basePath}/registrations`} icon={<Users size={16} />}>Registrations</NavLink>
           <NavLink href={`${basePath}/checkin`} icon={<CheckCircle size={16} />}>Check-In</NavLink>
           <NavLink href={`${basePath}/schedule`} icon={<CalendarDays size={16} />}>Schedule</NavLink>
+          <NavLink href={`${basePath}/course`} icon={<RouteIcon size={16} />}>Course Map</NavLink>
           <NavLink href={`${basePath}/motos`} icon={<Flag size={16} />}>Race Day Management</NavLink>
           <NavLink href={`${basePath}/results`} icon={<Activity size={16} />}>Enter Results</NavLink>
           <NavLink href={`${basePath}/report`} icon={<FileText size={16} />}>Report</NavLink>
@@ -108,6 +110,7 @@ export default function EventLayout() {
             <Route path="/events/:eventId/checkin" component={Checkin} />
             <Route path="/events/:eventId/schedule" component={EventSchedule} />
             <Route path="/events/:eventId/practice" component={PracticeRedirect} />
+            <Route path="/events/:eventId/course" component={CourseMap} />
             <Route path="/events/:eventId/motos" component={Motos} />
             <Route path="/events/:eventId/results" component={EnterResults} />
             <Route path="/events/:eventId/report" component={Report} />

@@ -30,8 +30,9 @@ import {
   motosTable,
   registrationsTable,
 } from "@workspace/db/schema";
-import { eq, and, count, ilike, or } from "drizzle-orm";
-import { processCrossing, handleFacilityCrossing, handlePing } from "./timing";
+import { eq, and, count, ilike, or, desc } from "drizzle-orm";
+import { processCrossing, handleFacilityCrossing, handlePing, buildLeaderboard, sseBroadcast } from "./timing";
+import { recordSplitCrossing, splitForReader } from "../lib/sectors";
 import { processPracticeCrossing } from "./practice";
 import { recomputeEnduroPositionsForEvent } from "./enduro-scoring";
 import { recordTagSeen } from "../lib/recentTags";
@@ -86,6 +87,36 @@ async function resolveRider(
   return rider?.id ?? null;
 }
 
+/** Push fresh sector times to live leaderboards after a split read. */
+function broadcastLeaderboard(motoId: number) {
+  buildLeaderboard(motoId).then(snapshot => { if (snapshot) sseBroadcast(motoId, snapshot); }).catch(() => {});
+}
+
+/** Tag reads in any payload format the facility URL accepts. */
+function tagsFromPayload(body: any): Array<{ rfidNumber: string; time: unknown }> {
+  if (Array.isArray(body?.events)) {
+    return body.events
+      .filter((e: any) => e?.type === "tagInventoryEvent" && e?.tagInventoryEvent?.epcHex)
+      .map((e: any) => ({ rfidNumber: String(e.tagInventoryEvent.epcHex).toUpperCase(), time: e.tagInventoryEvent.firstSeenTime }));
+  }
+  if (Array.isArray(body)) {
+    return body
+      .filter((e: any) => e?.eventType === "tagInventory" && e?.tagInventoryEvent?.epc)
+      .map((e: any) => ({
+        rfidNumber: Buffer.from(String(e.tagInventoryEvent.epc).replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("hex").toUpperCase(),
+        time: e.tagInventoryEvent.lastSeenTime ?? e.timestamp,
+      }));
+  }
+  const zebra: any[] = Array.isArray(body?.data?.tags) ? body.data.tags : Array.isArray(body?.tags) ? body.tags : [];
+  if (zebra.length) {
+    return zebra
+      .map(t => ({ rfidNumber: String(t.idHex || t.epc || "").toUpperCase(), time: t.firstSeenTimestamp }))
+      .filter(t => t.rfidNumber);
+  }
+  const id = body?.rfidNumber ?? body?.transponder ?? body?.transponderId ?? body?.id;
+  return id ? [{ rfidNumber: String(id), time: body?.crossingTime ?? body?.passingTime ?? body?.timestamp ?? body?.passTime }] : [];
+}
+
 function markReaderSeen(readerId: number) {
   db.update(readersTable)
     .set({ lastSeenAt: new Date() })
@@ -105,7 +136,30 @@ router.post("/timing/readers/:token/active/crossing", async (req, res) => {
   const reader = await findReaderByToken(req.params.token);
   if (!reader) return res.status(404).json({ ok: false, message: "Unknown reader token" });
   markReaderSeen(reader.id);
-  return handleFacilityCrossing(req, res, reader.clubId);
+  const [activeMoto] = await db
+    .select({ moto: motosTable })
+    .from(motosTable)
+    .innerJoin(eventsTable, eq(motosTable.eventId, eventsTable.id))
+    .where(and(eq(eventsTable.clubId, reader.clubId), eq(motosTable.status, "in_progress")))
+    .orderBy(desc(motosTable.startedAt))
+    .limit(1);
+  const moto = activeMoto?.moto;
+  const split = moto && moto.type !== "enduro_test" ? await splitForReader(moto.eventId, reader.id) : null;
+  if (!moto || !split) return handleFacilityCrossing(req, res, reader.clubId);
+
+  const tags = tagsFromPayload(req.body);
+  const isActive = reader.type === "active_transponder";
+  let recorded = 0;
+  for (const tag of tags) {
+    recordTagSeen(reader.clubId, tag.rfidNumber.toUpperCase());
+    const receivedAt = new Date();
+    const crossingTime = canonicalizeCrossingTimestamp(tag.time ?? receivedAt, receivedAt, { source: "reader_split_direct", readerId: reader.id });
+    const riderId = await resolveRider(tag.rfidNumber, moto.eventId, isActive);
+    const result = await recordSplitCrossing({ eventId: moto.eventId, motoId: moto.id, split, readerId: reader.id, rfidNumber: tag.rfidNumber, riderId, crossingTime });
+    if (result.recorded) recorded++;
+  }
+  if (recorded) broadcastLeaderboard(moto.id);
+  return res.json({ ok: true, processed: tags.length, recorded, split: split.label });
 });
 
 // POST /timing/readers/:token/ping — connectivity test for a per-reader URL.
@@ -249,7 +303,60 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
     .from(eventReaderAssignmentsTable)
     .where(and(eq(eventReaderAssignmentsTable.eventId, eventId), eq(eventReaderAssignmentsTable.readerId, reader.id)));
 
-  if (assignments.length === 0) {
+  // 4b. Course map (motocross / supercross): the event-wide finish reader scores
+  //     laps as usual; split readers only add sector times. Enduro tests keep
+  //     their own start/finish gates below.
+  const courseAssignment = assignments.find((a) => a.motoId == null && (a.role === "finish" || a.role === "split"));
+  if (courseAssignment) {
+    const [activeMoto] = await db
+      .select()
+      .from(motosTable)
+      .where(and(eq(motosTable.eventId, eventId), eq(motosTable.status, "in_progress")))
+      .orderBy(desc(motosTable.startedAt))
+      .limit(1);
+    const hasTestGate = activeMoto != null && assignments.some((a) => a.motoId === activeMoto.id);
+    if (!activeMoto) {
+      if (courseAssignment.role === "split") {
+        // Never fall back: a split read must not become a practice or race lap.
+        return res.status(409).json({ ok: false, message: "No moto in progress — split reads are only recorded during a moto" });
+      }
+      // Finish line with no moto running: RM Connect retries on the facility
+      // URL, which handles a running practice exactly as before.
+      return res.status(422).json({ ok: false, message: "No moto in progress for this course assignment" });
+    }
+    if (activeMoto.type !== "enduro_test" && !hasTestGate) {
+      const rfidNumber = body.rfidNumber!;
+      if (courseAssignment.role === "split") {
+        const split = await splitForReader(eventId, reader.id);
+        if (!split) return res.status(422).json({ ok: false, message: "Reader has no matching checkpoint assignment" });
+        const riderId = await resolveRider(rfidNumber, eventId, isActiveTransponderReader);
+        const { recorded, lapNumber } = await recordSplitCrossing({
+          eventId, motoId: activeMoto.id, split, readerId: reader.id, rfidNumber, riderId, crossingTime,
+        });
+        if (recorded) broadcastLeaderboard(activeMoto.id);
+        return res.json({ ok: true, message: recorded ? `${split.label} recorded (lap ${lapNumber})` : `${split.label} already recorded for lap ${lapNumber}` });
+      }
+      try {
+        const result = await processCrossing({
+          rfidNumber,
+          motoId: activeMoto.id,
+          crossingTime,
+          readerId: `reader:${reader.id}`,
+          antennaId: incomingAntenna ?? undefined,
+          readerReceivedAt: body.readerReceivedAt ?? originalReceipt?.toISOString(),
+        });
+        if (result.debounced) return res.json({ ok: true, message: "Duplicate read ignored" });
+        return res.json({ ok: true, message: `Lap ${result.lapNumber} recorded` });
+      } catch (err: any) {
+        return res.status(409).json({ ok: false, message: err?.message ?? "Processing error" });
+      }
+    }
+    if (courseAssignment.role === "split" && !hasTestGate) {
+      return res.status(409).json({ ok: false, message: "Split readers record sector times on motocross and supercross motos only" });
+    }
+  }
+
+  if (assignments.length === 0 || assignments.every((a) => a.motoId == null && (a.role === "finish" || a.role === "split"))) {
     return res.status(422).json({ ok: false, message: "Reader has no checkpoint assignment for this event" });
   }
 

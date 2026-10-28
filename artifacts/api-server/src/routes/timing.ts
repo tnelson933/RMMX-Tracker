@@ -18,6 +18,7 @@ import type { Request, Response } from "express";
 import { authorizeIngest, clubIdForEvent, clubIdForMoto } from "../lib/ingestAuth";
 import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
 import { processPracticeCrossing } from "./practice";
+import { computeMotoSectors } from "../lib/sectors";
 import { recordTagSeen } from "../lib/recentTags";
 import {
   canonicalizeCrossingTimestamp,
@@ -632,6 +633,24 @@ export async function buildLeaderboard(motoId: number) {
     };
   });
   const analytics = await buildRaceAnalytics(motoId, event?.raceStyle, withGaps);
+  // Sector times when the event's course map has split readers (null otherwise).
+  const sectors = await computeMotoSectors(motoId);
+  const withSectors = sectors
+    ? withGaps.map((entry) => {
+      const rider = entry.riderId != null ? sectors.byRider.get(entry.riderId) : undefined;
+      const completed = rider?.laps.filter(l => l.complete) ?? [];
+      const current = rider?.laps.find(l => !l.complete) ?? null;
+      return {
+        ...entry,
+        sectors: {
+          lastLapMs: completed.at(-1)?.sectorsMs ?? null,
+          bestMs: rider?.best ?? null,
+          currentLapMs: current?.sectorsMs ?? null,
+          laps: rider?.laps ?? [],
+        },
+      };
+    })
+    : withGaps;
   const timeRemainingMs = calculateRaceTimeRemainingMs({
     startedAt: moto.startedAt,
     pausedAt: moto.pausedAt,
@@ -663,7 +682,8 @@ export async function buildLeaderboard(motoId: number) {
     announcerLastExtraLap: moto.announcerLastExtraLap ?? 0,
     announcerSequence: moto.announcerSequence ?? 0,
     announcerFinishedAt: moto.announcerFinishedAt?.toISOString() ?? null,
-    leaderboard: withGaps,
+    leaderboard: withSectors,
+    sectorNames: sectors?.names ?? null,
     analytics,
     updatedAt: new Date().toISOString(),
   };

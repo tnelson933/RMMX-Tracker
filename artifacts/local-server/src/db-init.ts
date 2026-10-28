@@ -768,6 +768,9 @@ export function initDb() {
     ["tracks", "address TEXT"],
     ["tracks", "city    TEXT"],
     ["tracks", "zip     TEXT"],
+    // event_reader_assignments — course map (split order and names)
+    ["event_reader_assignments", "sequence INTEGER"],
+    ["event_reader_assignments", "label    TEXT"],
   ];
 
   for (const [table, colDef] of migrations) {

@@ -10,6 +10,7 @@ import {
   registrationsTable,
   ridersTable,
   lapCrossingsTable,
+  splitCrossingsTable,
   raceResultsTable,
   motosTable,
   clubsTable,
@@ -134,6 +135,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       await tx.delete(enduroCheckpointArrivalsTable).where(eq(enduroCheckpointArrivalsTable.eventId, eventId));
       await tx.delete(enduroTimeChecksTable).where(eq(enduroTimeChecksTable.eventId, eventId));
       await tx.delete(raceResultsTable).where(eq(raceResultsTable.eventId, eventId));
+      await tx.delete(splitCrossingsTable).where(eq(splitCrossingsTable.eventId, eventId));
       await tx.delete(lapCrossingsTable).where(eq(lapCrossingsTable.eventId, eventId));
       await tx.delete(motosTable).where(eq(motosTable.eventId, eventId));
       await tx.delete(checkinsTable).where(eq(checkinsTable.eventId, eventId));
@@ -1293,7 +1295,15 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       }
 
       // Reader assignments first (they reference time checks), then checks.
-      await tx.delete(eventReaderAssignmentsTable).where(eq(eventReaderAssignmentsTable.eventId, eventId));
+      // Desktop releases before the course map don't send its finish/split rows;
+      // keep the cloud's course map unless this snapshot says it carries one.
+      const includesCourse = setup.course_rows_included === true;
+      await tx.delete(eventReaderAssignmentsTable).where(includesCourse
+        ? eq(eventReaderAssignmentsTable.eventId, eventId)
+        : and(
+          eq(eventReaderAssignmentsTable.eventId, eventId),
+          sql`not (${eventReaderAssignmentsTable.motoId} is null and ${eventReaderAssignmentsTable.role} in ('finish', 'split'))`,
+        ));
       if (removedCheckIds.length > 0) {
         await tx.delete(enduroTimeChecksTable).where(inArray(enduroTimeChecksTable.id, removedCheckIds));
       }
@@ -1327,8 +1337,10 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       for (const a of assignments) {
         const readerId = Number(a.reader_id);
         if (!clubReaderIds.has(readerId)) { skip("event_enduro_setup", { id: setup.id }, `reader ${readerId} does not belong to this club`); continue; }
-        const role = ["start", "finish", "time_check"].includes(String(a.role)) ? String(a.role) as "start" | "finish" | "time_check" : "start";
+        const role = ["start", "finish", "split", "time_check"].includes(String(a.role)) ? String(a.role) as "start" | "finish" | "split" | "time_check" : "start";
         const motoId = a.moto_id != null ? mapMotoId(a.moto_id) : null;
+        const isCourseRow = a.moto_id == null && (role === "finish" || role === "split");
+        if (isCourseRow && !includesCourse) continue;
         const timeCheckId = a.time_check_id != null ? checkIdMap.get(Number(a.time_check_id)) ?? null : null;
         await tx.insert(eventReaderAssignmentsTable).values({
           eventId,
@@ -1337,6 +1349,8 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
           role,
           motoId: motoId && await motoInEvent(motoId, eventId) ? motoId : null,
           timeCheckId,
+          sequence: a.sequence != null && Number.isInteger(Number(a.sequence)) ? Number(a.sequence) : null,
+          label: typeof a.label === "string" && a.label.trim() ? a.label.trim().slice(0, 60) : null,
         });
       }
 

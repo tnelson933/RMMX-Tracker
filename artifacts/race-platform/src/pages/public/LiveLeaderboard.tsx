@@ -2,9 +2,10 @@ import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useRoute, Link } from "wouter";
 import {
   Flag, Clock, WifiOff, ChevronLeft, Radio, AlertTriangle, TrendingUp,
-  ArrowDown, ArrowUp, BarChart3, Repeat2, Timer, Zap,
+  ArrowDown, ArrowUp, BarChart3, Repeat2, Timer, Zap, Route,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { SectorTimes, type SectorEntry } from "@/components/SectorTimes";
 
 export interface LeaderboardEntry {
   position: number;
@@ -67,6 +68,8 @@ export interface LeaderboardData {
   plusLaps: number | null;
   timeExpiredAt: string | null;
   leaderboard: LeaderboardEntry[];
+  /** Present when the event's course map has split readers. */
+  sectorNames?: string[] | null;
   updatedAt: string;
   correction?: boolean;
   analytics?: RaceAnalytics;
@@ -122,7 +125,7 @@ function CountdownClock({ startedAt, timeLimitMs }: { startedAt: string; timeLim
   );
 }
 
-type LiveView = "timing" | "analytics" | "fastest";
+type LiveView = "timing" | "analytics" | "fastest" | "sectors";
 
 function ViewTab({
   active,
@@ -672,6 +675,7 @@ export function LiveRaceViews({
         <ViewTab active={activeView === "timing"} icon={<Radio size={15} />} label="Live Timing" onClick={() => setActiveView("timing")} />
         <ViewTab active={activeView === "analytics"} icon={<BarChart3 size={15} />} label="Quick Analytics" onClick={() => setActiveView("analytics")} />
         <ViewTab active={activeView === "fastest"} icon={<Timer size={15} />} label="Fastest Lap" onClick={() => setActiveView("fastest")} />
+        {data?.sectorNames?.length ? <ViewTab active={activeView === "sectors"} icon={<Route size={15} />} label="Sectors" onClick={() => setActiveView("sectors")} /> : null}
       </div>
       <section role="tabpanel" className={`min-h-0 flex-1 overflow-y-auto overscroll-contain ${compact ? "text-xs" : ""}`}>
         {error ? (
@@ -686,6 +690,7 @@ export function LiveRaceViews({
               {activeView === "timing" && <LiveTimingTable data={data} positionGains={positionGains} />}
               {activeView === "analytics" && <QuickAnalytics analytics={data.analytics} />}
               {activeView === "fastest" && <FastestLapRanking data={data} />}
+              {activeView === "sectors" && <SectorTimes tone="dark" sectorNames={data.sectorNames} entries={data.leaderboard as SectorEntry[]} />}
             </motion.div>
           </AnimatePresence>
         )}
@@ -936,6 +941,14 @@ function LegacyLiveLeaderboard() {
               label="Fastest Lap"
               onClick={() => setActiveView("fastest")}
             />
+            {data.sectorNames?.length ? (
+              <ViewTab
+                active={activeView === "sectors"}
+                icon={<Route size={16} />}
+                label="Sectors"
+                onClick={() => setActiveView("sectors")}
+              />
+            ) : null}
           </div>
 
           <section
@@ -959,6 +972,9 @@ function LegacyLiveLeaderboard() {
                 )}
                 {activeView === "fastest" && (
                   <FastestLapRanking data={data} />
+                )}
+                {activeView === "sectors" && (
+                  <SectorTimes tone="dark" sectorNames={data.sectorNames} entries={data.leaderboard as SectorEntry[]} />
                 )}
               </motion.div>
             </AnimatePresence>

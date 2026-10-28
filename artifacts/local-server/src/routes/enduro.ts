@@ -394,6 +394,8 @@ function serializeAssignment(a: any) {
     role: a.role,
     motoId: a.moto_id ?? null,
     timeCheckId: a.time_check_id ?? null,
+    sequence: a.sequence ?? null,
+    label: a.label ?? null,
     createdAt: a.created_at,
   };
 }
@@ -421,22 +423,35 @@ router.put("/events/:eventId/reader-assignments", (req, res) => {
   const incoming = body.assignments.map((a: any) => ({
     readerId: Number(a?.readerId),
     antennaId: a?.antennaId != null ? Number(a.antennaId) : null,
-    role: ["start", "finish", "time_check"].includes(a?.role) ? a.role : "start",
+    role: ["start", "finish", "split", "time_check"].includes(a?.role) ? a.role : "start",
     motoId: a?.motoId != null ? Number(a.motoId) : null,
     timeCheckId: a?.timeCheckId != null ? Number(a.timeCheckId) : null,
+    sequence: Number.isInteger(a?.sequence) ? a.sequence : null,
+    label: typeof a?.label === "string" && a.label.trim() ? a.label.trim().slice(0, 60) : null,
   }));
   if (incoming.some((a) => !Number.isInteger(a.readerId) || a.readerId <= 0)) {
     return res.status(400).json({ error: "Each assignment needs a readerId" });
+  }
+  // Same course map rules as the cloud.
+  const course = incoming.filter((a) => a.motoId == null && (a.role === "finish" || a.role === "split"));
+  if (incoming.some((a) => a.role === "split" && a.motoId != null)) {
+    return res.status(400).json({ error: "Split readers apply to the whole event, not one moto" });
+  }
+  if (course.filter((a) => a.role === "finish").length > 1) {
+    return res.status(400).json({ error: "An event has one finish-line reader" });
+  }
+  if (new Set(course.map((a) => a.readerId)).size !== course.length) {
+    return res.status(400).json({ error: "Each reader can only be in one place on the course" });
   }
 
   const db = getDb();
   db.transaction(() => {
     db.prepare("DELETE FROM event_reader_assignments WHERE event_id = ?").run(eventId);
     const insert = db.prepare(
-      `INSERT INTO event_reader_assignments (event_id, reader_id, antenna_id, role, moto_id, time_check_id)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO event_reader_assignments (event_id, reader_id, antenna_id, role, moto_id, time_check_id, sequence, label)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     );
-    for (const a of incoming) insert.run(eventId, a.readerId, a.antennaId, a.role, a.motoId, a.timeCheckId);
+    for (const a of incoming) insert.run(eventId, a.readerId, a.antennaId, a.role, a.motoId, a.timeCheckId, a.sequence, a.label);
     queueEnduroSetup(db, eventId);
   })();
 

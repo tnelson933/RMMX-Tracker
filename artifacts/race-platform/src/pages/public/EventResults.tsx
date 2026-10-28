@@ -22,6 +22,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { LiveRaceViews, useLiveRaceStream } from "./LiveLeaderboard";
+import { SectorTimes, type SectorEntry } from "@/components/SectorTimes";
 
 // ─── Lap time formatter ───────────────────────────────────────────────────────
 function formatLapTime(ms: number): string {
@@ -205,6 +206,26 @@ function ResultTable({
   );
 }
 
+// ─── MotoSectors ──────────────────────────────────────────────────────────────
+// Best sector per rider, for motos run with split readers on the course map.
+function MotoSectors({ motoId }: { motoId: number }) {
+  const [detail, setDetail] = useState<{ sectorNames?: string[] | null; leaderboard?: SectorEntry[] } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/public/motos/${motoId}/detail`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (!cancelled) setDetail(d); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [motoId]);
+  if (!detail?.sectorNames?.length) return null;
+  return (
+    <div className="mt-4">
+      <SectorTimes sectorNames={detail.sectorNames} entries={detail.leaderboard ?? []} />
+    </div>
+  );
+}
+
 // ─── MotoScheduleRow ──────────────────────────────────────────────────────────
 function MotoScheduleRow({
   moto,
@@ -338,6 +359,7 @@ function MotoScheduleRow({
                   <Timer size={11} /> Click a rider to see lap times
                 </p>
               )}
+              <MotoSectors motoId={moto.id} />
             </div>
           ) : (
             /* Non-completed moto — show pre-race lineup */

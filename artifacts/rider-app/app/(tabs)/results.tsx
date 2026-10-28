@@ -79,6 +79,8 @@ interface PublicLeaderEntry {
   gap: string;
   dnf: boolean | null;
   dns: boolean | null;
+  /** Present when the course map has split readers. */
+  sectors?: { bestMs: Array<number | null> | null; lastLapMs: Array<number | null> | null } | null;
 }
 
 interface AnalyticsRider {
@@ -123,6 +125,7 @@ interface PublicMotoDetail {
   leaderboard: PublicLeaderEntry[];
   lineup: PublicLineupEntry[];
   analytics?: RaceAnalytics;
+  sectorNames?: string[] | null;
 }
 
 // ─── Series Types ─────────────────────────────────────────────────────────────
@@ -351,6 +354,47 @@ function PublicRiderLapSheet({
 }
 
 type LiveMotoView = "timing" | "analytics" | "fastest";
+
+function fmtSector(ms: number | null | undefined): string {
+  if (ms == null) return "—";
+  const s = ms / 1000;
+  return s >= 60 ? `${Math.floor(s / 60)}:${(s % 60).toFixed(2).padStart(5, "0")}` : s.toFixed(2);
+}
+
+// Best sector times per rider, for motos run with split readers on the course map.
+function SectorsCard({ detail, colors }: { detail: PublicMotoDetail; colors: ReturnType<typeof useColors> }) {
+  const names = detail.sectorNames ?? [];
+  const rows = detail.leaderboard.filter(e => e.sectors?.bestMs);
+  if (!names.length || !rows.length) return null;
+  const fastest = names.map((_, i) => {
+    const values = rows.map(e => e.sectors?.bestMs?.[i]).filter((v): v is number => v != null);
+    return values.length ? Math.min(...values) : null;
+  });
+  return (
+    <View style={{ marginHorizontal: 16, marginTop: 18, borderWidth: 1, borderColor: colors.border, borderRadius: 14, overflow: "hidden" }}>
+      <View style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 2 }}>
+        <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>Best sectors</Text>
+        {names.map((name, i) => (
+          <Text key={i} style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>S{i + 1} · {name}</Text>
+        ))}
+      </View>
+      {rows.map((e, r) => (
+        <View key={e.riderId ?? r} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 8, borderTopWidth: r ? 1 : 0, borderTopColor: colors.border + "55", gap: 8 }}>
+          <Text numberOfLines={1} style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_500Medium" }}>{e.riderName}</Text>
+          {names.map((_, i) => {
+            const v = e.sectors?.bestMs?.[i] ?? null;
+            const best = v != null && v === fastest[i];
+            return (
+              <Text key={i} style={{ width: 54, textAlign: "right", fontSize: 12, color: best ? "#22c55e" : colors.foreground, fontFamily: best ? "Inter_700Bold" : "Inter_400Regular", fontVariant: ["tabular-nums"] }}>
+                {fmtSector(v)}
+              </Text>
+            );
+          })}
+        </View>
+      ))}
+    </View>
+  );
+}
 
 function LiveMotoTabs({
   activeView,
@@ -790,6 +834,7 @@ function PublicMotoSheet({
                   );
                 })
               )}
+              {detail && (!isLive || liveView === "timing") ? <SectorsCard detail={detail} colors={colors} /> : null}
             </>
           )}
 

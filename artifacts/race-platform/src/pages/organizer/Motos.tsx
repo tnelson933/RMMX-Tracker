@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { SectorTimes, type SectorEntry } from "@/components/SectorTimes";
 import { formatEventDatesFull } from "@/lib/eventDates";
 import { useRoute, Link } from "wouter";
 import { getPublicOrigin } from "@/lib/publicOrigin";
@@ -72,6 +73,8 @@ type LeaderboardSnapshot = {
   raceClass: string;
   status: string;
   leaderboard: LeaderboardEntry[];
+  /** Present when the event's course map has split readers. */
+  sectorNames?: string[] | null;
   updatedAt: string;
 };
 
@@ -377,6 +380,12 @@ function LiveLeaderboard({ motoId, isElapsedTimeSport, isEnduro, lapCount, penal
           </Table>
         </div>
       )}
+      {snapshot?.sectorNames?.length ? (
+        <div className="mt-3 space-y-3">
+          <SectorTimes title="Last lap sectors" view="last" sectorNames={snapshot.sectorNames} entries={snapshot.leaderboard as unknown as SectorEntry[]} />
+          <SectorTimes title="Best sectors" view="best" sectorNames={snapshot.sectorNames} entries={snapshot.leaderboard as unknown as SectorEntry[]} />
+        </div>
+      ) : null}
     </div>
   );
 }

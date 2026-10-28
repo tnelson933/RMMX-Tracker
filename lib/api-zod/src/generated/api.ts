@@ -1578,9 +1578,11 @@ export const ListEventReaderAssignmentsResponseItem = zod.object({
   "eventId": zod.number(),
   "readerId": zod.number(),
   "antennaId": zod.number().nullish().describe('Specific antenna port (1-4), or null for any antenna on this reader'),
-  "role": zod.enum(['start', 'finish', 'time_check']),
+  "role": zod.enum(['start', 'finish', 'split', 'time_check']).describe('start\/finish with a motoId: an enduro test gate. finish with no motoId: the event finish line that scores laps. split: an event-wide course point that only produces sector times.'),
   "motoId": zod.number().nullish().describe('For start\/finish roles — the specific test moto this reader covers'),
   "timeCheckId": zod.number().nullish().describe('For time_check role — the enduro_time_check this reader is positioned at'),
+  "sequence": zod.number().nullish().describe('Course order of a split (1 = first after the finish line)'),
+  "label": zod.string().nullish().describe('Organizer name for the course point, e.g. \"Whoops\"'),
   "createdAt": zod.coerce.date().optional()
 })
 export const ListEventReaderAssignmentsResponse = zod.array(ListEventReaderAssignmentsResponseItem)
@@ -1597,9 +1599,11 @@ export const SetEventReaderAssignmentsBody = zod.object({
   "assignments": zod.array(zod.object({
   "readerId": zod.number(),
   "antennaId": zod.number().nullish(),
-  "role": zod.enum(['start', 'finish', 'time_check']),
+  "role": zod.enum(['start', 'finish', 'split', 'time_check']),
   "motoId": zod.number().nullish(),
-  "timeCheckId": zod.number().nullish()
+  "timeCheckId": zod.number().nullish(),
+  "sequence": zod.number().nullish(),
+  "label": zod.string().nullish()
 }))
 })
 
@@ -1608,9 +1612,11 @@ export const SetEventReaderAssignmentsResponseItem = zod.object({
   "eventId": zod.number(),
   "readerId": zod.number(),
   "antennaId": zod.number().nullish().describe('Specific antenna port (1-4), or null for any antenna on this reader'),
-  "role": zod.enum(['start', 'finish', 'time_check']),
+  "role": zod.enum(['start', 'finish', 'split', 'time_check']).describe('start\/finish with a motoId: an enduro test gate. finish with no motoId: the event finish line that scores laps. split: an event-wide course point that only produces sector times.'),
   "motoId": zod.number().nullish().describe('For start\/finish roles — the specific test moto this reader covers'),
   "timeCheckId": zod.number().nullish().describe('For time_check role — the enduro_time_check this reader is positioned at'),
+  "sequence": zod.number().nullish().describe('Course order of a split (1 = first after the finish line)'),
+  "label": zod.string().nullish().describe('Organizer name for the course point, e.g. \"Whoops\"'),
   "createdAt": zod.coerce.date().optional()
 })
 export const SetEventReaderAssignmentsResponse = zod.array(SetEventReaderAssignmentsResponseItem)

@@ -113,7 +113,8 @@ Tabs, in order:
 - **Overview** — event details and Edit, status, registration link, event discount codes, Quick Check-In, image, embed widget, Delete Event
 - **Registrations** — every class entry; add registrations on site; edit, change class, void; export
 - **Check-In** — check riders in, assign bibs and RFID tags or transponders, sign waivers, collect payments for add-ons
-- **Schedule** — build the run order: motos, practices, lineups, staggered starts, enduro tests, checkpoint readers
+- **Schedule** — build the run order: motos, practices, lineups, staggered starts, enduro tests
+- **Course Map** — place readers on the course: finish line and split readers (sector times), or enduro section start/end and time-check readers
 - **Race Day Management** — live timing: start/finish motos, live leaderboard, crossing feed, manual laps, restarts, print, Live Video Feed
 - **Enter Results** — finish positions per class, DNF/DNS, overall standings, **Publish to Web**
 - **Report** — post-race summary, payments, class breakdown, AMA export, print
@@ -217,7 +218,7 @@ To time a rider: type their rider number into the **bib-# input at the bottom of
 - **DQ if early/late > (min)** — optional disqualification threshold; blank disables it.
 - Penalties are floored to whole minutes (1:59 late = 1 minute). Per-rider penalties show in the **Checkpoint Penalty Summary** card on the Schedule tab.
 
-Crossings at time-check readers are recorded as checkpoint arrivals automatically (assign readers in the Schedule tab's **Checkpoint Readers** card; see Reader Setup).
+Crossings at time-check readers are recorded as checkpoint arrivals automatically (place readers on the event's **Course Map** tab).
 
 ### Live Leaderboard
 Each in-progress or completed moto card shows a **Live Order** panel that updates instantly as crossings arrive: position, rider, laps completed, gap to leader.
@@ -620,11 +621,27 @@ Optional — the defaults of channel 0, power 100 and both loops on suit most tr
 - **Desktop-only RM TrackR diagnostic** (desktop app): connect directly, see the machine ID, last heartbeat, power/battery, Loop 1 / Loop 2 status and read count, then run **Start System Test** and walk an RM TrackR Transponder over the loop.
 - **USB / Serial Reader** (desktop app only) — for an RFID reader plugged into the laptop by USB or serial port. Click **Open Serial Port Settings** (also in the desktop menu as **Serial / RFID Settings…**).
 
+### Course Map tab (several readers per event)
+
+The event's **Course Map** tab places readers on the course. Readers come from Reader Setup (added with **Find readers** in RM Connect); the tab shows each reader's live dot (green ready, amber starting up, grey RM Connect not running). Drag a reader chip onto a slot, or pick it from the slot's list (works on phones and tablets). Click **Save course map**; readers route to their places right away.
+
+**Motocross / supercross (and cross country):**
+- **Finish line · scores laps** — the one reader that decides laps and placings, exactly as before. Required when there are splits.
+- **Splits** — click **Add split** (or drop a reader on it) for each extra reader around the track, name it (e.g. "Halfway", "Whoops"), and drag splits by their grip to put them in course order. A reader can only be in one place on the course.
+- **Sectors** — the page lists the sectors the splits create, e.g. one split at Halfway gives **S1 Finish → Halfway** and **S2 Halfway → Finish**. Lap 1's first sector starts at the moto start.
+- Split reads never change laps, placings or results. A missed split read only leaves those sector times blank. Repeat reads in the same pass count once. A split read with no moto running is ignored (it never becomes a practice or race lap).
+- Readers not on the course keep timing laps the usual way, so an event with one reader needs no course map.
+- Warnings show when splits exist without a finish line, a split has no reader, or a placed reader isn't connected.
+
+**Enduro:** each special test from the Schedule tab is a **Section** card with a **Start** and an **End** slot ("Starts and ends at the same reader" for a single gate), and each time check has a slot. Add, rename or reorder sections on the Schedule tab. Role enforcement still applies (a start reader only starts a rider; an end reader only finishes an open start).
+
+**Where sector times show:** the public live page's **Sectors** tab (best per sector, fastest in green), the Race Day Management leaderboard (**Last lap sectors** and **Best sectors** under the leaderboard), expanded motos on the public results page, and the rider app's race results (**Best sectors** card).
+
+**Desktop app / offline:** the Course Map tab works in the desktop app and syncs with the cloud. Split readers need RM Connect, which needs internet, so sector times are recorded only at tracks with internet; offline timing uses the finish line as before.
+
 ### Readers and enduro checkpoints
 
-Every reader is registered to your club (RM Connect does this when you add it). For enduro:
-1. In the **Event Schedule tab** (enduro events only) a **Checkpoint Readers** card appears at the bottom — assign a reader to the **Start** and **Finish** of each test and to each **Time Check** → **Save**.
-2. When a tag crosses, the platform resolves the reader's assignment and routes the crossing to the correct test and role — no manual gate selection on race day. Readers without an assignment time the running moto as usual.
+Every reader is registered to your club (RM Connect does this when you add it). Place enduro readers on the event's **Course Map** tab (above); the Schedule tab links there. When a tag crosses, the platform resolves the reader's place and routes the crossing to the correct test and role — no manual gate selection on race day.
 
 **Role enforcement**: a Start reader only processes crossings when the rider hasn't yet started (even crossing count); a Finish reader only processes when the rider has an open start (odd count). This prevents mis-routing if a reader sees a tag at the wrong moment.
 
@@ -742,7 +759,7 @@ RM Roost platform admins create clubs (Clubs page). Creating a club with an orga
 Riders use the **RM Roost** app (iPhone and Android) and the public website:
 - **Find and register** for events, pay by card, sign waivers, and enter discount codes.
 - **Profiles link by email:** rider profiles attach to the app account whose email matches the registration email. One account can manage several riders (e.g. a parent and kids). If a rider signs in with a different email than they registered with, the app shows no profile and offers **Sign in with a different email**.
-- **My Races** — upcoming races, results, and history. **Results** — published results and series standings. **Train** — practice laps from Practice sessions.
+- **My Races** — upcoming races, results, and history. **Results** — published results and series standings; motos run with split readers show a **Best sectors** card. **Train** — practice laps from Practice sessions.
 - **Quick Check-In** on race day (when the event has it on) and push notifications (next up, 3 races away, organizer messages).
 - **Cancel Registration** from the event page, which shows up on the organizer's Cancellations tab.
 - **Rocky**, an AI mechanic, answers bike setup and maintenance questions.

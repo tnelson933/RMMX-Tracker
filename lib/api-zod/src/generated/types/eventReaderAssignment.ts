@@ -16,6 +16,7 @@ export interface EventReaderAssignment {
      * @nullable
      */
   antennaId?: number | null;
+  /** start/finish with a motoId: an enduro test gate. finish with no motoId: the event finish line that scores laps. split: an event-wide course point that only produces sector times. */
   role: EventReaderAssignmentRole;
   /**
      * For start/finish roles — the specific test moto this reader covers
@@ -27,5 +28,15 @@ export interface EventReaderAssignment {
      * @nullable
      */
   timeCheckId?: number | null;
+  /**
+     * Course order of a split (1 = first after the finish line)
+     * @nullable
+     */
+  sequence?: number | null;
+  /**
+     * Organizer name for the course point, e.g. "Whoops"
+     * @nullable
+     */
+  label?: string | null;
   createdAt?: Date;
 }

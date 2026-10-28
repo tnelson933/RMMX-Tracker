@@ -2085,12 +2085,16 @@ export interface RecentTag {
   riderName?: string | null;
 }
 
+/**
+ * start/finish with a motoId: an enduro test gate. finish with no motoId: the event finish line that scores laps. split: an event-wide course point that only produces sector times.
+ */
 export type EventReaderAssignmentRole = typeof EventReaderAssignmentRole[keyof typeof EventReaderAssignmentRole];
 
 
 export const EventReaderAssignmentRole = {
   start: 'start',
   finish: 'finish',
+  split: 'split',
   time_check: 'time_check',
 } as const;
 
@@ -2103,6 +2107,7 @@ export interface EventReaderAssignment {
      * @nullable
      */
   antennaId?: number | null;
+  /** start/finish with a motoId: an enduro test gate. finish with no motoId: the event finish line that scores laps. split: an event-wide course point that only produces sector times. */
   role: EventReaderAssignmentRole;
   /**
      * For start/finish roles — the specific test moto this reader covers
@@ -2114,6 +2119,16 @@ export interface EventReaderAssignment {
      * @nullable
      */
   timeCheckId?: number | null;
+  /**
+     * Course order of a split (1 = first after the finish line)
+     * @nullable
+     */
+  sequence?: number | null;
+  /**
+     * Organizer name for the course point, e.g. "Whoops"
+     * @nullable
+     */
+  label?: string | null;
   createdAt?: string;
 }
 
@@ -2123,6 +2138,7 @@ export type EventReaderAssignmentInputRole = typeof EventReaderAssignmentInputRo
 export const EventReaderAssignmentInputRole = {
   start: 'start',
   finish: 'finish',
+  split: 'split',
   time_check: 'time_check',
 } as const;
 
@@ -2132,6 +2148,8 @@ export interface EventReaderAssignmentInput {
   role: EventReaderAssignmentInputRole;
   motoId?: number | null;
   timeCheckId?: number | null;
+  sequence?: number | null;
+  label?: string | null;
 }
 
 export interface SetEventReaderAssignmentsInput {

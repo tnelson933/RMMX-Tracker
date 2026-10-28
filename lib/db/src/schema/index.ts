@@ -29,6 +29,7 @@ export * from "./enduro_time_checks";
 export * from "./enduro_checkpoint_arrivals";
 export * from "./readers";
 export * from "./event_reader_assignments";
+export * from "./split_crossings";
 export * from "./rider_bikes";
 export * from "./liability_waiver_signatures";
 export * from "./quick_checkin_notifications";

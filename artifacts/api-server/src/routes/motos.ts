@@ -1,7 +1,7 @@
 import { eventToday } from "@workspace/api-zod";
 import { Router, type Response } from "express";
 import { db } from "@workspace/db";
-import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, pointsTablesTable, clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable, eventPublicationTable, lapCrossingsTable, registrationsTable, seriesTable, seriesPointsTable, riderAccountsTable, riderPushTokensTable } from "@workspace/db";
+import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, pointsTablesTable, clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable, eventPublicationTable, lapCrossingsTable, splitCrossingsTable, registrationsTable, seriesTable, seriesPointsTable, riderAccountsTable, riderPushTokensTable } from "@workspace/db";
 import { eq, and, inArray, min, ne, gt, asc } from "drizzle-orm";
 import { sseBroadcast, buildLeaderboard, publishTimingSnapshot, resetSharedAnnouncer } from "./timing";
 import { shouldPublishAnnouncerSnapshotForMotoPatch } from "../lib/announcerLifecycle";
@@ -460,6 +460,7 @@ router.post("/motos/:motoId/restart", async (req, res) => {
     const evClubId = await getEventClubId(moto.eventId);
     if (evClubId !== staffCIdRestart) return res.status(403).json({ error: "Forbidden" });
   }
+  await db.delete(splitCrossingsTable).where(eq(splitCrossingsTable.motoId, id));
   await db.delete(lapCrossingsTable).where(eq(lapCrossingsTable.motoId, id));
   // Clear timing data from race_results so short-lap flags reset correctly
   await db
@@ -555,6 +556,7 @@ router.delete("/motos/:motoId", async (req, res) => {
   if (!moto) return res.status(404).json({ error: "Not found" });
 
   // Delete FK-dependent rows before deleting the moto
+  await db.delete(splitCrossingsTable).where(eq(splitCrossingsTable.motoId, id));
   await db.delete(lapCrossingsTable).where(eq(lapCrossingsTable.motoId, id));
   if (moto.status !== "completed") {
     await db.delete(raceResultsTable).where(eq(raceResultsTable.motoId, id));
@@ -675,6 +677,7 @@ router.delete("/events/:eventId/motos", async (req, res) => {
 
   // Delete FK-dependent rows before deleting motos
   // (lap_crossings and race_results both have non-cascading FKs on moto_id)
+  await db.delete(splitCrossingsTable).where(inArray(splitCrossingsTable.motoId, ids));
   await db.delete(lapCrossingsTable).where(inArray(lapCrossingsTable.motoId, ids));
   await db.delete(raceResultsTable).where(inArray(raceResultsTable.motoId, ids));
   await db.delete(motosTable).where(inArray(motosTable.id, ids));

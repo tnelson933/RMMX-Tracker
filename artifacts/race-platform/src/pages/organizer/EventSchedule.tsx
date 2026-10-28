@@ -8,9 +8,8 @@ import {
   useUpdateEvent, useAdvanceToMain, useLinkStagger, useUnlinkStagger,
   useListEnduroTimeChecks, useSetEnduroTimeChecks, useGetEnduroPenaltySummary,
   useListCheckpointArrivals, useRecordCheckpointArrival, useDeleteCheckpointArrival,
-  useListReaders, useListEventReaderAssignments, useSetEventReaderAssignments,
   getListMotosQueryKey, getListCheckinsQueryKey, getListEnduroTimeChecksQueryKey,
-  getListReadersQueryKey, getListEventReaderAssignmentsQueryKey, getListCheckpointArrivalsQueryKey,
+  getListCheckpointArrivalsQueryKey,
   getGetEnduroPenaltySummaryQueryKey, getGetEventQueryKey,
   type Moto,
 } from "@workspace/api-client-react";
@@ -1481,71 +1480,6 @@ export default function EventSchedule() {
     // Only re-run when the dialog opens, not on every data refetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isGenerateOpen]);
-
-  // ── Checkpoint reader assignments (enduro only) ──
-  // Local state: motoId → { startReaderId, startAntennaId, finishReaderId, finishAntennaId }
-  //              timeCheckId → { readerId, antennaId }
-  const [motoRdrs, setMotoRdrs] = useState<Record<number, { startReaderId: string; startAntennaId: string; finishReaderId: string; finishAntennaId: string }>>({});
-  const [tcRdrs, setTcRdrs] = useState<Record<number, { readerId: string; antennaId: string }>>({});
-  // Per-moto: true when the test starts and finishes at the same location (single reader for both roles)
-  const [motoSameReader, setMotoSameReader] = useState<Record<number, boolean>>({});
-
-  const { data: clubReaders = [] } = useListReaders({ query: { enabled: isEnduro } as any });
-  const { data: existingAssignments = [] } = useListEventReaderAssignments(eventId, {
-    query: { enabled: isEnduro && !!eventId } as any,
-  });
-  const setAssignmentsMutation = useSetEventReaderAssignments();
-
-  // Sync saved assignments → local state whenever they load
-  useEffect(() => {
-    const assignments = (existingAssignments as any[]);
-    if (!assignments?.length) return;
-    const newMoto: typeof motoRdrs = {};
-    const newTc: typeof tcRdrs = {};
-    for (const a of assignments) {
-      if (a.role === "start" && a.motoId) {
-        newMoto[a.motoId] = { ...newMoto[a.motoId], startReaderId: String(a.readerId), startAntennaId: a.antennaId != null ? String(a.antennaId) : "", finishReaderId: newMoto[a.motoId]?.finishReaderId ?? "", finishAntennaId: newMoto[a.motoId]?.finishAntennaId ?? "" };
-      } else if (a.role === "finish" && a.motoId) {
-        newMoto[a.motoId] = { ...newMoto[a.motoId], finishReaderId: String(a.readerId), finishAntennaId: a.antennaId != null ? String(a.antennaId) : "", startReaderId: newMoto[a.motoId]?.startReaderId ?? "", startAntennaId: newMoto[a.motoId]?.startAntennaId ?? "" };
-      } else if (a.role === "time_check" && a.timeCheckId) {
-        newTc[a.timeCheckId] = { readerId: String(a.readerId), antennaId: a.antennaId != null ? String(a.antennaId) : "" };
-      }
-    }
-    // Auto-detect same-gate: if start and finish readerId match for a moto, check the box
-    const newSameReader: Record<number, boolean> = {};
-    for (const [motoIdStr, cfg] of Object.entries(newMoto)) {
-      if (cfg.startReaderId && cfg.startReaderId === cfg.finishReaderId) {
-        newSameReader[Number(motoIdStr)] = true;
-      }
-    }
-    setMotoRdrs(newMoto);
-    setTcRdrs(newTc);
-    setMotoSameReader(newSameReader);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [existingAssignments]);
-
-  async function saveReaderAssignments() {
-    const assignments: Array<{ readerId: number; antennaId: number | null; role: string; motoId: number | null; timeCheckId: number | null }> = [];
-    for (const [motoIdStr, cfg] of Object.entries(motoRdrs)) {
-      const motoId = Number(motoIdStr);
-      const sameGate = motoSameReader[motoId] ?? false;
-      // When same-gate is on, use startReaderId for both roles so the backend detects the pair
-      const effectiveFinishReaderId = sameGate ? cfg.startReaderId : cfg.finishReaderId;
-      const effectiveFinishAntennaId = sameGate ? cfg.startAntennaId : cfg.finishAntennaId;
-      if (cfg.startReaderId) assignments.push({ readerId: Number(cfg.startReaderId), antennaId: cfg.startAntennaId ? Number(cfg.startAntennaId) : null, role: "start", motoId, timeCheckId: null });
-      if (effectiveFinishReaderId) assignments.push({ readerId: Number(effectiveFinishReaderId), antennaId: effectiveFinishAntennaId ? Number(effectiveFinishAntennaId) : null, role: "finish", motoId, timeCheckId: null });
-    }
-    for (const [tcIdStr, cfg] of Object.entries(tcRdrs)) {
-      if (cfg.readerId) assignments.push({ readerId: Number(cfg.readerId), antennaId: cfg.antennaId ? Number(cfg.antennaId) : null, role: "time_check", motoId: null, timeCheckId: Number(tcIdStr) });
-    }
-    try {
-      await setAssignmentsMutation.mutateAsync({ eventId, data: { assignments } as any });
-      queryClient.invalidateQueries({ queryKey: getListEventReaderAssignmentsQueryKey(eventId) });
-      toast({ title: "Reader assignments saved" });
-    } catch {
-      toast({ title: "Failed to save reader assignments", variant: "destructive" });
-    }
-  }
 
   // ── defaultTopPerHeat (Advance to Main) ──
   const defaultTopPerHeat = useMemo(() => {
@@ -3168,108 +3102,16 @@ export default function EventSchedule() {
               </div>
             )}
 
-            {/* ── Checkpoint reader assignments (enduro only) ── */}
-            {isEnduro && (() => {
-              const testMotos = sortedMotos.filter(m => m.type === "enduro_test");
-              const timeChecks = (existingTimeChecks as any[] | undefined) ?? [];
-              const readers = (clubReaders as any[]);
-              if (testMotos.length === 0 && timeChecks.length === 0) return null;
-              return (
-                <div className="mt-2 rounded-lg border bg-card">
-                  <div className="flex items-center justify-between px-4 py-3 border-b">
-                    <div>
-                      <p className="font-semibold text-sm">Checkpoint Readers</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">Assign a registered reader to each start gate, finish line, and time check.</p>
-                    </div>
-                    <Button size="sm" onClick={saveReaderAssignments} disabled={setAssignmentsMutation.isPending}>
-                      {setAssignmentsMutation.isPending ? "Saving…" : "Save"}
-                    </Button>
-                  </div>
-                  <div className="p-4 space-y-4">
-                    {readers.length === 0 && (
-                      <p className="text-xs text-muted-foreground italic">No readers registered for this club yet. Go to <strong>RFID Setup → Registered Readers</strong> to add one.</p>
-                    )}
-                    {testMotos.length > 0 && (
-                      <div className="space-y-3">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Test Motos — Gates</p>
-                        {testMotos.map(moto => {
-                          const cfg = motoRdrs[moto.id] ?? { startReaderId: "", startAntennaId: "", finishReaderId: "", finishAntennaId: "" };
-                          const sameGate = motoSameReader[moto.id] ?? false;
-                          const readerSelect = (value: string, onChange: (v: string) => void) => (
-                            <Select value={value || "none"} onValueChange={v => onChange(v === "none" ? "" : v)}>
-                              <SelectTrigger className="h-8 text-xs">
-                                <SelectValue placeholder="None" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="none">None</SelectItem>
-                                {readers.map((r: any) => (
-                                  <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          );
-                          return (
-                            <div key={moto.id} className="rounded-md border p-3 space-y-2">
-                              <p className="text-sm font-medium">{moto.name ?? `Test ${moto.id}`}</p>
-                              <div className={`grid gap-3 ${sameGate ? "grid-cols-1" : "grid-cols-2"}`}>
-                                <div className="space-y-1">
-                                  <Label className="text-xs text-muted-foreground">
-                                    {sameGate ? "Start / Finish Reader" : "Start Reader"}
-                                  </Label>
-                                  {readerSelect(cfg.startReaderId, v => setMotoRdrs(prev => ({ ...prev, [moto.id]: { ...cfg, startReaderId: v } })))}
-                                </div>
-                                {!sameGate && (
-                                  <div className="space-y-1">
-                                    <Label className="text-xs text-muted-foreground">Finish Reader</Label>
-                                    {readerSelect(cfg.finishReaderId, v => setMotoRdrs(prev => ({ ...prev, [moto.id]: { ...cfg, finishReaderId: v } })))}
-                                  </div>
-                                )}
-                              </div>
-                              <label className="flex items-center gap-2 cursor-pointer select-none mt-1">
-                                <input
-                                  type="checkbox"
-                                  checked={sameGate}
-                                  onChange={e => setMotoSameReader(prev => ({ ...prev, [moto.id]: e.target.checked }))}
-                                  className="rounded border-border accent-primary"
-                                />
-                                <span className="text-xs text-muted-foreground">Start and finish are at the same location (one reader for both)</span>
-                              </label>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {timeChecks.length > 0 && (
-                      <div className="space-y-2">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Time Checks</p>
-                        {timeChecks.map((tc: any) => {
-                          const cfg = tcRdrs[tc.id] ?? { readerId: "", antennaId: "" };
-                          return (
-                            <div key={tc.id} className="flex items-center gap-3">
-                              <span className="text-sm flex-1 truncate">{tc.name || `TC ${tc.checkNumber}`}</span>
-                              <Select
-                                value={cfg.readerId || "none"}
-                                onValueChange={v => setTcRdrs(prev => ({ ...prev, [tc.id]: { ...cfg, readerId: v === "none" ? "" : v } }))}
-                              >
-                                <SelectTrigger className="h-8 text-xs w-44">
-                                  <SelectValue placeholder="None" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="none">None</SelectItem>
-                                  {readers.map((r: any) => (
-                                    <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
+            {/* Reader placement for sections and time checks lives on the Course Map tab. */}
+            {isEnduro && (
+              <div className="mt-2 rounded-lg border bg-card px-4 py-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-sm">Section readers</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Place a start and end reader on each special test, and readers on time checks, on the Course Map tab.</p>
                 </div>
-              );
-            })()}
+                <Link href={`/events/${eventId}/course`}><Button size="sm" variant="outline">Open Course Map</Button></Link>
+              </div>
+            )}
 
           </div>
           {/* ── Multi-class conflict panel (sticky top-right) — not applicable to enduro ── */}

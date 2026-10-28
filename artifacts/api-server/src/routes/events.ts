@@ -4,7 +4,7 @@ import { advanceEventStatuses } from "../lib/eventStatus";
 import { eventToday } from "@workspace/api-zod";
 import { Router, type Response } from "express";
 import { db } from "@workspace/db";
-import { eventsTable, clubsTable, registrationsTable, ridersTable, raceResultsTable, motosTable, eventPublicationTable, discountCategoriesTable, checkinsTable, rfidAssignmentsTable, lapCrossingsTable, compCodesTable, enduroTimeChecksTable, enduroCheckpointArrivalsTable, eventReaderAssignmentsTable, liabilityWaiverSignaturesTable } from "@workspace/db";
+import { eventsTable, clubsTable, registrationsTable, ridersTable, raceResultsTable, motosTable, eventPublicationTable, discountCategoriesTable, checkinsTable, rfidAssignmentsTable, lapCrossingsTable, splitCrossingsTable, compCodesTable, enduroTimeChecksTable, enduroCheckpointArrivalsTable, eventReaderAssignmentsTable, liabilityWaiverSignaturesTable } from "@workspace/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { normalizeEventPurchaseOptions } from "../lib/rmTrackr";
 import { sendStatsEmail } from "../lib/email";
@@ -492,6 +492,7 @@ router.delete("/events/:eventId", async (req, res) => {
     await tx.delete(enduroCheckpointArrivalsTable).where(eq(enduroCheckpointArrivalsTable.eventId, id));
     await tx.delete(enduroTimeChecksTable).where(eq(enduroTimeChecksTable.eventId, id));
     await tx.delete(raceResultsTable).where(eq(raceResultsTable.eventId, id));
+    await tx.delete(splitCrossingsTable).where(eq(splitCrossingsTable.eventId, id));
     await tx.delete(lapCrossingsTable).where(eq(lapCrossingsTable.eventId, id));
     await tx.delete(motosTable).where(eq(motosTable.eventId, id));
     await tx.delete(checkinsTable).where(eq(checkinsTable.eventId, id));

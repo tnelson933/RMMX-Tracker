@@ -690,6 +690,9 @@ export class SyncEngine {
         reader_assignments: this.db
           .prepare("SELECT * FROM event_reader_assignments WHERE event_id = ? ORDER BY id")
           .all(eventId),
+        // This release keeps the course map (finish + split rows) locally, so
+        // the cloud can replace them; older releases must not wipe them.
+        course_rows_included: true,
       });
     }
     return out;
