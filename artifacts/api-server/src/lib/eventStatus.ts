@@ -1,5 +1,6 @@
 import { db, eventsTable } from "@workspace/db";
 import { eq, inArray } from "drizzle-orm";
+import { eventToday } from "@workspace/api-zod";
 import { logger } from "./logger";
 
 // Event statuses move forward on their own:
@@ -7,7 +8,7 @@ import { logger } from "./logger";
 //   registration_open → registration_closed (registration window closes)
 //   any pre-race status → race_day (event start date arrives)
 //   race_day → completed (day after the last event day)
-// Dates are compared in Mountain time, the platform's home time zone.
+// Dates are compared in each event's local time (its track's time zone).
 
 export type EventStatusRow = {
   id: number;
@@ -16,27 +17,28 @@ export type EventStatusRow = {
   status: string;
   registrationOpen: string | null;
   registrationClose: string | null;
+  state?: string | null;
+  trackLat?: number | null;
+  trackLng?: number | null;
 };
 
 const PRE_RACE = new Set(["draft", "registration_open", "registration_closed"]);
 const SWEEP_INTERVAL_MS = 10 * 60_000;
 
-/** Today's date as YYYY-MM-DD in Mountain time. */
-export function todayInMountainTime(now = new Date()): string {
-  return now.toLocaleDateString("en-CA", { timeZone: "America/Denver" });
-}
 
 const day = (value: string | null | undefined) => (value ? String(value).substring(0, 10) : null);
 
-/** True once the event's start date has arrived: rider registration is over. */
-export function eventDateReached(event: { date: string }, now = new Date()): boolean {
+type EventPlace = { state?: string | null; trackLat?: number | null; trackLng?: number | null };
+
+/** True once the event's start date has arrived at the track: rider registration is over. */
+export function eventDateReached(event: { date: string } & EventPlace, now = new Date()): boolean {
   const start = day(event.date);
-  return !!start && start <= todayInMountainTime(now);
+  return !!start && start <= eventToday(event, now);
 }
 
 /** The single next status for an event, or null when it should stay as is. */
 export function computeAutoStatus(event: EventStatusRow, now = new Date()): string | null {
-  const today = todayInMountainTime(now);
+  const today = eventToday(event, now);
   const start = day(event.date);
   const lastDay = day(event.endDate) ?? start;
   const { status, registrationOpen, registrationClose } = event;
@@ -85,6 +87,9 @@ export async function sweepEventStatuses(): Promise<number> {
     status: eventsTable.status,
     registrationOpen: eventsTable.registrationOpen,
     registrationClose: eventsTable.registrationClose,
+    state: eventsTable.state,
+    trackLat: eventsTable.trackLat,
+    trackLng: eventsTable.trackLng,
   }).from(eventsTable).where(inArray(eventsTable.status, [...PRE_RACE, "race_day"]));
   const updates = await advanceEventStatuses(events);
   if (updates.size > 0) {

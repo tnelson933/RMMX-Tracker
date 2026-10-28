@@ -1,3 +1,4 @@
+import { eventToday } from "@workspace/api-zod";
 import { checkMoney, checkOneOf } from "../lib/validateInput";
 import { eventDateReached } from "../lib/eventStatus";
 import { Router } from "express";
@@ -613,7 +614,7 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
 
     const stripe = await getUncachableStripeClient();
     const appUrl = getAppUrl();
-    const todayStr = new Date().toISOString().substring(0, 10);
+    const todayStr = eventToday(event);
     const earlyBirdActive = !!(event.earlyBirdEndsAt && todayStr <= event.earlyBirdEndsAt && event.earlyBirdFee);
     const entryFee = earlyBirdActive ? Number(event.earlyBirdFee) : Number(event.entryFee);
     const rentalFee = (reg.transponderRental && event.transponderRentalEnabled && event.transponderRentalFee)
@@ -1417,7 +1418,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   // Determine if payment is required (accounting for comp discount and purchase options)
   const wantsRental = !!(rentTransponder && events[0].transponderRentalEnabled && events[0].transponderRentalFee);
   const wantsRfidSticker = !!(purchaseRfidSticker && events[0].timingTechnology === "rfid" && events[0].rfidStickerFee);
-  const todayStrReg = new Date().toISOString().substring(0, 10);
+  const todayStrReg = eventToday(events[0]);
   const earlyBirdActiveReg = !!(events[0].earlyBirdEndsAt && todayStrReg <= events[0].earlyBirdEndsAt && events[0].earlyBirdFee);
   const entryFeeNum = earlyBirdActiveReg
     ? Number(events[0].earlyBirdFee)

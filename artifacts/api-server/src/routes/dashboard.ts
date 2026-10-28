@@ -69,6 +69,8 @@ router.get("/dashboard/club/:clubId", async (req, res) => {
     raceClasses: eventsTable.raceClasses,
     registrationOpen: eventsTable.registrationOpen,
     registrationClose: eventsTable.registrationClose,
+    trackLat: eventsTable.trackLat,
+    trackLng: eventsTable.trackLng,
     status: eventsTable.status,
     paymentEnabled: eventsTable.paymentEnabled,
     requireWaiver: eventsTable.requireWaiver,
@@ -363,6 +365,8 @@ router.get("/public/upcoming", async (req, res) => {
     status: eventsTable.status,
     registrationOpen: eventsTable.registrationOpen,
     registrationClose: eventsTable.registrationClose,
+    trackLat: eventsTable.trackLat,
+    trackLng: eventsTable.trackLng,
     clubName: clubsTable.name,
   }).from(eventsTable)
     .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
@@ -489,6 +493,9 @@ router.get("/public/events/browse", async (req, res) => {
     status: eventsTable.status,
     registrationOpen: eventsTable.registrationOpen,
     registrationClose: eventsTable.registrationClose,
+    state: eventsTable.state,
+    trackLat: eventsTable.trackLat,
+    trackLng: eventsTable.trackLng,
   }).from(eventsTable)
     .where(sql`
       (${eventsTable.status} NOT IN ('race_day', 'completed')

@@ -14,7 +14,8 @@
       },
       "ios": {
         "simulator": true
-      }
+      },
+      "channel": "development"
     },
     "preview": {
       "pnpm": "10.26.1",
@@ -29,7 +30,8 @@
       "ios": {
         "simulator": false,
         "credentialsSource": "remote"
-      }
+      },
+      "channel": "preview"
     },
     "production": {
       "node": "20.19.4",
@@ -47,7 +49,8 @@
         "autoIncrement": true,
         "image": "macos-sequoia-15.6-xcode-26.0",
         "credentialsSource": "local"
-      }
+      },
+      "channel": "production"
     }
   },
   "submit": {

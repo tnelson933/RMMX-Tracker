@@ -1,3 +1,4 @@
+import { eventToday, eventTimeZone, todayInZone, hourInZone } from "@workspace/api-zod";
 import {
   db,
   eventsTable,
@@ -17,7 +18,8 @@ import { sendPushNotifications, type PushMessage } from "./push";
 
 // Race-day morning push for quick check-in.
 //
-// Every poll cycle, if it's past SEND_HOUR in Mountain Time, find events with
+// Every poll cycle, for events whose local time (at the track) is between
+// SEND_HOUR and SEND_HOUR_END, find events with
 // quick check-in enabled whose (start) date is today, and send ONE push per
 // eligible rider account that hasn't been notified for that event yet
 // (deduped durably via the quick_checkin_notifications table).
@@ -27,21 +29,13 @@ import { sendPushNotifications, type PushMessage } from "./push";
 // even when the app is closed.
 
 const POLL_INTERVAL_MS = 5 * 60 * 1000;
-const SEND_HOUR = 7; // don't push before 7:00 AM Mountain Time
+const SEND_HOUR = 7; // don't push before 7:00 AM at the track
 const SEND_HOUR_END = 18; // don't start pushing after 6:00 PM (race is winding down)
 
-function mountainNow(): { dateStr: string; hour: number } {
-  const now = new Date();
-  const dateStr = now.toLocaleDateString("en-CA", { timeZone: "America/Denver" });
-  const hour = Number(
-    new Intl.DateTimeFormat("en-US", { timeZone: "America/Denver", hour: "numeric", hour12: false }).format(now),
-  );
-  return { dateStr, hour };
-}
-
 export async function runQuickCheckinNotifierOnce(): Promise<void> {
-  const { dateStr: todayStr, hour } = mountainNow();
-  if (hour < SEND_HOUR || hour >= SEND_HOUR_END) return;
+  // Candidate dates span every US zone; each event's own local date and hour decide below.
+  const now = new Date();
+  const candidateDates = [-1, 0, 1].map(d => new Date(now.getTime() + d * 86_400_000).toISOString().substring(0, 10));
 
   // Events with quick check-in enabled starting today. Status may lag behind
   // (registration still "open" on race morning), so filter on date + flag, not status.
@@ -55,17 +49,25 @@ export async function runQuickCheckinNotifierOnce(): Promise<void> {
       requireWaiver: eventsTable.requireWaiver,
       requireLiabilityWaiver: eventsTable.requireLiabilityWaiver,
       requireTransponder: eventsTable.requireTransponder,
+      date: eventsTable.date,
+      state: eventsTable.state,
+      trackLat: eventsTable.trackLat,
+      trackLng: eventsTable.trackLng,
     })
     .from(eventsTable)
     .where(
       and(
         eq(eventsTable.quickCheckinEnabled, true),
-        sql`SUBSTRING(${eventsTable.date}::text, 1, 10) = ${todayStr}`,
+        inArray(sql<string>`SUBSTRING(${eventsTable.date}::text, 1, 10)`, candidateDates),
         ne(eventsTable.status, "completed"),
       ),
     );
 
   for (const event of events) {
+    const zone = eventTimeZone(event);
+    if (String(event.date).substring(0, 10) !== todayInZone(zone, now)) continue;
+    const hour = hourInZone(zone, now);
+    if (hour < SEND_HOUR || hour >= SEND_HOUR_END) continue;
     try {
       await notifyForEvent(event);
     } catch (err) {

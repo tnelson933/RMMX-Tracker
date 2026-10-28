@@ -1,3 +1,4 @@
+import { localDateString } from "@/lib/eventDates";
 import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useListEvents, useUpdateEvent } from "@workspace/api-client-react";
@@ -121,7 +122,7 @@ function EventRow({ event, onResolved }: EventRowProps) {
           <Input
             type="date"
             value={newDate}
-            min={new Date().toISOString().substring(0, 10)}
+            min={localDateString()}
             onChange={(e) => setNewDate(e.target.value)}
             className="flex-1"
           />

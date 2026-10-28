@@ -20,6 +20,7 @@ export type GeofenceEvent = {
   eventId: number;
   eventName: string;
   eventDate: string; // YYYY-MM-DD
+  timeZone?: string; // the track's time zone (from the server)
   trackName: string | null;
   trackLat: number;
   trackLng: number;
@@ -27,9 +28,16 @@ export type GeofenceEvent = {
 
 const isNative = Platform.OS === "ios" || Platform.OS === "android";
 
-export function todayInMountainTime(): string {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Denver" });
+/** Today's date (YYYY-MM-DD) at the event's track; the phone's own date if the zone is unknown. */
+export function todayAtTrack(timeZone?: string): string {
+  try {
+    if (timeZone) return new Date().toLocaleDateString("en-CA", { timeZone });
+  } catch { /* unknown zone: fall through */ }
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
+
+const isRaceDay = (e: Pick<GeofenceEvent, "eventDate" | "timeZone">) => e.eventDate === todayAtTrack(e.timeZone);
 
 export function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 3958.8;
@@ -75,7 +83,7 @@ if (isNative) {
     const meta: Record<string, GeofenceEvent> = JSON.parse((await AsyncStorage.getItem(META_KEY)) ?? "{}");
     const event = meta[region.identifier];
     // Geofences are set up to a week ahead; only alert on race day.
-    if (!event || event.eventDate !== todayInMountainTime()) return;
+    if (!event || !isRaceDay(event)) return;
     await notifyArrival(event);
   });
 }
@@ -148,8 +156,7 @@ const RADIUS_MILES_TOLERANCE = QUICK_CHECKIN_RADIUS_MILES;
 
 async function watchedEvents(): Promise<GeofenceEvent[]> {
   const list: GeofenceEvent[] = JSON.parse((await AsyncStorage.getItem(WATCH_KEY)) ?? "[]");
-  const today = todayInMountainTime();
-  return list.filter(e => e.eventDate === today);
+  return list.filter(isRaceDay);
 }
 
 if (isNative) {
@@ -178,8 +185,7 @@ if (isNative) {
  */
 export async function syncArrivalWatch(events: GeofenceEvent[]): Promise<void> {
   if (!isNative) return;
-  const today = todayInMountainTime();
-  const todays = events.filter(e => e.eventDate === today);
+  const todays = events.filter(isRaceDay);
   await AsyncStorage.setItem(WATCH_KEY, JSON.stringify(todays));
 
   const running = await Location.hasStartedLocationUpdatesAsync(WATCH_TASK).catch(() => false);

@@ -1,3 +1,4 @@
+import { eventToday, eventTimeZone, todayInZone, hourInZone } from "@workspace/api-zod";
 import { Router } from "express";
 import { db } from "@workspace/db";
 import {
@@ -57,22 +58,8 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
   const transponderByRiderId = new Map(familyRiders.map(r => [r.id, r.transponderId]));
   const nameById = new Map(familyRiders.map(r => [r.id, `${r.firstName} ${r.lastName}`.trim()]));
 
-  // "Today" anchored to Mountain Time (matches quickCheckinNotifier) so late-evening
-  // riders aren't cut off when the UTC date rolls over at ~6pm MT.
-  const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Denver" });
-
-  // Auto-advance any quick-checkin events whose date has arrived but status hasn't caught up.
-  // This handles the case where registration is still "open" on race day (late close date).
-  await db
-    .update(eventsTable)
-    .set({ status: "race_day" })
-    .where(
-      and(
-        eq(eventsTable.quickCheckinEnabled, true),
-        sql`${eventsTable.date}::date <= ${todayStr}::date`,
-        inArray(eventsTable.status, ["draft", "registration_open", "registration_closed"]),
-      )
-    );
+  // Statuses advance on the server's schedule (lib/eventStatus sweep); a rider
+  // opening the app never changes an event's status.
 
   // Fetch registrations for events that are: race_day status, quickCheckinEnabled, today
   const regs = await db
@@ -113,10 +100,10 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
 
   if (regs.length === 0) return res.json([]);
 
-  // Filter to today only (event.date === today, or for multi-day: start date === today)
+  // Today only, in each event's local time (start date === today at the track).
   const todayRegs = regs.filter(r => {
     const eventDate = String(r.eventDate ?? "").substring(0, 10);
-    return eventDate === todayStr;
+    return eventDate === eventToday({ state: r.state, trackLat: r.trackLat, trackLng: r.trackLng });
   });
 
   if (todayRegs.length === 0) return res.json([]);
@@ -168,6 +155,7 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
     eventId: number;
     eventName: string;
     eventDate: string;
+    timeZone: string;
     location: string | null;
     state: string;
     trackName: string | null;
@@ -234,6 +222,7 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
       eventId: r.eventId,
       eventName: r.eventName,
       eventDate: String(r.eventDate ?? "").substring(0, 10),
+      timeZone: eventTimeZone({ state: r.state, trackLat: r.trackLat, trackLng: r.trackLng }),
       location: r.location ?? null,
       state: r.state,
       trackName: r.trackName ?? null,
@@ -265,8 +254,9 @@ router.get("/rider/quick-checkin-geofences", requireRiderAuth, async (req, res) 
   const riders = await db.select({ id: ridersTable.id }).from(ridersTable).where(await managedRiderWhere(account));
   if (riders.length === 0) return res.json({ radiusMiles: QUICK_CHECKIN_RADIUS_MILES, events: [] });
 
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Denver" });
-  const weekOut = new Date(Date.now() + 7 * 86_400_000).toLocaleDateString("en-CA", { timeZone: "America/Denver" });
+  // Wide UTC window first; each event's own local date is checked below.
+  const today = new Date(Date.now() - 86_400_000).toISOString().substring(0, 10);
+  const weekOut = new Date(Date.now() + 8 * 86_400_000).toISOString().substring(0, 10);
   const rows = await db
     .selectDistinct({
       eventId: eventsTable.id,
@@ -275,6 +265,7 @@ router.get("/rider/quick-checkin-geofences", requireRiderAuth, async (req, res) 
       trackName: eventsTable.trackName,
       trackLat: eventsTable.trackLat,
       trackLng: eventsTable.trackLng,
+      state: eventsTable.state,
     })
     .from(registrationsTable)
     .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
@@ -289,7 +280,13 @@ router.get("/rider/quick-checkin-geofences", requireRiderAuth, async (req, res) 
 
   return res.json({
     radiusMiles: QUICK_CHECKIN_RADIUS_MILES,
-    events: rows.map(r => ({ ...r, eventDate: String(r.eventDate).substring(0, 10) })),
+    events: rows
+      .map(({ state, ...r }) => {
+        const place = { state, trackLat: r.trackLat, trackLng: r.trackLng };
+        return { ...r, eventDate: String(r.eventDate).substring(0, 10), timeZone: eventTimeZone(place), today: eventToday(place) };
+      })
+      .filter(e => e.eventDate >= e.today)
+      .map(({ today: _today, ...e }) => e),
   });
 });
 
@@ -322,6 +319,7 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
       requireTransponder: eventsTable.requireTransponder,
       trackLat: eventsTable.trackLat,
       trackLng: eventsTable.trackLng,
+      state: eventsTable.state,
     })
     .from(eventsTable)
     .where(eq(eventsTable.id, eventId));
@@ -330,10 +328,8 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
   if (!event.quickCheckinEnabled) return res.status(400).json({ error: "Quick check-in not enabled for this event" });
   if (event.status !== "race_day") return res.status(400).json({ error: "Event is not in race_day status" });
 
-  // "Today" anchored to Mountain Time (matches quickCheckinNotifier) so late-evening
-  // riders aren't cut off when the UTC date rolls over at ~6pm MT.
-  const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Denver" });
-  if (String(event.date).substring(0, 10) !== todayStr) {
+  // Race day at the track, in the event's local time.
+  if (String(event.date).substring(0, 10) !== eventToday(event)) {
     return res.status(400).json({ error: "Quick check-in is only available on race day" });
   }
 

@@ -35,6 +35,6 @@ httpServer.listen(port, (err?: Error) => {
   normalizeEventStates().catch(err => logger.error({ err }, "normalizeEventStates failed"));
   // Close registration and advance event statuses on schedule, not only when a page is opened.
   startEventStatusSweeper();
-  // Race-morning push for events with Quick Check-In (7 AM–6 PM Mountain).
+  // Race-morning push for events with Quick Check-In (7 AM–6 PM at each track).
   startQuickCheckinNotifier();
 });

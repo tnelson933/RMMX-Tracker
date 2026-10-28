@@ -1,3 +1,4 @@
+import { localDateString } from "@/lib/format";
 import { API_BASE_URL } from "@/lib/apiBase";
 import { Feather } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -161,7 +162,7 @@ function ordinalSuffix(n: number): string {
 }
 
 function isEventToday(e: BrowseEvent): boolean {
-  const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Denver" });
+  const todayStr = localDateString();
   const start = e.date ? e.date.substring(0, 10) : "";
   const end = e.endDate ? e.endDate.substring(0, 10) : start;
   return !!start && start <= todayStr && todayStr <= end;

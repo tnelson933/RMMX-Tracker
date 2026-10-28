@@ -1,6 +1,7 @@
 import { geocodeTrack } from "../lib/geocodeTrack";
 import { validateEventInput } from "../lib/validateInput";
-import { advanceEventStatuses, todayInMountainTime } from "../lib/eventStatus";
+import { advanceEventStatuses } from "../lib/eventStatus";
+import { eventToday } from "@workspace/api-zod";
 import { Router, type Response } from "express";
 import { db } from "@workspace/db";
 import { eventsTable, clubsTable, registrationsTable, ridersTable, raceResultsTable, motosTable, eventPublicationTable, discountCategoriesTable, checkinsTable, rfidAssignmentsTable, lapCrossingsTable, compCodesTable, enduroTimeChecksTable, enduroCheckpointArrivalsTable, eventReaderAssignmentsTable, liabilityWaiverSignaturesTable } from "@workspace/db";
@@ -19,7 +20,7 @@ function getStaffClubId(res: Response): number | null {
   return typeof id === "number" ? id : null;
 }
 
-type EventRow = { id: number; date: string; endDate?: string | null; status: string; registrationOpen: string | null; registrationClose: string | null };
+type EventRow = { id: number; date: string; endDate?: string | null; status: string; registrationOpen: string | null; registrationClose: string | null; state?: string | null; trackLat?: number | null; trackLng?: number | null };
 
 // Recompute the correct status from scratch based on date + registration window.
 function computeCorrectStatus(event: EventRow): string | null {
@@ -27,7 +28,7 @@ function computeCorrectStatus(event: EventRow): string | null {
   if (!["draft", "registration_open", "registration_closed", "race_day"].includes(status)) return null;
 
   const now = new Date();
-  const todayStr = todayInMountainTime(now);
+  const todayStr = eventToday(event, now);
   const eventDateStr = event.date ? String(event.date).substring(0, 10) : null;
   const lastDayStr = event.endDate ? String(event.endDate).substring(0, 10) : eventDateStr;
 
@@ -141,7 +142,7 @@ router.post("/events", async (req, res) => {
 
   // For draft saves, default date to today and state to "TBD"
   const now0 = new Date();
-  const todayFallback = `${now0.getFullYear()}-${String(now0.getMonth() + 1).padStart(2, "0")}-${String(now0.getDate()).padStart(2, "0")}`;
+  const todayFallback = eventToday({ state }, now0);
   // Strip any time component — always store as plain YYYY-MM-DD
   const cleanDate = isDraftCreate ? (date ? String(date).substring(0, 10) : todayFallback) : String(date).substring(0, 10);
   const cleanState = normalizeState(isDraftCreate ? (state || "TBD") : state);
@@ -375,6 +376,9 @@ router.patch("/events/:eventId", async (req, res) => {
     status: event.status,
     registrationOpen: event.registrationOpen,
     registrationClose: event.registrationClose,
+    state: event.state,
+    trackLat: event.trackLat,
+    trackLng: event.trackLng,
   });
   if (nextStatus) {
     await db.update(eventsTable).set({ status: nextStatus }).where(eq(eventsTable.id, id));

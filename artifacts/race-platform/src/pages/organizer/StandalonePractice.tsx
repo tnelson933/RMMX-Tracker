@@ -1,3 +1,4 @@
+import { localDateString } from "@/lib/eventDates";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useListClubs } from "@workspace/api-client-react";
@@ -77,7 +78,7 @@ export default function StandalonePractice() {
   const [selectedClubId, setSelectedClubId] = useState<number | "">("");
   const [expandedRfids, setExpandedRfids] = useState<Set<string>>(new Set());
   const [mobilePanel, setMobilePanel] = useState<"sidebar" | "board">("board");
-  const [expandedDates, setExpandedDates] = useState<Set<string>>(() => new Set([new Date().toISOString().slice(0, 10)]));
+  const [expandedDates, setExpandedDates] = useState<Set<string>>(() => new Set([localDateString()]));
   const [tracks, setTracks] = useState<{ id: number; name: string }[]>([]);
   const [selectedVenue, setSelectedVenue] = useState("");
   const esRef = useRef<EventSource | null>(null);
@@ -405,8 +406,8 @@ export default function StandalonePractice() {
               </div>
             )}
             {(() => {
-              const today = new Date().toISOString().slice(0, 10);
-              const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+              const today = localDateString();
+              const yesterday = localDateString(new Date(Date.now() - 86400000));
               const groups: Map<string, PracticeSession[]> = new Map();
               for (const s of sessions) {
                 const key = s.createdAt.slice(0, 10);

@@ -1,3 +1,4 @@
+import { localDateString } from "@/lib/format";
 import { toStateCode } from "@/lib/usStates";
 import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -525,7 +526,7 @@ export default function MyRacesScreen() {
     setRefreshing(false);
   }, [loadAll]);
 
-  const todayStr = new Date().toISOString().substring(0, 10);
+  const todayStr = localDateString();
   const raceDay  = schedule?.events.filter(e => {
     if (e.status !== "race_day") return false;
     const dateStr = e.eventDate ? String(e.eventDate).substring(0, 10) : "";

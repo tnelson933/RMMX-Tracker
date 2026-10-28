@@ -1,3 +1,4 @@
+import { localDateString } from "@/lib/format";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as Linking from "expo-linking";
@@ -162,7 +163,7 @@ export default function MaintenanceScreen() {
     if (!logSheetItem) return;
     setLogSheetSaving(true);
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDateString();
     // serviceNotes = what the user typed for this specific log entry (null if blank)
     // notes = the item's standing notes; only updated if user typed something
     const serviceNotes = logSheetNotes.trim() || null;

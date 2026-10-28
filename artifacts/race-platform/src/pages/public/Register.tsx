@@ -1,3 +1,5 @@
+import { eventToday } from "@workspace/api-zod";
+import { localDateString } from "@/lib/eventDates";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { StateSelect } from "@/components/ui/StateSelect";
 import { RM_TRACKR_OPTION_ID } from "@/lib/rmTrackr";
@@ -543,7 +545,8 @@ export default function Register() {
   const rfidStickerTotal = (watchedPurchaseRfidSticker && event?.timingTechnology === "rfid" && event?.rfidStickerFee != null)
     ? Number(event.rfidStickerFee)
     : 0;
-  const today = new Date().toISOString().substring(0, 10);
+  // Early-bird pricing ends by the track's local date (same rule as the server).
+  const today = event ? eventToday(event as any) : localDateString();
   const earlyBirdActive = !!(event?.earlyBirdEndsAt && today <= event.earlyBirdEndsAt && event?.earlyBirdFee != null);
   const effectiveEntryFee = earlyBirdActive ? (event?.earlyBirdFee ?? null) : (event?.entryFee ?? null);
   const totalEntryFees = (effectiveEntryFee ?? 0) * Math.max(1, numSelectedClasses);

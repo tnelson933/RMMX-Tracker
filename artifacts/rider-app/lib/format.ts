@@ -25,3 +25,8 @@ export function eventDay(iso: string): Date {
 export function displayDate(iso: string): Date {
   return /^\d{4}-\d{2}-\d{2}$/.test(iso) || /T00:00:00(\.0+)?Z$/.test(iso) ? eventDay(iso) : new Date(iso);
 }
+
+/** Today's date (YYYY-MM-DD) on this phone's clock, not UTC (which rolls over in the US evening). */
+export function localDateString(d = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}

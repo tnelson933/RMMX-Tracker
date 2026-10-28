@@ -1,4 +1,5 @@
 // Defines the background task for the Quick Check-In arrival alert at startup.
+import { useOtaUpdates } from "@/hooks/useOtaUpdates";
 import "@/lib/quickCheckinGeofence";
 import { API_BASE_URL } from "@/lib/apiBase";
 import {
@@ -96,6 +97,7 @@ function RootLayoutNav() {
   const segments = useSegments();
 
   useNotificationNavigation(!isLoading && isAuthenticated);
+  useOtaUpdates();
 
   useEffect(() => {
     if (isLoading) return;

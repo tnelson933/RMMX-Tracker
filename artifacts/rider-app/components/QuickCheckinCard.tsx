@@ -26,6 +26,7 @@ type Row = {
   eventId: number;
   eventName: string;
   eventDate: string;
+  timeZone?: string;
   trackName: string | null;
   trackLat: number | null;
   trackLng: number | null;
@@ -93,7 +94,7 @@ export function QuickCheckinCard() {
       const watch = new Map<number, GeofenceEvent>();
       for (const r of today) {
         if (r.trackLat == null || r.trackLng == null || !r.eligible || r.checkedIn) continue;
-        watch.set(r.eventId, { eventId: r.eventId, eventName: r.eventName, eventDate: r.eventDate, trackName: r.trackName, trackLat: r.trackLat, trackLng: r.trackLng });
+        watch.set(r.eventId, { eventId: r.eventId, eventName: r.eventName, eventDate: r.eventDate, timeZone: r.timeZone, trackName: r.trackName, trackLat: r.trackLat, trackLng: r.trackLng });
       }
       await syncArrivalWatch([...watch.values()]).catch(() => {});
 

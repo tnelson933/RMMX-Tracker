@@ -1,3 +1,5 @@
+import { eventToday } from "@workspace/api-zod";
+import { localDateString } from "@/lib/eventDates";
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useParams, Link } from "wouter";
 import {
@@ -1419,7 +1421,7 @@ export default function EventSchedule() {
     setArrivalSaving(true);
     try {
       // Build a full ISO timestamp: use today's date + the entered HH:MM time
-      const today = new Date().toISOString().slice(0, 10);
+      const today = localDateString();
       const iso = `${today}T${arrivalTime}:00`;
       await recordArrivalMutation.mutateAsync({
         eventId,
@@ -2134,7 +2136,7 @@ export default function EventSchedule() {
     const eventRaceDate = ((event as any)?.endDate ?? (event as any)?.date) as string | undefined;
     if (eventRaceDate) {
       const effectiveDate = eventRaceDate.substring(0, 10);
-      const todayStr = new Date().toISOString().substring(0, 10);
+      const todayStr = eventToday(event as any);
       if (effectiveDate < todayStr) {
         toast({
           title: "Race date has passed",

@@ -1,3 +1,4 @@
+import { eventToday } from "@workspace/api-zod";
 import { Router, type Response } from "express";
 import { db } from "@workspace/db";
 import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, pointsTablesTable, clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable, eventPublicationTable, lapCrossingsTable, registrationsTable, seriesTable, seriesPointsTable, riderAccountsTable, riderPushTokensTable } from "@workspace/db";
@@ -691,13 +692,16 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
       date: eventsTable.date,
       endDate: eventsTable.endDate,
       raceStyle: eventsTable.raceStyle,
+      state: eventsTable.state,
+      trackLat: eventsTable.trackLat,
+      trackLng: eventsTable.trackLng,
     })
     .from(eventsTable)
     .where(eq(eventsTable.id, eventId));
   const eligibleLapNumberFloor = eventDateRow?.raceStyle === "motocross" ? 2 : 1;
   if (eventDateRow) {
     const effectiveDate = (eventDateRow.endDate ?? eventDateRow.date).substring(0, 10);
-    const todayStr = new Date().toISOString().substring(0, 10);
+    const todayStr = eventToday(eventDateRow);
     if (effectiveDate < todayStr) {
       return res.status(422).json({
         error: "The race date has already passed. Update the event's race date to a future date before generating motos.",

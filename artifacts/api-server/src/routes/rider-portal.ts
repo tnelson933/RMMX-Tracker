@@ -1230,7 +1230,8 @@ router.delete("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => 
   }
 
   // Block removal while registered for an upcoming event (today counts as upcoming).
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Denver" });
+  // "Today" in the westernmost US zone, so a race still running anywhere counts.
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Pacific/Honolulu" });
   const [upcomingReg] = await db
     .select({ id: registrationsTable.id })
     .from(registrationsTable)
