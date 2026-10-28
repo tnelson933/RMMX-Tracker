@@ -5,6 +5,7 @@ import { attachVideoWebSocket } from "./lib/videoRelay";
 import { attachConnectorWebSocket } from "./lib/connectorRelay";
 import { normalizeEventStates } from "./normalizeStateMigration";
 import { startEventStatusSweeper } from "./lib/eventStatus";
+import { startQuickCheckinNotifier } from "./lib/quickCheckinNotifier";
 
 const rawPort = process.env["PORT"];
 
@@ -34,4 +35,6 @@ httpServer.listen(port, (err?: Error) => {
   normalizeEventStates().catch(err => logger.error({ err }, "normalizeEventStates failed"));
   // Close registration and advance event statuses on schedule, not only when a page is opened.
   startEventStatusSweeper();
+  // Race-morning push for events with Quick Check-In (7 AM–6 PM Mountain).
+  startQuickCheckinNotifier();
 });

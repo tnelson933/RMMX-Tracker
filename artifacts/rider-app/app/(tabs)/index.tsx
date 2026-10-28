@@ -1,3 +1,4 @@
+import { QuickCheckinCard } from "@/components/QuickCheckinCard";
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
@@ -298,6 +299,9 @@ export default function HomeScreen() {
           </View>
 
         </View>
+
+        {/* ── Race-day Quick Check-In ── */}
+        <QuickCheckinCard />
 
         {/* ── No profile warning ── */}
         {!hasProfile && <NoProfileLinked variant="card" />}

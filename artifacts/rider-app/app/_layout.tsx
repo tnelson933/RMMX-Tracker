@@ -1,3 +1,5 @@
+// Defines the background task for the Quick Check-In arrival alert at startup.
+import "@/lib/quickCheckinGeofence";
 import { API_BASE_URL } from "@/lib/apiBase";
 import {
   Inter_400Regular,
@@ -57,7 +59,7 @@ const useLastNotificationResponse: () => Notifications.NotificationResponse | nu
 
 /**
  * Open the screen a tapped push points at. Server payloads (api-server/src/lib):
- * `{ type: "quick_checkin" | "follow-results", eventId }` and broadcast `{ url }`.
+ * `{ type: "quick_checkin" | "quick_checkin_arrival" | "follow-results", eventId }` and broadcast `{ url }`.
  */
 function useNotificationNavigation(ready: boolean) {
   const router = useRouter();
@@ -72,6 +74,11 @@ function useNotificationNavigation(ready: boolean) {
     handledId.current = id;
 
     const data = (response.notification.request.content.data ?? {}) as Record<string, unknown>;
+    // Quick Check-In pushes open Home, where the Check In card is.
+    if (data.type === "quick_checkin" || data.type === "quick_checkin_arrival") {
+      router.push("/(tabs)" as any);
+      return;
+    }
     const eventId = Number(data.eventId);
     if (Number.isInteger(eventId) && eventId > 0) {
       router.push(`/event/${eventId}` as any);

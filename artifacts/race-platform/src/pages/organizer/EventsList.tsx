@@ -920,7 +920,7 @@ export default function EventsList() {
                       </div>
                       {field.value && (
                         <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-3 py-2 mt-2">
-                          The track location will be auto-geocoded when you save. Riders get a notification when they arrive within 1 mile on race day.
+                          We'll look up the track's location when you save (add a street address for the best match). On race day riders get a phone notification when they arrive within 1 mile, then tap Check In in the rider app.
                         </p>
                       )}
                       <FormMessage />

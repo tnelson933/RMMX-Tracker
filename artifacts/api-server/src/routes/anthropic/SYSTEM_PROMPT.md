@@ -306,22 +306,17 @@ Cards show **Waiver Signed** or **No Waiver**. If the event requires the e-signe
 In the RM Roost desktop app, check-in works offline and syncs to the cloud when the laptop is back online (the badge shows **Not Synced** until then). On the website, check-in needs an internet connection.
 
 ### Quick Check-In (Rider App self-service)
-Organizers can enable **Quick Check-In** per event so riders can check themselves in from the Rider App without waiting in line.
+Organizers can turn on **Quick Check-In** per event so riders check themselves in from the Rider App instead of waiting at the gate.
 
-**How to enable:** event → **Overview** tab → **Quick Check-In** row → **Enable** (also available in the event Edit form). The platform geocodes the track location from the venue name and address on file.
+**How to turn it on:** in the Create Event dialog, or event → **Overview** → **Quick Check-In** → **Enable** (also in the event Edit form). RM Roost looks up the track's location from its address when you save; add the street address, city and ZIP for the best match. If the track can't be found, the Overview shows a warning: riders then don't get the arrival alert and the 1-mile check is skipped, so add the address and save again.
 
-**How it works for riders:**
-- **Race-day morning push:** from 7:00 AM Mountain Time on the event date, the platform sends one push notification to every eligible rider who hasn't checked in (even if the app is closed). Riders who install the app or become eligible later get it on a later cycle (every 5 minutes, until 6:00 PM). At most one push per rider per event.
-- On race day, the Rider App also checks for eligible events every 60 seconds while open.
-- Within 1 mile of the track (app open), the rider gets an arrival alert *and* a banner at the top of the app's Home screen.
-- The banner lists **every registration on the rider's account** for that event (family members, multiple classes), each with its own **Check In** button.
-- Ineligible registrations are greyed out with the reason (e.g. "RFID sticker not assigned — see the organizer", "Missing active transponder number", "Waiver not signed") and must check in at the gate.
-- If several are pending and all eligible, **Check In for All** checks them all in.
+**What riders get on race day:**
+- **Race-morning push** (from 7 AM Mountain time, once per rider per event, for riders who have the app with notifications on): "Skip the check-in line… open RM Roost when you get to the track and tap Check In."
+- **Arrival alert at 1 mile:** riders who allow location "all the time" get a phone notification when they arrive within 1 mile of the track on race day, even with the app closed ("You're at [track]. Tap to check in…"). The app offers this on Home ("Get a check-in alert when you arrive") for any Quick Check-In race in the next week. Riders who only allow location while using the app get the same alert when they open the app at the track.
+- **In-app card on Home:** shows every registration on the rider's account for today's Quick Check-In race. Within 1 mile of the track each eligible registration has a **Check In** button (and **Check In for All** when there are several); farther away it shows how many miles away they are. Registrations that aren't eligible show why (RFID sticker not assigned, no transponder number, waiver not signed) and must check in at the gate.
+- The server confirms the rider is at the track (about 1 mile) before checking them in. The check-in appears on the organizer's Check-In tab right away.
 
-**Eligibility (enforced automatically):**
-- Event is in **Race Day** status on today's date, with Quick Check-In **On**.
-- RFID events: the rider has an RFID tag assigned. Active timing events: the rider has a transponder number.
-- Required waivers are signed, and the rider isn't already checked in.
+**Eligibility (enforced automatically):** event is in Race Day status on its start date with Quick Check-In on; RFID events: the rider has an RFID tag assigned; active timing events with "Require transponder number?" on: a transponder number on file; any required waiver signed; not already checked in.
 
 ---
 

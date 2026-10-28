@@ -62,6 +62,7 @@
     "expo-notifications": "^0.32.17",
     "expo-secure-store": "~15.0.8",
     "expo-sharing": "~14.0.8",
+    "expo-task-manager": "~14.0.9",
     "react-native-view-shot": "4.0.3"
   }
 }

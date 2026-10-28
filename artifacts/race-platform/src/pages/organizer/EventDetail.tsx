@@ -19,7 +19,7 @@ import { zodResolver } from "@/lib/zodResolver";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Calendar, MapPin, Flag, Save, Users, CheckCircle, Link2, Copy, Check, DollarSign, Clock, Plus, Trash2, Info, Upload, ImageIcon, X, Loader2, Sparkles, Ticket, ChevronsUpDown } from "lucide-react";
+import { Calendar, MapPin, Flag, Save, Users, CheckCircle, Link2, Copy, Check, DollarSign, Clock, Plus, Trash2, Info, Upload, ImageIcon, X, Loader2, Sparkles, Ticket, ChevronsUpDown, AlertTriangle } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format, parseISO } from "date-fns";
 import { formatEventDatesFull } from "@/lib/eventDates";
@@ -1072,7 +1072,7 @@ export default function EventDetail() {
                           </div>
                           {field.value && (
                             <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-3 py-2 mt-2">
-                              The track location will be auto-geocoded when you save. Riders get a notification when they arrive within 1 mile.
+                              We'll look up the track's location when you save (add a street address for the best match). On race day riders get a phone notification when they arrive within 1 mile, then tap Check In in the rider app.
                             </p>
                           )}
                           <FormMessage />
@@ -1925,8 +1925,17 @@ export default function EventDetail() {
                         </Button>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
-                        Riders within 1 mile of the track on race day can self-check-in from the rider app.
+                        On race day, riders get a phone notification when they arrive within 1 mile of the track and check in from the rider app.
                       </p>
+                      {(event as any).quickCheckinEnabled && (event as any).trackLat == null && (
+                        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mt-2 flex gap-1.5">
+                          <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                          <span>
+                            We couldn't find this track on the map, so riders won't get the arrival alert and the 1-mile check is skipped.
+                            Click <strong>Edit</strong> and add the track's street address, city and ZIP, then save.
+                          </span>
+                        </p>
+                      )}
                     </div>
                   </div>
 

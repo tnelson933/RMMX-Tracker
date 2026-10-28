@@ -54,6 +54,7 @@ export async function runQuickCheckinNotifierOnce(): Promise<void> {
       timingTechnology: eventsTable.timingTechnology,
       requireWaiver: eventsTable.requireWaiver,
       requireLiabilityWaiver: eventsTable.requireLiabilityWaiver,
+      requireTransponder: eventsTable.requireTransponder,
     })
     .from(eventsTable)
     .where(
@@ -81,6 +82,7 @@ type EventRow = {
   timingTechnology: string | null;
   requireWaiver: boolean | null;
   requireLiabilityWaiver: boolean | null;
+  requireTransponder: boolean | null;
 };
 
 async function notifyForEvent(event: EventRow): Promise<void> {
@@ -125,17 +127,16 @@ async function notifyForEvent(event: EventRow): Promise<void> {
   }
 
   // Waiver signatures (only needed when the event requires the full waiver)
-  const waiverByRegId = new Set<number>();
-  const waiverByEmail = new Set<string>();
+  // A signature counts for a rider when it's linked to any of their registrations
+  // for the event (same rule as the check-in route).
+  const waiverRiderIds = new Set<number>();
   if (event.requireLiabilityWaiver) {
     const waiverRows = await db
-      .select({ registrationId: liabilityWaiverSignaturesTable.registrationId, signerEmail: liabilityWaiverSignaturesTable.signerEmail })
+      .select({ registrationId: liabilityWaiverSignaturesTable.registrationId })
       .from(liabilityWaiverSignaturesTable)
       .where(eq(liabilityWaiverSignaturesTable.eventId, event.id));
-    for (const w of waiverRows) {
-      if (w.registrationId) waiverByRegId.add(w.registrationId);
-      if (w.signerEmail) waiverByEmail.add(w.signerEmail.toLowerCase());
-    }
+    const signedRegIds = new Set(waiverRows.map(w => w.registrationId).filter((id): id is number => id != null));
+    for (const r of regs) if (signedRegIds.has(r.registrationId)) waiverRiderIds.add(r.riderId);
   }
 
   // Emails of riders with at least one eligible, unchecked-in registration
@@ -145,9 +146,9 @@ async function notifyForEvent(event: EventRow): Promise<void> {
     if (!email) continue;
     if (checkedInSet.has(`${r.riderId}:${r.raceClass ?? "Unknown"}`)) continue;
     if (event.timingTechnology === "rfid" && !rfidSet.has(r.riderId)) continue;
-    if ((event.timingTechnology === "active_transponder" || event.timingTechnology === "mylaps") && !r.myLapsTransponderNumber && !r.riderTransponder) continue;
+    if (event.requireTransponder && (event.timingTechnology === "active_transponder" || event.timingTechnology === "mylaps") && !r.myLapsTransponderNumber && !r.riderTransponder) continue;
     if (event.requireWaiver && !event.requireLiabilityWaiver && !r.waiverAcknowledgedAt) continue;
-    if (event.requireLiabilityWaiver && !waiverByRegId.has(r.registrationId) && !waiverByEmail.has(email)) continue;
+    if (event.requireLiabilityWaiver && !waiverRiderIds.has(r.riderId)) continue;
     eligibleEmails.add(email);
   }
   if (eligibleEmails.size === 0) return;
@@ -210,7 +211,7 @@ async function notifyForEvent(event: EventRow): Promise<void> {
       messages.push({
         to: token,
         title: `🏁 Race day at ${event.trackName ?? event.name}`,
-        body: `Quick Check-In is open for ${event.name.trim()}. Tap to check in from your phone and skip the line.`,
+        body: `Skip the check-in line at ${event.name.trim()}: open RM Roost when you get to the track and tap Check In.`,
         data: { type: "quick_checkin", eventId: event.id },
       });
     }

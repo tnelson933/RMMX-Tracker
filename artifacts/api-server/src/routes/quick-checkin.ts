@@ -16,6 +16,11 @@ import { managedRiderWhere } from "../lib/riderAccess";
 
 const router = Router();
 
+// Riders see Check In within 1 mile of the track; the server allows a little
+// more so GPS drift at the edge doesn't reject a rider who's really there.
+export const QUICK_CHECKIN_RADIUS_MILES = 1;
+const SERVER_RADIUS_MILES = 1.25;
+
 // Haversine distance in miles between two lat/lng pairs
 function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 3958.8; // Earth radius in miles
@@ -240,6 +245,47 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
   return res.json(results);
 });
 
+// GET /rider/quick-checkin-geofences
+// Tracks to watch for the 1-mile arrival alert: this account's registrations
+// (not void) for Quick Check-In events in the next 7 days that have a track
+// location. The app registers these with the phone so the alert fires even
+// when RM Roost is closed; it only notifies on the event's start date.
+router.get("/rider/quick-checkin-geofences", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId as number;
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "Not authenticated" });
+
+  const riders = await db.select({ id: ridersTable.id }).from(ridersTable).where(await managedRiderWhere(account));
+  if (riders.length === 0) return res.json({ radiusMiles: QUICK_CHECKIN_RADIUS_MILES, events: [] });
+
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Denver" });
+  const weekOut = new Date(Date.now() + 7 * 86_400_000).toLocaleDateString("en-CA", { timeZone: "America/Denver" });
+  const rows = await db
+    .selectDistinct({
+      eventId: eventsTable.id,
+      eventName: eventsTable.name,
+      eventDate: eventsTable.date,
+      trackName: eventsTable.trackName,
+      trackLat: eventsTable.trackLat,
+      trackLng: eventsTable.trackLng,
+    })
+    .from(registrationsTable)
+    .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
+    .where(and(
+      inArray(registrationsTable.riderId, riders.map(r => r.id)),
+      ne(registrationsTable.status, "void"),
+      eq(eventsTable.quickCheckinEnabled, true),
+      ne(eventsTable.status, "completed"),
+      sql`${eventsTable.date}::date BETWEEN ${today}::date AND ${weekOut}::date`,
+      sql`${eventsTable.trackLat} IS NOT NULL AND ${eventsTable.trackLng} IS NOT NULL`,
+    ));
+
+  return res.json({
+    radiusMiles: QUICK_CHECKIN_RADIUS_MILES,
+    events: rows.map(r => ({ ...r, eventDate: String(r.eventDate).substring(0, 10) })),
+  });
+});
+
 // POST /events/:eventId/quick-checkin
 // Self-service check-in for a rider. Validates eligibility then creates/updates a checkin row.
 router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res) => {
@@ -247,7 +293,8 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
   const eventId = Number(req.params.eventId);
   if (isNaN(eventId)) return res.status(400).json({ error: "Invalid eventId" });
 
-  const { riderId: bodyRiderId, registrationId: bodyRegistrationId } = req.body as { riderId?: number; registrationId?: number };
+  const { riderId: bodyRiderId, registrationId: bodyRegistrationId, latitude, longitude } =
+    req.body as { riderId?: number; registrationId?: number; latitude?: number; longitude?: number };
 
   const [account] = await db
     .select()
@@ -265,6 +312,9 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
       timingTechnology: eventsTable.timingTechnology,
       requireWaiver: eventsTable.requireWaiver,
       requireLiabilityWaiver: eventsTable.requireLiabilityWaiver,
+      requireTransponder: eventsTable.requireTransponder,
+      trackLat: eventsTable.trackLat,
+      trackLng: eventsTable.trackLng,
     })
     .from(eventsTable)
     .where(eq(eventsTable.id, eventId));
@@ -278,6 +328,20 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
   const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Denver" });
   if (String(event.date).substring(0, 10) !== todayStr) {
     return res.status(400).json({ error: "Quick check-in is only available on race day" });
+  }
+
+  // The rider has to be at the track. (Events whose track location couldn't be
+  // found skip this; the organizer is warned when enabling Quick Check-In.)
+  if (event.trackLat != null && event.trackLng != null) {
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+    if (latitude == null || longitude == null || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ error: "Turn on location so we can confirm you're at the track" });
+    }
+    const miles = distanceMiles(lat, lng, event.trackLat, event.trackLng);
+    if (miles > SERVER_RADIUS_MILES) {
+      return res.status(403).json({ error: `You're ${miles.toFixed(1)} miles from the track. Quick Check-In opens within ${QUICK_CHECKIN_RADIUS_MILES} mile.`, distanceMiles: miles });
+    }
   }
 
   // Confirm the rider belongs to this account
@@ -322,7 +386,7 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
   }
 
   // Active transponder eligibility (including legacy stored values).
-  if (["active_transponder", "mylaps"].includes(event.timingTechnology)) {
+  if (event.requireTransponder && ["active_transponder", "mylaps"].includes(event.timingTechnology)) {
     const riderRow = familyRiders.find(r => r.id === riderId);
     if (!reg.myLapsTransponderNumber && !riderRow?.transponderId) {
       return res.status(400).json({ error: "Active transponder number not assigned — contact the organizer" });

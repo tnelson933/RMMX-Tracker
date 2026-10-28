@@ -1,3 +1,4 @@
+import { geocodeTrack } from "../lib/geocodeTrack";
 import { validateEventInput } from "../lib/validateInput";
 import { advanceEventStatuses, todayInMountainTime } from "../lib/eventStatus";
 import { Router, type Response } from "express";
@@ -130,7 +131,7 @@ router.get("/events", async (req, res) => {
 router.post("/events", async (req, res) => {
   const invalid = validateEventInput(req.body ?? {});
   if (invalid) return res.status(400).json({ error: invalid });
-  const { name, date, state, location, trackName, raceClasses, raceClassLimits, raceClassSeriesMap, registrationOpen, registrationClose, paymentEnabled, requireAma, entryFee, earlyBirdFee, earlyBirdEndsAt, maxRiders, timingTechnology, transponderRentalEnabled, transponderRentalFee, rfidStickerFee, purchaseOptions, scoringTableId, endDate, requireWaiver, requireLiabilityWaiver, requireTransponder, raceStyle } = req.body;
+  const { name, date, state, location, trackName, raceClasses, raceClassLimits, raceClassSeriesMap, registrationOpen, registrationClose, paymentEnabled, requireAma, entryFee, earlyBirdFee, earlyBirdEndsAt, maxRiders, timingTechnology, transponderRentalEnabled, transponderRentalFee, rfidStickerFee, purchaseOptions, scoringTableId, endDate, requireWaiver, requireLiabilityWaiver, requireTransponder, raceStyle, quickCheckinEnabled, streetAddress, zip } = req.body;
   // Staff are always scoped to their own club; ignore any caller-supplied clubId.
   const staffCId = getStaffClubId(res);
   const clubId: number = staffCId ?? Number(req.body.clubId);
@@ -163,6 +164,10 @@ router.post("/events", async (req, res) => {
     .where(and(eq(discountCategoriesTable.clubId, clubId), eq(discountCategoriesTable.name, "Entry Fees")));
 
   const { amaEventId } = req.body;
+  // Quick Check-In needs the track's coordinates for the 1-mile check.
+  const trackCoords = quickCheckinEnabled
+    ? await geocodeTrack({ streetAddress, trackName, location, state: cleanState, zip })
+    : null;
   const [event] = await db.insert(eventsTable).values({
     clubId, name, date: cleanDate, state: cleanState, location, trackName,
     raceClasses: raceClasses || [],
@@ -189,6 +194,11 @@ router.post("/events", async (req, res) => {
     entryFeeCategoryId: entryFeeCat?.id ?? null,
     amaEventId: amaEventId ?? null,
     endDate: cleanEndDate ?? null,
+    quickCheckinEnabled: !!quickCheckinEnabled,
+    streetAddress: streetAddress || null,
+    zip: zip || null,
+    trackLat: trackCoords?.lat ?? null,
+    trackLng: trackCoords?.lng ?? null,
   }).returning();
 
   return res.status(201).json({
@@ -344,28 +354,10 @@ router.patch("/events/:eventId", async (req, res) => {
     const location = (updates.location as string | undefined) ?? eventRow?.location;
     const state = (updates.state as string | undefined) ?? eventRow?.state;
     const zip = (updates.zip as string | undefined) ?? eventRow?.zip;
-    // Try most-specific query first (street address), then fall back progressively
-    const queries = [
-      [streetAddress, location, state, zip].filter(Boolean).join(", "),
-      [streetAddress, location, state].filter(Boolean).join(", "),
-      [trackName, location, state].filter(Boolean).join(", "),
-      [location, state].filter(Boolean).join(", "),
-    ].filter(q => q.length > 0);
-    for (const query of queries) {
-      try {
-        const geoRes = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`,
-          { headers: { "User-Agent": "RMRoost/1.0 (race-platform)" } }
-        );
-        const geoJson = await geoRes.json() as Array<{ lat: string; lon: string }>;
-        if (geoJson[0]) {
-          updates.trackLat = parseFloat(geoJson[0].lat);
-          updates.trackLng = parseFloat(geoJson[0].lon);
-          break;
-        }
-      } catch {
-        req.log?.warn("Nominatim geocoding failed for quick check-in");
-      }
+    const coords = await geocodeTrack({ streetAddress, trackName, location, state, zip });
+    if (coords) {
+      updates.trackLat = coords.lat;
+      updates.trackLng = coords.lng;
     }
   } else if (updates.quickCheckinEnabled === false) {
     updates.trackLat = null;
