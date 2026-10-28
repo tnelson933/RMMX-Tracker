@@ -15,7 +15,7 @@
   - Registrations: + Add Registration with payment, edit, class change, void, Export Excel
   - Cancellations, Transponder Rentals, Discount Codes (club and event), Enter Results/publish, Report
   - Series linking, Points Scoring Tables + AI, Auto DNF, Push Notifications, Practice, Race Day Display, Live Broadcast, Payments (Stripe Connect money flow)
-  - Reader Setup (RFID tools, RM TrackR settings, Registered Readers, Identify, troubleshooting)
+  - Reader Setup and RM Connect (Find readers, several readers per laptop, Test, Identify, RM TrackR settings, troubleshooting)
   - Offline Mode page + desktop app, connecting hardware without internet
   - Dashboard, Riders, Admin (classes, brands, Track Library, acknowledgement, waiver), Staff (invites, page access), new club invites, widgets
   - Rider App basics (what riders see)
@@ -68,7 +68,7 @@ To delete an event: Overview tab → **Delete Event** (top right).
 - **Discount Codes** — club-wide promo codes and discount categories
 - **Notifications** — send push notifications to riders
 - **Race Day Display** — jumbotron / announcer display link
-- **Reader Setup** — set up RFID or active timing hardware and RM Connect
+- **Reader Setup** — RM Connect download and setup steps, your readers with live status, tag scanner
 - **Offline Mode** — download the RM Roost desktop app for race days without internet
 - **Admin** — club settings: default race classes, brand contingencies, Track Library, rider acknowledgement form, liability waiver
 - **Staff** — invite staff and choose which pages each can open; gate schedule link for staff
@@ -258,15 +258,18 @@ There are three ways to get reads from the hardware into RM Roost:
 3. **Reader posts directly to its Timing URL** (RFID only) — program the reader's own web interface to send reads to the reader's Timing URL. See Reader Setup.
 
 ### RM Connect (recommended hardware bridge)
-**RM Connect** runs in the laptop's system tray at the track and bridges timing hardware to the cloud.
-- **Hardware options:** Impinj R700 (enter the last 6 characters of the MAC address on the reader's label), Zebra FX7500 / FX9600 (IP address), Other LLRP reader (IP address), and RM TrackR reader (IP address).
-- **Download:** Reader Setup page → RM Connect card → **Mac (Apple Silicon)**, **Mac (Intel)** or **Windows**.
-- **Setup:** first register the reader on Reader Setup (Registered Readers → Add Reader). Then open RM Connect → sign in with the organizer email and password (the "RM Roost server" field is pre-filled) → pick the registered reader from the list → choose the hardware type and enter its address. For an RM TrackR, the address and device settings (channel, power, loops) sync from Reader Setup. Leave the app running in the tray.
-- **RFID readers must have LLRP turned on:** Impinj — in the reader's web page set **RFID interface** to **LLRP** and reboot. Zebra — confirm the operating mode is **LLRP** (the factory default). Other readers — LLRP on TCP 5084. A reader accepts only one LLRP connection at a time, so only one program (RM Connect or the desktop app) can be connected to it.
-- **In the tray app:** a checklist shows Network transport, Machine & heartbeat, Finish-gate loops 1 / 2 (RM TrackR), and Cloud registration. **Test mode** forwards reads without a live moto so you can check tags. **Disconnect / Reconnect** and **Change reader…** switch hardware.
-- **Live status on the website:** Reader Setup shows an RM Connect status card with one row per reader: hardware type, connected or not, read count, antenna count, and an "App online" badge. "No RM Connect app is currently connected for your club" means the app isn't running or isn't signed in.
+**RM Connect** runs in the laptop's system tray at the track and bridges timing hardware to the cloud. It is the one place readers are set up; one laptop can run several readers at once (for example a finish line and split or enduro section readers on the same network).
+- **Download:** Reader Setup → **Set up with RM Connect** → **Windows**, **Mac (Apple Silicon)** or **Mac (Intel)**.
+- **Setup:** power on the readers and connect the laptop to the same network (a router, or a cable straight to the reader). Open RM Connect → sign in with the organizer email and password → click **Find readers**. RM Connect searches the laptop's network and lists every RFID reader (LLRP, TCP 5084) and RM TrackR (TCP 55555) it finds, including the usual direct-cable addresses. For each one choose **Add as** "A new reader in RM Roost" (type a name for where it sits, e.g. "Finish line" or "Section 3 start") or an existing reader, then **Add reader**. RM Connect registers it in RM Roost and connects. If a reader isn't found, type its IP (or, for an Impinj, the 6 characters after the MAC on its label) under "Or enter the reader's address" → **Check**.
+- **Each reader card in RM Connect** shows a status dot, "Ready … — waiting for a moto to start", reads and last read, and for an RM TrackR its ID and Loop 1 / Loop 2 state. Problems are explained in plain language with the fix (for example "refused the connection. Turn on its LLRP interface…", "Another program is already connected…", "No answer from … Check the reader's power and network cable"). RM Connect retries every 10 seconds, and if a reader keeps failing it looks for it on the network in case its address changed.
+- **Test:** click **Test** on a reader, then pass a tag or walk an RM TrackR Transponder over the loop. The reads list fills in and "Read received and confirmed by RM Roost. This reader is ready." means the whole path works. **Done testing** ends it.
+- **Identify:** click **Identify**, then pass a tag or transponder by any reader. The reader that saw it lights up with **This one!**, so you can tell identical boxes apart and rename them. No laps are recorded unless a moto is running.
+- **RM TrackR settings** (channel, power, loops, clock) can be set on the reader card or on the website; the website's values sync to RM Connect.
+- **Rename / Remove:** Rename updates the name in RM Roost too. Remove takes the reader off this laptop only; it stays registered and can be added back with Find readers.
+- **RFID readers must have LLRP turned on:** Impinj — in the reader's web page set **RFID interface** to **LLRP** and reboot. Zebra — confirm the operating mode is **LLRP** (the factory default). A reader accepts only one connection at a time, so close ItemTest or other reader software first.
+- **Live status on the website:** Reader Setup → **Your readers** shows each reader with a green dot and "Ready" when RM Connect has it connected (an RM TrackR is Ready once its enabled loops run), "Connected, starting up", "RM Connect is running but can't reach the reader", or "RM Connect isn't running for this reader".
 - **Sessions start and stop automatically:** passive RFID reading follows the moto lifecycle. Through RM Connect, active timing stays armed so a missed cloud command can't lose a physical crossing; the server only accepts active crossings for a live moto, a running practice, or a hardware test.
-- Crossings stream to the cloud in real time and route to the active moto (or to enduro checkpoint assignments if the reader is assigned to one).
+- Crossings stream to the cloud in real time and route to the active moto (or to enduro checkpoint assignments if the reader is assigned to one). Crossings that can't be sent wait on the laptop and go out in order when the internet is back.
 
 ### Active Timing Reader (RM TrackR) readiness
 A TCP connection and heartbeat do **not** mean the RM TrackR is ready. It is ready only after its enabled loops report they are working. "Opening enabled loops; waiting for RM TrackR telemetry…" means RM Roost is still opening the loops and retries automatically. In the desktop app the loops stay closed until a moto, practice, or loop test starts.
@@ -599,55 +602,49 @@ A club-wide list of every RFID tag or active transponder assigned to riders, at 
 
 ## Reader Setup
 
-**Reader Setup** (sidebar) walks through hardware setup in order:
-1. **Choose your timing system** — **RFID** or **Active Timing Reader**. Only that system's instructions are shown.
-2. **Will the track have internet?** (desktop app only) — "Yes, connect with internet" keeps the standard setup; "No, connect without internet" shows the local-network setup (see "Offline Mode & Desktop App").
-3. **Registered Readers** — register each physical reader (see below).
-4. **RM Connect** — download buttons and the live status card (see "Timing Systems").
+**Reader Setup** (sidebar) is short; RM Connect does the setup work:
+1. **Set up with RM Connect** — three steps (install, connect the laptop to the readers' network and sign in, click **Find readers**), the download buttons, and "RFID reader not found? Turn on LLRP".
+2. **Your readers** — every reader with live status from RM Connect (see "RM Connect"). Icons on each row: gear (RM TrackR settings), pencil (rename), key (new token), trash (remove). **Identify reader** at the top highlights the reader that sees the next tag or transponder while a moto or practice is running.
+3. **Live Tag Scanner** — click **Start Scanning**, pass a tag or transponder by a reader, and its number appears with "Assigned to [rider]" or "Not assigned to any rider". Copy the number to assign it; **Clear** empties the list.
+4. **Advanced** (collapsed) — add a reader by hand, readers that send reads without RM Connect, and RFID signal settings.
 
-### RFID tools on Reader Setup
-- **Your Timing URL** — every registered RFID reader has its own timing URL (`https://<your-domain>/api/timing/readers/<token>/active/crossing`). It routes crossings to whichever moto or practice is running. The token identifies the reader and its club, so treat the URL like a password.
-- **RFID Setup — 3 Steps** — (1) attach tags, (2) **Configure your reader** with step-by-step instructions for the reader's own web page (pick Impinj R700, Zebra FX7500, or Other), (3) **Test before race day**.
-- **Test Your Connection** — click **Test** to send a test tag read to the selected reader's URL. "Working!" with `Server received tag "…" — your reader is connected` means the path works. Nothing is recorded and no moto needs to be running.
-- **Live Tag Scanner** — click **Start Scanning**, hold a tag near an antenna, and its number appears with "Assigned to [rider]" or "Not assigned to any rider". Copy the number to assign it; **Clear** empties the list. Handy for finding a tag's number.
-- **Reader Signal Settings** — starting-point presets (**Race Day**, **Crowded Start Gate**, **Bench Testing**) plus Signal Strength, Gate Crossing Time (100 ms–2 s), Scanning Mode (Speed / Balanced / Multi-Reader light / full) and Riders Expected at Gate (1–64). **Apply to Reader** sends them through RM Connect ("Applied to N connected readers", or "Settings saved. Will apply when RM Connect connects.").
-- **USB / Serial Reader** (desktop app only, RFID only) — for an RFID reader plugged into the laptop by USB or serial port. Click **Open Serial Port Settings** (also in the desktop menu as **Serial / RFID Settings…**).
+In the desktop app, Reader Setup also starts with **Choose your timing system** (RFID or RM TrackR) and **Will the track have internet?** — "No, connect without internet" shows the local-network setup (see "Offline Mode & Desktop App").
 
-### Active Timing Reader tools on Reader Setup
-- Register the RM TrackR under Registered Readers with its **IP address** (required; the name defaults to "RM TrackR Reader").
-- **Advanced RM TrackR settings** (optional — the defaults of channel 0, power 100 and both loops on work for most readers): pick the reader, set **Active channel (0–5)** and **Active power (0–100)**, tick the loops, then **Save & send to RM Connect**. **Sync reader clock** sets the RM TrackR's clock (it must be connected and have reported its machine ID first). If RM Connect is offline: "Saved. RM Connect will receive these settings as soon as it reconnects."
-- **Desktop-only RM TrackR diagnostic** (desktop app): connect directly, see the machine ID, last heartbeat, power/battery, Loop 1 / Loop 2 status and read count, then run **Start System Test** and walk an RM TrackR Transponder over the loop. "Test Successful" means a real crossing was read.
+### RM TrackR settings (gear icon on a reader)
+Optional — the defaults of channel 0, power 100 and both loops on suit most tracks. Set **Channel (0–5)** and **Power (0–100)**, tick **Loop 1** / **Loop 2** (both loops sit at the same timing line, so either records a crossing), then **Save & send to RM Connect** ("Saved and sent to RM Connect.", or "Saved. RM Connect will receive these settings as soon as it reconnects."). **Sync reader clock** sets the RM TrackR's clock (it must be connected and have reported its machine ID first).
 
-### Registered Readers (reader-aware timing)
+### Advanced section
+- **Add a reader by hand** — name, type (RFID reader or RM TrackR) and address → **Add**. Only needed for a reader that sends reads on its own; RM Connect adds its readers itself.
+- **RFID reader without RM Connect** — an RFID reader with internet access can post reads straight to RM Roost. **Your Timing URL** shows each RFID reader's own URL (`https://<your-domain>/api/timing/readers/<token>/active/crossing`), which routes to whichever moto or practice is running; treat it like a password. **Set up the reader to send reads** gives step-by-step instructions for the reader's own web page (Impinj R700, Zebra FX7500, or Other). **Test Your Connection** sends a test tag read to the selected reader's URL ("Working!" means the path works; nothing is recorded). Don't also add the same reader in RM Connect.
+- **Reader Signal Settings** (RFID) — starting-point presets (**Race Day**, **Crowded Start Gate**, **Bench Testing**) plus Signal Strength, Gate Crossing Time (100 ms–2 s), Scanning Mode (Speed / Balanced / Multi-Reader light / full) and Riders Expected at Gate (1–64). **Apply to Reader** sends them through RM Connect.
+- **Desktop-only RM TrackR diagnostic** (desktop app): connect directly, see the machine ID, last heartbeat, power/battery, Loop 1 / Loop 2 status and read count, then run **Start System Test** and walk an RM TrackR Transponder over the loop.
+- **USB / Serial Reader** (desktop app only) — for an RFID reader plugged into the laptop by USB or serial port. Click **Open Serial Port Settings** (also in the desktop menu as **Serial / RFID Settings…**).
 
-Register every physical reader so its reads are tied to your club and, for enduro, to the right gate:
+### Readers and enduro checkpoints
 
-1. In **Reader Setup → Registered Readers**, click **Add Reader**. The reader's type follows the timing system chosen in step 1. Enter a name (e.g. "Start Gate Test 1") and its address (IP, hostname, or for Impinj the MAC-based hostname) → **Add**. An amber "No address set" note on a reader means you should edit it and add the address.
-2. RFID readers get two URLs: the **Timing URL** (`.../readers/<token>/active/crossing`, routes to the running moto or practice) and the **Checkpoint URL** (`https://<your-domain>/api/timing/readers/<token>/crossing`, for enduro start/finish/time-check assignments). Active timing readers show only the Checkpoint URL.
-3. For enduro, program the Checkpoint URL into the reader once (or use RM Connect, which routes by the selected reader).
-4. In the **Event Schedule tab** (enduro events only) a **Checkpoint Readers** card appears at the bottom — assign a reader to the **Start** and **Finish** of each test and to each **Time Check** → **Save**.
-5. When a tag crosses, the platform resolves the reader's assignment and routes the crossing to the correct test and role — no manual gate selection on race day.
+Every reader is registered to your club (RM Connect does this when you add it). For enduro:
+1. In the **Event Schedule tab** (enduro events only) a **Checkpoint Readers** card appears at the bottom — assign a reader to the **Start** and **Finish** of each test and to each **Time Check** → **Save**.
+2. When a tag crosses, the platform resolves the reader's assignment and routes the crossing to the correct test and role — no manual gate selection on race day. Readers without an assignment time the running moto as usual.
 
 **Role enforcement**: a Start reader only processes crossings when the rider hasn't yet started (even crossing count); a Finish reader only processes when the rider has an open start (odd count). This prevents mis-routing if a reader sees a tag at the wrong moment.
 
-**Renaming / editing a reader**: click the pencil icon to edit the name or address inline, then **Save**. The URLs don't change.
+**Renaming a reader**: in RM Connect click **Rename**, or on the website click the pencil, then **Save**. The URLs don't change.
 
-**New URL (token rotation)**: click the key icon next to a reader to issue a new token. The old URLs stop working immediately, including for a running RM Connect, so the reader must be reprogrammed with the new URL and re-selected in RM Connect. Use this if a reader URL was shared or leaked.
+**New token (key icon)**: issues a new token. The old URLs stop working immediately, including for RM Connect, so remove the reader in RM Connect and add it again with Find readers (and reprogram a reader that posts directly). Use this if a reader URL was shared or leaked.
 
 **Timing ingest authentication**: each club has a setting that controls crossings sent without a reader token or organizer sign-in (for example the older `/api/timing/active/crossing?clubId=` URL): off (accepted, the default), warn (accepted and logged) or enforce (rejected). Readers using their own timing URL and RM Connect keep working in every mode. There is no screen for this setting yet; the platform team changes it.
-
-**Identify Reader** (RFID): when several readers are deployed and you can't tell which box is which, click **Identify Reader**, then hold a tag up to one reader. The reader that picks up the scan is highlighted with a "This one" badge. It times out after 60 seconds ("No scan detected — Identify timed out — try again").
 
 **Deleting a reader** removes it from the list and clears its checkpoint assignments across all events.
 
 ### Troubleshooting timing hardware
-- **RM Connect says "Reader disconnected" (RFID)** → LLRP is off on the reader, or another program is already connected to it. Turn on LLRP (see RM Connect above), close the other program, and try the IP address if the `.local` hostname doesn't resolve.
+- **RM Connect can't find a reader** → check it is powered and on the same network as the laptop, then **Search again**. For an RFID reader, LLRP must be on. Type the reader's IP under "Or enter the reader's address" → **Check** to test one address.
+- **RM Connect says "refused the connection" or "Another program is already connected" (RFID)** → LLRP is off on the reader, or another program is connected to it. Turn on LLRP (see RM Connect above) and close the other program.
 - **"The RM TrackR at … refused the connection"** → wrong IP, or the RM TrackR isn't in TCP mode on port 55555. On the RM TrackR: **Config → Network** (TCP mode) and check its IP under **Config → About**.
 - **"Cannot reach the RM TrackR…" / connection timed out** → the laptop and reader aren't on the same network, or the reader is off. "address … was not found" → the IP or hostname is wrong.
 - **"RM TrackR heartbeat stopped"** → the reader lost power or network; check cables, battery, and Wi-Fi.
 - **Connected but "waiting for the loops" / not ready** → wait for the loops to report working; RM Roost retries automatically. Check that the loops are enabled in Advanced RM TrackR settings.
-- **Reads arrive but nothing is timed / "No moto in progress for this club"** → start a moto or practice first (Race Day Management tab or Practice page). To check tags without a moto, use RM Connect's **Test mode**, the **Test** button, or the Live Tag Scanner.
-- **Crossings rejected after rotating a reader's URL** → reprogram the reader with the new URL and re-select the reader in RM Connect.
+- **Reads arrive but nothing is timed / "No moto in progress for this club"** → start a moto or practice first (Race Day Management tab or Practice page). To check tags without a moto, use **Test** on the reader in RM Connect, or the Live Tag Scanner.
+- **Crossings rejected after issuing a new token** → in RM Connect remove the reader and add it again with Find readers; reprogram a reader that posts directly with its new URL.
 - **Sync reader clock fails** → connect the RM TrackR and wait for its machine ID first.
 
 ---

@@ -34,6 +34,8 @@ export interface ConnectorStatus {
   hardware: {
      kind: "impinj" | "zebra" | "generic" | "active_transponder" | null;
     connected: boolean;
+    /** RFID: connected. RM TrackR: identified, configured and its enabled loops running. */
+    ready: boolean;
     detail: string | null;
     lastReadAt: string | null;
     readCount: number;
@@ -179,6 +181,7 @@ export function attachConnectorWebSocket(httpServer: Server): void {
               hardware: {
                 kind: null,
                 connected: false,
+                ready: false,
                 detail: null,
                 lastReadAt: null,
                 readCount: 0,
@@ -291,6 +294,8 @@ export function attachConnectorWebSocket(httpServer: Server): void {
                    ? "active_transponder"
                    : ["impinj", "zebra", "generic"].includes(msg.hardware) ? msg.hardware : null,
                 connected: !!msg.connected,
+                // Older RM Connect releases don't send ready; a connected RFID reader is ready.
+                ready: typeof msg.ready === "boolean" ? msg.ready : !!msg.connected && msg.hardware !== "active_transponder",
                 detail: typeof msg.detail === "string" ? msg.detail.slice(0, 200) : null,
                 lastReadAt: typeof msg.lastReadAt === "string" ? msg.lastReadAt.slice(0, 40) : conn.status.hardware.lastReadAt,
                 readCount: Number.isFinite(msg.readCount) && Number(msg.readCount) >= 0 ? Math.floor(Number(msg.readCount)) : conn.status.hardware.readCount,

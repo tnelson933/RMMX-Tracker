@@ -796,9 +796,11 @@ export const GetConnectorStatusResponseItem = zod.object({
   "hardware": zod.object({
   "kind": zod.union([zod.literal('impinj'),zod.literal('zebra'),zod.literal('generic'),zod.literal('active_transponder'),zod.literal(null)]).nullable(),
   "connected": zod.boolean(),
+  "ready": zod.boolean().optional().describe('RFID readers are ready once connected; an RM TrackR is ready once identified, configured and its enabled loops are running.'),
   "detail": zod.string().nullish(),
   "lastReadAt": zod.coerce.date().nullish(),
-  "readCount": zod.number()
+  "readCount": zod.number(),
+  "antennaIds": zod.array(zod.number()).optional()
 })
 })
 export const GetConnectorStatusResponse = zod.array(GetConnectorStatusResponseItem)

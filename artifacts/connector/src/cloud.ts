@@ -71,6 +71,8 @@ export interface CloudStatusReport {
   connectorVersion: string;
   hardware: "impinj" | "zebra" | "generic" | "active_transponder" | null;
   connected: boolean;
+  /** RFID: connected. RM TrackR: identified, configured and both enabled loops running. */
+  ready?: boolean;
   detail: string | null;
   lastReadAt: string | null;
   readCount: number;
@@ -353,6 +355,43 @@ export async function cloudLogin(
   const data = (await res.json().catch(() => ({}))) as { clubId?: number; user?: { clubId?: number } };
   const clubId = data.clubId ?? data.user?.clubId ?? null;
   return { cookie, clubId: clubId ?? null };
+}
+
+/** Register a reader for the club (RM Connect does this when it finds new hardware). */
+export async function createReader(
+  cloudUrl: string,
+  cookie: string,
+  input: { name: string; type: "rfid" | "active_transponder"; hardwareAddress: string },
+): Promise<CloudReader> {
+  const base = cloudUrl.replace(/\/+$/, "");
+  const res = await fetch(`${base}/api/readers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify(input),
+  });
+  if (res.status === 401) throw new Error("Session expired — sign in again");
+  const data = (await res.json().catch(() => ({}))) as CloudReader & { error?: string };
+  if (!res.ok) throw new Error(data.error ?? `Couldn't add the reader (${res.status})`);
+  return data;
+}
+
+/** Rename a reader and/or save the address RM Connect found it at. */
+export async function updateReader(
+  cloudUrl: string,
+  cookie: string,
+  readerId: number,
+  input: { name: string; hardwareAddress?: string },
+): Promise<CloudReader> {
+  const base = cloudUrl.replace(/\/+$/, "");
+  const res = await fetch(`${base}/api/readers/${readerId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify(input),
+  });
+  if (res.status === 401) throw new Error("Session expired — sign in again");
+  const data = (await res.json().catch(() => ({}))) as CloudReader & { error?: string };
+  if (!res.ok) throw new Error(data.error ?? `Couldn't update the reader (${res.status})`);
+  return data;
 }
 
 /** Fetch the club's registered readers using a session cookie. */

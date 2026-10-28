@@ -7,79 +7,26 @@
 import { safeStorage, app } from "electron";
 import path from "path";
 import fs from "fs";
-import { migrateLegacyActiveTransponderAddress } from "./settings-migrations";
+import { migrateSettings, type ConnectorSettings } from "./settings-migrations";
 import { builtInCloudUrl, migrateCloudUrl } from "./cloud-url";
+
+export type { ConnectorSettings, ReaderConfig, Hardware, ActiveTimingConfig } from "./settings-migrations";
 
 const SETTINGS_FILE = () => path.join(app.getPath("userData"), "connector-settings.json");
 const PASSWORD_FILE = () => path.join(app.getPath("userData"), "credentials.enc");
 const SESSION_FILE = () => path.join(app.getPath("userData"), "session.enc");
 
-export interface ConnectorSettings {
-  cloudUrl: string;
-  email: string;
-  clubId: number | null;
-  readerId: number | null;
-  readerToken: string | null;
-  readerName: string | null;
-  hardware: "impinj" | "zebra" | "generic" | "active_transponder" | null;
-  /** Impinj: last 6 MAC chars OR a full hostname/IP. F2000: host/IP[:port]. */
-  hardwareAddress: string;
-  /** Reconnect hardware + cloud automatically when the app launches. */
-  autoConnect: boolean;
-  /** F2000 V3.2 active-transponder configuration. */
-  activeTimingChannel: number;
-  activeTimingPower: number;
-  activeTimingLoop1Enabled: boolean;
-  activeTimingLoop2Enabled: boolean;
-}
-
-const DEFAULT_SETTINGS: ConnectorSettings = {
-  cloudUrl: "",
-  email: "",
-  clubId: null,
-  readerId: null,
-  readerToken: null,
-  readerName: null,
-  hardware: null,
-  hardwareAddress: "",
-  autoConnect: true,
-  activeTimingChannel: 0,
-  activeTimingPower: 100,
-  activeTimingLoop1Enabled: true,
-  activeTimingLoop2Enabled: true,
-};
-
 function defaultSettings(): ConnectorSettings {
-  return { ...DEFAULT_SETTINGS, cloudUrl: builtInCloudUrl() };
+  return { cloudUrl: builtInCloudUrl(), email: "", clubId: null, readers: [], autoConnect: true };
 }
 
 export function loadSettings(): ConnectorSettings {
   try {
     if (!fs.existsSync(SETTINGS_FILE())) return defaultSettings();
     const raw = JSON.parse(fs.readFileSync(SETTINGS_FILE(), "utf8"));
-    // Preserve existing installations while migrating both the former decoder
-    // hardware kind and its obsolete F2000 TCP port.
-    const hardware = raw.hardware === "mylaps" ? "active_transponder" : raw.hardware;
-    const hardwareAddress = migrateLegacyActiveTransponderAddress(hardware, raw.hardwareAddress);
-    // Older releases persisted vendor-prefixed configuration keys. Compose
-    // those names so the retired vendor token never appears in source.
-    const legacyPrefix = ["fei", "bot"].join("");
-    const legacy = (suffix: string) => raw[legacyPrefix + suffix];
-    const migrated = {
-      ...raw,
-      // Empty or retired (former Replit) URLs move to the built-in cloud URL.
-      cloudUrl: migrateCloudUrl(raw.cloudUrl),
-      hardware,
-      hardwareAddress,
-      activeTimingChannel: raw.activeTimingChannel ?? legacy("Channel") ?? DEFAULT_SETTINGS.activeTimingChannel,
-      activeTimingPower: raw.activeTimingPower ?? legacy("Power") ?? DEFAULT_SETTINGS.activeTimingPower,
-      activeTimingLoop1Enabled: raw.activeTimingLoop1Enabled ?? legacy("Loop1Enabled") ?? DEFAULT_SETTINGS.activeTimingLoop1Enabled,
-      activeTimingLoop2Enabled: raw.activeTimingLoop2Enabled ?? legacy("Loop2Enabled") ?? DEFAULT_SETTINGS.activeTimingLoop2Enabled,
-    };
-    for (const suffix of ["Channel", "Power", "Loop1Enabled", "Loop2Enabled"]) {
-      delete migrated[legacyPrefix + suffix];
-    }
-    const normalized = { ...DEFAULT_SETTINGS, ...migrated };
+    // Empty or retired (former Replit) URLs move to the built-in cloud URL,
+    // and a single-reader file from an older release becomes a reader list.
+    const normalized = migrateSettings(raw, migrateCloudUrl);
     fs.writeFileSync(SETTINGS_FILE(), JSON.stringify(normalized, null, 2), "utf8");
     return normalized;
   } catch {

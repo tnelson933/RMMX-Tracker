@@ -184,7 +184,7 @@ function ActiveTransponderGuidedSetup({
 
   // Desktop configuration state
   const [activeChannel, setActiveChannel] = useState(0);
-  const [activePower, setActivePower] = useState(50);
+  const [activePower, setActivePower] = useState(100);
   const [loop1Enabled, setLoop1Enabled] = useState(true);
   const [loop2Enabled, setLoop2Enabled] = useState(true);
   const [applyingConfig, setApplyingConfig] = useState(false);
@@ -202,14 +202,8 @@ function ActiveTransponderGuidedSetup({
     if ((activeStatus as any).loopsReady) isLoopsReady = true;
     if ((activeStatus as any).ready) isReady = true;
   } else if (!isDesktop && activeConnector) {
-    try {
-      if (activeConnector.hardware.detail) {
-        const detail = JSON.parse(activeConnector.hardware.detail);
-        if (detail.configApplied) isConfigApplied = true;
-        if (detail.loopsReady) isLoopsReady = true;
-        if (detail.ready) isReady = true;
-      }
-    } catch {}
+    // RM Connect reports readiness as a flag; its detail is plain text.
+    if (activeConnector.hardware.ready) isConfigApplied = isLoopsReady = isReady = true;
   }
 
   const applyConfig = async () => {
@@ -221,7 +215,7 @@ function ActiveTransponderGuidedSetup({
         await api.configure({
           activeChannel,
           activePower,
-          loopEnabled: { 1: loop1Enabled, 2: loop2Enabled }
+          loopEnabled: [loop1Enabled, loop2Enabled],
         });
       }
     } catch {}
@@ -264,21 +258,10 @@ function ActiveTransponderGuidedSetup({
   } else if (!isDesktop && activeConnector) {
     isConnected = activeConnector.hardware.connected;
     readCount = activeConnector.hardware.readCount;
-    try {
-      if (activeConnector.hardware.detail) {
-        const detail = JSON.parse(activeConnector.hardware.detail);
-        if (detail.lastHeartbeatAt) heartbeat = detail.lastHeartbeatAt;
-        if (detail.batteryPercent != null) battery = detail.batteryPercent;
-        if (detail.machineId) machineId = detail.machineId;
-        if (detail.error) {
-          hasError = true;
-          errorMsg = detail.error;
-        }
-        if (detail.reader1Working != null) {
-          loops = { l1: detail.reader1Working === "1", l2: detail.reader2Working === "1" };
-        }
-      }
-    } catch {}
+    if (!isConnected && activeConnector.hardware.detail) {
+      hasError = true;
+      errorMsg = activeConnector.hardware.detail;
+    }
   }
 
   const testPassed = testMode && initialReadCount != null && readCount > initialReadCount;
@@ -518,11 +501,10 @@ export default function ReaderSetup() {
       onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetRecentTagsQueryKey() }),
     } as any,
   });
-  const [connectorDl, setConnectorDl] = useState({
-    macArm:  "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.16/RM-Connect-arm64.dmg",
-    macX64:  "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.16/RM-Connect-x64.dmg",
-    windows: "https://github.com/tnelson933/RMMX-Tracker/releases/download/connector-v1.0.16/RM-Connect-Setup.exe",
-  });
+  // Until /api/config/connector-release answers, link to the releases page
+  // rather than a pinned version that goes stale.
+  const RELEASES_PAGE = "https://github.com/tnelson933/RMMX-Tracker/releases";
+  const [connectorDl, setConnectorDl] = useState({ macArm: RELEASES_PAGE, macX64: RELEASES_PAGE, windows: RELEASES_PAGE });
   useEffect(() => {
     fetch("/api/config/connector-release")
       .then(r => r.ok ? r.json() : null)
@@ -698,6 +680,8 @@ export default function ReaderSetup() {
   const [readerIp,   setReaderIp]   = useState("");
   const [readerMac,  setReaderMac]  = useState("");
   const [activeConfigReaderId, setActiveConfigReaderId] = useState<number | null>(null);
+  // Reader whose RM TrackR settings panel is open in the reader list.
+  const [settingsReaderId, setSettingsReaderId] = useState<number | null>(null);
   const [activeTimingConfig, setActiveTimingConfig] = useState({ channel: 0, power: 100, loop1Enabled: true, loop2Enabled: true });
   const [activeTimingConfigSaving, setActiveTimingConfigSaving] = useState(false);
   const [activeTimingConfigResult, setActiveTimingConfigResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -954,358 +938,65 @@ export default function ReaderSetup() {
       {/* Header */}
       <div>
         <h1 className="text-3xl font-heading font-bold uppercase tracking-tight">Reader Setup</h1>
-        <p className="text-muted-foreground mt-1">Choose your timing system, then follow one clear setup path.</p>
+        <p className="text-muted-foreground mt-1">
+          RM Connect finds your RFID readers and RM TrackR readers at the track, adds them here, and keeps them connected.
+        </p>
       </div>
 
-      {/* Start with the choice that determines every instruction below. */}
-      <section className="rounded-xl border-2 border-primary/25 bg-card p-5 space-y-4">
-        <div>
-          <p className="font-heading font-bold uppercase tracking-wider text-sm">1. Choose your timing system</p>
-          <p className="text-sm text-muted-foreground mt-1">Only the instructions for the system you choose are shown below.</p>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <button
-            onClick={() => { setTech("rfid"); setNewReaderType("rfid"); setTestResult(null); setShowAddReader(false); }}
-            className={`flex items-center gap-3 rounded-xl border-2 p-4 text-left transition-all ${tech === "rfid" ? "border-primary bg-primary/5 shadow-sm" : "border-border hover:border-primary/40"}`}
-          >
-            <Wifi size={22} className={tech === "rfid" ? "text-primary" : "text-muted-foreground"} />
-            <div>
-              <p className="font-semibold">RFID</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Sticker tags read by an Impinj, Zebra, or compatible RFID reader.</p>
-            </div>
-          </button>
-          <button
-            onClick={() => { setTech("active_transponder"); setNewReaderType("active_transponder"); setTestResult(null); setShowAddReader(false); }}
-            className={`flex items-center gap-3 rounded-xl border-2 p-4 text-left transition-all ${tech === "active_transponder" ? "border-primary bg-primary/5 shadow-sm" : "border-border hover:border-primary/40"}`}
-          >
-            <Timer size={22} className={tech === "active_transponder" ? "text-primary" : "text-muted-foreground"} />
-            <div>
-              <p className="font-semibold">Active Timing Reader</p>
-              <p className="text-xs text-muted-foreground mt-0.5">RM TrackR reader with RM TrackR Transponders.</p>
-            </div>
-          </button>
-        </div>
-      </section>
-
+      {/* The desktop app can also time with no internet; that path picks the system first. */}
+      {isDesktop && (
+        <section className="rounded-xl border-2 border-primary/25 bg-card p-5 space-y-4">
+          <div>
+            <p className="font-heading font-bold uppercase tracking-wider text-sm">1. Choose your timing system</p>
+            <p className="text-sm text-muted-foreground mt-1">Used by the no-internet setup below.</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button
+              onClick={() => { setTech("rfid"); setNewReaderType("rfid"); setTestResult(null); }}
+              className={`flex items-center gap-3 rounded-xl border-2 p-4 text-left transition-all ${tech === "rfid" ? "border-primary bg-primary/5 shadow-sm" : "border-border hover:border-primary/40"}`}
+            >
+              <Wifi size={22} className={tech === "rfid" ? "text-primary" : "text-muted-foreground"} />
+              <div>
+                <p className="font-semibold">RFID</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Sticker tags read by an Impinj, Zebra, or compatible RFID reader.</p>
+              </div>
+            </button>
+            <button
+              onClick={() => { setTech("active_transponder"); setNewReaderType("active_transponder"); setTestResult(null); }}
+              className={`flex items-center gap-3 rounded-xl border-2 p-4 text-left transition-all ${tech === "active_transponder" ? "border-primary bg-primary/5 shadow-sm" : "border-border hover:border-primary/40"}`}
+            >
+              <Timer size={22} className={tech === "active_transponder" ? "text-primary" : "text-muted-foreground"} />
+              <div>
+                <p className="font-semibold">RM TrackR</p>
+                <p className="text-xs text-muted-foreground mt-0.5">RM TrackR reader with RM TrackR Transponders.</p>
+              </div>
+            </button>
+          </div>
+        </section>
+      )}
       {isDesktop && <ConnectionModeChooser tech={tech} />}
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="rounded-lg border bg-card p-3">
-          <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">Selected system</p>
-          <p className="text-sm font-semibold mt-1">{tech === "rfid" ? "RFID" : "Active Timing Reader"}</p>
+      {/* ── RM Connect: the one place readers are set up ── */}
+      <section className="rounded-xl border-2 border-primary/25 bg-card p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <MonitorDown size={18} className="text-primary" />
+          <h2 className="font-heading font-bold uppercase tracking-tight text-lg">Set up with RM Connect</h2>
         </div>
-        <div className="rounded-lg border bg-card p-3">
-          <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">Registered readers</p>
-          <p className="text-sm font-semibold mt-1">{(readers as any[]).filter(r => r.type === tech).length} for this system</p>
+        <div className="space-y-2 text-sm">
+          <div className="flex gap-2"><MiniStep n={1} /><p>Install RM Connect on the laptop you take to the track.</p></div>
+          <div className="flex gap-2"><MiniStep n={2} /><p>Power on your readers and connect the laptop to the same network (a router, or a cable straight to the reader). Sign in with your organizer email.</p></div>
+          <div className="flex gap-2"><MiniStep n={3} /><p>Click <strong>Find readers</strong>. RM Connect lists every reader it finds; name each one after where it sits (for example "Finish line" or "Section 3 start") and click <strong>Add</strong>. Click <strong>Test</strong> and pass a tag or transponder to check it.</p></div>
         </div>
-        <div className="rounded-lg border bg-card p-3">
-          <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">Next action</p>
-          <p className="text-sm font-semibold mt-1">{(readers as any[]).some(r => r.type === tech) ? "Connect your reader" : "Register your reader"}</p>
-        </div>
-      </div>
-
-      {/* Timing URL — RFID only */}
-      {tech === "rfid" && (
-        <div className="rounded-xl border-2 border-primary/40 bg-primary/5 p-5 space-y-3">
-          <div>
-            <p className="font-heading font-bold uppercase tracking-wider text-sm">Your Timing URL</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Each reader has its own URL. Program it into that reader once. It automatically routes to whichever moto or practice is running.
-            </p>
-          </div>
-          {urlReader ? (
-            <>
-              {rfidReaders.length > 1 && (
-                <div className="flex items-center gap-2">
-                  <Label className="text-xs shrink-0">Reader</Label>
-                  <Select value={String(urlReader.id)} onValueChange={v => setUrlReaderId(Number(v))}>
-                    <SelectTrigger className="h-8 w-full sm:w-64 text-xs"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {rfidReaders.map(r => <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-              <div className="flex items-center gap-2">
-                <code className="flex-1 font-mono text-xs bg-background border rounded-lg px-3 py-2.5 truncate text-primary">
-                  {facilityEndpoint}
-                </code>
-                <button onClick={copyUrl} className="shrink-0 flex items-center gap-1.5 rounded-lg border bg-background px-3 py-2.5 text-xs font-medium hover:bg-muted transition-colors">
-                  {copiedUrl ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
-                  {copiedUrl ? "Copied" : "Copy"}
-                </button>
-              </div>
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Register your reader in step 2 below. Its timing URL appears here.
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* ── Registered Readers ── */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="font-heading font-bold uppercase tracking-tight text-lg">2. Register your {tech === "rfid" ? "RFID reader" : "Active Timing Reader"}</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Give this physical device a name and save its address. {tech === "rfid" ? "You will use its timing URL in the next step." : "RM Connect or the desktop app will use the RM TrackR address in the next step."}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {tech === "rfid" && (readers as any[]).filter(r => r.type === tech).length > 0 && (
-              identifying ? (
-                <Button size="sm" variant="secondary" onClick={stopIdentify} className="gap-1.5">
-                  <Loader2 size={13} className="animate-spin" /> Listening… Cancel
-                </Button>
-              ) : (
-                <Button size="sm" variant="outline" onClick={startIdentify} className="gap-1.5">
-                  <ScanLine size={13} /> Identify Reader
-                </Button>
-              )
-            )}
-            <Button size="sm" variant="outline" onClick={() => setShowAddReader(v => !v)} className="gap-1.5">
-              <Plus size={13} /> Add Reader
-            </Button>
-          </div>
-        </div>
-
-        {identifying && (
-          <div className="rounded-lg border-2 border-primary/50 bg-primary/5 p-4 flex items-center gap-3">
-            <ScanLine size={18} className="text-primary shrink-0 animate-pulse" />
-            <p className="text-sm">
-              <strong>Listening for a scan…</strong> Hold a tag up to one of your readers. The reader that picks it up will be highlighted below.
-            </p>
-          </div>
-        )}
-
-        {showAddReader && (
-          <div className="rounded-lg border p-4 space-y-3 bg-muted/20">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">New Reader</p>
-            <div className="flex gap-2 flex-wrap">
-              <Input
-                value={newReaderName}
-                onChange={e => setNewReaderName(e.target.value)}
-                placeholder={tech === "active_transponder" ? 'Optional name (defaults to "RM TrackR Reader")' : 'e.g. "Start Gate"'}
-                className="h-9 flex-1 min-w-36"
-                onKeyDown={e => e.key === "Enter" && handleAddReader()}
-              />
-              <div className="h-9 inline-flex items-center rounded-md border bg-background px-3 text-xs font-semibold whitespace-nowrap">
-                {tech === "rfid" ? "RFID" : "Active Timing Reader"}
-              </div>
-              <Input
-                value={newReaderAddress}
-                onChange={e => setNewReaderAddress(e.target.value)}
-                placeholder={newReaderType === "active_transponder" ? "RM TrackR IP address (e.g. 192.168.1.50)" : "Last 6 of MAC (e.g. 3A:4B:5C)"}
-                className="h-9 flex-1 min-w-48 font-mono text-xs"
-                onKeyDown={e => e.key === "Enter" && handleAddReader()}
-              />
-            </div>
-            {tech === "active_transponder" && (
-              <p className="text-xs text-muted-foreground">
-                Enter the IP shown by the RM TrackR. A port is optional; RM Connect uses port 55555 when only an IP is provided.
-              </p>
-            )}
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                onClick={handleAddReader}
-                disabled={createReaderMutation.isPending || (tech === "active_transponder" ? !newReaderAddress.trim() : !newReaderName.trim())}
-              >
-                {createReaderMutation.isPending ? "Adding…" : "Add"}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => { setShowAddReader(false); setNewReaderName(""); setNewReaderAddress(""); }}>Cancel</Button>
-            </div>
-          </div>
-        )}
-
-        {(readers as any[]).filter(r => r.type === tech).length === 0 ? (
-          <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-            No {tech === "rfid" ? "RFID readers" : "Active Timing Readers"} registered yet — add the physical device you are setting up above.
-          </div>
-        ) : (
-          <div className="rounded-xl border overflow-hidden divide-y">
-            {(readers as any[]).filter(reader => reader.type === tech).map((reader: any) => {
-              const { text: lsText, live } = lastSeenLabel(reader.lastSeenAt);
-              const timingUrl = readerTimingUrl(reader.token);
-              const checkpointUrl = readerCheckpointUrl(reader.token);
-              const isEditing = editingId === reader.id;
-              const isIdentified = identifiedId === reader.id;
-              return (
-                <div
-                  key={reader.id}
-                  className={`p-4 space-y-3 transition-colors ${isIdentified ? "bg-primary/10 ring-2 ring-inset ring-primary" : ""}`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <Radio size={14} className={`shrink-0 mt-0.5 ${isIdentified ? "text-primary" : "text-muted-foreground"}`} />
-                      <div className="min-w-0 flex-1">
-                        {isEditing ? (
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-2">
-                              <Input
-                                value={editName}
-                                onChange={e => setEditName(e.target.value)}
-                                className="h-8 flex-1"
-                                autoFocus
-                                placeholder="Reader name"
-                                onKeyDown={e => {
-                                  if (e.key === "Enter") handleSaveReader(reader.id);
-                                  if (e.key === "Escape") setEditingId(null);
-                                }}
-                              />
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Input
-                                value={editAddress}
-                                onChange={e => setEditAddress(e.target.value)}
-                                className="h-8 flex-1 font-mono text-xs"
-                                placeholder={reader.type === "active_transponder" ? "RM TrackR IP address" : "Last 6 of MAC (e.g. 3A:4B:5C)"}
-                                onKeyDown={e => {
-                                  if (e.key === "Enter") handleSaveReader(reader.id);
-                                  if (e.key === "Escape") setEditingId(null);
-                                }}
-                              />
-                              <Button
-                                size="sm"
-                                className="h-8"
-                                onClick={() => handleSaveReader(reader.id)}
-                                disabled={updateReaderMutation.isPending || !editName.trim()}
-                              >
-                                {updateReaderMutation.isPending ? "Saving…" : "Save"}
-                              </Button>
-                              <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => setEditingId(null)} title="Cancel">
-                                <X size={14} />
-                              </Button>
-                            </div>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="flex items-center gap-2">
-                              <p className="font-semibold text-sm truncate">{reader.name}</p>
-                              {isIdentified && (
-                                <span className="text-[10px] font-bold uppercase tracking-wider text-primary bg-primary/15 rounded px-1.5 py-0.5 shrink-0">
-                                  This one
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                              <span className="text-xs text-muted-foreground uppercase">{reader.type === "active_transponder" ? "Active Timing Reader" : "RFID"}</span>
-                              {reader.hardwareAddress ? (
-                                <span className="text-xs font-mono text-muted-foreground bg-muted rounded px-1.5 py-0.5">{reader.hardwareAddress}</span>
-                              ) : (
-                                <span className="text-xs text-amber-500">No address set</span>
-                              )}
-                              <span className={`text-xs font-medium ${live ? "text-green-500" : "text-muted-foreground"}`}>
-                                {live ? "● " : "○ "}{lsText}
-                              </span>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    {!isEditing && (
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          onClick={() => beginEdit(reader)}
-                          className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
-                          title="Rename reader"
-                        >
-                          <Pencil size={14} />
-                        </button>
-                        <button
-                          onClick={() => handleRotateReader(reader)}
-                          disabled={rotateReaderMutation.isPending}
-                          className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
-                          title="Issue a new URL (revokes the current one)"
-                        >
-                          <KeyRound size={14} />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteReader(reader.id)}
-                          className="text-muted-foreground hover:text-destructive transition-colors p-1 rounded"
-                          title="Remove reader"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  {reader.type === "rfid" && (
-                    <div className="space-y-1">
-                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">Timing URL</p>
-                      <div className="flex items-center gap-2 bg-muted/40 rounded-lg px-3 py-2">
-                        <code className="flex-1 font-mono text-xs truncate text-primary">{timingUrl}</code>
-                        <CopyButton text={timingUrl} />
-                      </div>
-                    </div>
-                  )}
-                  <div className="space-y-1">
-                    <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-semibold">
-                      Checkpoint URL <span className="normal-case tracking-normal font-normal">(only for start, finish, or time-check assignments)</span>
-                    </p>
-                    <div className="flex items-center gap-2 bg-muted/40 rounded-lg px-3 py-2">
-                      <code className="flex-1 font-mono text-xs truncate text-primary">{checkpointUrl}</code>
-                      <CopyButton text={checkpointUrl} />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* ── RM Connect ── */}
-        <div className="rounded-xl border-2 p-5 space-y-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <MonitorDown size={18} className="text-primary" />
-              <h2 className="font-heading font-bold uppercase tracking-tight text-lg">
-                3. {tech === "active_transponder" ? "Start RM Connect" : "Connect the track laptop"}
-              </h2>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-primary bg-primary/15 rounded px-1.5 py-0.5">Recommended</span>
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              RM Connect runs in the laptop's system tray at the track. It connects directly to your{" "}
-              {tech === "rfid" ? "RFID reader and streams tag reads" : "RM TrackR and streams RM TrackR Transponder crossings"}{" "}
-              to the cloud. Leave it running on race day; readers start and stop automatically with each moto.
-              {tech === "active_transponder" && " Your saved IP address is used automatically—no channel, power, loop, or clock setup is needed for normal use."}
-            </p>
-          </div>
-        </div>
-
-        {(connectorStatuses as any[]).length > 0 ? (
-          <div className="rounded-lg border divide-y">
-            {(connectorStatuses as any[]).map((c: any) => (
-              <div key={c.readerId} className="flex items-center gap-3 p-3">
-                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${c.hardware?.connected ? "bg-green-500" : "bg-amber-500"}`} />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold truncate">{c.readerName}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {c.hardware?.kind === "impinj" ? "Impinj R700" : c.hardware?.kind === "zebra" ? "Zebra reader" : c.hardware?.kind === "generic" ? "LLRP reader" : c.hardware?.kind === "active_transponder" ? "RM TrackR" : "Hardware"}
-                    {" — "}
-                    {c.hardware?.connected ? "connected" : (c.hardware?.detail || "not connected")}
-                    {c.hardware?.readCount > 0 && ` · ${c.hardware.readCount} reads`}
-                    {c.hardware?.antennaIds?.length > 0 && ` · ${c.hardware.antennaIds.length} antenna${c.hardware.antennaIds.length === 1 ? "" : "s"} active`}
-                  </p>
-                </div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-green-500 bg-green-500/10 rounded px-1.5 py-0.5 shrink-0">
-                  App online
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-            No RM Connect app is currently connected for your club.
-          </div>
-        )}
-
+        <p className="text-xs text-muted-foreground">
+          One laptop can run several readers. Leave RM Connect running on race day: readers start and stop with each moto, and reconnect on their own if the network drops.
+        </p>
         <div className="flex flex-wrap gap-2">
-          <a href={connectorDl.macArm} title="macOS Apple Silicon (M1/M2/M3)">
+          <a href={connectorDl.windows} title="Windows 10/11">
+            <Button size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
+              <Download size={13} /> Windows
+            </Button>
+          </a>
+          <a href={connectorDl.macArm} title="macOS Apple Silicon (M1 and newer)">
             <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
               <Download size={13} /> Mac (Apple Silicon)
             </Button>
@@ -1315,39 +1006,193 @@ export default function ReaderSetup() {
               <Download size={13} /> Mac (Intel)
             </Button>
           </a>
-          <a href={connectorDl.windows} title="Windows 10/11">
-            <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
-              <Download size={13} /> Windows
-            </Button>
-          </a>
         </div>
-
-        <div className="space-y-2 text-sm">
-          <div className="flex gap-2"><MiniStep n={1} /><p>Download and install RM Connect on the laptop you bring to the track.</p></div>
-          <div className="flex gap-2"><MiniStep n={2} /><p>Sign in with your organizer email, pick a reader registration from the list above, choose your hardware (Impinj R700, Zebra FX7500/FX9600, other LLRP reader, or RM TrackR), and enter its address (Impinj: last 6 of the MAC on the label · Zebra/other/RM TrackR: IP address).</p></div>
-          <div className="flex gap-2"><MiniStep n={3} /><p>That's it — leave it running in the tray. When you press <strong>Start Moto</strong> here, the reader starts reading automatically.</p></div>
-        </div>
-
-         {tech === "rfid" && <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm space-y-1.5">
-           <p className="font-semibold text-amber-700 dark:text-amber-400">RFID readers: enable LLRP before connecting</p>
-          <p className="text-muted-foreground">
-            RM Connect talks to RFID readers over LLRP. If the reader's LLRP interface is off, it will refuse the connection and
-            RM Connect will show "Reader disconnected."
-          </p>
-          <ol className="list-decimal ml-5 space-y-0.5 text-muted-foreground">
-            <li><strong>Impinj R700</strong>: open the reader's web page at <span className="font-mono text-xs">http://impinj-xx-xx-xx.local</span> (last 6 of the MAC) or its IP. Log in, change the <strong>RFID interface</strong> setting from "Impinj IoT device interface" to <strong>LLRP</strong>, and reboot when prompted.</li>
-            <li><strong>Zebra FX7500 / FX9600</strong>: open <span className="font-mono text-xs">http://READER_IP</span>, log in (default admin / change#me), and make sure the operating mode is <strong>LLRP</strong> (this is the factory default).</li>
-            <li><strong>Other LLRP readers</strong>: enable LLRP in the reader's admin page — RM Connect connects on TCP port 5084.</li>
-            <li>Once LLRP is on, RM Connect connects automatically within a few seconds.</li>
+        <details className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+          <summary className="cursor-pointer font-semibold text-amber-700 dark:text-amber-400">RFID reader not found? Turn on LLRP</summary>
+          <ol className="list-decimal ml-5 mt-2 space-y-0.5 text-muted-foreground">
+            <li><strong>Impinj R700</strong>: open the reader's web page (<span className="font-mono text-xs">http://impinj-xx-xx-xx.local</span>, the last 6 characters of the MAC on its label), log in, change <strong>RFID interface</strong> to <strong>LLRP</strong>, and reboot when prompted.</li>
+            <li><strong>Zebra FX7500 / FX9600</strong>: LLRP is on from the factory. If it was changed, set the operating mode back to <strong>LLRP</strong> on the reader's web page.</li>
+            <li>Only one program can talk to a reader at a time. Close ItemTest or other reader software before RM Connect connects.</li>
           </ol>
-          <p className="text-muted-foreground text-xs">
-            Tip: if the <span className="font-mono">.local</span> address won't load, find the reader's IP in your router's device list and enter the IP in RM Connect instead.
-          </p>
-         </div>}
+        </details>
+      </section>
+
+      {/* ── Readers ── */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="font-heading font-bold uppercase tracking-tight text-lg">Your readers</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Live status from RM Connect. Rename a reader after where it sits on the course.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {(readers as any[]).length > 0 && (
+              identifying ? (
+                <Button size="sm" variant="secondary" onClick={stopIdentify} className="gap-1.5">
+                  <Loader2 size={13} className="animate-spin" /> Listening… Cancel
+                </Button>
+              ) : (
+                <Button size="sm" variant="outline" onClick={startIdentify} className="gap-1.5">
+                  <ScanLine size={13} /> Identify reader
+                </Button>
+              )
+            )}
+          </div>
+        </div>
+
+        {identifying && (
+          <div className="rounded-lg border-2 border-primary/50 bg-primary/5 p-4 flex items-center gap-3">
+            <ScanLine size={18} className="text-primary shrink-0 animate-pulse" />
+            <p className="text-sm">
+              <strong>Listening…</strong> Pass a tag or transponder by one of your readers while a moto or practice is running. The reader that sees it is highlighted below.
+            </p>
+          </div>
+        )}
+
+        {(readers as any[]).length === 0 ? (
+          <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+            No readers yet. Click <strong>Find readers</strong> in RM Connect and they appear here.
+          </div>
+        ) : (
+          <div className="rounded-xl border overflow-hidden divide-y">
+            {(readers as any[]).map((reader: any) => {
+              const { text: lsText } = lastSeenLabel(reader.lastSeenAt);
+              const connector = (connectorStatuses as any[]).find((c: any) => c.readerId === reader.id);
+              const isActive = reader.type === "active_transponder";
+              const isEditing = editingId === reader.id;
+              const isIdentified = identifiedId === reader.id;
+              const showSettings = isActive && settingsReaderId === reader.id;
+              const hw = connector?.hardware;
+              const live = !!hw?.connected;
+              const ready = live && (hw?.ready ?? !isActive);
+              const statusText = !connector
+                ? `RM Connect isn't running for this reader${reader.lastSeenAt ? ` · last read ${lsText}` : ""}`
+                : !live
+                  ? `RM Connect is running but can't reach the reader${hw?.detail ? ` — ${hw.detail}` : ""}`
+                  : ready
+                    ? `Ready${hw?.readCount ? ` · ${hw.readCount} reads` : ""}${hw?.antennaIds?.length ? ` · antennas ${hw.antennaIds.join(", ")}` : ""}`
+                    : `Connected, starting up${hw?.detail ? ` — ${hw.detail}` : ""}`;
+              return (
+                <div
+                  key={reader.id}
+                  className={`p-4 space-y-3 transition-colors ${isIdentified ? "bg-primary/10 ring-2 ring-inset ring-primary" : ""}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                      <span className={`w-2.5 h-2.5 rounded-full shrink-0 mt-1.5 ${ready ? "bg-green-500" : live || connector ? "bg-amber-500" : "bg-muted-foreground/40"}`} />
+                      <div className="min-w-0 flex-1">
+                        {isEditing ? (
+                          <div className="flex items-center gap-2">
+                            <Input
+                              value={editName}
+                              onChange={e => setEditName(e.target.value)}
+                              className="h-8 flex-1"
+                              autoFocus
+                              placeholder="Reader name"
+                              onKeyDown={e => {
+                                if (e.key === "Enter") handleSaveReader(reader.id);
+                                if (e.key === "Escape") setEditingId(null);
+                              }}
+                            />
+                            <Button size="sm" className="h-8" onClick={() => handleSaveReader(reader.id)} disabled={updateReaderMutation.isPending || !editName.trim()}>
+                              {updateReaderMutation.isPending ? "Saving…" : "Save"}
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => setEditingId(null)} title="Cancel">
+                              <X size={14} />
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-semibold text-sm truncate">{reader.name}</p>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground bg-muted rounded px-1.5 py-0.5">
+                              {isActive ? "RM TrackR" : hw?.kind === "impinj" ? "Impinj R700" : hw?.kind === "zebra" ? "Zebra" : "RFID"}
+                            </span>
+                            {isIdentified && (
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-primary bg-primary/15 rounded px-1.5 py-0.5">This one</span>
+                            )}
+                          </div>
+                        )}
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {reader.hardwareAddress && <span className="font-mono mr-1.5">{reader.hardwareAddress}</span>}
+                          {statusText}
+                        </p>
+                      </div>
+                    </div>
+                    {!isEditing && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        {isActive && (
+                          <button
+                            onClick={() => { if (showSettings) setSettingsReaderId(null); else { selectActiveTimingReader(reader.id); setSettingsReaderId(reader.id); } }}
+                            className={`transition-colors p-1 rounded ${showSettings ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                            title="RM TrackR settings"
+                          >
+                            <Settings size={14} />
+                          </button>
+                        )}
+                        <button onClick={() => beginEdit(reader)} className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded" title="Rename reader">
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          onClick={() => handleRotateReader(reader)}
+                          disabled={rotateReaderMutation.isPending}
+                          className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
+                          title="Issue a new token (RM Connect must add this reader again)"
+                        >
+                          <KeyRound size={14} />
+                        </button>
+                        <button
+                          onClick={() => { if (window.confirm(`Remove "${reader.name}"? RM Connect stops sending its reads.`)) handleDeleteReader(reader.id); }}
+                          className="text-muted-foreground hover:text-destructive transition-colors p-1 rounded"
+                          title="Remove reader"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {showSettings && (
+                    <div className="rounded-lg border bg-muted/20 p-4 space-y-3">
+                      <p className="text-xs text-muted-foreground">
+                        The defaults (channel 0, power 100, both loops on) suit most tracks. Changes are sent to RM Connect right away.
+                      </p>
+                      <div className="grid grid-cols-2 gap-3 max-w-sm">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-muted-foreground">Channel (0–5)</Label>
+                          <Input type="number" min={0} max={5} value={activeTimingConfig.channel} onChange={event => setActiveTimingConfig(config => ({ ...config, channel: Number(event.target.value) }))} />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-muted-foreground">Power (0–100)</Label>
+                          <Input type="number" min={0} max={100} value={activeTimingConfig.power} onChange={event => setActiveTimingConfig(config => ({ ...config, power: Number(event.target.value) }))} />
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-4">
+                        <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={activeTimingConfig.loop1Enabled} onChange={event => setActiveTimingConfig(config => ({ ...config, loop1Enabled: event.target.checked }))} /> Loop 1</label>
+                        <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={activeTimingConfig.loop2Enabled} onChange={event => setActiveTimingConfig(config => ({ ...config, loop2Enabled: event.target.checked }))} /> Loop 2</label>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">Both loops sit at the same timing line, so either one records a crossing.</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button size="sm" onClick={() => saveActiveTimingConfig(false)} disabled={activeTimingConfigSaving} className="gap-2">
+                          {activeTimingConfigSaving ? <Loader2 size={14} className="animate-spin" /> : <Settings size={14} />}
+                          Save & send to RM Connect
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => saveActiveTimingConfig(true)} disabled={activeTimingConfigSaving}>
+                          Sync reader clock
+                        </Button>
+                      </div>
+                      {activeTimingConfigResult && (
+                        <p className={`text-xs ${activeTimingConfigResult.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>{activeTimingConfigResult.message}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* ── Live Tag Scanner ── */}
-      {tech === "rfid" && <div className="rounded-xl border-2 p-5 space-y-4">
+      <div className="rounded-xl border-2 p-5 space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
@@ -1355,8 +1200,8 @@ export default function ReaderSetup() {
               <h2 className="font-heading font-bold uppercase tracking-tight text-lg">Live Tag Scanner</h2>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Identify RFID tags so you can assign them to riders. Turn the scanner on, hold a tag near
-              the antenna, and its number appears below. Tags already assigned to a rider show the rider's name.
+              Read a tag or transponder number so you can assign it to a rider. Turn the scanner on, pass it by
+              a reader, and its number appears below. Tags already assigned to a rider show the rider's name.
             </p>
           </div>
           <div className="flex gap-2 shrink-0">
@@ -1410,463 +1255,478 @@ export default function ReaderSetup() {
             into the RFID number field. Practice sessions and races only count tags assigned to a rider.
           </p>
         )}
-      </div>}
+      </div>
 
-      {/* Active Timing Reader is configured through RM Connect; no bridge or desktop setup is required. */}
-      {false && (
-        <div className="flex items-center gap-2 text-sm">
-          <span className="font-medium text-muted-foreground">My laptop runs:</span>
-          <button
-            onClick={() => setOs("windows")}
-            className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${os === "windows" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}
-          >Windows</button>
-          <button
-            onClick={() => setOs("mac")}
-            className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${os === "mac" ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:text-foreground"}`}
-          >Mac</button>
-        </div>
-      )}
+      {/* ── Advanced: what most clubs never need ── */}
+      <details className="rounded-xl border bg-card overflow-hidden">
+        <summary className="cursor-pointer list-none px-5 py-4 flex items-center gap-3 hover:bg-muted/30 transition-colors">
+          <Settings size={18} className="text-muted-foreground shrink-0" />
+          <div className="min-w-0">
+            <p className="font-heading font-bold uppercase tracking-wider text-sm">Advanced</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Add a reader by hand, RFID signal settings, and readers that send reads without RM Connect.</p>
+          </div>
+        </summary>
+        <div className="border-t p-5 space-y-8">
+          {/* Add a reader by hand */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-heading font-bold uppercase tracking-wider text-sm">Add a reader by hand</p>
+                <p className="text-xs text-muted-foreground mt-0.5">RM Connect adds readers for you. Use this only for a reader that sends reads on its own (below).</p>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => setShowAddReader(v => !v)} className="gap-1.5 shrink-0">
+                <Plus size={13} /> Add reader
+              </Button>
+            </div>
+            {showAddReader && (
+              <div className="rounded-lg border p-4 space-y-3 bg-muted/20">
+                <div className="flex gap-2 flex-wrap">
+                  <Input
+                    value={newReaderName}
+                    onChange={e => setNewReaderName(e.target.value)}
+                    placeholder='Name, e.g. "Finish line"'
+                    className="h-9 flex-1 min-w-36"
+                    onKeyDown={e => e.key === "Enter" && handleAddReader()}
+                  />
+                  <Select value={newReaderType} onValueChange={v => setNewReaderType(v as "rfid" | "active_transponder")}>
+                    <SelectTrigger className="h-9 w-40"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="rfid">RFID reader</SelectItem>
+                      <SelectItem value="active_transponder">RM TrackR</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    value={newReaderAddress}
+                    onChange={e => setNewReaderAddress(e.target.value)}
+                    placeholder={newReaderType === "active_transponder" ? "RM TrackR IP address" : "IP address or last 6 of MAC"}
+                    className="h-9 flex-1 min-w-48 font-mono text-xs"
+                    onKeyDown={e => e.key === "Enter" && handleAddReader()}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={handleAddReader} disabled={createReaderMutation.isPending || (newReaderType === "active_transponder" ? !newReaderAddress.trim() : !newReaderName.trim())}>
+                    {createReaderMutation.isPending ? "Adding…" : "Add"}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => { setShowAddReader(false); setNewReaderName(""); setNewReaderAddress(""); }}>Cancel</Button>
+                </div>
+              </div>
+            )}
+          </div>
 
-      {/* RFID-only setup instructions */}
-      {tech === "rfid" && (
-      <div className="border rounded-xl bg-card overflow-hidden divide-y">
-        <div className="px-5 py-3 bg-muted/30 border-b">
-          <p className="font-heading font-bold uppercase tracking-wider text-sm">RFID Setup — 3 Steps</p>
-        </div>
-
-          <>
-            {/* Step 1 */}
-            <div className="flex gap-4 p-5">
-              <StepBadge n={1} />
-              <div className="space-y-2 min-w-0">
-                <p className="font-semibold">Attach a tag to each rider</p>
-                <p className="text-sm text-muted-foreground">
-                  Stick an RFID tag on each rider's helmet, chest protector, or bike. Then go to{" "}
-                  <strong className="text-foreground">Riders</strong> in the sidebar, open each rider's profile, and enter the tag number printed on the sticker.
-                </p>
-                <p className="text-xs bg-muted/60 border rounded-md px-3 py-2">
-                  <strong>Tip:</strong> Your reader's Tag Streaming page shows live reads with the exact tag ID — use it to copy and paste tag numbers accurately.
+          {/* Readers that post reads to RM Roost themselves */}
+          <div className="space-y-4">
+            <div>
+              <p className="font-heading font-bold uppercase tracking-wider text-sm">RFID reader without RM Connect</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                An RFID reader with internet access can send reads straight to RM Roost. Program its timing URL once on the reader's own web page.
+                Don't also set up the same reader in RM Connect.
+              </p>
+            </div>
+            <div className="rounded-xl border-2 border-primary/40 bg-primary/5 p-5 space-y-3">
+              <div>
+                <p className="font-heading font-bold uppercase tracking-wider text-sm">Your Timing URL</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Each reader has its own URL. Program it into that reader once. It automatically routes to whichever moto or practice is running.
                 </p>
               </div>
+              {urlReader ? (
+                <>
+                  {rfidReaders.length > 1 && (
+                    <div className="flex items-center gap-2">
+                      <Label className="text-xs shrink-0">Reader</Label>
+                      <Select value={String(urlReader.id)} onValueChange={v => setUrlReaderId(Number(v))}>
+                        <SelectTrigger className="h-8 w-full sm:w-64 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {rfidReaders.map(r => <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 font-mono text-xs bg-background border rounded-lg px-3 py-2.5 truncate text-primary">
+                      {facilityEndpoint}
+                    </code>
+                    <button onClick={copyUrl} className="shrink-0 flex items-center gap-1.5 rounded-lg border bg-background px-3 py-2.5 text-xs font-medium hover:bg-muted transition-colors">
+                      {copiedUrl ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
+                      {copiedUrl ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Register your reader in step 2 below. Its timing URL appears here.
+                </p>
+              )}
+            </div>
+          <div className="border rounded-xl bg-card overflow-hidden divide-y">
+            <div className="px-5 py-3 bg-muted/30 border-b">
+              <p className="font-heading font-bold uppercase tracking-wider text-sm">Set up the reader to send reads</p>
             </div>
 
-            {/* Step 2 */}
-            <div className="flex gap-4 p-5">
-              <StepBadge n={2} />
-              <div className="space-y-4 min-w-0 w-full">
-                <div>
-                  <p className="font-semibold">Configure your reader</p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Select your reader model, then follow the steps to set it up through its own web interface. This only needs to be done once — settings are saved on the reader.
-                  </p>
-                </div>
-
-                {/* Reader type selector */}
-                <div className="space-y-1.5">
-                  <p className="text-xs text-muted-foreground">Reader model:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {(["impinj-r700", "zebra-fx7500", "generic"] as const).map(rt => (
-                      <button key={rt} onClick={() => setReaderType(rt)}
-                        className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${readerType === rt ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/40"}`}>
-                        {rt === "impinj-r700" ? "Impinj R700" : rt === "zebra-fx7500" ? "Zebra FX7500" : "Other / Generic"}
-                      </button>
-                    ))}
+              <>
+                {/* Step 1 */}
+                <div className="flex gap-4 p-5">
+                  <StepBadge n={1} />
+                  <div className="space-y-2 min-w-0">
+                    <p className="font-semibold">Attach a tag to each rider</p>
+                    <p className="text-sm text-muted-foreground">
+                      Stick an RFID tag on each rider's helmet, chest protector, or bike. Then go to{" "}
+                      <strong className="text-foreground">Riders</strong> in the sidebar, open each rider's profile, and enter the tag number printed on the sticker.
+                    </p>
+                    <p className="text-xs bg-muted/60 border rounded-md px-3 py-2">
+                      <strong>Tip:</strong> Your reader's Tag Streaming page shows live reads with the exact tag ID — use it to copy and paste tag numbers accurately.
+                    </p>
                   </div>
                 </div>
 
-                {/* IP / MAC fields */}
-                {readerType !== "generic" && (
-                  <div className="space-y-3">
-                    {/* R700 MAC address helper */}
-                    {readerType === "impinj-r700" && (
-                      <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
-                        <p className="text-xs font-semibold text-foreground">Open your reader by MAC address</p>
-                        <p className="text-xs text-muted-foreground">Enter your reader's MAC address (printed on the label on the bottom of the unit) to get a direct link — no IP lookup needed.</p>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            value={readerMac}
-                            onChange={e => setReaderMac(e.target.value)}
-                            placeholder="e.g. AA:BB:CC:DD:EE:FF"
-                            className="font-mono h-9 text-sm max-w-xs"
-                          />
-                          {macLocalUrl ? (
-                            <a
-                              href={macLocalUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1.5 shrink-0 rounded-md border bg-background px-3 py-2 text-xs font-mono font-medium text-primary hover:bg-muted transition-colors"
-                            >
-                              {macLocalUrl} <ExternalLink size={11} />
-                            </a>
-                          ) : (
-                            <span className="text-xs text-muted-foreground font-mono">http://impinj-XX-XX-XX.local</span>
-                          )}
+                {/* Step 2 */}
+                <div className="flex gap-4 p-5">
+                  <StepBadge n={2} />
+                  <div className="space-y-4 min-w-0 w-full">
+                    <div>
+                      <p className="font-semibold">Configure your reader</p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        Select your reader model, then follow the steps to set it up through its own web interface. This only needs to be done once — settings are saved on the reader.
+                      </p>
+                    </div>
+
+                    {/* Reader type selector */}
+                    <div className="space-y-1.5">
+                      <p className="text-xs text-muted-foreground">Reader model:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {(["impinj-r700", "zebra-fx7500", "generic"] as const).map(rt => (
+                          <button key={rt} onClick={() => setReaderType(rt)}
+                            className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${readerType === rt ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/40"}`}>
+                            {rt === "impinj-r700" ? "Impinj R700" : rt === "zebra-fx7500" ? "Zebra FX7500" : "Other / Generic"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* IP / MAC fields */}
+                    {readerType !== "generic" && (
+                      <div className="space-y-3">
+                        {/* R700 MAC address helper */}
+                        {readerType === "impinj-r700" && (
+                          <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+                            <p className="text-xs font-semibold text-foreground">Open your reader by MAC address</p>
+                            <p className="text-xs text-muted-foreground">Enter your reader's MAC address (printed on the label on the bottom of the unit) to get a direct link — no IP lookup needed.</p>
+                            <div className="flex items-center gap-2">
+                              <Input
+                                value={readerMac}
+                                onChange={e => setReaderMac(e.target.value)}
+                                placeholder="e.g. AA:BB:CC:DD:EE:FF"
+                                className="font-mono h-9 text-sm max-w-xs"
+                              />
+                              {macLocalUrl ? (
+                                <a
+                                  href={macLocalUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1.5 shrink-0 rounded-md border bg-background px-3 py-2 text-xs font-mono font-medium text-primary hover:bg-muted transition-colors"
+                                >
+                                  {macLocalUrl} <ExternalLink size={11} />
+                                </a>
+                              ) : (
+                                <span className="text-xs text-muted-foreground font-mono">http://impinj-XX-XX-XX.local</span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        <div className="space-y-1.5">
+                          <label className="text-xs text-muted-foreground">
+                            Reader's IP address <span className="text-muted-foreground/60">(shown on the reader's screen, or check your router's connected-devices list)</span>
+                          </label>
+                          <Input value={readerIp} onChange={e => setReaderIp(e.target.value)}
+                            placeholder="e.g. 192.168.1.50" className="font-mono h-9 text-sm max-w-xs" />
                         </div>
                       </div>
                     )}
-                    <div className="space-y-1.5">
-                      <label className="text-xs text-muted-foreground">
-                        Reader's IP address <span className="text-muted-foreground/60">(shown on the reader's screen, or check your router's connected-devices list)</span>
-                      </label>
-                      <Input value={readerIp} onChange={e => setReaderIp(e.target.value)}
-                        placeholder="e.g. 192.168.1.50" className="font-mono h-9 text-sm max-w-xs" />
+
+                    {/* Step-by-step instructions */}
+                    <div className="border rounded-lg divide-y overflow-hidden">
+                      {manualRows.map(({ step, label, content }) => (
+                        <div key={step} className="flex gap-3 px-4 py-3">
+                          <MiniStep n={step} />
+                          <div className="space-y-1.5 min-w-0 w-full">
+                            <p className="text-sm font-medium">{label}</p>
+                            <div>{content}</div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                )}
+                </div>
 
-                {/* Step-by-step instructions */}
-                <div className="border rounded-lg divide-y overflow-hidden">
-                  {manualRows.map(({ step, label, content }) => (
-                    <div key={step} className="flex gap-3 px-4 py-3">
-                      <MiniStep n={step} />
-                      <div className="space-y-1.5 min-w-0 w-full">
-                        <p className="text-sm font-medium">{label}</p>
-                        <div>{content}</div>
-                      </div>
+                {/* Step 3 */}
+                <div className="flex gap-4 p-5">
+                  <StepBadge n={3} />
+                  <div className="space-y-2 min-w-0">
+                    <p className="font-semibold">Test before race day</p>
+                    <p className="text-sm text-muted-foreground">
+                      Use the test tool below — enter any tag number and confirm the server receives it. No moto needs to be running.
+                    </p>
+                  </div>
+                </div>
+              </>
+          </div>
+          <div className="border rounded-xl bg-card overflow-hidden">
+            <div className="px-5 py-3 bg-muted/30 border-b">
+              <p className="font-heading font-bold uppercase tracking-wider text-sm">Test Your Connection</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                No moto needed — just enter a tag number and confirm the server receives it.
+              </p>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="flex gap-3 items-end max-w-sm">
+                <div className="flex-1 space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    "Tag number (hex)"
+                  </label>
+                  <Input value={testValue} onChange={e => setTestValue(e.target.value)}
+                    placeholder="e.g. 1A2B3C4D"
+                    className="font-mono h-10"
+                    onKeyDown={e => { if (e.key === "Enter") sendTest(); }} />
+                </div>
+                <Button onClick={sendTest} disabled={testLoading || !testValue.trim() || !pingEndpoint}
+                  className="font-heading uppercase tracking-wider h-10 px-5 gap-2 shrink-0">
+                  {testLoading ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
+                  {testLoading ? "Sending…" : "Test"}
+                </Button>
+              </div>
+
+              {testResult && (
+                <div className={`flex items-start gap-3 rounded-lg border px-4 py-3 ${testResult.ok ? "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800" : "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800"}`}>
+                  {testResult.ok
+                    ? <CheckCircle2 size={18} className="text-green-600 dark:text-green-400 shrink-0 mt-0.5" />
+                    : <XCircle size={18} className="text-red-600 dark:text-red-400 shrink-0 mt-0.5" />}
+                  <div>
+                    <p className={`font-semibold text-sm ${testResult.ok ? "text-green-700 dark:text-green-300" : "text-red-700 dark:text-red-300"}`}>
+                      {testResult.ok ? "Working!" : "Not working"}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{testResult.message}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          </div>
+
+          {/* RFID signal settings */}
+            <div className="border rounded-xl bg-card overflow-hidden">
+              <div className="px-5 py-3 bg-muted/30 border-b">
+                <p className="font-heading font-bold uppercase tracking-wider text-sm">Reader Signal Settings</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Control how your RFID reader scans for tags at the timing gate. Sent live to RM Connect when you click Apply.
+                </p>
+              </div>
+              <div className="p-5 space-y-5">
+
+                {/* Quick presets */}
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-muted-foreground">Starting Points</p>
+                  <div className="flex gap-2 flex-wrap">
+                    {(["raceday", "dense", "low"] as const).map(key => {
+                      const labels: Record<string, string> = {
+                        raceday: "Race Day",
+                        dense:   "Crowded Start Gate",
+                        low:     "Bench Testing",
+                      };
+                      const descs: Record<string, string> = {
+                        raceday: "Full power, fastest scanning — best for a single finish line or timing gate",
+                        dense:   "Use when you have multiple readers close together or many riders crossing at once",
+                        low:     "Short range — for walking a tag past the antenna slowly while setting up",
+                      };
+                      return (
+                        <button key={key}
+                          title={descs[key]}
+                          onClick={() => { setRfPreset(key); setRfConfig(RF_PRESETS[key]); setRfResult(null); }}
+                          className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
+                            rfPreset === key
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "bg-muted/40 border-border hover:border-primary/40"
+                          }`}>
+                          {labels[key]}
+                        </button>
+                      );
+                    })}
+                    {rfPreset === "custom" && (
+                      <span className="px-3 py-1.5 rounded-lg border text-xs font-semibold bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-700 text-amber-700 dark:text-amber-300">
+                        Custom
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Controls grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+
+                  {/* Signal Strength */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <label className="text-xs font-medium">Signal Strength</label>
+                      <span className="text-xs font-semibold text-muted-foreground">
+                        {rfConfig.transmitPowerIndex <= 21 ? "Low"
+                          : rfConfig.transmitPowerIndex <= 41 ? "Medium"
+                          : rfConfig.transmitPowerIndex <= 61 ? "High"
+                          : "Maximum"}
+                      </span>
                     </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+                    <input type="range" min={1} max={81} step={1}
+                      value={rfConfig.transmitPowerIndex}
+                      onChange={e => {
+                        setRfConfig(c => ({ ...c, transmitPowerIndex: Number(e.target.value) }));
+                        setRfPreset("custom");
+                        setRfResult(null);
+                      }}
+                      className="w-full accent-primary" />
+                    <div className="flex justify-between text-[10px] text-muted-foreground">
+                      <span>Low — short range</span><span>Maximum — widest read zone</span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      Higher signal = wider read zone around the antenna. For outdoor timing gates, keep this at Maximum. Only turn it down if your reader is picking up tags from areas you don't want (e.g. the pits).
+                    </p>
+                  </div>
 
-            {/* Step 3 */}
-            <div className="flex gap-4 p-5">
-              <StepBadge n={3} />
-              <div className="space-y-2 min-w-0">
-                <p className="font-semibold">Test before race day</p>
-                <p className="text-sm text-muted-foreground">
-                  Use the test tool below — enter any tag number and confirm the server receives it. No moto needs to be running.
-                </p>
-              </div>
-            </div>
-          </>
-      </div>
-      )}
+                  {/* Gate Crossing Time */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <label className="text-xs font-medium">Gate Crossing Time</label>
+                      <span className="text-xs font-semibold text-muted-foreground">
+                        {rfConfig.tagTransitTime < 1000
+                          ? `${rfConfig.tagTransitTime} ms`
+                          : `${(rfConfig.tagTransitTime / 1000).toFixed(1)} s`}
+                      </span>
+                    </div>
+                    <input type="range" min={100} max={2000} step={50}
+                      value={rfConfig.tagTransitTime}
+                      onChange={e => {
+                        setRfConfig(c => ({ ...c, tagTransitTime: Number(e.target.value) }));
+                        setRfPreset("custom");
+                        setRfResult(null);
+                      }}
+                      className="w-full accent-primary" />
+                    <div className="flex justify-between text-[10px] text-muted-foreground">
+                      <span>Very fast (100ms)</span><span>Slow walk-through (2s)</span>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      How long a rider is in range of the antenna as they pass. The reader uses this to decide how many times to try reading a tag. At race speed, 400–600ms is the sweet spot — long enough to catch every rider, short enough to not confuse back-to-back crossings.
+                    </p>
+                  </div>
 
-      {tech === "active_transponder" && (
-        <>
-          {isDesktop && (
-            <details className="rounded-xl border bg-card overflow-hidden">
-              <summary className="cursor-pointer list-none px-5 py-4 flex items-center gap-3 hover:bg-muted/30 transition-colors">
-                <Activity size={18} className="text-muted-foreground shrink-0" />
-                <div className="min-w-0">
-                  <p className="font-heading font-bold uppercase tracking-wider text-sm">Desktop-only RM TrackR diagnostic</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Optional: connect directly, inspect loop status, or run an RM TrackR Transponder crossing test.
-                  </p>
-                </div>
-              </summary>
-              <div className="border-t px-5 pb-5">
-                <ActiveTransponderGuidedSetup
-                  isDesktop={isDesktop}
-                  connectorStatuses={connectorStatuses}
-                  readers={readers}
-                />
-              </div>
-            </details>
-          )}
-
-          <details className="rounded-xl border bg-card overflow-hidden">
-            <summary className="cursor-pointer list-none px-5 py-4 flex items-center gap-3 hover:bg-muted/30 transition-colors">
-              <Settings size={18} className="text-muted-foreground shrink-0" />
-              <div className="min-w-0">
-                <p className="font-heading font-bold uppercase tracking-wider text-sm">Advanced RM TrackR settings</p>
-                   <p className="text-xs text-muted-foreground mt-0.5">
-                   Optional — the default channel, full power, and both finish-gate coverage loops work for most readers.
-                </p>
-              </div>
-            </summary>
-            <div className="border-t p-5 space-y-4">
-              {(readers as any[]).filter(reader => reader.type === "active_transponder").length === 0 ? (
-                <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                  Register an Active Timing Reader above before changing its RM TrackR settings.
-                </div>
-              ) : (
-                <>
+                  {/* Scanning Mode */}
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Active Timing Reader</Label>
-                    <Select value={activeConfigReaderId ? String(activeConfigReaderId) : ""} onValueChange={value => selectActiveTimingReader(Number(value))}>
-                      <SelectTrigger className="bg-background"><SelectValue placeholder="Choose a reader" /></SelectTrigger>
+                    <label className="text-xs font-medium">Scanning Mode</label>
+                    <Select value={String(rfConfig.rfModeIndex)}
+                      onValueChange={v => {
+                        setRfConfig(c => ({ ...c, rfModeIndex: Number(v) }));
+                        setRfPreset("custom");
+                        setRfResult(null);
+                      }}>
+                      <SelectTrigger className="h-9 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
                       <SelectContent>
-                        {(readers as any[]).filter(reader => reader.type === "active_transponder").map(reader => (
-                          <SelectItem key={reader.id} value={String(reader.id)}>{reader.name}{reader.hardwareAddress ? ` · ${reader.hardwareAddress}` : ""}</SelectItem>
-                        ))}
+                        <SelectItem value="0">Speed Mode — reads as fast as possible</SelectItem>
+                        <SelectItem value="1">Balanced — speed and reliability</SelectItem>
+                        <SelectItem value="2">Multi-Reader (light) — 2–3 readers at same venue</SelectItem>
+                        <SelectItem value="3">Multi-Reader (full) — 4+ readers at same venue</SelectItem>
                       </SelectContent>
                     </Select>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      Speed Mode is best if you have one timing gate. If you're running multiple readers at the same venue (start, finish, and checkpoints), switch to a Multi-Reader mode — it prevents the readers from stepping on each other's signals.
+                    </p>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground">Active channel (0–5)</Label>
-                      <Input type="number" min={0} max={5} value={activeTimingConfig.channel} onChange={event => setActiveTimingConfig(config => ({ ...config, channel: Number(event.target.value) }))} />
+
+                  {/* Riders at Gate */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium">Riders Expected at Gate</label>
+                    <Select value={String(rfConfig.tagPopulation)}
+                      onValueChange={v => {
+                        setRfConfig(c => ({ ...c, tagPopulation: Number(v) }));
+                        setRfPreset("custom");
+                        setRfResult(null);
+                      }}>
+                      <SelectTrigger className="h-9 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">1 — riders come through one at a time</SelectItem>
+                        <SelectItem value="2">2 — up to 2 riders at once</SelectItem>
+                        <SelectItem value="4">4 — up to 4 riders at once</SelectItem>
+                        <SelectItem value="8">8 — busy gate, up to 8 riders</SelectItem>
+                        <SelectItem value="16">16 — mass start or very crowded gate</SelectItem>
+                        <SelectItem value="32">32 — large mass start</SelectItem>
+                        <SelectItem value="64">64 — very large group start</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[10px] text-muted-foreground leading-relaxed">
+                      How many riders the reader expects to see at the gate at the same time. Matching this to reality makes the reader faster and more accurate — a lower number is quicker for single-file finish lines; a higher number is needed so no one gets missed in a pack.
+                    </p>
+                  </div>
+
+                </div>
+
+                {/* Apply button + result */}
+                <div className="flex items-center gap-3 pt-1 flex-wrap">
+                  <Button onClick={applyRfConfig} disabled={rfApplying}
+                    className="font-heading uppercase tracking-wider h-9 px-5 gap-2 text-xs shrink-0">
+                    {rfApplying
+                      ? <RefreshCw size={13} className="animate-spin" />
+                      : <Radio size={13} />}
+                    {rfApplying ? "Applying…" : "Apply to Reader"}
+                  </Button>
+                  {rfResult && (
+                    <div className={`flex items-center gap-2 text-xs ${rfResult.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+                      {rfResult.ok
+                        ? <CheckCircle2 size={14} />
+                        : <XCircle size={14} />}
+                      {rfResult.message}
                     </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground">Active power (0–100)</Label>
-                      <Input type="number" min={0} max={100} value={activeTimingConfig.power} onChange={event => setActiveTimingConfig(config => ({ ...config, power: Number(event.target.value) }))} />
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-4">
-                    <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={activeTimingConfig.loop1Enabled} onChange={event => setActiveTimingConfig(config => ({ ...config, loop1Enabled: event.target.checked }))} /> Loop 1 (Start)</label>
-                    <label className="flex items-center gap-2 text-sm cursor-pointer"><input type="checkbox" checked={activeTimingConfig.loop2Enabled} onChange={event => setActiveTimingConfig(config => ({ ...config, loop2Enabled: event.target.checked }))} /> Loop 2 (Finish)</label>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button onClick={() => saveActiveTimingConfig(false)} disabled={activeTimingConfigSaving || !activeConfigReaderId} className="gap-2">
-                      {activeTimingConfigSaving ? <Loader2 size={14} className="animate-spin" /> : <Settings size={14} />}
-                      Save & send to RM Connect
-                    </Button>
-                    <Button variant="outline" onClick={() => saveActiveTimingConfig(true)} disabled={activeTimingConfigSaving || !activeConfigReaderId}>
-                      Sync reader clock
-                    </Button>
-                  </div>
-                  {activeTimingConfigResult && (
-                    <p className={`text-xs ${activeTimingConfigResult.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>{activeTimingConfigResult.message}</p>
                   )}
-                </>
+                </div>
+
+              </div>
+            </div>
+
+              {isDesktop && (
+                <details className="rounded-xl border bg-card overflow-hidden">
+                  <summary className="cursor-pointer list-none px-5 py-4 flex items-center gap-3 hover:bg-muted/30 transition-colors">
+                    <Activity size={18} className="text-muted-foreground shrink-0" />
+                    <div className="min-w-0">
+                      <p className="font-heading font-bold uppercase tracking-wider text-sm">Desktop-only RM TrackR diagnostic</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Optional: connect directly, inspect loop status, or run an RM TrackR Transponder crossing test.
+                      </p>
+                    </div>
+                  </summary>
+                  <div className="border-t px-5 pb-5">
+                    <ActiveTransponderGuidedSetup
+                      isDesktop={isDesktop}
+                      connectorStatuses={connectorStatuses}
+                      readers={readers}
+                    />
+                  </div>
+                </details>
               )}
-            </div>
-          </details>
-        </>
-      )}
 
-      {/* Test Connection */}
-      {tech === "rfid" && (
-      <div className="border rounded-xl bg-card overflow-hidden">
-        <div className="px-5 py-3 bg-muted/30 border-b">
-          <p className="font-heading font-bold uppercase tracking-wider text-sm">Test Your Connection</p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            No moto needed — just enter a tag number and confirm the server receives it.
-          </p>
-        </div>
-        <div className="p-5 space-y-4">
-          <div className="flex gap-3 items-end max-w-sm">
-            <div className="flex-1 space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">
-                "Tag number (hex)"
-              </label>
-              <Input value={testValue} onChange={e => setTestValue(e.target.value)}
-                placeholder="e.g. 1A2B3C4D"
-                className="font-mono h-10"
-                onKeyDown={e => { if (e.key === "Enter") sendTest(); }} />
-            </div>
-            <Button onClick={sendTest} disabled={testLoading || !testValue.trim() || !pingEndpoint}
-              className="font-heading uppercase tracking-wider h-10 px-5 gap-2 shrink-0">
-              {testLoading ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
-              {testLoading ? "Sending…" : "Test"}
-            </Button>
-          </div>
-
-          {testResult && (
-            <div className={`flex items-start gap-3 rounded-lg border px-4 py-3 ${testResult.ok ? "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800" : "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800"}`}>
-              {testResult.ok
-                ? <CheckCircle2 size={18} className="text-green-600 dark:text-green-400 shrink-0 mt-0.5" />
-                : <XCircle size={18} className="text-red-600 dark:text-red-400 shrink-0 mt-0.5" />}
-              <div>
-                <p className={`font-semibold text-sm ${testResult.ok ? "text-green-700 dark:text-green-300" : "text-red-700 dark:text-red-300"}`}>
-                  {testResult.ok ? "Working!" : "Not working"}
+          {isDesktop && (
+            <div className="border rounded-xl bg-card overflow-hidden">
+              <div className="px-5 py-3 bg-muted/30 border-b">
+                <p className="font-heading font-bold uppercase tracking-wider text-sm">USB / Serial Reader</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Using a USB or serial-port RFID reader connected directly to this computer?
                 </p>
-                <p className="text-xs text-muted-foreground mt-0.5">{testResult.message}</p>
+              </div>
+              <div className="p-5">
+                <Button variant="outline" className="gap-2" onClick={openSerialSettings}>
+                  <Usb size={16} /> Open Serial Port Settings
+                </Button>
               </div>
             </div>
           )}
         </div>
-      </div>
-
-      )}
-
-      {/* Antenna RF Settings — RFID only */}
-      {tech === "rfid" && (
-        <div className="border rounded-xl bg-card overflow-hidden">
-          <div className="px-5 py-3 bg-muted/30 border-b">
-            <p className="font-heading font-bold uppercase tracking-wider text-sm">Reader Signal Settings</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Control how your RFID reader scans for tags at the timing gate. Sent live to RM Connect when you click Apply.
-            </p>
-          </div>
-          <div className="p-5 space-y-5">
-
-            {/* Quick presets */}
-            <div className="space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground">Starting Points</p>
-              <div className="flex gap-2 flex-wrap">
-                {(["raceday", "dense", "low"] as const).map(key => {
-                  const labels: Record<string, string> = {
-                    raceday: "Race Day",
-                    dense:   "Crowded Start Gate",
-                    low:     "Bench Testing",
-                  };
-                  const descs: Record<string, string> = {
-                    raceday: "Full power, fastest scanning — best for a single finish line or timing gate",
-                    dense:   "Use when you have multiple readers close together or many riders crossing at once",
-                    low:     "Short range — for walking a tag past the antenna slowly while setting up",
-                  };
-                  return (
-                    <button key={key}
-                      title={descs[key]}
-                      onClick={() => { setRfPreset(key); setRfConfig(RF_PRESETS[key]); setRfResult(null); }}
-                      className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
-                        rfPreset === key
-                          ? "bg-primary text-primary-foreground border-primary"
-                          : "bg-muted/40 border-border hover:border-primary/40"
-                      }`}>
-                      {labels[key]}
-                    </button>
-                  );
-                })}
-                {rfPreset === "custom" && (
-                  <span className="px-3 py-1.5 rounded-lg border text-xs font-semibold bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-700 text-amber-700 dark:text-amber-300">
-                    Custom
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Controls grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-
-              {/* Signal Strength */}
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <label className="text-xs font-medium">Signal Strength</label>
-                  <span className="text-xs font-semibold text-muted-foreground">
-                    {rfConfig.transmitPowerIndex <= 21 ? "Low"
-                      : rfConfig.transmitPowerIndex <= 41 ? "Medium"
-                      : rfConfig.transmitPowerIndex <= 61 ? "High"
-                      : "Maximum"}
-                  </span>
-                </div>
-                <input type="range" min={1} max={81} step={1}
-                  value={rfConfig.transmitPowerIndex}
-                  onChange={e => {
-                    setRfConfig(c => ({ ...c, transmitPowerIndex: Number(e.target.value) }));
-                    setRfPreset("custom");
-                    setRfResult(null);
-                  }}
-                  className="w-full accent-primary" />
-                <div className="flex justify-between text-[10px] text-muted-foreground">
-                  <span>Low — short range</span><span>Maximum — widest read zone</span>
-                </div>
-                <p className="text-[10px] text-muted-foreground leading-relaxed">
-                  Higher signal = wider read zone around the antenna. For outdoor timing gates, keep this at Maximum. Only turn it down if your reader is picking up tags from areas you don't want (e.g. the pits).
-                </p>
-              </div>
-
-              {/* Gate Crossing Time */}
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <label className="text-xs font-medium">Gate Crossing Time</label>
-                  <span className="text-xs font-semibold text-muted-foreground">
-                    {rfConfig.tagTransitTime < 1000
-                      ? `${rfConfig.tagTransitTime} ms`
-                      : `${(rfConfig.tagTransitTime / 1000).toFixed(1)} s`}
-                  </span>
-                </div>
-                <input type="range" min={100} max={2000} step={50}
-                  value={rfConfig.tagTransitTime}
-                  onChange={e => {
-                    setRfConfig(c => ({ ...c, tagTransitTime: Number(e.target.value) }));
-                    setRfPreset("custom");
-                    setRfResult(null);
-                  }}
-                  className="w-full accent-primary" />
-                <div className="flex justify-between text-[10px] text-muted-foreground">
-                  <span>Very fast (100ms)</span><span>Slow walk-through (2s)</span>
-                </div>
-                <p className="text-[10px] text-muted-foreground leading-relaxed">
-                  How long a rider is in range of the antenna as they pass. The reader uses this to decide how many times to try reading a tag. At race speed, 400–600ms is the sweet spot — long enough to catch every rider, short enough to not confuse back-to-back crossings.
-                </p>
-              </div>
-
-              {/* Scanning Mode */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium">Scanning Mode</label>
-                <Select value={String(rfConfig.rfModeIndex)}
-                  onValueChange={v => {
-                    setRfConfig(c => ({ ...c, rfModeIndex: Number(v) }));
-                    setRfPreset("custom");
-                    setRfResult(null);
-                  }}>
-                  <SelectTrigger className="h-9 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="0">Speed Mode — reads as fast as possible</SelectItem>
-                    <SelectItem value="1">Balanced — speed and reliability</SelectItem>
-                    <SelectItem value="2">Multi-Reader (light) — 2–3 readers at same venue</SelectItem>
-                    <SelectItem value="3">Multi-Reader (full) — 4+ readers at same venue</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-[10px] text-muted-foreground leading-relaxed">
-                  Speed Mode is best if you have one timing gate. If you're running multiple readers at the same venue (start, finish, and checkpoints), switch to a Multi-Reader mode — it prevents the readers from stepping on each other's signals.
-                </p>
-              </div>
-
-              {/* Riders at Gate */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium">Riders Expected at Gate</label>
-                <Select value={String(rfConfig.tagPopulation)}
-                  onValueChange={v => {
-                    setRfConfig(c => ({ ...c, tagPopulation: Number(v) }));
-                    setRfPreset("custom");
-                    setRfResult(null);
-                  }}>
-                  <SelectTrigger className="h-9 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">1 — riders come through one at a time</SelectItem>
-                    <SelectItem value="2">2 — up to 2 riders at once</SelectItem>
-                    <SelectItem value="4">4 — up to 4 riders at once</SelectItem>
-                    <SelectItem value="8">8 — busy gate, up to 8 riders</SelectItem>
-                    <SelectItem value="16">16 — mass start or very crowded gate</SelectItem>
-                    <SelectItem value="32">32 — large mass start</SelectItem>
-                    <SelectItem value="64">64 — very large group start</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-[10px] text-muted-foreground leading-relaxed">
-                  How many riders the reader expects to see at the gate at the same time. Matching this to reality makes the reader faster and more accurate — a lower number is quicker for single-file finish lines; a higher number is needed so no one gets missed in a pack.
-                </p>
-              </div>
-
-            </div>
-
-            {/* Apply button + result */}
-            <div className="flex items-center gap-3 pt-1 flex-wrap">
-              <Button onClick={applyRfConfig} disabled={rfApplying}
-                className="font-heading uppercase tracking-wider h-9 px-5 gap-2 text-xs shrink-0">
-                {rfApplying
-                  ? <RefreshCw size={13} className="animate-spin" />
-                  : <Radio size={13} />}
-                {rfApplying ? "Applying…" : "Apply to Reader"}
-              </Button>
-              {rfResult && (
-                <div className={`flex items-center gap-2 text-xs ${rfResult.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
-                  {rfResult.ok
-                    ? <CheckCircle2 size={14} />
-                    : <XCircle size={14} />}
-                  {rfResult.message}
-                </div>
-              )}
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* Desktop RFID / Serial section */}
-      {isDesktop && tech === "rfid" && (
-        <div className="border rounded-xl bg-card overflow-hidden">
-          <div className="px-5 py-3 bg-muted/30 border-b">
-            <p className="font-heading font-bold uppercase tracking-wider text-sm">USB / Serial Reader</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Using a USB or serial-port RFID reader connected directly to this computer?
-            </p>
-          </div>
-          <div className="p-5">
-            <Button variant="outline" className="gap-2" onClick={openSerialSettings}>
-              <Usb size={16} /> Open Serial Port Settings
-            </Button>
-          </div>
-        </div>
-      )}
+      </details>
 
     </div>
   );

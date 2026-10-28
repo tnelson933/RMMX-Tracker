@@ -62,7 +62,7 @@ function releaseEndpoint(prefix: string, fallbackTag: string, fallbackStem: stri
   };
 }
 
-router.get("/config/connector-release", releaseEndpoint("connector-v", "connector-v1.0.16", "RM-Connect"));
-router.get("/config/desktop-release", releaseEndpoint("desktop-v", "desktop-v1.0.111", "RM-Tracker"));
+router.get("/config/connector-release", releaseEndpoint("connector-v", "connector-v1.0.17", "RM-Connect"));
+router.get("/config/desktop-release", releaseEndpoint("desktop-v", "desktop-v1.0.113", "RM-Roost"));
 
 export default router;

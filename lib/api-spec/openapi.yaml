@@ -5965,6 +5965,9 @@ components:
               enum: [impinj, zebra, generic, active_transponder, null]
             connected:
               type: boolean
+            ready:
+              type: boolean
+              description: RFID readers are ready once connected; an RM TrackR is ready once identified, configured and its enabled loops are running.
             detail:
               type: ["string", "null"]
             lastReadAt:
@@ -5972,6 +5975,10 @@ components:
               format: date-time
             readCount:
               type: integer
+            antennaIds:
+              type: array
+              items:
+                type: integer
 
     RecentTag:
       type: object

@@ -1,247 +1,319 @@
-// RM Connect settings window script. Kept in a file so the page CSP can
-// forbid inline scripts.
+// RM Connect window script. Kept in a file so the page CSP can forbid inline
+// scripts. Device-reported values (tag IDs, machine IDs, hostnames) are
+// untrusted: everything is written with textContent, never innerHTML.
 const $ = (id) => document.getElementById(id);
 const api = window.connector;
-let currentStatus = null;
 
-// ── View state ──────────────────────────────────────────────────────────────
-// Tracks which panel is active so periodic status pushes don't clobber the
-// setup card while the user is mid-configuration.
-// 'login' | 'setup' | 'status'
-let view = 'login';
+const MODEL = {
+  impinj: "Impinj R700",
+  zebra: "Zebra RFID",
+  generic: "RFID reader",
+  active_transponder: "RM TrackR",
+};
+const FOUND_HIGHLIGHT_MS = 6_000;
 
-function showView(v) {
-  view = v;
-  $("loginCard").classList.toggle("hidden", v !== 'login');
-  $("setupCard").classList.toggle("hidden", v !== 'setup');
-  $("statusCard").classList.toggle("hidden", v !== 'status');
-}
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
-
-function readerTypeLabel(type) {
-  return type === "active_transponder" ? "active timing" : type === "rfid" ? "RFID" : (type || "reader");
-}
+let status = null;
+const cards = new Map(); // readerId → { el, f: fields, settingsLoaded }
 
 function fmtAgo(iso) {
   if (!iso) return "";
-  const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+  const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
   if (s < 5) return "just now";
   if (s < 60) return s + "s ago";
-  return Math.round(s / 60) + "m ago";
+  if (s < 3600) return Math.round(s / 60) + "m ago";
+  return new Date(iso).toLocaleTimeString();
 }
 
-// ── Status rendering ────────────────────────────────────────────────────────
- // Keep an explicitly opened setup panel open while live status updates
- // arrive. Otherwise a configured reader would immediately switch back to
- // the status panel while the user is editing device settings.
-
-function renderStatus(st) {
-  currentStatus = st;
-  $("btnLogout").classList.toggle("hidden", !st.email);
-
-   if (st.configured && view !== 'setup') {
-    showView('status');
-  } else if (!st.email) {
-    showView('login');
+function el(tag, props = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === "class") node.className = v;
+    else if (k === "text") node.textContent = v;
+    else node.setAttribute(k, v);
   }
-  // else: signed in but not configured — leave view as-is
-
-  if (view !== 'status') return;
-
-  $("dotCloud").className = "dot " + (st.cloud.connected ? "on" : "off");
-  $("txtCloud").textContent = "Cloud: " + (st.cloud.connected ? "connected" : (st.cloud.error || "disconnected"));
-  $("dotDevice").className = "dot " + (st.device.connected ? "on" : "off");
-  const hwName = st.hardware === "impinj" ? "Impinj R700"
-    : st.hardware === "zebra" ? "Zebra reader"
-    : st.hardware === "generic" ? "LLRP reader"
-    : "RM TrackR active timing";
-  const deviceDetail = st.device.detail ? " — " + st.device.detail : "";
-  let stateLabel = {
-    connecting: "connecting", reconnecting: "reconnecting" + (st.reconnect.secondsUntilAttempt !== null ? " (retry in " + st.reconnect.secondsUntilAttempt + "s)" : ""),
-    connected_idle: "connected, idle", testing: "testing", race_active: "race active", error: "needs attention", disconnected: "disconnected"
-  }[st.state] || "disconnected";
-  if ((st.state === "testing" || st.state === "race_active") && st.hardware === "active_transponder" && !st.device.ready) stateLabel += " — device pending";
-  $("txtDevice").textContent = hwName + ": " + stateLabel + deviceDetail;
-  if (st.activeMoto) {
-    $("dotMoto").className = "dot on";
-    $("txtMoto").textContent = "Racing — " + st.activeMoto.name;
-  } else if (st.testMode || st.testProgress === "confirmed" || st.testProgress === "unresolved") {
-    $("dotMoto").className = "dot on";
-    $("txtMoto").textContent = "Test — " + (st.testMessage || "waiting for a real tag read");
-  } else {
-    $("dotMoto").className = "dot";
-    $("txtMoto").textContent = "Idle — waiting for a moto to start";
-  }
-  $("txtReads").textContent = st.device.readCount
-    ? st.device.readCount + " reads · last " + fmtAgo(st.device.lastReadAt)
-    : "No reads yet";
-  $("chkTest").checked = st.testMode;
-  $("activeTimingChecklist").classList.toggle("hidden", st.hardware !== "active_transponder");
-   $("btnActiveTimingSettings").classList.add("hidden");
-   $("activeTimingManagedNotice").classList.toggle("hidden", st.hardware !== "active_transponder");
-  if (st.hardware === "active_transponder") {
-    // Device-reported values (machine ID, loop states) are untrusted: build the
-    // label with DOM nodes and textContent, never innerHTML.
-    const setCheck = (id, ready, label, detail) => {
-      const el = $(id); el.classList.toggle("ready", !!ready);
-      const bold = document.createElement("b");
-      bold.textContent = label;
-      el.querySelector("span:last-child").replaceChildren(bold, document.createTextNode(" — " + detail));
-    };
-    setCheck("checkTransport", st.device.connected, "Network transport", (st.device.connected ? "connected" : "check IP, same network, and TCP 55555"));
-    setCheck("checkMachine", st.device.transportReady && st.device.heartbeatFresh, "Machine & heartbeat", (st.device.machineId ? st.device.machineId + (st.device.heartbeatFresh ? " reporting" : " heartbeat is stale") : "waiting for RM TrackR identification"));
-    setCheck("checkLoops", st.device.ready, "Finish-gate loops 1 / 2", (st.device.loop1State || "pending") + " / " + (st.device.loop2State || "pending") + (st.device.ready ? " (same finish gate)" : " (not ready yet)"));
-    setCheck("checkCloud", st.cloud.connected, "Cloud registration", (st.cloud.connected ? "connected" : "cloud disconnected; verify internet and reader registration"));
-  }
-  $("errStatus").textContent = st.device.diagnosis || "";
-  // "No active moto" and similar hints are information, not a fault.
-  $("errStatus").classList.toggle("info", st.state !== "error" && st.cloud.connected);
-
+  for (const child of children) if (child) node.append(child);
+  return node;
 }
 
-// ── Status-view reader picker ────────────────────────────────────────────────
+// ── Top-level view ──────────────────────────────────────────────────────────
 
-let statusReadersCache = [];
+function render(st) {
+  status = st;
+  $("loginCard").classList.toggle("hidden", st.signedIn);
+  $("mainView").classList.toggle("hidden", !st.signedIn);
+  if (!st.signedIn) return;
+  $("txtAccount").textContent = "Signed in as " + st.email;
+  $("identifyBanner").classList.toggle("hidden", !st.identifying);
+  $("btnIdentify").classList.toggle("hidden", st.identifying || st.readers.length === 0);
+  renderReaders(st.readers);
+}
 
-function populateStatusReaders(readers, currentId) {
-  statusReadersCache = readers || [];
-  const sel = $("selReaderStatus");
-  sel.innerHTML = "";
-  if (!statusReadersCache.length) {
-    const opt = document.createElement("option");
-    opt.value = "";
-    opt.textContent = "No readers found — create one on Reader Setup in RM Roost";
-    sel.appendChild(opt);
-  } else {
-    for (const r of statusReadersCache) {
-      const opt = document.createElement("option");
-      opt.value = r.id;
-      opt.textContent = r.name + " (" + readerTypeLabel(r.type) + ")";
-      if (currentId && r.id === currentId) opt.selected = true;
-      sel.appendChild(opt);
+function renderReaders(readers) {
+  const list = $("readers");
+  const seen = new Set();
+  for (const r of readers) {
+    seen.add(r.readerId);
+    let card = cards.get(r.readerId);
+    if (!card) {
+      card = createCard(r.readerId);
+      cards.set(r.readerId, card);
     }
+    list.append(card.el); // keeps order in step with the reader list
+    updateCard(card, r);
   }
-}
-
-async function openReaderPicker() {
-  $("errSwitch").textContent = "";
-  $("readerPickerWrap").classList.remove("hidden");
-  // Load fresh reader list from cloud
-  const s = await api.getSettings();
-  const res = await api.listReaders();
-  if (res.ok) populateStatusReaders(res.readers || [], s.readerId);
-  else $("errSwitch").textContent = res.error || "Could not load readers";
-}
-
-function closeReaderPicker() {
-  $("readerPickerWrap").classList.add("hidden");
-  $("errSwitch").textContent = "";
-}
-
-$("btnChangeReader").addEventListener("click", openReaderPicker);
-$("btnCancelSwitch").addEventListener("click", closeReaderPicker);
-
-$("btnSwitchReader").addEventListener("click", async () => {
-  $("errSwitch").textContent = "";
-  const readerId = parseInt($("selReaderStatus").value, 10);
-  if (!readerId) { $("errSwitch").textContent = "Select a reader first"; return; }
-  $("btnSwitchReader").disabled = true;
-  $("btnSwitchReader").textContent = "Switching…";
-  const s = await api.getSettings();
-  const selectedReader = statusReadersCache.find((r) => r.id === readerId);
-  const res = await api.connect({
-    readerId,
-    hardware: s.hardware,
-    hardwareAddress: selectedReader?.hardwareAddress || s.hardwareAddress,
-  });
-  $("btnSwitchReader").disabled = false;
-  $("btnSwitchReader").textContent = "Switch";
-  if (!res.ok) { $("errSwitch").textContent = res.error; return; }
-  $("errStatus").textContent = "";
-  closeReaderPicker();
-  refresh();
-});
-
-// ── Reader list ─────────────────────────────────────────────────────────────
-
-let readersCache = [];
-
-function populateReaders(readers, selectedId) {
-  readersCache = readers || [];
-  const sel = $("selReader");
-  sel.innerHTML = "";
-  for (const r of readersCache) {
-    const opt = document.createElement("option");
-    opt.value = r.id;
-    opt.textContent = r.name + " (" + readerTypeLabel(r.type) + ")";
-    if (selectedId && r.id === selectedId) opt.selected = true;
-    sel.appendChild(opt);
+  for (const [id, card] of cards) {
+    if (!seen.has(id)) { card.el.remove(); cards.delete(id); }
   }
-  if (!readersCache.length) {
-    const opt = document.createElement("option");
-    opt.value = "";
-    opt.textContent = "No readers yet — create one on Reader Setup in RM Roost";
-    sel.appendChild(opt);
-  }
-  autofillFromReader();
-}
-
-function autofillFromReader() {
-  const reader = readersCache.find((r) => String(r.id) === $("selReader").value);
-  if (!reader) return;
-  if (reader.type === "active_transponder") {
-    $("selHardware").value = "active_transponder";
-    $("selHardware").dispatchEvent(new Event("change"));
-  }
-  if (reader.hardwareAddress) {
-    $("inAddress").value = reader.hardwareAddress;
-  }
-}
-
-$("selReader").addEventListener("change", autofillFromReader);
-
-$("selHardware").addEventListener("change", () => {
-  const hw = $("selHardware").value;
-  if (hw === "impinj") {
-    $("lblAddress").textContent = "Last 6 of reader MAC address";
-    $("inAddress").placeholder = "e.g. 16-25-B2";
-    $("hintAddress").textContent = "Printed on the reader label — we connect via impinj-XX-XX-XX.local";
-  } else if (hw === "zebra" || hw === "generic") {
-    $("lblAddress").textContent = "Reader IP address or hostname";
-    $("inAddress").placeholder = "e.g. 192.168.1.50";
-    $("hintAddress").textContent = "Find it in your router's device list — the reader must have LLRP enabled";
+  if (readers.length === 0) {
+    if (!$("emptyState")) {
+      list.append(el("div", { class: "card empty", id: "emptyState" },
+        el("div", { text: "No readers on this laptop yet." }),
+        el("div", { text: "Power on your reader, connect this laptop to the same network, then click Find readers." })));
+    }
+    if ($("findCard").classList.contains("hidden") && !autoFindDone) { autoFindDone = true; openFind(); }
   } else {
-    $("lblAddress").textContent = "RM TrackR IP address (or IP:port)";
-    $("inAddress").placeholder = "e.g. 192.168.1.50 or 192.168.1.50:55555";
-    $("hintAddress").textContent = "Enter the RM TrackR network address. TCP port 55555 is used by default; enter IP:port only if your device uses a different port.";
+    $("emptyState")?.remove();
   }
-  const isActiveTiming = hw === "active_transponder";
-  $("setupTitle").textContent = isActiveTiming ? "Guided RM TrackR active timing connection" : "RFID hardware setup";
-  $("activeTimingSetupGuide").classList.toggle("hidden", !isActiveTiming);
-  $("activeTimingControls").classList.add("hidden");
+}
+
+// ── Reader cards ────────────────────────────────────────────────────────────
+
+function createCard(readerId) {
+  const el = $("tplReader").content.firstElementChild.cloneNode(true);
+  const f = {};
+  el.querySelectorAll("[data-f]").forEach(n => { f[n.dataset.f] = n; });
+  const card = { el, f, readerId, settingsLoaded: false, renaming: false };
+  el.querySelectorAll("[data-a]").forEach(btn => btn.addEventListener("click", () => onCardAction(card, btn.dataset.a, btn)));
+  f.renameInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") onCardAction(card, "saveName");
+    if (e.key === "Escape") onCardAction(card, "cancelName");
+  });
+  return card;
+}
+
+function statusText(r) {
+  const where = r.hardwareAddress ? " at " + r.hardwareAddress : "";
+  switch (r.state) {
+    case "connecting": return "Connecting" + where + "…";
+    case "reconnecting": return "Can't reach the reader" + where + (r.reconnectInSeconds != null ? " — retrying in " + r.reconnectInSeconds + "s" : "");
+    case "race_active": return "Timing " + (r.activeMoto ? r.activeMoto.name : "a moto");
+    case "testing": return "Testing";
+    case "connected_idle": return (r.device.ready ? "Ready" : "Connected") + where + " — waiting for a moto to start";
+    case "error": return "Needs attention";
+    default: return "Not connected" + where;
+  }
+}
+
+function updateCard(card, r) {
+  const { f, el: root } = card;
+  const ok = r.device.connected && r.cloud.connected && (r.hardware !== "active_transponder" || r.device.ready || r.state === "connected_idle");
+  f.dot.className = "dot " + (ok ? "on" : r.state === "connecting" || r.state === "reconnecting" ? "wait" : r.device.connected ? "wait" : "off");
+  f.name.textContent = r.readerName;
+  f.model.textContent = MODEL[r.hardware] || "Reader";
+  f.status.textContent = statusText(r);
+
+  if (r.hardware === "active_transponder" && r.device.connected) {
+    // The RM TrackR reports each loop as 1/0 (or a word on some firmware).
+    const loop = (state) => !state ? "waiting" : /^1$|working|running|open/i.test(state) ? "running" : /^0$|stop|closed/i.test(state) ? "off" : state;
+    f.checks.textContent = (r.device.machineId ? "ID " + r.device.machineId : "Waiting for the RM TrackR to identify itself")
+      + " · Loop 1 " + loop(r.device.loop1State) + " · Loop 2 " + loop(r.device.loop2State);
+  } else if (r.hardware !== "active_transponder" && r.device.connected && r.device.antennaIds.length) {
+    f.checks.textContent = "Antennas seen: " + r.device.antennaIds.join(", ");
+  } else {
+    f.checks.textContent = "";
+  }
+
+  f.reads.textContent = r.device.readCount
+    ? r.device.readCount + " read" + (r.device.readCount === 1 ? "" : "s") + " · last " + fmtAgo(r.device.lastReadAt)
+      + (r.pendingCrossings ? " · " + r.pendingCrossings + " waiting to send" : "")
+    : (r.pendingCrossings ? r.pendingCrossings + " crossings waiting to send" : "");
+
+  // A problem the organizer can act on vs. an informational note.
+  const problem = r.device.error || (!r.cloud.connected ? r.device.diagnosis : "");
+  f.problem.textContent = problem || "";
+  f.note.textContent = !problem && r.hardware === "active_transponder" && r.device.connected && !r.device.ready && r.device.diagnosis ? r.device.diagnosis : "";
+
+  const found = r.identifiedAt && Date.now() - new Date(r.identifiedAt).getTime() < FOUND_HIGHLIGHT_MS;
+  root.classList.toggle("found", !!found);
+  f.thisOne.classList.toggle("hidden", !found);
+
+  root.querySelector('[data-a="settings"]').classList.toggle("hidden", r.hardware !== "active_transponder");
+  const testBtn = root.querySelector('[data-a="test"]');
+  testBtn.classList.toggle("hidden", r.testMode);
+  testBtn.disabled = !r.device.connected;
+  testBtn.title = r.device.connected ? "Check that reads reach RM Roost" : "Connect the reader first";
+
+  f.testPanel.classList.toggle("hidden", !r.testMode && r.testProgress !== "confirmed" && r.testProgress !== "unresolved");
+  f.testMsg.textContent = r.testMessage || (r.hardware === "active_transponder" ? "Walk an RM TrackR Transponder over either loop." : "Hold a tag near an antenna.");
+  f.testMsg.classList.toggle("ok", r.testProgress === "confirmed");
+  f.readList.replaceChildren(...r.recentReads.map(read => el("div", { class: "read" },
+    el("span", { class: "tag mono", text: read.tag }),
+    read.antennaId != null ? el("span", { class: "meta", text: "antenna " + read.antennaId }) : null,
+    read.rssi != null ? el("span", { class: "meta", text: read.rssi + " dBm" }) : null,
+    el("span", { class: "meta", text: fmtAgo(read.at) }))));
+
+  if (!card.renaming) f.renameInput.value = r.readerName;
+  card.status = r;
+}
+
+async function onCardAction(card, action, btn) {
+  const r = card.status;
+  const { f } = card;
+  f.actionErr.textContent = "";
+  if (action === "rename") {
+    card.renaming = true;
+    f.renameRow.classList.remove("hidden");
+    f.renameInput.value = r.readerName;
+    f.renameInput.focus();
+    f.renameInput.select();
+  } else if (action === "cancelName") {
+    card.renaming = false;
+    f.renameRow.classList.add("hidden");
+  } else if (action === "saveName") {
+    const res = await api.renameReader(r.readerId, f.renameInput.value);
+    if (!res.ok) { f.actionErr.textContent = res.error; return; }
+    card.renaming = false;
+    f.renameRow.classList.add("hidden");
+  } else if (action === "test") {
+    await api.testReader(r.readerId, true);
+  } else if (action === "endTest") {
+    await api.testReader(r.readerId, false);
+    f.testPanel.classList.add("hidden");
+  } else if (action === "reconnect") {
+    btn.disabled = true;
+    const res = await api.reconnectReader(r.readerId);
+    btn.disabled = false;
+    if (!res.ok) f.actionErr.textContent = res.error;
+  } else if (action === "remove") {
+    if (!confirm(`Remove "${r.readerName}" from this laptop?\n\nIt stays registered in RM Roost, and you can add it back with Find readers.`)) return;
+    await api.removeReader(r.readerId);
+  } else if (action === "settings") {
+    const open = f.settingsPanel.classList.toggle("hidden") === false;
+    if (open) {
+      const cfg = (await api.getSettings()).readers.find(x => x.readerId === r.readerId);
+      const at = cfg?.activeTiming || { channel: 0, power: 100, loop1Enabled: true, loop2Enabled: true };
+      f.channel.value = at.channel; f.power.value = at.power;
+      f.loop1.checked = at.loop1Enabled; f.loop2.checked = at.loop2Enabled;
+    }
+  } else if (action === "applySettings" || action === "syncClock") {
+    f.settingsErr.textContent = "";
+    const res = await api.configureReader(r.readerId, {
+      channel: parseInt(f.channel.value, 10),
+      power: parseInt(f.power.value, 10),
+      loop1Enabled: f.loop1.checked,
+      loop2Enabled: f.loop2.checked,
+      syncClock: action === "syncClock",
+    });
+    f.settingsErr.textContent = res.ok ? "" : res.error;
+  }
+}
+
+// ── Find readers ────────────────────────────────────────────────────────────
+
+let autoFindDone = false;
+let cloudReaders = [];
+
+function openFind() {
+  $("findCard").classList.remove("hidden");
+  $("errFind").textContent = "";
+  runScan();
+}
+
+async function loadCloudReaders() {
+  const res = await api.listCloudReaders();
+  cloudReaders = res.ok ? res.readers : [];
+  if (!res.ok) $("errFind").textContent = res.error;
+}
+
+async function runScan() {
+  $("findResults").replaceChildren();
+  $("findStatus").replaceChildren(el("span", { class: "spinner" }), document.createTextNode(" Searching this laptop's network for readers…"));
+  $("btnRescan").disabled = true;
+  const [res] = await Promise.all([api.scanNetwork(), loadCloudReaders()]);
+  $("btnRescan").disabled = false;
+  if (!res.ok) {
+    $("findStatus").textContent = "";
+    $("errFind").textContent = res.error;
+    return;
+  }
+  showDevices(res.devices, res.devices.length
+    ? `Found ${res.devices.length} reader${res.devices.length === 1 ? "" : "s"}.`
+    : "No readers found on this laptop's network.");
+}
+
+function showDevices(devices, summary) {
+  $("findStatus").textContent = summary;
+  $("findResults").replaceChildren(...devices.map(deviceRow));
+}
+
+function deviceRow(d) {
+  const title = (MODEL[d.hardware] || "Reader") + " at " + d.address;
+  const box = el("div", { class: "device" },
+    el("div", { class: "device-title", text: title }),
+    d.hostname && d.hostname !== d.address ? el("div", { class: "muted", text: d.hostname }) : null);
+
+  if (d.inUseBy) {
+    box.append(el("div", { class: "muted ok", text: "Already added as “" + d.inUseBy + "”." }));
+    return box;
+  }
+
+  const isActive = d.hardware === "active_transponder";
+  const sameType = cloudReaders.filter(r => !r.onThisLaptop && (r.type === "active_transponder") === isActive);
+  const select = el("select");
+  select.append(el("option", { value: "", text: "A new reader in RM Roost" }));
+  for (const r of sameType) select.append(el("option", { value: String(r.id), text: "Existing: " + r.name }));
+  if (d.registeredReaderId && sameType.some(r => r.id === d.registeredReaderId)) select.value = String(d.registeredReaderId);
+
+  const name = el("input", { placeholder: isActive ? "e.g. Finish line" : "e.g. Finish line or Section 3 start", maxlength: "60" });
+  const nameWrap = el("div", {}, el("label", { text: "Name it after where it sits on the course" }), name);
+  const sync = () => nameWrap.classList.toggle("hidden", !!select.value);
+  select.addEventListener("change", sync);
+  sync();
+
+  const err = el("div", { class: "err" });
+  const add = el("button", { text: "Add reader" });
+  add.addEventListener("click", async () => {
+    add.disabled = true;
+    add.textContent = "Adding…";
+    err.textContent = "";
+    const res = await api.addReader({
+      address: d.address,
+      hardware: d.hardware,
+      readerId: select.value ? Number(select.value) : null,
+      name: name.value,
+    });
+    add.disabled = false;
+    add.textContent = "Add reader";
+    if (!res.ok) { err.textContent = res.error; return; }
+    box.replaceChildren(el("div", { class: "device-title", text: title }), el("div", { class: "muted ok", text: "Added. It's connecting below." }));
+  });
+
+  box.append(el("label", { text: "Add as" }), select, nameWrap, el("div", { class: "row", style: "margin-top:8px;" }, add), err);
+  return box;
+}
+
+$("btnFind").addEventListener("click", openFind);
+$("btnRescan").addEventListener("click", runScan);
+$("btnCloseFind").addEventListener("click", () => $("findCard").classList.add("hidden"));
+$("btnCheckAddress").addEventListener("click", async () => {
+  const address = $("inManualAddress").value.trim();
+  $("errFind").textContent = "";
+  if (!address) { $("errFind").textContent = "Enter an IP address or the 6 characters from the Impinj label."; return; }
+  $("btnCheckAddress").disabled = true;
+  $("findStatus").replaceChildren(el("span", { class: "spinner" }), document.createTextNode(" Checking " + address + "…"));
+  const [res] = await Promise.all([api.probeAddress(address), loadCloudReaders()]);
+  $("btnCheckAddress").disabled = false;
+  if (!res.ok) { $("findStatus").textContent = ""; $("errFind").textContent = res.error; return; }
+  showDevices(res.devices, "Found a reader at " + address + ".");
 });
+$("inManualAddress").addEventListener("keydown", e => { if (e.key === "Enter") $("btnCheckAddress").click(); });
 
-function activeTimingInput(syncClock) {
-  return {
-    channel: parseInt($("selActiveTimingChannel").value, 10),
-    power: parseInt($("inActiveTimingPower").value, 10),
-    loop1Enabled: $("chkLoop1").checked,
-    loop2Enabled: $("chkLoop2").checked,
-    syncClock: !!syncClock,
-  };
-}
+// ── Identify ────────────────────────────────────────────────────────────────
 
-async function applyActiveTiming(syncClock) {
-  $("errActiveTiming").textContent = "";
-  const res = await api.configureHardware(activeTimingInput(syncClock));
-  if (!res.ok) $("errActiveTiming").textContent = res.error || "Unable to apply active timing settings";
-  else refresh();
-}
-$("btnApplyActiveTiming").addEventListener("click", () => applyActiveTiming(false));
-$("btnSyncClock").addEventListener("click", () => applyActiveTiming(true));
+$("btnIdentify").addEventListener("click", () => api.setIdentifying(true));
+$("btnStopIdentify").addEventListener("click", () => api.setIdentifying(false));
 
-// ── Button handlers ─────────────────────────────────────────────────────────
+// ── Sign in / out ───────────────────────────────────────────────────────────
 
 $("btnLogin").addEventListener("click", async () => {
   $("errLogin").textContent = "";
@@ -251,129 +323,33 @@ $("btnLogin").addEventListener("click", async () => {
   }
   $("btnLogin").disabled = true;
   $("btnLogin").textContent = "Signing in…";
-  const res = await api.login({
-    cloudUrl: $("inCloudUrl").value,
-    email: $("inEmail").value,
-    password: $("inPassword").value,
-  });
+  const res = await api.login({ cloudUrl: $("inCloudUrl").value, email: $("inEmail").value, password: $("inPassword").value });
   $("btnLogin").disabled = false;
   $("btnLogin").textContent = "Sign in";
   if (!res.ok) { $("errLogin").textContent = res.error; return; }
   $("inPassword").value = "";
-  showView('setup');
-  $("btnLogout").classList.remove("hidden");
-  populateReaders(res.readers || []);
+  render(await api.getStatus());
 });
 
-$("btnConnect").addEventListener("click", async () => {
-  $("errSetup").textContent = "";
-  const readerId = parseInt($("selReader").value, 10);
-  if (!readerId) { $("errSetup").textContent = "Select or create a reader first"; return; }
-  if (!$("inAddress").value.trim()) { $("errSetup").textContent = "Enter the hardware address"; return; }
-  $("btnConnect").disabled = true;
-  $("btnConnect").textContent = "Connecting…";
-  const res = await api.connect({
-    readerId,
-    hardware: $("selHardware").value,
-    hardwareAddress: $("inAddress").value,
-  });
-  $("btnConnect").disabled = false;
-  $("btnConnect").textContent = "Save & Connect";
-  if (!res.ok) { $("errSetup").textContent = res.error; return; }
-  showView('status');
-  refresh();
-});
-
-$("btnDisconnect").addEventListener("click", async () => {
-  await api.disconnect();
-  const s = await api.getSettings();
-  const res = await api.listReaders();
-  if (res.ok) populateReaders(res.readers || [], s.readerId);
-  if (s.hardware) $("selHardware").value = s.hardware;
-  if (s.hardwareAddress) $("inAddress").value = s.hardwareAddress;
-   $("selActiveTimingChannel").value = String(s.activeTimingChannel ?? 0);
-   $("inActiveTimingPower").value = String(s.activeTimingPower ?? 100);
-   $("chkLoop1").checked = s.activeTimingLoop1Enabled !== false;
-   $("chkLoop2").checked = s.activeTimingLoop2Enabled !== false;
-  $("selHardware").dispatchEvent(new Event("change"));
-  showView('setup');
-});
-
-$("btnActiveTimingSettings").addEventListener("click", async () => {
-  const s = await api.getSettings();
-  const res = await api.listReaders();
-  if (res.ok) populateReaders(res.readers || [], s.readerId);
-  if (s.hardware) $("selHardware").value = s.hardware;
-  if (s.hardwareAddress) $("inAddress").value = s.hardwareAddress;
-  $("selActiveTimingChannel").value = String(s.activeTimingChannel ?? 0);
-  $("inActiveTimingPower").value = String(s.activeTimingPower ?? 100);
-  $("chkLoop1").checked = s.activeTimingLoop1Enabled !== false;
-  $("chkLoop2").checked = s.activeTimingLoop2Enabled !== false;
-  $("selHardware").dispatchEvent(new Event("change"));
-  showView("setup");
-});
-
-$("btnReconnect").addEventListener("click", async () => {
-  $("errStatus").textContent = "";
-  const s = await api.getSettings();
-  const res = await api.connect({
-    readerId: s.readerId,
-    hardware: s.hardware,
-    hardwareAddress: s.hardwareAddress,
-  });
-  if (!res.ok) {
-    $("errStatus").textContent = res.error;
-    if (res.error && res.error.toLowerCase().includes("no longer exists")) {
-      openReaderPicker();
-    }
-  }
-});
-
-$("chkTest").addEventListener("change", async () => {
-  const res = await api.toggleTest($("chkTest").checked);
-  if (!res.ok) { $("errStatus").textContent = res.error; $("chkTest").checked = false; }
-});
-
-$("btnLogout").addEventListener("click", async () => {
-  if (!confirm("Sign out and clear all saved settings?")) return;
-  await api.logout();
-  location.reload();
-});
-
-// Enter in any sign-in field submits.
 for (const id of ["inCloudUrl", "inEmail", "inPassword"]) {
   $(id).addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !$("btnLogin").disabled) $("btnLogin").click();
   });
 }
 
-// ── Init ────────────────────────────────────────────────────────────────────
+$("btnLogout").addEventListener("click", async () => {
+  if (!confirm("Sign out? Readers on this laptop stop sending reads until you sign in and add them again.")) return;
+  await api.logout();
+  location.reload();
+});
 
-async function refresh() {
-  const st = await api.getStatus();
-  renderStatus(st);
-}
+// ── Init ────────────────────────────────────────────────────────────────────
 
 async function init() {
   const s = await api.getSettings();
   if (s.cloudUrl) $("inCloudUrl").value = s.cloudUrl;
   if (s.email) $("inEmail").value = s.email;
-  await refresh();
-  // Signed in but not fully configured → go straight to setup
-  if (!currentStatus?.configured && s.email && s.cloudUrl) {
-    const res = await api.listReaders();
-    if (res.ok) {
-      showView('setup');
-      populateReaders(res.readers || [], s.readerId);
-      if (s.hardware) $("selHardware").value = s.hardware;
-      if (s.hardwareAddress) $("inAddress").value = s.hardwareAddress;
-       $("selActiveTimingChannel").value = String(s.activeTimingChannel ?? 0);
-       $("inActiveTimingPower").value = String(s.activeTimingPower ?? 100);
-       $("chkLoop1").checked = s.activeTimingLoop1Enabled !== false;
-       $("chkLoop2").checked = s.activeTimingLoop2Enabled !== false;
-      $("selHardware").dispatchEvent(new Event("change"));
-    }
-  }
-  api.onStatus(renderStatus);
+  render(await api.getStatus());
+  api.onStatus(render);
 }
 init();

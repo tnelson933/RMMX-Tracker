@@ -67,6 +67,11 @@ export interface ActiveTransponderStatus {
   utcOffsetMinutes: number;
 }
 
+/** Loop telemetry: firmware reports 1/0 or words such as "working" / "open" (matches the desktop app). */
+export function isLoopWorking(value: string): boolean {
+  return /^(1|true|enabled)$/i.test(value.trim()) || /working|running|open/i.test(value);
+}
+
 function friendlyConnectionError(error: Error, host: string, port: number): string {
   const code = (error as NodeJS.ErrnoException).code;
   if (code === "ECONNREFUSED") return `The RM TrackR at ${host}:${port} refused the connection. Confirm its IP address and that TCP port ${port} is enabled.`;
@@ -165,7 +170,7 @@ export class ActiveTransponderClient extends EventEmitter {
     const heartbeatAge = this.lastHeartbeatAt ? Date.now() - new Date(this.lastHeartbeatAt).getTime() : null;
     const heartbeatFresh = heartbeatAge !== null && heartbeatAge <= HEARTBEAT_STALE_MS;
     const state = this.machineState;
-    const enabledLoops = this.loopEnabled.map((enabled, index) => !enabled || /working|running|open/i.test(state[`reader${index + 1}Working`] ?? ""));
+    const enabledLoops = this.loopEnabled.map((enabled, index) => !enabled || isLoopWorking(state[`reader${index + 1}Working`] ?? ""));
     const readersWorking = enabledLoops.every(Boolean);
     const ready = connected && heartbeatFresh && this.desiredReading && this.configurationApplied
       && this.readerCommandMachineId === this.machineId && readersWorking;
@@ -384,7 +389,7 @@ export class ActiveTransponderClient extends EventEmitter {
 
   private enabledLoopsAreRunning(): boolean {
     return this.loopEnabled.every(
-      (enabled, index) => !enabled || /working|running|open/i.test(this.machineState[`reader${index + 1}Working`] ?? ""),
+      (enabled, index) => !enabled || isLoopWorking(this.machineState[`reader${index + 1}Working`] ?? ""),
     );
   }
 

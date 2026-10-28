@@ -2052,11 +2052,14 @@ export type ConnectorStatusHardware = {
   /** @nullable */
   kind: ConnectorStatusHardwareKind;
   connected: boolean;
+  /** RFID readers are ready once connected; an RM TrackR is ready once identified, configured and its enabled loops are running. */
+  ready?: boolean;
   /** @nullable */
   detail?: string | null;
   /** @nullable */
   lastReadAt?: string | null;
   readCount: number;
+  antennaIds?: number[];
 };
 
 export interface ConnectorStatus {

@@ -1,9 +1,11 @@
 /**
  * RM Connect — main process.
  *
- * A tray-only Electron app that bridges local timing hardware to the cloud:
- *   - Impinj R700 via LLRP (TCP 5084, reached by mDNS hostname from MAC digits)
- *   - F2000 active transponder timing (TCP 55555)
+ * A tray-only Electron app that bridges local timing hardware to the cloud.
+ * One laptop can run several readers at once (a finish line plus split or
+ * section readers), each with its own ReaderSession:
+ *   - LLRP RFID readers (Impinj R700, Zebra, others) on TCP 5084
+ *   - RM TrackR active timing readers on TCP 55555
  *
  * Crossings are forwarded to the cloud ingest endpoint. Start/stop commands
  * arrive over a WebSocket when the organizer starts or completes a moto in
@@ -18,23 +20,12 @@ import {
   nativeImage,
   shell,
 } from "electron";
+import fs from "fs";
 import path from "path";
 import { pathToFileURL } from "url";
-import { LlrpClient, impinjHostFromMac } from "./llrp";
-import { ActiveTransponderClient, type ActiveTimingReceiptMetadata } from "./active-transponder-client";
-import { RecentReadDeduper } from "./recent-read-deduper";
-import { shouldForwardCrossing, type CrossingSource } from "./crossing-policy";
-import {
-  CrossingRetryQueue,
-  isRetryableCrossingResult,
-  type QueuedCrossing,
-} from "./crossing-retry-queue";
-import {
-  CloudLink,
-  cloudLogin,
-  fetchReaders,
-  type CloudCommand,
-} from "./cloud";
+import { ReaderSession } from "./reader-session";
+import { scanLocalNetwork, probeAddress, type DiscoveredDevice } from "./discovery";
+import { cloudLogin, fetchReaders, createReader, updateReader, type CloudReader } from "./cloud";
 import {
   loadSettings,
   saveSettings,
@@ -44,10 +35,13 @@ import {
   loadSessionCookie,
   clearAll,
   type ConnectorSettings,
+  type ReaderConfig,
+  type ActiveTimingConfig,
 } from "./auth-manager";
+import { DEFAULT_ACTIVE_TIMING } from "./settings-migrations";
 import { builtInCloudUrl, normalizeCloudUrl } from "./cloud-url";
 import { ICON_GREEN, ICON_RED, ICON_GRAY } from "./tray-icons";
-import type { AggregateStatus, ConnectInput, LoginResult } from "./ipc-types";
+import type { AppStatus, AddReaderInput, ActionResult, CloudReaderSummary, LoginResult, ScanReply } from "./ipc-types";
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -55,42 +49,14 @@ let tray: Tray | null = null;
 let settingsWindow: BrowserWindow | null = null;
 declare const __CONNECTOR_PACKAGE_VERSION__: string;
 
-// loadSettings() fills in the built-in cloud URL and migrates retired hosts.
+// loadSettings() fills in the built-in cloud URL, migrates retired hosts, and
+// turns an older single-reader settings file into a reader list.
 let settings: ConnectorSettings = loadSettings();
 let sessionCookie: string | null = null;
-
-const llrp = new LlrpClient();
-const activeTransponder = new ActiveTransponderClient();
-const cloud = new CloudLink();
-
-function sendQueuedCrossing(crossing: QueuedCrossing) {
-  return cloud.postCrossing({
-    rfidNumber: crossing.rfidNumber,
-    crossingTime: new Date(crossing.crossingTime),
-    antennaId: crossing.antennaId,
-    clubId: crossing.clubId,
-    eventId: crossing.eventId,
-    receivedAtUtc: crossing.receivedAtUtc ? new Date(crossing.receivedAtUtc) : undefined,
-    deviceTimezone: crossing.deviceTimezone,
-    source: crossing.source,
-  });
-}
-
-// Crossings the cloud could not accept because of a network error, 5xx or 429.
-// Created at app ready, when the userData path is final.
-let crossingQueue: CrossingRetryQueue | null = null;
-
-let activeMoto: { motoId: number; name: string; eventId: number | null } | null = null;
-let testMode = false;
-let deviceReconnectTimer: NodeJS.Timeout | null = null;
-let hardwareWanted = false; // true while the user wants the device connected
-let hardwareConnecting = false;
-let reconnectNextAttemptAt: string | null = null;
-let testProgress: AggregateStatus["testProgress"] = "inactive";
-let testMessage: string | null = null;
-
-const LOCAL_DEDUPE_MS = 1_500;
-const recentReads = new RecentReadDeduper(LOCAL_DEDUPE_MS);
+const sessions = new Map<number, ReaderSession>();
+let identifying = false;
+let identifyTimer: NodeJS.Timeout | null = null;
+const IDENTIFY_TIMEOUT_MS = 2 * 60_000;
 
 function getConnectorVersion(): string {
   try {
@@ -104,95 +70,63 @@ function getConnectorVersion(): string {
     : "unknown";
 }
 
-// ── Status aggregation ────────────────────────────────────────────────────────
+function queueFile(readerId: number): string {
+  return path.join(app.getPath("userData"), `pending-crossings-${readerId}.json`);
+}
 
-function getAggregateStatus(): AggregateStatus {
-  const isLlrp = settings.hardware === "impinj" || settings.hardware === "zebra" || settings.hardware === "generic";
-  const dev = isLlrp ? llrp.getStatus() : null;
-  const active = settings.hardware === "active_transponder" ? activeTransponder.getStatus() : null;
+/** Releases before 1.0.18 kept one queue file; hand it to the first reader. */
+function adoptLegacyQueue(readerId: number): void {
+  const legacy = path.join(app.getPath("userData"), "pending-crossings.json");
+  try {
+    if (fs.existsSync(legacy) && !fs.existsSync(queueFile(readerId))) fs.renameSync(legacy, queueFile(readerId));
+  } catch {
+    // Non-fatal: the old file stays where it is.
+  }
+}
 
-  const cloudStatus = cloud.getStatus();
-  const deviceConnected = dev?.connected ?? active?.connected ?? false;
-  const deviceError = dev?.error ?? active?.error ?? null;
-  const state: AggregateStatus["state"] = deviceError ? "error"
-    : reconnectNextAttemptAt ? "reconnecting"
-      : hardwareConnecting ? "connecting"
-        : activeMoto ? "race_active"
-          : testMode ? "testing"
-            : deviceConnected ? "connected_idle" : "disconnected";
-  const diagnosis = active?.diagnosis
-    ?? deviceError
-    ?? (!cloudStatus.connected ? (cloudStatus.error ?? "Cloud disconnected — check internet access and reader registration.") : null)
-    ?? (!activeMoto && !testMode ? "No active moto. Start a moto in RM Roost when you are ready to time." : null);
+// ── Status ────────────────────────────────────────────────────────────────────
+
+function getAppStatus(): AppStatus {
   return {
-    configured: !!settings.readerToken && !!settings.hardware && !!settings.hardwareAddress,
-    cloudUrl: settings.cloudUrl,
+    signedIn: !!settings.email,
     email: settings.email,
-    readerName: settings.readerName,
-    hardware: settings.hardware,
-    hardwareAddress: settings.hardwareAddress,
-    cloud: {
-      connected: cloudStatus.connected,
-      error: cloudStatus.error,
-    },
-    state,
-    reconnect: {
-      nextAttemptAt: reconnectNextAttemptAt,
-      secondsUntilAttempt: reconnectNextAttemptAt ? Math.max(0, Math.ceil((new Date(reconnectNextAttemptAt).getTime() - Date.now()) / 1000)) : null,
-    },
-    device: {
-      connected: deviceConnected,
-      reading: dev?.reading ?? active?.reading ?? false,
-      error: deviceError,
-      detail: active?.detail ?? null,
-      lastReadAt: dev?.lastReadAt ?? active?.lastPassingAt ?? null,
-      readCount: dev?.readCount ?? active?.passingCount ?? 0,
-      antennaIds: dev?.antennaIds ?? [],
-      transportReady: active?.transportReady,
-      heartbeatFresh: active?.heartbeatFresh,
-      machineId: active?.machineId,
-      loop1State: active?.loop1State,
-      loop2State: active?.loop2State,
-      diagnosis,
-      ready: active?.ready,
-      hostTimezone: active?.hostTimezone,
-      utcOffsetMinutes: active?.utcOffsetMinutes,
-    },
-    // Keep event context internal; the renderer's established status shape only
-    // exposes the moto identity and display name.
-    activeMoto: activeMoto ? { motoId: activeMoto.motoId, name: activeMoto.name } : null,
-    testMode,
-    testProgress,
-    testMessage,
+    cloudUrl: settings.cloudUrl,
+    readers: settings.readers.map(r => sessions.get(r.readerId)?.getStatus()).filter((s): s is NonNullable<typeof s> => !!s),
+    identifying,
   };
 }
 
-function pushStatusToWindow(): void {
-  if (settingsWindow && !settingsWindow.isDestroyed()) {
-    settingsWindow.webContents.send("status:update", getAggregateStatus());
-  }
-  updateTray();
+let pushQueued = false;
+function pushStatus(): void {
+  // Coalesce bursts of read events into one window update.
+  if (pushQueued) return;
+  pushQueued = true;
+  setImmediate(() => {
+    pushQueued = false;
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      settingsWindow.webContents.send("status:update", getAppStatus());
+    }
+    updateTray();
+  });
 }
 
 // ── Tray ──────────────────────────────────────────────────────────────────────
 
 function trayIcon(): Electron.NativeImage {
-  const s = getAggregateStatus();
-  const base64 = !s.configured
+  const readers = getAppStatus().readers;
+  const base64 = readers.length === 0
     ? ICON_GRAY
-    : s.cloud.connected && s.device.connected
-      ? ICON_GREEN
-      : ICON_RED;
+    : readers.every(r => r.cloud.connected && r.device.connected) ? ICON_GREEN : ICON_RED;
   return nativeImage.createFromDataURL(`data:image/png;base64,${base64}`);
 }
 
 function trayStatusLabel(): string {
-  const s = getAggregateStatus();
-  if (!s.configured) return "Not configured";
-  const dev = s.device.connected ? "Reader connected" : "Reader disconnected";
-  const cl = s.cloud.connected ? "Cloud connected" : "Cloud disconnected";
-  const moto = s.activeMoto ? ` — reading (${s.activeMoto.name})` : "";
-  return `${dev} · ${cl}${moto}`;
+  const readers = getAppStatus().readers;
+  if (readers.length === 0) return "No readers set up";
+  const connected = readers.filter(r => r.device.connected).length;
+  const racing = readers.find(r => r.activeMoto)?.activeMoto;
+  const label = `${connected} of ${readers.length} reader${readers.length === 1 ? "" : "s"} connected`;
+  return racing ? `${label} — timing ${racing.name}` : label;
 }
 
 function updateTray(): void {
@@ -203,7 +137,7 @@ function updateTray(): void {
     Menu.buildFromTemplate([
       { label: trayStatusLabel(), enabled: false },
       { type: "separator" },
-      { label: "Open Settings", click: () => openSettingsWindow() },
+      { label: "Open RM Connect", click: () => openSettingsWindow() },
       { type: "separator" },
       { label: "Quit RM Connect", click: () => { app.quit(); } },
     ]),
@@ -219,10 +153,10 @@ function openSettingsWindow(): void {
     return;
   }
   settingsWindow = new BrowserWindow({
-    width: 460,
-    height: 640,
-    minWidth: 400,
-    minHeight: 500,
+    width: 520,
+    height: 720,
+    minWidth: 420,
+    minHeight: 520,
     resizable: true,
     title: "RM Connect",
     icon: path.join(__dirname, "ui", "logo.png"),
@@ -256,444 +190,82 @@ function openSettingsWindow(): void {
   });
 }
 
-// ── Crossing forwarding ───────────────────────────────────────────────────────
+// ── Sessions ──────────────────────────────────────────────────────────────────
 
-function shouldRunPassiveReader(): boolean {
-  return activeMoto !== null || testMode;
-}
-
-async function forwardCrossing(
-  source: CrossingSource,
-  rfidNumber: string,
-  crossingTime: Date,
-  antennaId?: number | null,
-  receipt?: ActiveTimingReceiptMetadata,
-): Promise<void> {
-  if (!shouldForwardCrossing(source, activeMoto !== null, testMode)) return;
-
-  if (!recentReads.accept(rfidNumber)) return;
-
-  // Keep the original crossing and receipt timestamps so a delayed delivery is
-  // scored at the moment the rider crossed.
-  const crossing: QueuedCrossing = {
-    rfidNumber,
-    crossingTime: crossingTime.toISOString(),
-    antennaId,
-    clubId: settings.clubId,
-    eventId: activeMoto?.eventId ?? null,
-    receivedAtUtc: receipt?.receivedAt?.toISOString(),
-    deviceTimezone: receipt?.deviceTimezone,
-    source: receipt?.source,
-  };
-
-  // While earlier crossings are still waiting for the cloud, queue behind them
-  // so crossings are delivered in order. Test reads are never queued.
-  if (!testMode && crossingQueue && crossingQueue.size > 0) {
-    crossingQueue.enqueue(crossing, 0);
-    return;
-  }
-
-  try {
-    if (testMode) {
-      testProgress = "sending_crossing";
-      testMessage = "RM TrackR Transponder received. Sending the crossing to RM Roost…";
-      pushStatusToWindow();
-    }
-    const result = await sendQueuedCrossing(crossing);
-    if (!testMode && isRetryableCrossingResult(result)) {
-      crossingQueue?.enqueue(crossing, 1);
-    }
-    if (testMode) {
-      if (result.ok) {
-        testProgress = "confirmed";
-        testMessage = result.message ?? "RM TrackR Transponder crossing received and confirmed by RM Roost.";
-        testMode = false;
-        if (!activeMoto && isLlrpHardware()) await llrp.stopReading().catch(() => {});
-      } else {
-        testProgress = "unresolved";
-        testMessage = result.message ?? "RM TrackR Transponder was read, but RM Roost could not confirm the crossing. Check cloud connection and reader registration.";
-      }
-      pushStatusToWindow();
-    }
-  } catch {
-    if (testMode) {
-      testProgress = "unresolved";
-      testMessage = "RM TrackR Transponder was read, but the crossing could not reach RM Roost. Check the cloud connection.";
-      pushStatusToWindow();
-      return;
-    }
-    // Network error — the request never got an answer. Queue it for retry
-    // with backoff instead of dropping the lap.
-    crossingQueue?.enqueue(crossing, 1);
-  }
-}
-
-llrp.on("tag", (read) => {
-  forwardCrossing("passive_rfid", read.epcHex, new Date(), read.antennaId).catch(() => {});
-  pushStatusToWindow();
-});
-
-activeTransponder.on("tag", (tag: string, crossingTime: Date, receipt: ActiveTimingReceiptMetadata) => {
-  if (testMode) {
-    testProgress = "sending_crossing";
-    testMessage = "RM TrackR Transponder received from active timing. Confirming the cloud crossing…";
-  }
-  forwardCrossing("active_transponder", tag, crossingTime, undefined, receipt).catch(() => {});
-  pushStatusToWindow();
-});
-
-// ── Hardware connection management ────────────────────────────────────────────
-
-function isLlrpHardware(): boolean {
-  return settings.hardware === "impinj" || settings.hardware === "zebra" || settings.hardware === "generic";
-}
-
-function resolveHardwareHost(): string {
-  const addr = settings.hardwareAddress.trim();
-  if (settings.hardware === "impinj") {
-    // Accept: last-6 MAC digits, full hostname, or IP
-    if (/^[0-9a-fA-F]{6}$/.test(addr.replace(/[^0-9a-fA-F]/g, "")) && !addr.includes(".")) {
-      return impinjHostFromMac(addr);
-    }
-    return addr;
-  }
-  return addr; // zebra/generic: hostname or IP · RM TrackR: hostname/IP[:port]
-}
-
-function applyActiveTimingSettings(): void {
-  activeTransponder.configure({
-    channel: settings.activeTimingChannel,
-    power: settings.activeTimingPower,
-    loop1Enabled: settings.activeTimingLoop1Enabled,
-    loop2Enabled: settings.activeTimingLoop2Enabled,
-  });
-}
-
-function applyWebsiteActiveTimingConfig(
-  config: { channel: number; power: number; loop1Enabled: boolean; loop2Enabled: boolean },
-  syncClock = false,
-): void {
-  if (!Number.isInteger(config.channel) || config.channel < 0 || config.channel > 5) {
-    throw new Error("Website sent an invalid active timing channel.");
-  }
-  if (!Number.isInteger(config.power) || config.power < 0 || config.power > 100) {
-    throw new Error("Website sent an invalid active timing power value.");
-  }
+function saveReaderConfig(config: ReaderConfig): void {
   settings = {
     ...settings,
-    activeTimingChannel: config.channel,
-    activeTimingPower: config.power,
-    activeTimingLoop1Enabled: !!config.loop1Enabled,
-    activeTimingLoop2Enabled: !!config.loop2Enabled,
+    readers: settings.readers.some(r => r.readerId === config.readerId)
+      ? settings.readers.map(r => (r.readerId === config.readerId ? config : r))
+      : [...settings.readers, config],
   };
   saveSettings(settings);
-  applyActiveTimingSettings();
-  if (syncClock && activeTransponder.getStatus().transportReady) activeTransponder.syncClock();
 }
 
-async function connectHardware(): Promise<void> {
-  hardwareWanted = true;
-  hardwareConnecting = true;
-  reconnectNextAttemptAt = null;
-  const host = resolveHardwareHost();
-  try {
-    if (isLlrpHardware()) {
-      await llrp.connect(host, { impinjExtensions: settings.hardware === "impinj" });
-      // If a moto is already live (reconnect mid-race), resume reading
-      if (shouldRunPassiveReader()) {
-        await llrp.startReading().catch(() => {});
-      }
-    } else if (settings.hardware === "active_transponder") {
-      applyActiveTimingSettings();
-      await activeTransponder.connect(host);
-      // Keep active timing live continuously. A dropped WebSocket start command
-      // must not prevent the F2000 from observing a physical crossing.
-      activeTransponder.startReading();
-    }
-  } finally {
-    hardwareConnecting = false;
-  }
-  pushStatusToWindow();
-}
-
-function disconnectHardware(): void {
-  hardwareWanted = false;
-  hardwareConnecting = false;
-  reconnectNextAttemptAt = null;
-  if (deviceReconnectTimer) {
-    clearTimeout(deviceReconnectTimer);
-    deviceReconnectTimer = null;
-  }
-  llrp.disconnect().catch(() => {});
-  activeTransponder.disconnect();
-  pushStatusToWindow();
-}
-
-function scheduleHardwareReconnect(): void {
-  if (!hardwareWanted || deviceReconnectTimer) return;
-  reconnectNextAttemptAt = new Date(Date.now() + 10_000).toISOString();
-  deviceReconnectTimer = setTimeout(() => {
-    deviceReconnectTimer = null;
-    reconnectNextAttemptAt = null;
-    if (!hardwareWanted) return;
-    connectHardware().catch(() => scheduleHardwareReconnect());
-  }, 10_000);
-}
-
-llrp.on("disconnected", () => {
-  scheduleHardwareReconnect();
-  pushStatusToWindow();
-});
-llrp.on("error", () => pushStatusToWindow());
-activeTransponder.on("disconnected", () => {
-  scheduleHardwareReconnect();
-  pushStatusToWindow();
-});
-activeTransponder.on("status", () => {
-  const status = activeTransponder.getStatus();
-  if (testMode && testProgress === "opening_loops") {
-    if (status.ready) {
-      testProgress = "waiting_for_tag";
-      testMessage = "Both enabled RM TrackR loops are running. Pass an RM TrackR Transponder over either loop.";
-    } else if (status.transportReady) {
-      testMessage = "RM TrackR is identified. Waiting for it to confirm the enabled loops are running; RM Connect is retrying the open command.";
-    }
-  }
-  pushStatusToWindow();
-});
-activeTransponder.on("error", pushStatusToWindow);
-
-// ── Cloud command handling ────────────────────────────────────────────────────
-
-cloud.setStatusProvider(() => {
-  const s = getAggregateStatus();
-  return {
-    connectorVersion: getConnectorVersion(),
-    hardware: settings.hardware,
-    connected: s.device.connected,
-    detail: s.device.error ?? s.device.detail ?? null,
-    lastReadAt: s.device.lastReadAt,
-    readCount: s.device.readCount,
-    antennaIds: s.device.antennaIds,
-    hostTimezone: s.device.hostTimezone,
-    utcOffsetMinutes: s.device.utcOffsetMinutes,
-  };
-});
-
-cloud.on("command", (cmd: CloudCommand) => {
-  if (cmd.type === "start_moto" && cmd.motoId) {
-    activeMoto = {
-      motoId: cmd.motoId,
-      name: cmd.motoName ?? `Moto ${cmd.motoId}`,
-      eventId: typeof cmd.eventId === "number" && Number.isInteger(cmd.eventId) && cmd.eventId > 0
-        ? cmd.eventId
-        : null,
-    };
-    if (isLlrpHardware()) {
-      llrp.startReading().catch(() => {
-        // Reader not connected — reconnect loop will resume reading when back
-        scheduleHardwareReconnect();
-      });
-    } else if (settings.hardware === "active_transponder") {
-      applyActiveTimingSettings();
-      activeTransponder.startReading();
-    }
-  } else if (cmd.type === "stop_moto") {
-    activeMoto = null;
-    if (isLlrpHardware() && !testMode) {
-      llrp.stopReading().catch(() => {});
-    }
-  } else if (cmd.type === "set_llrp_config" && cmd.config && isLlrpHardware()) {
-    llrp.applyRfConfig(cmd.config as { transmitPowerIndex: number; rfModeIndex: number; tagPopulation: number; tagTransitTime: number }).catch(() => {
-      // Non-fatal — config stored and will be applied on next reconnect
-    });
-  } else if (cmd.type === "set_active_timing_config" && cmd.config && settings.hardware === "active_transponder") {
-    try {
-      applyWebsiteActiveTimingConfig(cmd.config as { channel: number; power: number; loop1Enabled: boolean; loop2Enabled: boolean }, cmd.syncClock === true);
-    } catch {
-      // Preserve the active connection and report its existing status; a valid
-      // portal save is replayed automatically on the next connector reconnect.
-    }
-  }
-  cloud.sendStatus();
-  pushStatusToWindow();
-});
-
-cloud.on("connected", () => {
-  // The cloud is reachable again: deliver anything queued during the outage.
-  crossingQueue?.retryNow();
-  pushStatusToWindow();
-});
-cloud.on("disconnected", pushStatusToWindow);
-
-// ── Full connect / disconnect ─────────────────────────────────────────────────
-
-async function connectAll(): Promise<void> {
-  if (!settings.readerToken) throw new Error("No reader selected");
-  if (!settings.hardware || !settings.hardwareAddress) throw new Error("Hardware not configured");
-  cloud.start(settings.cloudUrl, settings.readerToken);
-  await connectHardware();
-}
-
-function disconnectAll(): void {
-  cloud.stop();
-  disconnectHardware();
-  activeMoto = null;
-  testMode = false;
-  pushStatusToWindow();
-}
-
-// ── IPC ───────────────────────────────────────────────────────────────────────
-
-function registerIpc(): void {
-  ipcMain.handle("status:get", () => getAggregateStatus());
-
-  ipcMain.handle("settings:get", () => ({
+function startSession(config: ReaderConfig): ReaderSession {
+  sessions.get(config.readerId)?.dispose();
+  const session = new ReaderSession({
+    config,
     cloudUrl: settings.cloudUrl,
-    email: settings.email,
-    readerId: settings.readerId,
-    readerName: settings.readerName,
-    hardware: settings.hardware,
-    hardwareAddress: settings.hardwareAddress,
-    activeTimingChannel: settings.activeTimingChannel,
-    activeTimingPower: settings.activeTimingPower,
-    activeTimingLoop1Enabled: settings.activeTimingLoop1Enabled,
-    activeTimingLoop2Enabled: settings.activeTimingLoop2Enabled,
-    hasSession: !!sessionCookie,
-  }));
-
-  ipcMain.handle(
-    "auth:login",
-    async (_e, input: { cloudUrl: string; email: string; password: string }): Promise<LoginResult> => {
-      try {
-        // A blank field means the built-in RM Roost cloud; "host.com" gets https://.
-        const cloudUrl = normalizeCloudUrl(input.cloudUrl) || builtInCloudUrl();
-        if (!/^https?:\/\//i.test(cloudUrl)) throw new Error("Cloud URL must start with https:// (or http:// for a local server)");
-        const { cookie, clubId } = await cloudLogin(cloudUrl, input.email.trim(), input.password);
-        sessionCookie = cookie;
-        settings = { ...settings, cloudUrl, email: input.email.trim(), clubId };
-        saveSettings(settings);
-        savePassword(input.password);
-        saveSessionCookie(cookie);
-        const readers = await fetchReaders(cloudUrl, cookie);
-        return { ok: true, readers: readers.map((r) => ({ id: r.id, name: r.name, type: r.type, hardwareAddress: r.hardwareAddress ?? null, activeTimingConfig: r.activeTimingConfig ?? null })) };
-      } catch (err: any) {
-        return { ok: false, error: err?.message ?? "Login failed" };
-      }
-    },
-  );
-
-  ipcMain.handle("readers:list", async (): Promise<LoginResult> => {
-    try {
-      const cookie = await ensureSession();
-      const readers = await fetchReaders(settings.cloudUrl, cookie);
-      return { ok: true, readers: readers.map((r) => ({ id: r.id, name: r.name, type: r.type, hardwareAddress: r.hardwareAddress ?? null, activeTimingConfig: r.activeTimingConfig ?? null })) };
-    } catch (err: any) {
-      return { ok: false, error: err?.message ?? "Failed to load readers" };
-    }
+    clubId: settings.clubId,
+    connectorVersion: getConnectorVersion(),
+    queueFile: queueFile(config.readerId),
+    rediscover: findMovedReader,
   });
-
-  ipcMain.handle("connect", async (_e, input: ConnectInput) => {
-    try {
-      const cookie = await ensureSession();
-      const readers = await fetchReaders(settings.cloudUrl, cookie);
-      const reader = readers.find((r) => r.id === input.readerId);
-      if (!reader) throw new Error("Selected reader no longer exists — refresh the list");
-
-      settings = {
-        ...settings,
-        readerId: reader.id,
-        readerToken: reader.token,
-        readerName: reader.name,
-        hardware: input.hardware,
-        // The cloud registration is canonical when it has an address. Keep a
-        // single saved address locally rather than maintaining a second value.
-        hardwareAddress: reader.hardwareAddress?.trim() || input.hardwareAddress.trim(),
-      };
-      if (reader.type === "active_transponder" && reader.activeTimingConfig) {
-        settings = {
-          ...settings,
-          activeTimingChannel: reader.activeTimingConfig.channel,
-          activeTimingPower: reader.activeTimingConfig.power,
-          activeTimingLoop1Enabled: reader.activeTimingConfig.loop1Enabled,
-          activeTimingLoop2Enabled: reader.activeTimingConfig.loop2Enabled,
-        };
-      }
-      saveSettings(settings);
-
-      await connectAll();
-      return { ok: true };
-    } catch (err: any) {
-      return { ok: false, error: err?.message ?? "Connection failed" };
-    }
+  session.on("change", pushStatus);
+  session.on("addressChanged", (address: string) => {
+    saveReaderConfig(session.config);
+    // Keep RM Roost's copy in step so the next laptop finds it too.
+    withSession(cookie => updateReader(settings.cloudUrl, cookie, session.config.readerId, { name: session.config.readerName, hardwareAddress: address }))
+      .catch(() => {});
   });
-
-  ipcMain.handle("disconnect", () => {
-    disconnectAll();
-    return { ok: true };
-  });
-
-  ipcMain.handle("hardware:configure", async (_e, input: { channel: number; power: number; loop1Enabled: boolean; loop2Enabled: boolean; syncClock?: boolean }) => {
-    try {
-      if (settings.hardware !== "active_transponder") throw new Error("Active timing settings are only available for an RM TrackR reader.");
-      if (!Number.isInteger(input.channel) || input.channel < 0 || input.channel > 5) throw new Error("Channel must be a whole number from 0 to 5.");
-      if (!Number.isInteger(input.power) || input.power < 0 || input.power > 100) throw new Error("Power must be a whole number from 0 to 100.");
-      settings = { ...settings, activeTimingChannel: input.channel, activeTimingPower: input.power, activeTimingLoop1Enabled: !!input.loop1Enabled, activeTimingLoop2Enabled: !!input.loop2Enabled };
-      saveSettings(settings);
-      applyActiveTimingSettings();
-      if (input.syncClock) activeTransponder.syncClock();
-      pushStatusToWindow();
-      return { ok: true };
-    } catch (err: any) {
-      return { ok: false, error: err?.message ?? "Unable to apply active timing settings." };
-    }
-  });
-
-  ipcMain.handle("test:toggle", async (_e, enabled: boolean) => {
-    testMode = !!enabled;
-    testProgress = testMode ? (settings.hardware === "active_transponder" ? "opening_loops" : "waiting_for_tag") : "inactive";
-    testMessage = testMode ? (settings.hardware === "active_transponder"
-      ? "Opening RM TrackR loops 1 and 2. Waiting for a real RM TrackR Transponder crossing…"
-      : "Waiting for a real tag read…") : null;
-    try {
-      if (isLlrpHardware()) {
-        if (testMode && !llrp.getStatus().reading) {
-          await llrp.startReading();
-        } else if (!testMode && activeMoto === null && llrp.getStatus().reading) {
-          await llrp.stopReading();
-        }
-      } else if (settings.hardware === "active_transponder") {
-        // Active timing stays armed outside motos so missed cloud commands
-        // cannot create a silent gap in physical crossing delivery.
-        activeTransponder.startReading();
-        if (testMode && activeTransponder.getStatus().ready) {
-          testProgress = "waiting_for_tag";
-          testMessage = "Both enabled RM TrackR loops are running. Pass an RM TrackR Transponder over either loop.";
-        }
-      }
-      pushStatusToWindow();
-      return { ok: true };
-    } catch (err: any) {
-      testMode = false;
-      testProgress = "unresolved";
-      testMessage = err?.message ?? "Unable to start the hardware test.";
-      pushStatusToWindow();
-      return { ok: false, error: err?.message ?? "Test mode failed" };
-    }
-  });
-
-  ipcMain.handle("logout", () => {
-    disconnectAll();
-    sessionCookie = null;
-    clearAll();
-    settings = loadSettings();
-    return { ok: true };
-  });
-
-  ipcMain.handle("open-external", (_e, url: string) => {
-    if (typeof url === "string" && /^https?:\/\//.test(url)) shell.openExternal(url).catch(() => {});
-  });
+  session.on("activeTimingChanged", () => saveReaderConfig(session.config));
+  sessions.set(config.readerId, session);
+  if (identifying) session.setIdentifying(true);
+  session.start();
+  return session;
 }
+
+function stopAllSessions(): void {
+  for (const session of sessions.values()) session.dispose();
+  sessions.clear();
+}
+
+/** Addresses of devices this laptop is connected to, which a scan must not probe. */
+function addressesInUse(): string[] {
+  const used = new Set<string>();
+  for (const s of sessions.values()) {
+    const connected = s.connectedAddress();
+    if (connected) used.add(connected);
+    used.add(s.host.replace(/:\d+$/, ""));
+  }
+  return [...used];
+}
+
+/**
+ * Called after a reader has failed to reconnect several times. If exactly one
+ * unclaimed device of the same kind is on the network, the reader most likely
+ * moved there (a router restart handed out new addresses).
+ */
+async function findMovedReader(session: ReaderSession): Promise<string | null> {
+  const { devices } = await scanLocalNetwork(addressesInUse());
+  const wantActive = session.config.hardware === "active_transponder";
+  const candidates = devices.filter(d => (d.hardware === "active_transponder") === wantActive);
+  if (candidates.length !== 1) return null;
+  return candidates[0].address;
+}
+
+// ── Identify ──────────────────────────────────────────────────────────────────
+
+function setIdentifying(enabled: boolean): void {
+  identifying = enabled;
+  if (identifyTimer) clearTimeout(identifyTimer);
+  identifyTimer = enabled ? setTimeout(() => setIdentifying(false), IDENTIFY_TIMEOUT_MS) : null;
+  for (const s of sessions.values()) s.setIdentifying(enabled);
+  pushStatus();
+}
+
+// ── Cloud session ─────────────────────────────────────────────────────────────
 
 /** Return a valid session cookie, re-logging in with stored creds if needed. */
 async function ensureSession(): Promise<string> {
@@ -707,12 +279,240 @@ async function ensureSession(): Promise<string> {
   }
   const password = loadPassword();
   if (!settings.cloudUrl || !settings.email || !password) {
-    throw new Error("Not signed in — open Settings and sign in");
+    throw new Error("Not signed in — sign in again");
   }
   const { cookie } = await cloudLogin(settings.cloudUrl, settings.email, password);
   sessionCookie = cookie;
   saveSessionCookie(cookie);
   return cookie;
+}
+
+async function withSession<T>(fn: (cookie: string) => Promise<T>): Promise<T> {
+  return fn(await ensureSession());
+}
+
+function summarize(readers: CloudReader[]): CloudReaderSummary[] {
+  return readers.map(r => ({
+    id: r.id,
+    name: r.name,
+    type: r.type,
+    hardwareAddress: r.hardwareAddress ?? null,
+    onThisLaptop: sessions.has(r.id),
+  }));
+}
+
+function sameAddress(a: string | null | undefined, b: string): boolean {
+  const strip = (v: string) => v.trim().toLowerCase().replace(/:55555$/, "");
+  return !!a && strip(a) === strip(b);
+}
+
+function defaultReaderName(device: Pick<DiscoveredDevice, "hardware">, existing: CloudReader[]): string {
+  const base = device.hardware === "active_transponder" ? "RM TrackR" : "RFID Reader";
+  const taken = new Set(existing.map(r => r.name.toLowerCase()));
+  if (!taken.has(base.toLowerCase())) return base;
+  for (let n = 2; ; n++) if (!taken.has(`${base} ${n}`.toLowerCase())) return `${base} ${n}`;
+}
+
+// ── IPC ───────────────────────────────────────────────────────────────────────
+
+function registerIpc(): void {
+  ipcMain.handle("status:get", () => getAppStatus());
+
+  ipcMain.handle("settings:get", () => ({
+    cloudUrl: settings.cloudUrl,
+    email: settings.email,
+    readers: settings.readers.map(r => ({ readerId: r.readerId, activeTiming: r.activeTiming })),
+  }));
+
+  ipcMain.handle(
+    "auth:login",
+    async (_e, input: { cloudUrl: string; email: string; password: string }): Promise<LoginResult> => {
+      try {
+        // A blank field means the built-in RM Roost cloud; "host.com" gets https://.
+        const cloudUrl = normalizeCloudUrl(input.cloudUrl) || builtInCloudUrl();
+        if (!/^https?:\/\//i.test(cloudUrl)) throw new Error("Server address must start with https:// (or http:// for a local server)");
+        const { cookie, clubId } = await cloudLogin(cloudUrl, input.email.trim(), input.password);
+        const cloudChanged = cloudUrl !== settings.cloudUrl;
+        sessionCookie = cookie;
+        settings = { ...settings, cloudUrl, email: input.email.trim(), clubId };
+        if (cloudChanged) {
+          // Readers belong to one RM Roost server; don't carry them to another.
+          stopAllSessions();
+          settings = { ...settings, readers: [] };
+        }
+        saveSettings(settings);
+        savePassword(input.password);
+        saveSessionCookie(cookie);
+        pushStatus();
+        return { ok: true };
+      } catch (err: any) {
+        return { ok: false, error: err?.message ?? "Sign-in failed" };
+      }
+    },
+  );
+
+  ipcMain.handle("readers:cloud", async () => {
+    try {
+      return { ok: true, readers: summarize(await withSession(cookie => fetchReaders(settings.cloudUrl, cookie))) };
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? "Couldn't load your readers from RM Roost" };
+    }
+  });
+
+  ipcMain.handle("network:scan", async (): Promise<ScanReply> => {
+    try {
+      const [scan, cloudReaders] = await Promise.all([
+        scanLocalNetwork(addressesInUse()),
+        withSession(cookie => fetchReaders(settings.cloudUrl, cookie)).catch(() => [] as CloudReader[]),
+      ]);
+      return {
+        ok: true,
+        scannedHosts: scan.scannedHosts,
+        devices: scan.devices.map(d => {
+          const local = settings.readers.find(r => sameAddress(r.hardwareAddress, d.address));
+          const registered = cloudReaders.find(r => sameAddress(r.hardwareAddress, d.address)
+            && (r.type === "active_transponder") === (d.hardware === "active_transponder"));
+          return { ...d, inUseBy: local?.readerName ?? null, registeredReaderId: registered?.id ?? null };
+        }),
+      };
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? "Network scan failed" };
+    }
+  });
+
+  ipcMain.handle("network:probe", async (_e, address: string): Promise<ScanReply> => {
+    try {
+      if (typeof address !== "string" || !address.trim()) throw new Error("Enter an address");
+      const { resolved, devices } = await probeAddress(address);
+      if (!resolved) return { ok: false, error: `Couldn't find "${address.trim()}" on this network. Check the spelling, or that the device is powered and plugged in.` };
+      if (devices.length === 0) {
+        return { ok: false, error: `${resolved} answered, but not as a timing reader. RFID readers need LLRP turned on (port 5084); the RM TrackR must be in TCP mode (port 55555).` };
+      }
+      const cloudReaders = await withSession(cookie => fetchReaders(settings.cloudUrl, cookie)).catch(() => [] as CloudReader[]);
+      return {
+        ok: true,
+        devices: devices.map(d => ({
+          ...d,
+          inUseBy: settings.readers.find(r => sameAddress(r.hardwareAddress, d.address))?.readerName ?? null,
+          registeredReaderId: cloudReaders.find(r => sameAddress(r.hardwareAddress, d.address))?.id ?? null,
+        })),
+      };
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? "Check failed" };
+    }
+  });
+
+  ipcMain.handle("reader:add", async (_e, input: AddReaderInput): Promise<ActionResult> => {
+    try {
+      const address = input.address.trim();
+      if (!address) throw new Error("No device address");
+      const type = input.hardware === "active_transponder" ? "active_transponder" : "rfid";
+      const cloudReaders = await withSession(cookie => fetchReaders(settings.cloudUrl, cookie));
+      let reader: CloudReader | undefined;
+      if (input.readerId) {
+        reader = cloudReaders.find(r => r.id === input.readerId);
+        if (!reader) throw new Error("That reader no longer exists in RM Roost — pick another or add it as new.");
+        if (reader.type !== type) throw new Error(`"${reader.name}" is set up as ${reader.type === "rfid" ? "an RFID reader" : "an RM TrackR"} in RM Roost, but this device is ${type === "rfid" ? "an RFID reader" : "an RM TrackR"}.`);
+        if (sessions.has(reader.id)) throw new Error(`"${reader.name}" is already connected on this laptop.`);
+        reader = await withSession(cookie => updateReader(settings.cloudUrl, cookie, reader!.id, { name: reader!.name, hardwareAddress: address }));
+      } else {
+        const name = input.name?.trim() || defaultReaderName({ hardware: input.hardware }, cloudReaders);
+        reader = await withSession(cookie => createReader(settings.cloudUrl, cookie, { name, type, hardwareAddress: address }));
+      }
+      const config: ReaderConfig = {
+        readerId: reader.id,
+        readerToken: reader.token,
+        readerName: reader.name,
+        hardware: input.hardware,
+        hardwareAddress: address,
+        activeTiming: reader.activeTimingConfig ?? { ...DEFAULT_ACTIVE_TIMING },
+      };
+      if (settings.readers.length === 0) adoptLegacyQueue(config.readerId);
+      saveReaderConfig(config);
+      startSession(config);
+      pushStatus();
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? "Couldn't add the reader" };
+    }
+  });
+
+  ipcMain.handle("reader:remove", (_e, readerId: number): ActionResult => {
+    sessions.get(readerId)?.dispose();
+    sessions.delete(readerId);
+    settings = { ...settings, readers: settings.readers.filter(r => r.readerId !== readerId) };
+    saveSettings(settings);
+    pushStatus();
+    return { ok: true };
+  });
+
+  ipcMain.handle("reader:rename", async (_e, readerId: number, name: string): Promise<ActionResult> => {
+    try {
+      const config = settings.readers.find(r => r.readerId === readerId);
+      const trimmed = typeof name === "string" ? name.trim() : "";
+      if (!config) throw new Error("Reader not found");
+      if (!trimmed) throw new Error("Enter a name");
+      await withSession(cookie => updateReader(settings.cloudUrl, cookie, readerId, { name: trimmed }));
+      const updated = { ...config, readerName: trimmed };
+      saveReaderConfig(updated);
+      sessions.get(readerId)?.update(updated);
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? "Couldn't rename the reader" };
+    }
+  });
+
+  ipcMain.handle("reader:reconnect", async (_e, readerId: number): Promise<ActionResult> => {
+    const session = sessions.get(readerId);
+    if (!session) return { ok: false, error: "Reader not found" };
+    try {
+      await session.reconnect();
+      return { ok: true };
+    } catch {
+      // The session keeps retrying; its status carries the plain-English reason.
+      return { ok: false, error: session.getStatus().device.diagnosis ?? "Couldn't connect" };
+    }
+  });
+
+  ipcMain.handle("reader:test", async (_e, readerId: number, enabled: boolean): Promise<ActionResult> => {
+    const session = sessions.get(readerId);
+    if (!session) return { ok: false, error: "Reader not found" };
+    await session.setTestMode(!!enabled);
+    return { ok: true };
+  });
+
+  ipcMain.handle("reader:configure", async (_e, readerId: number, input: ActiveTimingConfig & { syncClock?: boolean }): Promise<ActionResult> => {
+    try {
+      const session = sessions.get(readerId);
+      if (!session || session.config.hardware !== "active_transponder") throw new Error("RM TrackR settings only apply to an RM TrackR reader.");
+      if (!Number.isInteger(input.channel) || input.channel < 0 || input.channel > 5) throw new Error("Channel must be a whole number from 0 to 5.");
+      if (!Number.isInteger(input.power) || input.power < 0 || input.power > 100) throw new Error("Power must be a whole number from 0 to 100.");
+      session.setActiveTiming({ channel: input.channel, power: input.power, loop1Enabled: !!input.loop1Enabled, loop2Enabled: !!input.loop2Enabled }, !!input.syncClock);
+      saveReaderConfig(session.config);
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err?.message ?? "Couldn't apply the settings." };
+    }
+  });
+
+  ipcMain.handle("identify:set", (_e, enabled: boolean) => {
+    setIdentifying(!!enabled);
+    return { ok: true };
+  });
+
+  ipcMain.handle("logout", () => {
+    setIdentifying(false);
+    stopAllSessions();
+    sessionCookie = null;
+    clearAll();
+    settings = loadSettings();
+    pushStatus();
+    return { ok: true };
+  });
+
+  ipcMain.handle("open-external", (_e, url: string) => {
+    if (typeof url === "string" && /^https?:\/\//.test(url)) shell.openExternal(url).catch(() => {});
+  });
 }
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
@@ -734,21 +534,12 @@ if (!gotLock) {
 
     sessionCookie = loadSessionCookie();
 
-    crossingQueue = new CrossingRetryQueue({
-      send: sendQueuedCrossing,
-      filePath: path.join(app.getPath("userData"), "pending-crossings.json"),
-    });
-    crossingQueue.load();
+    // Keep "retry in Ns" and "last read Ns ago" fresh in the window.
+    setInterval(() => pushStatus(), 2_000);
 
-    // Push status to the settings window periodically
-    setInterval(() => pushStatusToWindow(), 2_000);
-
-    const configured = !!settings.readerToken && !!settings.hardware && !!settings.hardwareAddress;
-    if (configured && settings.autoConnect) {
-      connectAll().catch(() => {
-        scheduleHardwareReconnect();
-        pushStatusToWindow();
-      });
+    if (settings.readers.length > 0 && settings.autoConnect) {
+      adoptLegacyQueue(settings.readers[0].readerId);
+      for (const config of settings.readers) startSession(config);
     } else {
       openSettingsWindow();
     }
@@ -760,7 +551,6 @@ if (!gotLock) {
   });
 
   app.on("before-quit", () => {
-    crossingQueue?.dispose();
-    disconnectAll();
+    stopAllSessions();
   });
 }

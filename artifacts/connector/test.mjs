@@ -55,12 +55,13 @@ const { CloudLink } = cloudModule.default ?? cloudModule;
 const policyModule = await import(pathToFileURL(policyOutputFile).href);
 const { shouldForwardCrossing } = policyModule.default ?? policyModule;
 const migrationsModule = await import(pathToFileURL(migrationsOutputFile).href);
-const { migrateLegacyActiveTransponderAddress } = migrationsModule.default ?? migrationsModule;
+const { migrateLegacyActiveTransponderAddress, migrateSettings } = migrationsModule.default ?? migrationsModule;
 const activeReaderModule = await import(pathToFileURL(activeReaderOutputFile).href);
 const {
   ActiveTransponderClient,
   formatLocalClockCommands,
   parseTimestamp,
+  isLoopWorking,
 } = activeReaderModule.default ?? activeReaderModule;
 const deduperModule = await import(pathToFileURL(deduperOutputFile).href);
 const { RecentReadDeduper } = deduperModule.default ?? deduperModule;
@@ -631,4 +632,211 @@ test("facility fallback without a saved clubId uses the per-reader URL", async (
     webSockets.close();
     await new Promise(resolve => server.close(resolve));
   }
+});
+
+// ── Multi-reader sessions, discovery and settings migration (1.0.18) ─────────
+
+const sessionOutputFile = path.join(os.tmpdir(), `rm-connect-reader-session-${process.pid}.cjs`);
+const discoveryOutputFile = path.join(os.tmpdir(), `rm-connect-discovery-${process.pid}.cjs`);
+await build({ entryPoints: [path.resolve("src/reader-session.ts")], bundle: true, platform: "node", format: "cjs", outfile: sessionOutputFile });
+await build({ entryPoints: [path.resolve("src/discovery.ts")], bundle: true, platform: "node", format: "cjs", outfile: discoveryOutputFile });
+const sessionModule = await import(pathToFileURL(sessionOutputFile).href);
+const { ReaderSession, friendlyRfidError } = sessionModule.default ?? sessionModule;
+const discoveryModule = await import(pathToFileURL(discoveryOutputFile).href);
+const { probeAddress, rfidHardwareFromHostname } = discoveryModule.default ?? discoveryModule;
+
+const keepUrl = (url) => (typeof url === "string" && url ? url : "https://www.rmroost.com");
+
+test("a single-reader settings file becomes the first entry of the reader list", () => {
+  const legacyPrefix = ["fei", "bot"].join("");
+  const migrated = migrateSettings({
+    cloudUrl: "https://www.rmroost.com", email: "org@example.test", clubId: 7,
+    readerId: 12, readerToken: "tok-12", readerName: "Finish", hardware: "mylaps",
+    hardwareAddress: "192.168.1.50:3333", [legacyPrefix + "Power"]: 80, activeTimingChannel: 3,
+  }, keepUrl);
+  assert.equal(migrated.readers.length, 1);
+  assert.deepEqual(migrated.readers[0], {
+    readerId: 12, readerToken: "tok-12", readerName: "Finish", hardware: "active_transponder",
+    hardwareAddress: "192.168.1.50:55555",
+    activeTiming: { channel: 3, power: 80, loop1Enabled: true, loop2Enabled: true },
+  });
+  assert.equal(migrated.clubId, 7);
+  assert.equal(migrated.autoConnect, true);
+});
+
+test("reader lists keep valid entries once each", () => {
+  const migrated = migrateSettings({
+    readers: [
+      { readerId: 1, readerToken: "a", readerName: "Finish", hardware: "impinj", hardwareAddress: "16-25-B2" },
+      { readerId: 1, readerToken: "a", readerName: "Duplicate", hardware: "impinj", hardwareAddress: "x" },
+      { readerId: 2, readerToken: "", hardware: "zebra", hardwareAddress: "10.0.0.5" },
+      { readerId: 3, readerToken: "c", readerName: "Split", hardware: "toaster", hardwareAddress: "10.0.0.6" },
+      { readerId: 4, readerToken: "d", readerName: "Halfway", hardware: "active_transponder", hardwareAddress: "10.0.0.7",
+        activeTiming: { channel: 9, power: 50, loop1Enabled: false, loop2Enabled: true } },
+    ],
+  }, keepUrl);
+  assert.deepEqual(migrated.readers.map(r => [r.readerId, r.readerName]), [[1, "Finish"], [4, "Halfway"]]);
+  // An out-of-range channel falls back to the default; valid values are kept.
+  assert.deepEqual(migrated.readers[1].activeTiming, { channel: 0, power: 50, loop1Enabled: false, loop2Enabled: true });
+  assert.deepEqual(migrateSettings(null, keepUrl).readers, []);
+});
+
+test("RFID connection errors are explained in plain language", () => {
+  const err = (code, message = code) => Object.assign(new Error(message), { code });
+  assert.match(friendlyRfidError(err("ECONNREFUSED"), "10.0.0.5"), /LLRP interface/);
+  assert.match(friendlyRfidError(err("ENOTFOUND"), "impinj-16-25-b2.local"), /find impinj-16-25-b2\.local/);
+  assert.match(friendlyRfidError(err("ETIMEDOUT"), "10.0.0.5"), /No answer from 10\.0\.0\.5/);
+  assert.match(friendlyRfidError(new Error("LLRP connection refused: another LLRP client is already connected to this reader"), "10.0.0.5"), /Another program/);
+});
+
+test("RFID reader model is named from its network name", () => {
+  assert.equal(rfidHardwareFromHostname("impinj-16-25-B2.local"), "impinj");
+  assert.equal(rfidHardwareFromHostname("FX9600F1A2B3"), "zebra");
+  assert.equal(rfidHardwareFromHostname(null), "generic");
+});
+
+test("checking an address finds an RM TrackR listening there", async () => {
+  const server = net.createServer(peer => peer.destroy());
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    const { port } = server.address();
+    const { resolved, devices } = await probeAddress(`127.0.0.1:${port}`);
+    assert.equal(resolved, "127.0.0.1");
+    assert.deepEqual(devices.map(d => [d.hardware, d.address]), [["active_transponder", `127.0.0.1:${port}`]]);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+/** Fake RM Roost: records crossings per reader token and accepts the command socket. */
+async function fakeCloud() {
+  const crossings = [];
+  const statuses = [];
+  const server = createServer((request, response) => {
+    let body = "";
+    request.setEncoding("utf8");
+    request.on("data", chunk => { body += chunk; });
+    request.on("end", () => {
+      const match = /^\/api\/timing\/readers\/([^/]+)\/crossing$/.exec(request.url);
+      if (request.method === "POST" && match) {
+        crossings.push({ token: match[1], ...JSON.parse(body) });
+        response.writeHead(200, { "Content-Type": "application/json" });
+        response.end(JSON.stringify({ ok: true, message: "Lap recorded" }));
+        return;
+      }
+      response.writeHead(404).end();
+    });
+  });
+  const sockets = new WebSocketServer({ server });
+  sockets.on("connection", socket => socket.on("message", data => statuses.push(JSON.parse(data.toString()))));
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  return {
+    url: `http://127.0.0.1:${server.address().port}`,
+    crossings,
+    statuses,
+    close: async () => { sockets.close(); await new Promise(resolve => server.close(resolve)); },
+  };
+}
+
+/** Fake RM TrackR that identifies itself and can send a crossing. */
+async function fakeTrackr(machineId) {
+  const peers = [];
+  const server = net.createServer(peer => {
+    peers.push(peer);
+    peer.on("error", () => {});
+    peer.write(`${machineId}@heartBeat@0001@;`);
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const stamp = () => {
+    const { date, time } = formatLocalClockCommands(new Date());
+    return `${date}_${time}`;
+  };
+  return {
+    address: `127.0.0.1:${server.address().port}`,
+    cross: (tag) => peers.at(-1).write(`${machineId}@epc@0002@${stamp()},${tag};`),
+    close: async () => { for (const p of peers) p.destroy(); await new Promise(resolve => server.close(resolve)); },
+  };
+}
+
+function session(config, cloudUrl) {
+  return new ReaderSession({
+    config: {
+      readerName: `Reader ${config.readerId}`,
+      hardware: "active_transponder",
+      activeTiming: { channel: 0, power: 100, loop1Enabled: true, loop2Enabled: true },
+      ...config,
+    },
+    cloudUrl, clubId: 7, connectorVersion: "test", queueFile: null,
+  });
+}
+
+test("two readers on one laptop each send their own crossings, and a test read is confirmed", async () => {
+  const cloud = await fakeCloud();
+  const finish = await fakeTrackr("finish-unit");
+  const halfway = await fakeTrackr("half-unit");
+  const a = session({ readerId: 1, readerToken: "finish-token", hardwareAddress: finish.address }, cloud.url);
+  const b = session({ readerId: 2, readerToken: "half-token", hardwareAddress: halfway.address }, cloud.url);
+  try {
+    a.start();
+    b.start();
+    await waitFor(() => a.getStatus().device.machineId === "finish-unit" && b.getStatus().device.machineId === "half-unit", 3_000);
+
+    await a.setTestMode(true);
+    finish.cross("ABC123");
+    await waitFor(() => a.getStatus().testProgress === "confirmed", 3_000);
+    assert.equal(a.getStatus().recentReads[0].tag, "ABC123");
+
+    halfway.cross("ABC123");
+    await waitFor(() => cloud.crossings.length === 2, 3_000);
+    assert.deepEqual(cloud.crossings.map(c => [c.token, c.rfidNumber]), [["finish-token", "ABC123"], ["half-token", "ABC123"]]);
+    await waitFor(() => cloud.statuses.some(s => typeof s.ready === "boolean"), 3_000);
+  } finally {
+    a.dispose();
+    b.dispose();
+    await finish.close();
+    await halfway.close();
+    await cloud.close();
+  }
+});
+
+test("identify marks the reader that saw the read", async () => {
+  const cloud = await fakeCloud();
+  const device = await fakeTrackr("unit-9");
+  const s = session({ readerId: 9, readerToken: "tok-9", hardwareAddress: device.address }, cloud.url);
+  try {
+    s.start();
+    await waitFor(() => s.getStatus().device.machineId === "unit-9", 3_000);
+    s.setIdentifying(true);
+    assert.equal(s.getStatus().identifiedAt, null);
+    device.cross("FEED01");
+    await waitFor(() => s.getStatus().identifiedAt !== null, 3_000);
+    s.setIdentifying(false);
+    assert.equal(s.getStatus().identifiedAt, null);
+  } finally {
+    s.dispose();
+    await device.close();
+    await cloud.close();
+  }
+});
+
+test("an unreachable RFID reader reports a plain-language reason and retries", async () => {
+  const cloud = await fakeCloud();
+  const s = session({ readerId: 5, readerToken: "tok-5", hardware: "generic", hardwareAddress: "127.0.0.1" }, cloud.url);
+  try {
+    s.start();
+    await waitFor(() => s.getStatus().state === "reconnecting", 5_000);
+    assert.match(s.getStatus().device.error ?? "", /refused the connection|No answer/);
+    assert.ok(s.getStatus().reconnectInSeconds > 0);
+  } finally {
+    s.dispose();
+    await cloud.close();
+  }
+});
+
+test("loop status counts 1 and words like working as running", () => {
+  for (const value of ["1", "true", "working", "Running", "open"]) assert.equal(isLoopWorking(value), true, value);
+  for (const value of ["0", "", "stopped", "closed"]) assert.equal(isLoopWorking(value), false, value);
 });

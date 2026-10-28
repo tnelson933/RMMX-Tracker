@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'" />
 <title>RM Connect</title>
 <style>
@@ -18,6 +19,7 @@
     --accent-hover: #cc1a1a;
     --focus: #ff5c5c;
     --green: #22c55e;
+    --amber: #f59e0b;
     --red: #ff6b6b;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -40,37 +42,63 @@
   }
   input:focus, select:focus { border-color: var(--focus); }
   input::placeholder { color: #6b6b6b; }
+  input[type=checkbox] { width: auto; }
   button {
-    margin-top: 10px; padding: 8px 16px; border: none; border-radius: 999px;
-    background: var(--accent); color: #fff; font-weight: 600; font-size: 13px; cursor: pointer;
+    padding: 7px 14px; border: none; border-radius: 999px;
+    background: var(--accent); color: #fff; font-weight: 600; font-size: 12px; cursor: pointer; white-space: nowrap;
   }
   button:hover:not(:disabled) { background: var(--accent-hover); }
   button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
   button.secondary:hover:not(:disabled) { background: #2e2e2e; }
+  button.link { background: none; border: none; color: var(--muted); padding: 2px 4px; font-weight: 500; text-decoration: underline; }
+  button.link:hover:not(:disabled) { background: none; color: var(--text); }
   button.danger { background: transparent; border: 1px solid var(--red); color: var(--red); }
   button.danger:hover:not(:disabled) { background: rgba(255, 107, 107, 0.1); }
   button:disabled { opacity: 0.5; cursor: default; }
-  .row { display: flex; gap: 8px; align-items: center; }
-  .row button { flex: 1; }
-  .status-line { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .grow { flex: 1; min-width: 0; }
+  .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .toolbar h2 { flex: 1; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
   .dot.on { background: var(--green); }
+  .dot.wait { background: var(--amber); }
   .dot.off { background: var(--red); }
-  .err { color: var(--red); font-size: 12px; margin-top: 8px; line-height: 1.4; }
+  .err { color: var(--red); font-size: 12px; margin-top: 6px; line-height: 1.4; }
   .err:empty { display: none; }
-  .err.info { color: var(--muted); }
+  .info { color: var(--muted); font-size: 12px; margin-top: 6px; line-height: 1.4; }
+  .info:empty { display: none; }
+  .ok { color: var(--green); }
   .hint { color: var(--muted); font-size: 11px; margin-top: 4px; line-height: 1.4; }
-  .ok-msg { color: var(--green); font-size: 12px; margin-top: 8px; }
   .muted { color: var(--muted); font-size: 11px; }
-  .hidden { display: none; }
-  .badge { background: var(--field); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-size: 11px; color: var(--muted); }
-  .switch { display: flex; align-items: center; justify-content: space-between; margin: 8px 0 0; color: var(--text); font-size: 13px; }
-   .checklist { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 7px; }
-   .check { display:flex; gap:7px; padding:4px 0; color:var(--muted); font-size:12px; }
-   .check b { color:var(--text); font-weight:500; }
-   .check .mark { color:var(--red); width:14px; }
-   .check.ready .mark { color:var(--green); }
+  .hidden { display: none !important; }
+  .badge { background: var(--field); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .mono { font-family: Consolas, "SF Mono", Menlo, monospace; }
+
+  .reader { transition: box-shadow 0.2s, border-color 0.2s; }
+  .reader.found { border-color: var(--green); box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.35); }
+  .reader-head { display: flex; align-items: center; gap: 8px; }
+  .reader-name { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .this-one { background: var(--green); color: #0b2a14; border-radius: 4px; padding: 1px 7px; font-size: 11px; font-weight: 700; }
+  .reader-line { color: var(--muted); font-size: 12px; margin-top: 5px; line-height: 1.4; }
+  .reader-actions { margin-top: 10px; }
+  .panel { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px; }
+  .test-msg { font-size: 14px; font-weight: 600; line-height: 1.4; }
+  .test-msg.ok { color: var(--green); }
+  .reads { margin-top: 8px; border: 1px solid var(--border); border-radius: 6px; max-height: 180px; overflow-y: auto; }
+  .reads:empty { display: none; }
+  .read { display: flex; gap: 10px; padding: 5px 8px; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .read:last-child { border-bottom: none; }
+  .read .tag { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  .read .meta { color: var(--muted); }
+
+  .banner { border: 1px solid var(--green); background: rgba(34, 197, 94, 0.08); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; display: flex; gap: 10px; align-items: center; line-height: 1.4; }
+  .device { border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-top: 8px; }
+  .device-title { font-weight: 600; }
+  .spinner { width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--text); border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; vertical-align: -2px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .empty { text-align: center; color: var(--muted); line-height: 1.5; padding: 18px 8px; }
+  .footer { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -78,108 +106,121 @@
     <img src="logo.png" alt="" />
     <div>
       <h1>RM Connect</h1>
-      <div class="sub">Bridges your timing hardware to RM Roost. Leave it running on race day.</div>
+      <div class="sub">Connects your timing readers to RM Roost. Leave it running on race day.</div>
     </div>
   </div>
 
-  <!-- STATUS -->
-  <div class="card" id="statusCard">
-     <h2>Active timing connection &amp; status</h2>
-    <div class="status-line"><span class="dot" id="dotCloud"></span><span id="txtCloud">Cloud: —</span></div>
-    <div class="status-line"><span class="dot" id="dotDevice"></span><span id="txtDevice">Hardware: —</span></div>
-    <div class="status-line"><span class="dot" id="dotMoto"></span><span id="txtMoto">Idle — waiting for a moto to start</span></div>
-    <div class="muted" id="txtReads"></div>
-     <div class="checklist" id="activeTimingChecklist">
-       <div class="check" id="checkTransport"><span class="mark">●</span><span><b>Network transport</b> — connect to the RM TrackR on TCP 55555</span></div>
-       <div class="check" id="checkMachine"><span class="mark">●</span><span><b>Machine &amp; heartbeat</b> — waiting for RM TrackR identification</span></div>
-       <div class="check" id="checkLoops"><span class="mark">●</span><span><b>Finish-gate loops 1 / 2</b> — idle until a moto, practice, or test starts</span></div>
-       <div class="check" id="checkCloud"><span class="mark">●</span><span><b>Cloud registration</b> — reader must be online in RM Roost</span></div>
-     </div>
-    <label class="switch" for="chkTest">
-      <span>Test mode <span class="muted">(forward reads without a live moto)</span></span>
-      <input type="checkbox" id="chkTest" style="width:auto" />
-    </label>
-    <div class="row">
-      <button id="btnDisconnect" class="secondary">Disconnect</button>
-      <button id="btnReconnect">Reconnect</button>
-    </div>
-      <div id="activeTimingManagedNotice" class="hidden muted" style="margin-top:10px; line-height:1.45;">
-        RM TrackR channel, power, loop, and clock settings are managed from Reader Setup in RM Roost and sync here automatically.
-      </div>
-      <button id="btnActiveTimingSettings" class="secondary hidden" style="width:100%">RM TrackR device settings…</button>
-    <div class="err" id="errStatus"></div>
-    <!-- Reader picker — shown when reader is missing or user clicks "Change reader" -->
-    <div id="readerPickerWrap" class="hidden" style="margin-top:10px; border-top:1px solid var(--border); padding-top:10px;">
-      <label style="display:block; color:var(--muted); font-size:11px; margin-bottom:4px;">Switch reader</label>
-      <div class="row" style="margin-top:0;">
-        <select id="selReaderStatus" style="flex:1;"></select>
-        <button id="btnSwitchReader" style="margin-top:0; flex:0 0 auto; padding:7px 12px;">Switch</button>
-        <button id="btnCancelSwitch" class="secondary" style="margin-top:0; flex:0 0 auto; padding:7px 10px;">✕</button>
-      </div>
-      <div class="muted" style="margin-top:6px; line-height:1.4;">
-        Need to add a reader first? Add it on <strong style="color:var(--text);">Reader Setup</strong> in RM Roost, then come back and pick it here.
-      </div>
-      <div class="err" id="errSwitch"></div>
-    </div>
-    <div style="margin-top:8px;">
-      <button id="btnChangeReader" class="secondary" style="margin-top:0; width:100%; font-size:11px; padding:5px 10px;">Change reader…</button>
-    </div>
-  </div>
-
-  <!-- LOGIN -->
-  <div class="card" id="loginCard">
+  <!-- SIGN IN -->
+  <div class="card hidden" id="loginCard">
     <h2>Sign in</h2>
-    <label for="inCloudUrl">RM Roost server</label>
-    <input id="inCloudUrl" type="url" placeholder="https://www.rmroost.com" spellcheck="false" />
-    <div class="hint">Leave this as is unless your club runs its own server.</div>
     <label for="inEmail">Organizer email</label>
     <input id="inEmail" type="email" placeholder="you@yourclub.com" autocomplete="username" />
     <label for="inPassword">Password</label>
     <input id="inPassword" type="password" autocomplete="current-password" />
-    <button id="btnLogin">Sign in</button>
+    <details style="margin-top:8px;">
+      <summary class="muted" style="cursor:pointer;">Server</summary>
+      <label for="inCloudUrl">RM Roost server</label>
+      <input id="inCloudUrl" type="url" placeholder="https://www.rmroost.com" spellcheck="false" />
+      <div class="hint">Leave this as is unless your club runs its own server.</div>
+    </details>
+    <div class="row" style="margin-top:12px;"><button id="btnLogin">Sign in</button></div>
     <div class="err" id="errLogin"></div>
   </div>
 
-  <!-- SETUP -->
-   <div class="card hidden" id="setupCard">
-     <h2 id="setupTitle">Hardware setup</h2>
-    <label>Reader registration <span class="muted">(create readers on Reader Setup in RM Roost)</span></label>
-    <select id="selReader"></select>
-    <label>Hardware type</label>
-    <select id="selHardware">
-      <option value="impinj">Impinj R700 (RFID)</option>
-      <option value="zebra">Zebra FX7500 / FX9600 (RFID)</option>
-      <option value="generic">Other LLRP reader (RFID)</option>
-      <option value="active_transponder">RM TrackR active timing</option>
-    </select>
-    <label id="lblAddress">Last 6 of reader MAC address</label>
-    <input id="inAddress" placeholder="e.g. 16-25-B2" />
-    <div class="hint" id="hintAddress">Printed on the reader label — we connect via impinj-XX-XX-XX.local</div>
-     <div class="checklist hidden" id="activeTimingSetupGuide">
-        <div class="check ready"><span class="mark">●</span><span><b>1. Register</b> — select the RM TrackR reader created in RM Roost.</span></div>
-        <div class="check"><span class="mark">●</span><span><b>2. Sync</b> — RM TrackR address and device settings come from Reader Setup in RM Roost.</span></div>
-        <div class="check"><span class="mark">●</span><span><b>3. Verify</b> — connect, then run an RM TrackR Transponder test through either loop.</span></div>
-     </div>
-     <div class="hidden" id="activeTimingControls">
-       <label>Active channel <span class="muted">(0–5)</span></label>
-       <select id="selActiveTimingChannel"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select>
-       <label>Active power <span class="muted">(0–100)</span></label>
-       <input id="inActiveTimingPower" type="number" min="0" max="100" value="100" />
-       <div class="switch"><span>Enable loop 1</span><input id="chkLoop1" type="checkbox" checked style="width:auto" /></div>
-       <div class="switch"><span>Enable loop 2</span><input id="chkLoop2" type="checkbox" checked style="width:auto" /></div>
-       <div class="row">
-         <button id="btnApplyActiveTiming" class="secondary" type="button">Apply settings</button>
-         <button id="btnSyncClock" class="secondary" type="button">Sync device clock</button>
-       </div>
-       <div class="err" id="errActiveTiming"></div>
-     </div>
-    <button id="btnConnect">Save &amp; Connect</button>
-    <div class="err" id="errSetup"></div>
+  <!-- MAIN -->
+  <div id="mainView" class="hidden">
+    <div class="toolbar">
+      <h2>Readers on this laptop</h2>
+      <button id="btnIdentify" class="secondary" title="Find out which reader is which">Identify</button>
+      <button id="btnFind">+ Find readers</button>
+    </div>
+
+    <div class="banner hidden" id="identifyBanner">
+      <div class="grow"><b>Identify is on.</b> Walk a transponder past a reader, or hold a tag near an antenna. The reader that sees it lights up below. No laps are recorded unless a moto is running.</div>
+      <button id="btnStopIdentify" class="secondary">Done</button>
+    </div>
+
+    <!-- FIND READERS -->
+    <div class="card hidden" id="findCard">
+      <div class="row">
+        <h2 class="grow" style="margin:0;">Find readers</h2>
+        <button id="btnCloseFind" class="link">Close</button>
+      </div>
+      <div class="info" id="findStatus"></div>
+      <div id="findResults"></div>
+      <label for="inManualAddress">Or enter the reader's address</label>
+      <div class="row">
+        <input id="inManualAddress" class="grow" placeholder="IP address, or the 6 characters after the MAC on an Impinj label" spellcheck="false" />
+        <button id="btnCheckAddress" class="secondary">Check</button>
+      </div>
+      <div class="err" id="errFind"></div>
+      <div class="hint">Plug the reader in and power it on, and connect this laptop to the same network (router or a direct cable). Then search again.</div>
+      <div class="row" style="margin-top:8px;"><button id="btnRescan" class="secondary">Search again</button></div>
+    </div>
+
+    <div id="readers"></div>
+
+    <div class="footer">
+      <span class="grow" id="txtAccount"></span>
+      <button id="btnLogout" class="link">Sign out</button>
+    </div>
   </div>
 
-  <div class="row">
-    <button id="btnLogout" class="danger hidden">Sign out &amp; reset</button>
-  </div>
+  <!-- Reader card template -->
+  <template id="tplReader">
+    <div class="card reader">
+      <div class="reader-head">
+        <span class="dot" data-f="dot"></span>
+        <span class="reader-name" data-f="name"></span>
+        <span class="badge" data-f="model"></span>
+        <span class="this-one hidden" data-f="thisOne">This one!</span>
+        <span class="grow"></span>
+        <button class="link" data-a="rename" title="Rename">Rename</button>
+      </div>
+      <div class="row hidden" data-f="renameRow" style="margin-top:8px;">
+        <input class="grow" data-f="renameInput" maxlength="60" />
+        <button data-a="saveName">Save</button>
+        <button class="secondary" data-a="cancelName">Cancel</button>
+      </div>
+      <div class="reader-line" data-f="status"></div>
+      <div class="reader-line" data-f="checks"></div>
+      <div class="reader-line" data-f="reads"></div>
+      <div class="err" data-f="problem"></div>
+      <div class="info" data-f="note"></div>
+      <div class="row reader-actions">
+        <button data-a="test">Test</button>
+        <button class="secondary" data-a="reconnect">Reconnect</button>
+        <button class="secondary hidden" data-a="settings">RM TrackR settings</button>
+        <span class="grow"></span>
+        <button class="link" data-a="remove">Remove</button>
+      </div>
+      <div class="err" data-f="actionErr"></div>
+
+      <div class="panel hidden" data-f="testPanel">
+        <div class="test-msg" data-f="testMsg"></div>
+        <div class="reads" data-f="readList"></div>
+        <div class="row" style="margin-top:8px;"><button class="secondary" data-a="endTest">Done testing</button></div>
+      </div>
+
+      <div class="panel hidden" data-f="settingsPanel">
+        <div class="hint" style="margin-top:0;">Usually set from Reader Setup in RM Roost. The defaults (channel 0, power 100, both loops) suit most tracks.</div>
+        <div class="row">
+          <div class="grow"><label>Channel (0–5)</label><input type="number" min="0" max="5" data-f="channel" /></div>
+          <div class="grow"><label>Power (0–100)</label><input type="number" min="0" max="100" data-f="power" /></div>
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <label class="row" style="margin:0; color:var(--text);"><input type="checkbox" data-f="loop1" /> Loop 1</label>
+          <label class="row" style="margin:0; color:var(--text);"><input type="checkbox" data-f="loop2" /> Loop 2</label>
+        </div>
+        <div class="hint">Both loops sit at the same timing line, so either one records the crossing.</div>
+        <div class="row" style="margin-top:8px;">
+          <button class="secondary" data-a="applySettings">Apply</button>
+          <button class="secondary" data-a="syncClock">Sync clock</button>
+        </div>
+        <div class="err" data-f="settingsErr"></div>
+      </div>
+    </div>
+  </template>
 
 <script src="settings.js"></script>
 </body>
