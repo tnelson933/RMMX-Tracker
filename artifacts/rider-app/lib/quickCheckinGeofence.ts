@@ -191,9 +191,13 @@ export async function syncArrivalWatch(events: GeofenceEvent[]): Promise<void> {
   if (running) return;
   const track = todays[0].trackName ?? "the track";
   await Location.startLocationUpdatesAsync(WATCH_TASK, {
-    accuracy: Location.Accuracy.Balanced,
-    distanceInterval: 200, // meters between updates: enough to catch a 1-mile circle, light on battery
-    timeInterval: 30_000,
+    // GPS: "balanced" uses Wi-Fi/cell positions, which Android stops updating
+    // with the screen off and which are poor at rural tracks. Runs only on
+    // race day until the rider arrives, so the battery cost is small.
+    accuracy: Location.Accuracy.High,
+    distanceInterval: 100, // meters between updates
+    timeInterval: 15_000,
+    deferredUpdatesInterval: 0, // deliver each update right away (no batching while locked)
     activityType: Location.ActivityType.AutomotiveNavigation,
     pausesUpdatesAutomatically: false,
     showsBackgroundLocationIndicator: true,
