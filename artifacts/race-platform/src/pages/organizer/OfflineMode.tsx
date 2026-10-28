@@ -22,7 +22,7 @@ function detectPlatform(): "windows" | "mac" | "other" {
 
 const STEPS = [
   { icon: RefreshCw, title: "Sync before you leave", body: "Sign in to the desktop app while you have internet. It copies your events, riders and registrations to the laptop." },
-  { icon: Radio, title: "Connect your reader at the track", body: "In Reader Setup, choose \"No, connect without internet\". The app finds your RFID reader or F2000 on the local network." },
+  { icon: Radio, title: "Connect your reader at the track", body: "In Reader Setup, choose \"No, connect without internet\". The app finds your RFID reader or RM TrackR on the local network." },
   { icon: CloudUpload, title: "Results upload automatically", body: "Run check-in, timing and results offline. Everything syncs to the cloud once the laptop is back online." },
 ];
 

@@ -323,7 +323,7 @@ function ProfileEditor({ rider }: { rider: RiderFull }) {
         <CardContent className="px-5 pb-5 grid grid-cols-2 gap-4">
           {field("#", "bibNumber", "e.g. 42")}
           {field("AMA Number", "amaNumber", "AMA membership #")}
-          {field("Active Timing Transponder #", "myLapsTransponderNumber", "e.g. 4012345")}
+          {field("RM TrackR Transponder #", "myLapsTransponderNumber", "e.g. 4012345")}
           <div className="col-span-2 space-y-1.5">
             <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sponsors</Label>
             {editing ? (

@@ -55,7 +55,7 @@ function renderStatus(st) {
   const hwName = st.hardware === "impinj" ? "Impinj R700"
     : st.hardware === "zebra" ? "Zebra reader"
     : st.hardware === "generic" ? "LLRP reader"
-    : "F2000 active timing";
+    : "RM TrackR active timing";
   const deviceDetail = st.device.detail ? " — " + st.device.detail : "";
   let stateLabel = {
     connecting: "connecting", reconnecting: "reconnecting" + (st.reconnect.secondsUntilAttempt !== null ? " (retry in " + st.reconnect.secondsUntilAttempt + "s)" : ""),
@@ -90,7 +90,7 @@ function renderStatus(st) {
       el.querySelector("span:last-child").replaceChildren(bold, document.createTextNode(" — " + detail));
     };
     setCheck("checkTransport", st.device.connected, "Network transport", (st.device.connected ? "connected" : "check IP, same network, and TCP 55555"));
-    setCheck("checkMachine", st.device.transportReady && st.device.heartbeatFresh, "Machine & heartbeat", (st.device.machineId ? st.device.machineId + (st.device.heartbeatFresh ? " reporting" : " heartbeat is stale") : "waiting for F2000 identification"));
+    setCheck("checkMachine", st.device.transportReady && st.device.heartbeatFresh, "Machine & heartbeat", (st.device.machineId ? st.device.machineId + (st.device.heartbeatFresh ? " reporting" : " heartbeat is stale") : "waiting for RM TrackR identification"));
     setCheck("checkLoops", st.device.ready, "Finish-gate loops 1 / 2", (st.device.loop1State || "pending") + " / " + (st.device.loop2State || "pending") + (st.device.ready ? " (same finish gate)" : " (not ready yet)"));
     setCheck("checkCloud", st.cloud.connected, "Cloud registration", (st.cloud.connected ? "connected" : "cloud disconnected; verify internet and reader registration"));
   }
@@ -212,12 +212,12 @@ $("selHardware").addEventListener("change", () => {
     $("inAddress").placeholder = "e.g. 192.168.1.50";
     $("hintAddress").textContent = "Find it in your router's device list — the reader must have LLRP enabled";
   } else {
-    $("lblAddress").textContent = "F2000 IP address (or IP:port)";
+    $("lblAddress").textContent = "RM TrackR IP address (or IP:port)";
     $("inAddress").placeholder = "e.g. 192.168.1.50 or 192.168.1.50:55555";
-    $("hintAddress").textContent = "Enter the F2000 network address. TCP port 55555 is used by default; enter IP:port only if your device uses a different port.";
+    $("hintAddress").textContent = "Enter the RM TrackR network address. TCP port 55555 is used by default; enter IP:port only if your device uses a different port.";
   }
   const isActiveTiming = hw === "active_transponder";
-  $("setupTitle").textContent = isActiveTiming ? "Guided F2000 active timing connection" : "RFID hardware setup";
+  $("setupTitle").textContent = isActiveTiming ? "Guided RM TrackR active timing connection" : "RFID hardware setup";
   $("activeTimingSetupGuide").classList.toggle("hidden", !isActiveTiming);
   $("activeTimingControls").classList.add("hidden");
 });

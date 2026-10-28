@@ -88,7 +88,7 @@ export function ActiveTransponderConnectionStatus({ className = "" }: { classNam
     <Link href="/rfid/setup" className={`inline-flex items-center gap-3 rounded-md border px-3 py-1.5 text-xs transition-colors hover:bg-muted/50 ${isConnected ? (hasError ? "border-amber-500/30 bg-amber-500/5 text-amber-700" : "border-green-500/30 bg-green-500/5 text-green-700") : "border-red-500/30 bg-red-500/5 text-red-700"} ${className}`}>
       <div className="flex items-center gap-1.5 font-medium">
         {isConnected ? <CheckCircle2 size={14} className={hasError ? "text-amber-500" : "text-green-500"} /> : <XCircle size={14} className="text-red-500" />}
-        <span>{isConnected ? "F2000" : "Active Timing Reader Disconnected"}</span>
+        <span>{isConnected ? "RM TrackR" : "Active Timing Reader Disconnected"}</span>
       </div>
 
       {isConnected && (

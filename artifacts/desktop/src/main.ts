@@ -1026,8 +1026,8 @@ function postCrossingToLocalServer(opts: {
           const noActiveMoto = res.statusCode === 404 || res.statusCode === 409;
           onFailure?.(
             noActiveMoto
-              ? "F2000 read a real crossing, but no active moto or practice is running. Start a moto/practice and try again."
-              : `F2000 read a real crossing, but the local timing server rejected it (HTTP ${res.statusCode}${rejection ? `: ${rejection}` : ""}).`,
+              ? "RM TrackR read a real crossing, but no active moto or practice is running. Start a moto/practice and try again."
+              : `RM TrackR read a real crossing, but the local timing server rejected it (HTTP ${res.statusCode}${rejection ? `: ${rejection}` : ""}).`,
           );
         });
       } else {
@@ -1043,7 +1043,7 @@ function postCrossingToLocalServer(opts: {
 
   req.on("error", (err) => {
     console.error(`[rfid] failed to post crossing: ${err.message}`);
-    onFailure?.(`F2000 read a real crossing, but it could not reach the local timing server: ${err.message}`);
+    onFailure?.(`RM TrackR read a real crossing, but it could not reach the local timing server: ${err.message}`);
   });
 
   req.write(body);

@@ -90,8 +90,8 @@
     <div class="status-line"><span class="dot" id="dotMoto"></span><span id="txtMoto">Idle — waiting for a moto to start</span></div>
     <div class="muted" id="txtReads"></div>
      <div class="checklist" id="activeTimingChecklist">
-       <div class="check" id="checkTransport"><span class="mark">●</span><span><b>Network transport</b> — connect to the F2000 on TCP 55555</span></div>
-       <div class="check" id="checkMachine"><span class="mark">●</span><span><b>Machine &amp; heartbeat</b> — waiting for F2000 identification</span></div>
+       <div class="check" id="checkTransport"><span class="mark">●</span><span><b>Network transport</b> — connect to the RM TrackR on TCP 55555</span></div>
+       <div class="check" id="checkMachine"><span class="mark">●</span><span><b>Machine &amp; heartbeat</b> — waiting for RM TrackR identification</span></div>
        <div class="check" id="checkLoops"><span class="mark">●</span><span><b>Finish-gate loops 1 / 2</b> — idle until a moto, practice, or test starts</span></div>
        <div class="check" id="checkCloud"><span class="mark">●</span><span><b>Cloud registration</b> — reader must be online in RM Roost</span></div>
      </div>
@@ -104,9 +104,9 @@
       <button id="btnReconnect">Reconnect</button>
     </div>
       <div id="activeTimingManagedNotice" class="hidden muted" style="margin-top:10px; line-height:1.45;">
-        F2000 channel, power, loop, and clock settings are managed from Reader Setup in RM Roost and sync here automatically.
+        RM TrackR channel, power, loop, and clock settings are managed from Reader Setup in RM Roost and sync here automatically.
       </div>
-      <button id="btnActiveTimingSettings" class="secondary hidden" style="width:100%">F2000 device settings…</button>
+      <button id="btnActiveTimingSettings" class="secondary hidden" style="width:100%">RM TrackR device settings…</button>
     <div class="err" id="errStatus"></div>
     <!-- Reader picker — shown when reader is missing or user clicks "Change reader" -->
     <div id="readerPickerWrap" class="hidden" style="margin-top:10px; border-top:1px solid var(--border); padding-top:10px;">
@@ -150,15 +150,15 @@
       <option value="impinj">Impinj R700 (RFID)</option>
       <option value="zebra">Zebra FX7500 / FX9600 (RFID)</option>
       <option value="generic">Other LLRP reader (RFID)</option>
-      <option value="active_transponder">F2000 active transponder</option>
+      <option value="active_transponder">RM TrackR active timing</option>
     </select>
     <label id="lblAddress">Last 6 of reader MAC address</label>
     <input id="inAddress" placeholder="e.g. 16-25-B2" />
     <div class="hint" id="hintAddress">Printed on the reader label — we connect via impinj-XX-XX-XX.local</div>
      <div class="checklist hidden" id="activeTimingSetupGuide">
-        <div class="check ready"><span class="mark">●</span><span><b>1. Register</b> — select the F2000 reader created in RM Roost.</span></div>
-        <div class="check"><span class="mark">●</span><span><b>2. Sync</b> — F2000 address and device settings come from Reader Setup in RM Roost.</span></div>
-        <div class="check"><span class="mark">●</span><span><b>3. Verify</b> — connect, then run a PowerTag test through either loop.</span></div>
+        <div class="check ready"><span class="mark">●</span><span><b>1. Register</b> — select the RM TrackR reader created in RM Roost.</span></div>
+        <div class="check"><span class="mark">●</span><span><b>2. Sync</b> — RM TrackR address and device settings come from Reader Setup in RM Roost.</span></div>
+        <div class="check"><span class="mark">●</span><span><b>3. Verify</b> — connect, then run an RM TrackR Transponder test through either loop.</span></div>
      </div>
      <div class="hidden" id="activeTimingControls">
        <label>Active channel <span class="muted">(0–5)</span></label>

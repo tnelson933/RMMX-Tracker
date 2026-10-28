@@ -147,7 +147,7 @@ function ActiveTransponderGuidedSetup({
       await (window as any).electronAPI.activeTransponder.connect(finalAddress);
       setActiveStatus(await (window as any).electronAPI.activeTransponder.getStatus());
     } catch (error) {
-      setConnectError(error instanceof Error ? error.message : "Could not connect to the F2000.");
+      setConnectError(error instanceof Error ? error.message : "Could not connect to the RM TrackR.");
     } finally {
       setConnecting(false);
     }
@@ -289,7 +289,7 @@ function ActiveTransponderGuidedSetup({
         <div className="px-5 py-4 bg-primary/5 border-b border-primary/10 flex items-center gap-3">
           <Activity className="text-primary shrink-0" size={24} />
           <div>
-            <h3 className="font-heading font-bold uppercase tracking-wider text-sm">F2000 Setup</h3>
+            <h3 className="font-heading font-bold uppercase tracking-wider text-sm">RM TrackR Setup</h3>
             <p className="text-xs text-muted-foreground mt-0.5">Guided pre-flight checklist for Active Timing Reader setup.</p>
           </div>
         </div>
@@ -302,7 +302,7 @@ function ActiveTransponderGuidedSetup({
               <div>
                 <p className="font-semibold text-sm">Network & Address</p>
                 <p className="text-xs text-muted-foreground">
-                  Connect this computer and the F2000 to the same network router (wired or wireless).
+                  Connect this computer and the RM TrackR to the same network router (wired or wireless).
                 </p>
               </div>
 
@@ -443,7 +443,7 @@ function ActiveTransponderGuidedSetup({
               <div>
                 <p className="font-semibold text-sm">Real Crossing Test</p>
                 <p className="text-xs text-muted-foreground">
-                  Put the system into test mode and walk a PowerTag across the loop.
+                  Put the system into test mode and walk an RM TrackR Transponder across the loop.
                   The test succeeds when the read count goes up.
                 </p>
               </div>
@@ -610,7 +610,7 @@ export default function ReaderSetup() {
   }
 
   async function handleAddReader() {
-    const name = newReaderName.trim() || (newReaderType === "active_transponder" ? "F2000 Reader" : "");
+    const name = newReaderName.trim() || (newReaderType === "active_transponder" ? "RM TrackR Reader" : "");
     if (!name || (newReaderType === "active_transponder" && !newReaderAddress.trim())) return;
     const hardwareAddress = newReaderAddress.trim() || undefined;
     try {
@@ -787,7 +787,7 @@ export default function ReaderSetup() {
       await (window as any).electronAPI.activeTransponder.connect(address);
       setActiveStatus(await (window as any).electronAPI.activeTransponder.getStatus());
     } catch (error) {
-      setActiveConnectError(error instanceof Error ? error.message : "Could not connect to the F2000.");
+      setActiveConnectError(error instanceof Error ? error.message : "Could not connect to the RM TrackR.");
     } finally {
       setActiveConnecting(false);
     }
@@ -981,7 +981,7 @@ export default function ReaderSetup() {
             <Timer size={22} className={tech === "active_transponder" ? "text-primary" : "text-muted-foreground"} />
             <div>
               <p className="font-semibold">Active Timing Reader</p>
-              <p className="text-xs text-muted-foreground mt-0.5">F2000 reader with PowerTag transponders.</p>
+              <p className="text-xs text-muted-foreground mt-0.5">RM TrackR reader with RM TrackR Transponders.</p>
             </div>
           </button>
         </div>
@@ -1050,7 +1050,7 @@ export default function ReaderSetup() {
           <div>
             <h2 className="font-heading font-bold uppercase tracking-tight text-lg">2. Register your {tech === "rfid" ? "RFID reader" : "Active Timing Reader"}</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Give this physical device a name and save its address. {tech === "rfid" ? "You will use its timing URL in the next step." : "RM Connect or the desktop app will use the F2000 address in the next step."}
+              Give this physical device a name and save its address. {tech === "rfid" ? "You will use its timing URL in the next step." : "RM Connect or the desktop app will use the RM TrackR address in the next step."}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -1087,7 +1087,7 @@ export default function ReaderSetup() {
               <Input
                 value={newReaderName}
                 onChange={e => setNewReaderName(e.target.value)}
-                placeholder={tech === "active_transponder" ? 'Optional name (defaults to "F2000 Reader")' : 'e.g. "Start Gate"'}
+                placeholder={tech === "active_transponder" ? 'Optional name (defaults to "RM TrackR Reader")' : 'e.g. "Start Gate"'}
                 className="h-9 flex-1 min-w-36"
                 onKeyDown={e => e.key === "Enter" && handleAddReader()}
               />
@@ -1097,14 +1097,14 @@ export default function ReaderSetup() {
               <Input
                 value={newReaderAddress}
                 onChange={e => setNewReaderAddress(e.target.value)}
-                placeholder={newReaderType === "active_transponder" ? "F2000 IP address (e.g. 192.168.1.50)" : "Last 6 of MAC (e.g. 3A:4B:5C)"}
+                placeholder={newReaderType === "active_transponder" ? "RM TrackR IP address (e.g. 192.168.1.50)" : "Last 6 of MAC (e.g. 3A:4B:5C)"}
                 className="h-9 flex-1 min-w-48 font-mono text-xs"
                 onKeyDown={e => e.key === "Enter" && handleAddReader()}
               />
             </div>
             {tech === "active_transponder" && (
               <p className="text-xs text-muted-foreground">
-                Enter the IP shown by the F2000. A port is optional; RM Connect uses port 55555 when only an IP is provided.
+                Enter the IP shown by the RM TrackR. A port is optional; RM Connect uses port 55555 when only an IP is provided.
               </p>
             )}
             <div className="flex gap-2">
@@ -1161,7 +1161,7 @@ export default function ReaderSetup() {
                                 value={editAddress}
                                 onChange={e => setEditAddress(e.target.value)}
                                 className="h-8 flex-1 font-mono text-xs"
-                                placeholder={reader.type === "active_transponder" ? "F2000 IP address" : "Last 6 of MAC (e.g. 3A:4B:5C)"}
+                                placeholder={reader.type === "active_transponder" ? "RM TrackR IP address" : "Last 6 of MAC (e.g. 3A:4B:5C)"}
                                 onKeyDown={e => {
                                   if (e.key === "Enter") handleSaveReader(reader.id);
                                   if (e.key === "Escape") setEditingId(null);
@@ -1270,7 +1270,7 @@ export default function ReaderSetup() {
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               RM Connect runs in the laptop's system tray at the track. It connects directly to your{" "}
-              {tech === "rfid" ? "RFID reader and streams tag reads" : "F2000 and streams PowerTag crossings"}{" "}
+              {tech === "rfid" ? "RFID reader and streams tag reads" : "RM TrackR and streams RM TrackR Transponder crossings"}{" "}
               to the cloud. Leave it running on race day; readers start and stop automatically with each moto.
               {tech === "active_transponder" && " Your saved IP address is used automatically—no channel, power, loop, or clock setup is needed for normal use."}
             </p>
@@ -1285,7 +1285,7 @@ export default function ReaderSetup() {
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold truncate">{c.readerName}</p>
                   <p className="text-xs text-muted-foreground">
-                    {c.hardware?.kind === "impinj" ? "Impinj R700" : c.hardware?.kind === "zebra" ? "Zebra reader" : c.hardware?.kind === "generic" ? "LLRP reader" : c.hardware?.kind === "active_transponder" ? "F2000" : "Hardware"}
+                    {c.hardware?.kind === "impinj" ? "Impinj R700" : c.hardware?.kind === "zebra" ? "Zebra reader" : c.hardware?.kind === "generic" ? "LLRP reader" : c.hardware?.kind === "active_transponder" ? "RM TrackR" : "Hardware"}
                     {" — "}
                     {c.hardware?.connected ? "connected" : (c.hardware?.detail || "not connected")}
                     {c.hardware?.readCount > 0 && ` · ${c.hardware.readCount} reads`}
@@ -1324,7 +1324,7 @@ export default function ReaderSetup() {
 
         <div className="space-y-2 text-sm">
           <div className="flex gap-2"><MiniStep n={1} /><p>Download and install RM Connect on the laptop you bring to the track.</p></div>
-          <div className="flex gap-2"><MiniStep n={2} /><p>Sign in with your organizer email, pick a reader registration from the list above, choose your hardware (Impinj R700, Zebra FX7500/FX9600, other LLRP reader, or F2000), and enter its address (Impinj: last 6 of the MAC on the label · Zebra/other/F2000: IP address).</p></div>
+          <div className="flex gap-2"><MiniStep n={2} /><p>Sign in with your organizer email, pick a reader registration from the list above, choose your hardware (Impinj R700, Zebra FX7500/FX9600, other LLRP reader, or RM TrackR), and enter its address (Impinj: last 6 of the MAC on the label · Zebra/other/RM TrackR: IP address).</p></div>
           <div className="flex gap-2"><MiniStep n={3} /><p>That's it — leave it running in the tray. When you press <strong>Start Moto</strong> here, the reader starts reading automatically.</p></div>
         </div>
 
@@ -1550,9 +1550,9 @@ export default function ReaderSetup() {
               <summary className="cursor-pointer list-none px-5 py-4 flex items-center gap-3 hover:bg-muted/30 transition-colors">
                 <Activity size={18} className="text-muted-foreground shrink-0" />
                 <div className="min-w-0">
-                  <p className="font-heading font-bold uppercase tracking-wider text-sm">Desktop-only F2000 diagnostic</p>
+                  <p className="font-heading font-bold uppercase tracking-wider text-sm">Desktop-only RM TrackR diagnostic</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Optional: connect directly, inspect loop status, or run a PowerTag crossing test.
+                    Optional: connect directly, inspect loop status, or run an RM TrackR Transponder crossing test.
                   </p>
                 </div>
               </summary>
@@ -1570,7 +1570,7 @@ export default function ReaderSetup() {
             <summary className="cursor-pointer list-none px-5 py-4 flex items-center gap-3 hover:bg-muted/30 transition-colors">
               <Settings size={18} className="text-muted-foreground shrink-0" />
               <div className="min-w-0">
-                <p className="font-heading font-bold uppercase tracking-wider text-sm">Advanced F2000 settings</p>
+                <p className="font-heading font-bold uppercase tracking-wider text-sm">Advanced RM TrackR settings</p>
                    <p className="text-xs text-muted-foreground mt-0.5">
                    Optional — the default channel, full power, and both finish-gate coverage loops work for most readers.
                 </p>
@@ -1579,7 +1579,7 @@ export default function ReaderSetup() {
             <div className="border-t p-5 space-y-4">
               {(readers as any[]).filter(reader => reader.type === "active_transponder").length === 0 ? (
                 <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                  Register an Active Timing Reader above before changing its F2000 settings.
+                  Register an Active Timing Reader above before changing its RM TrackR settings.
                 </div>
               ) : (
                 <>

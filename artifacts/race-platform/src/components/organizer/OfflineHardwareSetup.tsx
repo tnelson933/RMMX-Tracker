@@ -151,7 +151,7 @@ function OfflineHardwareSetup({ tech, api }: { tech: Tech; api: DesktopApi }) {
   useEffect(() => { refreshInfo(); }, []);
 
   const wantedKind: DeviceKind = tech;
-  const kindLabel = (kind: DeviceKind) => kind === "rfid" ? "RFID reader (LLRP)" : "F2000 active timing reader";
+  const kindLabel = (kind: DeviceKind) => kind === "rfid" ? "RFID reader (LLRP)" : "RM TrackR reader";
 
   async function runScan() {
     setScanning(true);
@@ -207,7 +207,7 @@ function OfflineHardwareSetup({ tech, api }: { tech: Tech; api: DesktopApi }) {
             {tech === "rfid" ? (
               <li>Impinj R700 and Zebra readers need Power over Ethernet: use a PoE switch or a PoE injector between the router and the reader.</li>
             ) : (
-              <li>On the F2000, open <strong className="text-foreground">Config → Network</strong> and choose TCP mode. Its IP is under <strong className="text-foreground">Config → About</strong>: the first three numbers must match this computer's address in step 2. If they don't, set a free fixed IP there that does (e.g. <code className="font-mono text-xs">192.168.1.200</code> on a 192.168.1.x router).</li>
+              <li>On the RM TrackR, open <strong className="text-foreground">Config → Network</strong> and choose TCP mode. Its IP is under <strong className="text-foreground">Config → About</strong>: the first three numbers must match this computer's address in step 2. If they don't, set a free fixed IP there that does (e.g. <code className="font-mono text-xs">192.168.1.200</code> on a 192.168.1.x router).</li>
             )}
             <li>Wait about a minute after power-up, then scan below.</li>
           </ul>
@@ -220,8 +220,8 @@ function OfflineHardwareSetup({ tech, api }: { tech: Tech; api: DesktopApi }) {
           </ul>
         ) : (
           <ul className="text-sm text-muted-foreground list-disc pl-5 space-y-1">
-            <li>Cable the F2000's Ethernet port straight to this computer.</li>
-            <li>On the F2000, open <strong className="text-foreground">Config → Network</strong>, choose TCP mode, and set a fixed IP: <code className="font-mono text-xs">192.168.1.200</code>, mask <code className="font-mono text-xs">255.255.255.0</code>.</li>
+            <li>Cable the RM TrackR's Ethernet port straight to this computer.</li>
+            <li>On the RM TrackR, open <strong className="text-foreground">Config → Network</strong>, choose TCP mode, and set a fixed IP: <code className="font-mono text-xs">192.168.1.200</code>, mask <code className="font-mono text-xs">255.255.255.0</code>.</li>
             <li>Give this computer's Ethernet adapter a fixed IP on the same network: <code className="font-mono text-xs">192.168.1.10</code>, mask <code className="font-mono text-xs">255.255.255.0</code>, no gateway.
               <span className="block text-xs mt-0.5">Windows: Settings → Network &amp; internet → Ethernet → IP assignment → Edit → Manual. Mac: System Settings → Network → Ethernet → Details → TCP/IP → Configure IPv4: Manually.</span>
             </li>
@@ -250,7 +250,7 @@ function OfflineHardwareSetup({ tech, api }: { tech: Tech; api: DesktopApi }) {
         <Button size="sm" variant="ghost" className="gap-1.5 -ml-2" onClick={refreshInfo}><RefreshCw size={13} /> Refresh</Button>
       </Step>
 
-      <Step n={3} title={`Find the ${tech === "rfid" ? "RFID reader" : "F2000"}`}>
+      <Step n={3} title={`Find the ${tech === "rfid" ? "RFID reader" : "RM TrackR"}`}>
         <div className="flex flex-wrap gap-2">
           <Button size="sm" className="gap-1.5" onClick={runScan} disabled={scanning}>
             {scanning ? <Loader2 size={14} className="animate-spin" /> : <Radar size={14} />}
@@ -397,7 +397,7 @@ function ActiveConnect({ api, address }: { api: DesktopApi; address: string }) {
         <Button size="sm" variant="outline" className="h-9" onClick={() => api.activeTransponder.disconnect()}>Disconnect</Button>
       ) : (
         <Button size="sm" className="h-9 gap-1.5" onClick={connect} disabled={busy || !address.trim()}>
-          {busy && <Loader2 size={14} className="animate-spin" />} Connect to {address.trim() || "F2000"}
+          {busy && <Loader2 size={14} className="animate-spin" />} Connect to {address.trim() || "RM TrackR"}
         </Button>
       )}
       {error && <p className="text-sm text-destructive">{error}</p>}
@@ -405,10 +405,10 @@ function ActiveConnect({ api, address }: { api: DesktopApi; address: string }) {
         <div className={`rounded-lg border p-3 text-sm space-y-1 ${status!.ready ? "bg-emerald-500/5 border-emerald-500/30" : "bg-amber-500/5 border-amber-500/30"}`}>
           <p className={`font-semibold flex items-center gap-1.5 ${status!.ready ? "text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400"}`}>
             {status!.ready ? <CheckCircle2 size={15} /> : <Loader2 size={15} className="animate-spin" />}
-            {status!.ready ? `F2000 ready at ${status!.deviceIp}` : `Connected to ${status!.deviceIp}, waiting for the loops to start`}
+            {status!.ready ? `RM TrackR ready at ${status!.deviceIp}` : `Connected to ${status!.deviceIp}, waiting for the loops to start`}
           </p>
           <p className="text-muted-foreground">{status!.diagnosis}</p>
-          <p>Pass a PowerTag through the loop: <strong>{status!.passingCount}</strong> passings so far. Use the F2000 diagnostic below for a full crossing test.</p>
+          <p>Pass an RM TrackR Transponder through the loop: <strong>{status!.passingCount}</strong> passings so far. Use the RM TrackR diagnostic below for a full crossing test.</p>
         </div>
       )}
     </div>

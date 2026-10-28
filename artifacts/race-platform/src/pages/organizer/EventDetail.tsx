@@ -973,7 +973,7 @@ export default function EventDetail() {
                             <div className="grid grid-cols-2 gap-2">
                               {[
                                 { value: "rfid", label: "RFID Stickers", desc: "Passive RFID tags" },
-                    { value: "active_transponder", label: "Active Timing Reader", desc: "F2000 active transponders" },
+                    { value: "active_transponder", label: "Active Timing Reader", desc: "RM TrackR Transponders" },
                               ].map(opt => (
                                 <button
                                   key={opt.value}

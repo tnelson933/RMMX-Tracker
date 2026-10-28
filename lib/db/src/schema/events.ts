@@ -8,7 +8,7 @@ export type PurchaseOption = { id: string; name: string; amount: number; categor
 
 /** The RM TrackR active timing transponder: a purchase option with a fixed id and price. */
 export const RM_TRACKR_OPTION_ID = "rm-trackr";
-export const RM_TRACKR_NAME = "RM TrackR";
+export const RM_TRACKR_NAME = "RM TrackR Transponder";
 export const RM_TRACKR_PRICE = 40;
 export type EnduroPenaltyConfig = {
   earlySecPerMin: number;

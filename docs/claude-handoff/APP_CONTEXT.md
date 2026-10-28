@@ -193,8 +193,11 @@ They are lessons from earlier debugging, not substitutes for inspecting current 
   server-side; stale browser event state must not reject an otherwise valid registration.
   Assignment must keep registration/rider identities and check-in display state aligned.
 - **Vendor-neutral naming:** active timing is intended for white-label distribution.
-  Use active transponder, active timing reader, F2000 or PowerTag where appropriate
-  in customer-facing work. Some legacy internal identifiers still exist.
+  It is white-labeled as **RM TrackR**: the reader (hardware model F2000) is the
+  "RM TrackR" and its transponders (PowerTags) are "RM TrackR Transponders".
+  Customer-facing text never says F2000 or PowerTag; code comments about the
+  device protocol still do. Some legacy internal identifiers (mylaps_*) remain.
+  MyLaps/AMB decoders are not supported.
 - **F2000 readiness:** TCP connection and heartbeats do not prove loops are running.
   Confirm enabled-loop telemetry, respect setup ordering, retry opening loops,
   and own/cancel retry timers correctly.

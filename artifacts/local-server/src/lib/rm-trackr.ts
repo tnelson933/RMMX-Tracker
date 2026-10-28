@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 
 /** Mirrors the cloud constants in lib/db/src/schema/events.ts. */
 export const RM_TRACKR_OPTION_ID = "rm-trackr";
-export const RM_TRACKR_NAME = "RM TrackR";
+export const RM_TRACKR_NAME = "RM TrackR Transponder";
 export const RM_TRACKR_PRICE = 40;
 
 /** True when a list of purchase options (ids or `{ id }` objects) includes the RM TrackR. */

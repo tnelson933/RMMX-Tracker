@@ -69,12 +69,12 @@ export interface ActiveTransponderStatus {
 
 function friendlyConnectionError(error: Error, host: string, port: number): string {
   const code = (error as NodeJS.ErrnoException).code;
-  if (code === "ECONNREFUSED") return `The F2000 at ${host}:${port} refused the connection. Confirm its IP address and that TCP port ${port} is enabled.`;
+  if (code === "ECONNREFUSED") return `The RM TrackR at ${host}:${port} refused the connection. Confirm its IP address and that TCP port ${port} is enabled.`;
   if (code === "ETIMEDOUT" || code === "EHOSTUNREACH" || code === "ENETUNREACH") {
-    return `Cannot reach the F2000 at ${host}:${port}. Check that this computer and reader are on the same network and TCP port ${port} is reachable.`;
+    return `Cannot reach the RM TrackR at ${host}:${port}. Check that this computer and reader are on the same network and TCP port ${port} is reachable.`;
   }
-  if (code === "ENOTFOUND") return `The F2000 address "${host}" was not found. Check the IP address or hostname.`;
-  return error.message || `Unable to connect to F2000 at ${host}:${port}.`;
+  if (code === "ENOTFOUND") return `The RM TrackR address "${host}" was not found. Check the IP address or hostname.`;
+  return error.message || `Unable to connect to RM TrackR at ${host}:${port}.`;
 }
 
 function parseAddress(address: string): { host: string; port: number } {
@@ -177,21 +177,21 @@ export class ActiveTransponderClient extends EventEmitter {
       .join(", ");
     const detail = this.machineId
       ? `${this.machineId}${this.activeSystemState ? ` · ${this.activeSystemState}` : ""}${machineSummary ? ` · ${machineSummary}` : ""}`
-      : connected ? "Connected — waiting for F2000 machine identification" : null;
+      : connected ? "Connected — waiting for RM TrackR machine identification" : null;
     const heartbeatError = connected && heartbeatAge !== null && !heartbeatFresh
-      ? "F2000 heartbeat stopped — check the reader and network connection."
+      ? "RM TrackR heartbeat stopped — check the reader and network connection."
       : null;
     const diagnosis = this.lastError ?? heartbeatError ?? (!connected
-      ? "Connect the F2000 on the same network using its IP address and TCP port 55555."
+      ? "Connect the RM TrackR on the same network using its IP address and TCP port 55555."
       : !this.machineId
-        ? "Transport is connected. Waiting for the F2000 machine identification and heartbeat."
+        ? "Transport is connected. Waiting for the RM TrackR machine identification and heartbeat."
         : !heartbeatFresh
-          ? "Waiting for a fresh F2000 heartbeat."
+          ? "Waiting for a fresh RM TrackR heartbeat."
           : this.desiredReading && !readersWorking
-            ? `Opening enabled loops; waiting for F2000 telemetry to confirm they are running.${this.readerOpenRetryCount
+            ? `Opening enabled loops; waiting for RM TrackR telemetry to confirm they are running.${this.readerOpenRetryCount
               ? ` Retry ${this.readerOpenRetryCount} was last sent ${this.lastReaderOpenRetryAt ?? "recently"}.`
               : " The open command has been sent and will be retried if needed."}`
-            : "F2000 transport, heartbeat, and machine identification are ready.");
+            : "RM TrackR transport, heartbeat, and machine identification are ready.");
     return {
       connected, host: this.host, port: this.port, machineId: this.machineId,
       error: this.lastError ?? heartbeatError, lastPassingAt: this.lastPassingAt,
@@ -206,8 +206,8 @@ export class ActiveTransponderClient extends EventEmitter {
   }
 
   configure(input: { channel: number; power: number; loop1Enabled: boolean; loop2Enabled: boolean }): void {
-    if (!Number.isInteger(input.channel) || input.channel < 0 || input.channel > 5) throw new Error("F2000 active channel must be between 0 and 5.");
-    if (!Number.isInteger(input.power) || input.power < 0 || input.power > 100) throw new Error("F2000 active power must be between 0 and 100.");
+    if (!Number.isInteger(input.channel) || input.channel < 0 || input.channel > 5) throw new Error("RM TrackR active channel must be between 0 and 5.");
+    if (!Number.isInteger(input.power) || input.power < 0 || input.power > 100) throw new Error("RM TrackR active power must be between 0 and 100.");
     this.channel = input.channel;
     this.power = input.power;
     this.loopEnabled = [input.loop1Enabled, input.loop2Enabled];
@@ -219,7 +219,7 @@ export class ActiveTransponderClient extends EventEmitter {
   }
 
   syncClock(): void {
-    if (!this.machineId) throw new Error("F2000 is not identified yet. Connect it before syncing its clock.");
+    if (!this.machineId) throw new Error("RM TrackR is not identified yet. Connect it before syncing its clock.");
     this.sendClockCommands();
     this.emit("status");
   }
@@ -228,7 +228,7 @@ export class ActiveTransponderClient extends EventEmitter {
     this.disconnect();
     const socketEpoch = ++this.socketEpoch;
     const { host, port } = parseAddress(address);
-    if (!host) return Promise.reject(new Error("Enter an F2000 IP address or hostname."));
+    if (!host) return Promise.reject(new Error("Enter an RM TrackR IP address or hostname."));
     this.intentionalClose = false;
     this.lastError = null;
     this.host = host;
@@ -263,7 +263,7 @@ export class ActiveTransponderClient extends EventEmitter {
         resolve();
       });
       socket.once("timeout", () => {
-        const error = new Error(`Cannot reach the F2000 at ${host}:${port}. Check the IP address, same network, and TCP port ${port}.`);
+        const error = new Error(`Cannot reach the RM TrackR at ${host}:${port}. Check the IP address, same network, and TCP port ${port}.`);
         fail(error);
         socket.destroy();
       });
@@ -275,7 +275,7 @@ export class ActiveTransponderClient extends EventEmitter {
         if (this.socket !== socket) return;
         this.clearReaderOpenRetry();
         this.socket = null;
-        if (!this.intentionalClose && settled) this.emit("disconnected", this.lastError ?? "F2000 connection closed");
+        if (!this.intentionalClose && settled) this.emit("disconnected", this.lastError ?? "RM TrackR connection closed");
         this.emit("status");
       });
     });
@@ -471,7 +471,7 @@ export class ActiveTransponderClient extends EventEmitter {
     try {
       this.socket.write(`${this.machineId}@${command}@${sequence}@${parameters};`);
     } catch (error) {
-      this.lastError = error instanceof Error ? error.message : "Unable to send command to F2000";
+      this.lastError = error instanceof Error ? error.message : "Unable to send command to RM TrackR";
     }
   }
 }

@@ -38,14 +38,14 @@ export default function RfidManagement() {
 
   const assignMutation = useAssignRfid();
 
-  const transponderLabel = isActiveTransponder ? "Active Timing Transponder #" : isRfid ? "RFID Tag #" : "Transponder #";
+  const transponderLabel = isActiveTransponder ? "RM TrackR Transponder #" : isRfid ? "RFID Tag #" : "Transponder #";
   const assignLabel = isActiveTransponder ? "Assign Transponder" : isRfid ? "Assign RFID Tag" : "Assign Transponder";
-  const assignDialogTitle = isActiveTransponder ? "Assign Active Timing Transponder" : isRfid ? "Assign RFID Tag" : "Assign Transponder";
+  const assignDialogTitle = isActiveTransponder ? "Assign RM TrackR Transponder" : isRfid ? "Assign RFID Tag" : "Assign Transponder";
   const scanLabel = isActiveTransponder ? "Enter Transponder Number" : isRfid ? "Scan or Enter Tag Number" : "Enter Tag / Transponder Number";
   const placeholder = isActiveTransponder ? "e.g. 12345" : isRfid ? "e.g. 1A2B3C4D" : "e.g. 1A2B3C4D or 12345";
   const emptyLabel = isActiveTransponder ? "No transponders assigned yet" : isRfid ? "No RFID tags assigned yet" : "No transponders assigned yet";
   const successLabel = isActiveTransponder ? "Transponder assigned successfully" : isRfid ? "RFID tag assigned successfully" : "Transponder assigned successfully";
-  const pageTitle = isActiveTransponder ? "Active Timing Transponder Management" : isRfid ? "RFID Management" : "Transponder Management";
+  const pageTitle = isActiveTransponder ? "RM TrackR Transponder Management" : isRfid ? "RFID Management" : "Transponder Management";
   const pageDesc = isActiveTransponder ? "Track and assign active transponder numbers to riders." : isRfid ? "Track and assign RFID tags to riders." : "Track and assign timing transponders to riders.";
 
   const handleAssign = () => {

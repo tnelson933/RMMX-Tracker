@@ -296,7 +296,7 @@ async function forwardCrossing(
   try {
     if (testMode) {
       testProgress = "sending_crossing";
-      testMessage = "PowerTag received. Sending the crossing to RM Roost…";
+      testMessage = "RM TrackR Transponder received. Sending the crossing to RM Roost…";
       pushStatusToWindow();
     }
     const result = await sendQueuedCrossing(crossing);
@@ -306,19 +306,19 @@ async function forwardCrossing(
     if (testMode) {
       if (result.ok) {
         testProgress = "confirmed";
-        testMessage = result.message ?? "PowerTag crossing received and confirmed by RM Roost.";
+        testMessage = result.message ?? "RM TrackR Transponder crossing received and confirmed by RM Roost.";
         testMode = false;
         if (!activeMoto && isLlrpHardware()) await llrp.stopReading().catch(() => {});
       } else {
         testProgress = "unresolved";
-        testMessage = result.message ?? "PowerTag was read, but RM Roost could not confirm the crossing. Check cloud connection and reader registration.";
+        testMessage = result.message ?? "RM TrackR Transponder was read, but RM Roost could not confirm the crossing. Check cloud connection and reader registration.";
       }
       pushStatusToWindow();
     }
   } catch {
     if (testMode) {
       testProgress = "unresolved";
-      testMessage = "PowerTag was read, but the crossing could not reach RM Roost. Check the cloud connection.";
+      testMessage = "RM TrackR Transponder was read, but the crossing could not reach RM Roost. Check the cloud connection.";
       pushStatusToWindow();
       return;
     }
@@ -336,7 +336,7 @@ llrp.on("tag", (read) => {
 activeTransponder.on("tag", (tag: string, crossingTime: Date, receipt: ActiveTimingReceiptMetadata) => {
   if (testMode) {
     testProgress = "sending_crossing";
-    testMessage = "PowerTag received from active timing. Confirming the cloud crossing…";
+    testMessage = "RM TrackR Transponder received from active timing. Confirming the cloud crossing…";
   }
   forwardCrossing("active_transponder", tag, crossingTime, undefined, receipt).catch(() => {});
   pushStatusToWindow();
@@ -357,7 +357,7 @@ function resolveHardwareHost(): string {
     }
     return addr;
   }
-  return addr; // zebra/generic: hostname or IP · F2000: hostname/IP[:port]
+  return addr; // zebra/generic: hostname or IP · RM TrackR: hostname/IP[:port]
 }
 
 function applyActiveTimingSettings(): void {
@@ -454,9 +454,9 @@ activeTransponder.on("status", () => {
   if (testMode && testProgress === "opening_loops") {
     if (status.ready) {
       testProgress = "waiting_for_tag";
-      testMessage = "Both enabled F2000 loops are running. Pass a PowerTag over either loop.";
+      testMessage = "Both enabled RM TrackR loops are running. Pass an RM TrackR Transponder over either loop.";
     } else if (status.transportReady) {
-      testMessage = "F2000 is identified. Waiting for it to confirm the enabled loops are running; RM Connect is retrying the open command.";
+      testMessage = "RM TrackR is identified. Waiting for it to confirm the enabled loops are running; RM Connect is retrying the open command.";
     }
   }
   pushStatusToWindow();
@@ -635,7 +635,7 @@ function registerIpc(): void {
 
   ipcMain.handle("hardware:configure", async (_e, input: { channel: number; power: number; loop1Enabled: boolean; loop2Enabled: boolean; syncClock?: boolean }) => {
     try {
-      if (settings.hardware !== "active_transponder") throw new Error("Active timing settings are only available for an F2000 reader.");
+      if (settings.hardware !== "active_transponder") throw new Error("Active timing settings are only available for an RM TrackR reader.");
       if (!Number.isInteger(input.channel) || input.channel < 0 || input.channel > 5) throw new Error("Channel must be a whole number from 0 to 5.");
       if (!Number.isInteger(input.power) || input.power < 0 || input.power > 100) throw new Error("Power must be a whole number from 0 to 100.");
       settings = { ...settings, activeTimingChannel: input.channel, activeTimingPower: input.power, activeTimingLoop1Enabled: !!input.loop1Enabled, activeTimingLoop2Enabled: !!input.loop2Enabled };
@@ -653,7 +653,7 @@ function registerIpc(): void {
     testMode = !!enabled;
     testProgress = testMode ? (settings.hardware === "active_transponder" ? "opening_loops" : "waiting_for_tag") : "inactive";
     testMessage = testMode ? (settings.hardware === "active_transponder"
-      ? "Opening F2000 loops 1 and 2. Waiting for a real PowerTag crossing…"
+      ? "Opening RM TrackR loops 1 and 2. Waiting for a real RM TrackR Transponder crossing…"
       : "Waiting for a real tag read…") : null;
     try {
       if (isLlrpHardware()) {
@@ -668,7 +668,7 @@ function registerIpc(): void {
         activeTransponder.startReading();
         if (testMode && activeTransponder.getStatus().ready) {
           testProgress = "waiting_for_tag";
-          testMessage = "Both enabled F2000 loops are running. Pass a PowerTag over either loop.";
+          testMessage = "Both enabled RM TrackR loops are running. Pass an RM TrackR Transponder over either loop.";
         }
       }
       pushStatusToWindow();

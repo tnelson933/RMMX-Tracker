@@ -1363,7 +1363,7 @@ export default function Register() {
 
                 {event.timingTechnology === "active_transponder" && (
                   <Card>
-                    <SectionHeader>Active Timing Transponder</SectionHeader>
+                    <SectionHeader>RM TrackR Transponder</SectionHeader>
                     <CardContent className="p-6 space-y-4">
                       {/* Own transponder number */}
                       <FormField
@@ -1371,7 +1371,7 @@ export default function Register() {
                         name="myLapsTransponderNumber"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Active Timing Transponder Number</FormLabel>
+                            <FormLabel>RM TrackR Transponder Number</FormLabel>
                             <FormControl>
                               <Input
                                 {...field}
@@ -1504,7 +1504,7 @@ export default function Register() {
                                   </label>
                                   {opt.id === RM_TRACKR_OPTION_ID && (
                                     <p className="text-xs text-muted-foreground pt-1">
-                                      Your own active timing transponder to keep. Pick it up at check-in.
+                                      Your own RM TrackR Transponder to keep. Pick it up at check-in.
                                     </p>
                                   )}
                                 </div>

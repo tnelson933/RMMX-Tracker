@@ -921,7 +921,7 @@ export default function RiderDetail() {
                           <FormItem><FormLabel>AMA #</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
                         )} />
                         <FormField control={form.control} name="mylapsTransponderId" render={({ field }) => (
-                          <FormItem><FormLabel>Active Timing Transponder #</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+                          <FormItem><FormLabel>RM TrackR Transponder #</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
                         )} />
                       </div>
                       <div className="mt-4">
@@ -1001,7 +1001,7 @@ export default function RiderDetail() {
                       <InfoRow label="Bike Year" value={(r as any).bikeYear} />
                       <InfoRow label="Default Bib #" value={rider.bibNumber} />
                       <InfoRow label="AMA #" value={r.amaNumber} />
-                      <InfoRow label="Active Timing Transponder #" value={r.mylapsTransponderId} />
+                      <InfoRow label="RM TrackR Transponder #" value={r.mylapsTransponderId} />
                       <InfoRow label="Club ID #" value={(rider as any).clubIdNumber} />
                     </div>
                     {r.sponsors && (
@@ -1127,7 +1127,7 @@ export default function RiderDetail() {
             <CardHeader className={`${r.mylapsTransponderId ? "bg-primary/5" : "bg-muted/30"} border-b pb-4`}>
               <CardTitle className="font-heading uppercase text-xl flex items-center gap-2">
                 <Radio className={r.mylapsTransponderId ? "text-primary" : "text-muted-foreground"} size={20} />
-                Active Timing Transponder
+                RM TrackR Transponder
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6">
@@ -1182,7 +1182,7 @@ export default function RiderDetail() {
           {r.mylapsTransponderId && (
             <Card>
               <CardContent className="p-5 space-y-1">
-                <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Active Timing Transponder</div>
+                <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest">RM TrackR Transponder</div>
                 <div className="font-mono text-lg font-bold">{r.mylapsTransponderId}</div>
               </CardContent>
             </Card>

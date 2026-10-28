@@ -10,12 +10,12 @@
   - Event tabs: Overview, Registrations, Check-In, Schedule, Race Day Management, Enter Results, Report, Cancellations, Transponder Rentals
   - Schedule: Add Moto/Add Practice, minimum lap time, time + laps, staggered starts, Generate Lineups, supercross Advance to Main, enduro tests/time checks/penalties
   - Race Day Management: start/finish, End Current & Start, live leaderboard, crossing feed, Record Lap, Restart Moto, Print, moving riders between heats
-  - Timing: RFID and Active Timing Reader (F2000), RM Connect (Impinj/Zebra/LLRP/F2000), loop readiness, RM TrackR sales, rentals
+  - Timing: RFID and Active Timing Reader (RM TrackR), RM Connect (Impinj/Zebra/LLRP/RM TrackR), loop readiness, RM TrackR Transponder sales, rentals
   - Check-In: filters, bibs, tag assignment, waiver signing, add-on sales (cash/card/QR), Quick Check-In
   - Registrations: + Add Registration with payment, edit, class change, void, Export Excel
   - Cancellations, Transponder Rentals, Discount Codes (club and event), Enter Results/publish, Report
   - Series linking, Points Scoring Tables + AI, Auto DNF, Push Notifications, Practice, Race Day Display, Live Broadcast, Payments (Stripe Connect money flow)
-  - Reader Setup (RFID tools, F2000 settings, Registered Readers, Identify, troubleshooting)
+  - Reader Setup (RFID tools, RM TrackR settings, Registered Readers, Identify, troubleshooting)
   - Offline Mode page + desktop app, connecting hardware without internet
   - Dashboard, Riders, Admin (classes, brands, Track Library, acknowledgement, waiver), Staff (invites, page access), new club invites, widgets
   - Rider App basics (what riders see)
@@ -96,7 +96,7 @@ Main fields:
 
 **Classes:** in Edit, click Club Classes chips (or **Select All**) or **+ Add Class**, then set each class's Max Riders, Series, and details.
 
-**Purchase Options:** **+ Add Purchase Option** (name, price, optional discount category) for gate fees, pit passes, camping, etc. **Add RM TrackR ($40)** adds the RM TrackR transponder sale (see Timing Systems).
+**Purchase Options:** **+ Add Purchase Option** (name, price, optional discount category) for gate fees, pit passes, camping, etc. **Add RM TrackR Transponder ($40)** adds the RM TrackR transponder sale (see Timing Systems).
 
 **Registration Link:** the Overview tab has a card with the public registration link and a copy button. Riders can only register while the status is Registration Open.
 
@@ -250,7 +250,7 @@ Practice motos use a **countdown timer** instead of lap counting. When started, 
 RM Roost supports two timing technologies. Select the mode for an event in the event's Overview tab (Edit → Timing Technology field). In Reader Setup they are labelled **RFID** and **Active Timing Reader**.
 
 - **RFID** — sticker tags read by an Impinj (R700), Zebra (FX7500, FX9600), or other LLRP-compatible UHF RFID reader. Riders are assigned RFID tag numbers (alphanumeric, 1–32 chars) on the Check-In tab.
-- **Active Timing Reader** — an F2000 reader with PowerTag active transponders. Each rider needs an active transponder number (numeric, 1–9 digits), assigned on the Check-In tab or entered at registration. The F2000 always connects over the network on TCP port 55555.
+- **Active Timing Reader** — an RM TrackR reader with RM TrackR Transponders. RM TrackR is RM Roost's own active timing system. Each rider needs an RM TrackR Transponder number (up to 9 numbers or letters A–F), assigned on the Check-In tab or entered at registration. The RM TrackR always connects over the network on TCP port 55555.
 
 There are three ways to get reads from the hardware into RM Roost:
 1. **RM Connect** (recommended when the track has internet) — a small tray app on the track laptop that connects to the reader and streams crossings to the cloud.
@@ -259,25 +259,25 @@ There are three ways to get reads from the hardware into RM Roost:
 
 ### RM Connect (recommended hardware bridge)
 **RM Connect** runs in the laptop's system tray at the track and bridges timing hardware to the cloud.
-- **Hardware options:** Impinj R700 (enter the last 6 characters of the MAC address on the reader's label), Zebra FX7500 / FX9600 (IP address), Other LLRP reader (IP address), and F2000 active timing reader (IP address).
+- **Hardware options:** Impinj R700 (enter the last 6 characters of the MAC address on the reader's label), Zebra FX7500 / FX9600 (IP address), Other LLRP reader (IP address), and RM TrackR reader (IP address).
 - **Download:** Reader Setup page → RM Connect card → **Mac (Apple Silicon)**, **Mac (Intel)** or **Windows**.
-- **Setup:** first register the reader on Reader Setup (Registered Readers → Add Reader). Then open RM Connect → sign in with the organizer email and password (the "RM Roost server" field is pre-filled) → pick the registered reader from the list → choose the hardware type and enter its address. For an F2000, the address and device settings (channel, power, loops) sync from Reader Setup. Leave the app running in the tray.
+- **Setup:** first register the reader on Reader Setup (Registered Readers → Add Reader). Then open RM Connect → sign in with the organizer email and password (the "RM Roost server" field is pre-filled) → pick the registered reader from the list → choose the hardware type and enter its address. For an RM TrackR, the address and device settings (channel, power, loops) sync from Reader Setup. Leave the app running in the tray.
 - **RFID readers must have LLRP turned on:** Impinj — in the reader's web page set **RFID interface** to **LLRP** and reboot. Zebra — confirm the operating mode is **LLRP** (the factory default). Other readers — LLRP on TCP 5084. A reader accepts only one LLRP connection at a time, so only one program (RM Connect or the desktop app) can be connected to it.
-- **In the tray app:** a checklist shows Network transport, Machine & heartbeat, Finish-gate loops 1 / 2 (F2000), and Cloud registration. **Test mode** forwards reads without a live moto so you can check tags. **Disconnect / Reconnect** and **Change reader…** switch hardware.
+- **In the tray app:** a checklist shows Network transport, Machine & heartbeat, Finish-gate loops 1 / 2 (RM TrackR), and Cloud registration. **Test mode** forwards reads without a live moto so you can check tags. **Disconnect / Reconnect** and **Change reader…** switch hardware.
 - **Live status on the website:** Reader Setup shows an RM Connect status card with one row per reader: hardware type, connected or not, read count, antenna count, and an "App online" badge. "No RM Connect app is currently connected for your club" means the app isn't running or isn't signed in.
 - **Sessions start and stop automatically:** passive RFID reading follows the moto lifecycle. Through RM Connect, active timing stays armed so a missed cloud command can't lose a physical crossing; the server only accepts active crossings for a live moto, a running practice, or a hardware test.
 - Crossings stream to the cloud in real time and route to the active moto (or to enduro checkpoint assignments if the reader is assigned to one).
 
-### Active Timing Reader (F2000) readiness
-A TCP connection and heartbeat do **not** mean the F2000 is ready. It is ready only after its enabled loops report they are working. "Opening enabled loops; waiting for F2000 telemetry…" means RM Roost is still opening the loops and retries automatically. In the desktop app the loops stay closed until a moto, practice, or loop test starts.
+### Active Timing Reader (RM TrackR) readiness
+A TCP connection and heartbeat do **not** mean the RM TrackR is ready. It is ready only after its enabled loops report they are working. "Opening enabled loops; waiting for RM TrackR telemetry…" means RM Roost is still opening the loops and retries automatically. In the desktop app the loops stay closed until a moto, practice, or loop test starts.
 
 The header of the organizer portal shows an active timing chip: "Active Timing Reader Disconnected", or the reader with its crossing count, battery, and L1/L2 loop status (a loop is struck through when it isn't working). Click it to open Reader Setup.
 
-### Transponder rentals and RM TrackR sales
+### Transponder rentals and RM TrackR Transponder sales
 - Transponder rental: if enabled in the event settings, riders can rent a transponder at registration; a rental fee is added to their total
-- RM TrackR sales: riders can buy their own RM TrackR transponder for a standard $40.
-  - In the event's Purchase Options, click **Add RM TrackR ($40)**. Its name and price are fixed.
-  - Riders who buy one at registration show an amber **RM TrackR Purchased — Assign** flag on the Check-In tab. Assigning the transponder number marks it fulfilled and clears the flag.
+- RM TrackR Transponder sales: riders can buy their own RM TrackR Transponder for a standard $40.
+  - In the event's Purchase Options, click **Add RM TrackR Transponder ($40)**. Its name and price are fixed.
+  - Riders who buy one at registration show an amber **RM TrackR Transponder Purchased — Assign** flag on the Check-In tab. Assigning the transponder number marks it fulfilled and clears the flag.
   - On Check-In, **+ Sell RM TrackR** appears for riders without a transponder (active timing events, online only). Staff can collect cash or take a card. For a card, staff either type the card on their own device (Stripe checkout) or the rider scans the QR code to pay on their phone. The window closes by itself once payment goes through.
 
 ---
@@ -300,7 +300,7 @@ Cards show **Waiver Signed** or **No Waiver**. If the event requires the e-signe
 - **+ Purchase RFID** (the event's RFID sticker fee) and **+ Add Transponder Rental** (if rentals are on).
 - **+ Sell RM TrackR** for active timing riders without a transponder (online only).
 - Each offers **Collect Cash** or **Pay with Card** — staff type the card on their own device (Stripe checkout), or the rider scans a QR code to pay on their phone. The window closes by itself once payment goes through.
-- Riders who bought an RM TrackR online show an amber **RM TrackR Purchased — Assign** flag until the transponder number is assigned.
+- Riders who bought an RM TrackR Transponder online show an amber **RM TrackR Transponder Purchased — Assign** flag until the transponder number is assigned.
 
 ### Checking in without internet
 In the RM Roost desktop app, check-in works offline and syncs to the cloud when the laptop is back online (the badge shows **Not Synced** until then). On the website, check-in needs an internet connection.
@@ -614,9 +614,9 @@ A club-wide list of every RFID tag or active transponder assigned to riders, at 
 - **USB / Serial Reader** (desktop app only, RFID only) — for an RFID reader plugged into the laptop by USB or serial port. Click **Open Serial Port Settings** (also in the desktop menu as **Serial / RFID Settings…**).
 
 ### Active Timing Reader tools on Reader Setup
-- Register the F2000 under Registered Readers with its **IP address** (required; the name defaults to "F2000 Reader").
-- **Advanced F2000 settings** (optional — the defaults of channel 0, power 100 and both loops on work for most readers): pick the reader, set **Active channel (0–5)** and **Active power (0–100)**, tick the loops, then **Save & send to RM Connect**. **Sync reader clock** sets the F2000's clock (it must be connected and have reported its machine ID first). If RM Connect is offline: "Saved. RM Connect will receive these settings as soon as it reconnects."
-- **Desktop-only F2000 diagnostic** (desktop app): connect directly, see the machine ID, last heartbeat, power/battery, Loop 1 / Loop 2 status and read count, then run **Start System Test** and walk a PowerTag over the loop. "Test Successful" means a real crossing was read.
+- Register the RM TrackR under Registered Readers with its **IP address** (required; the name defaults to "RM TrackR Reader").
+- **Advanced RM TrackR settings** (optional — the defaults of channel 0, power 100 and both loops on work for most readers): pick the reader, set **Active channel (0–5)** and **Active power (0–100)**, tick the loops, then **Save & send to RM Connect**. **Sync reader clock** sets the RM TrackR's clock (it must be connected and have reported its machine ID first). If RM Connect is offline: "Saved. RM Connect will receive these settings as soon as it reconnects."
+- **Desktop-only RM TrackR diagnostic** (desktop app): connect directly, see the machine ID, last heartbeat, power/battery, Loop 1 / Loop 2 status and read count, then run **Start System Test** and walk an RM TrackR Transponder over the loop. "Test Successful" means a real crossing was read.
 
 ### Registered Readers (reader-aware timing)
 
@@ -642,13 +642,13 @@ Register every physical reader so its reads are tied to your club and, for endur
 
 ### Troubleshooting timing hardware
 - **RM Connect says "Reader disconnected" (RFID)** → LLRP is off on the reader, or another program is already connected to it. Turn on LLRP (see RM Connect above), close the other program, and try the IP address if the `.local` hostname doesn't resolve.
-- **"The F2000 at … refused the connection"** → wrong IP, or the F2000 isn't in TCP mode on port 55555. On the F2000: **Config → Network** (TCP mode) and check its IP under **Config → About**.
-- **"Cannot reach the F2000…" / connection timed out** → the laptop and reader aren't on the same network, or the reader is off. "address … was not found" → the IP or hostname is wrong.
-- **"F2000 heartbeat stopped"** → the reader lost power or network; check cables, battery, and Wi-Fi.
-- **Connected but "waiting for the loops" / not ready** → wait for the loops to report working; RM Roost retries automatically. Check that the loops are enabled in Advanced F2000 settings.
+- **"The RM TrackR at … refused the connection"** → wrong IP, or the RM TrackR isn't in TCP mode on port 55555. On the RM TrackR: **Config → Network** (TCP mode) and check its IP under **Config → About**.
+- **"Cannot reach the RM TrackR…" / connection timed out** → the laptop and reader aren't on the same network, or the reader is off. "address … was not found" → the IP or hostname is wrong.
+- **"RM TrackR heartbeat stopped"** → the reader lost power or network; check cables, battery, and Wi-Fi.
+- **Connected but "waiting for the loops" / not ready** → wait for the loops to report working; RM Roost retries automatically. Check that the loops are enabled in Advanced RM TrackR settings.
 - **Reads arrive but nothing is timed / "No moto in progress for this club"** → start a moto or practice first (Race Day Management tab or Practice page). To check tags without a moto, use RM Connect's **Test mode**, the **Test** button, or the Live Tag Scanner.
 - **Crossings rejected after rotating a reader's URL** → reprogram the reader with the new URL and re-select the reader in RM Connect.
-- **Sync reader clock fails** → connect the F2000 and wait for its machine ID first.
+- **Sync reader clock fails** → connect the RM TrackR and wait for its machine ID first.
 
 ---
 
@@ -672,11 +672,11 @@ A Windows/Mac app that runs the full race-day system on the laptop (a local race
 ### Connecting timing hardware without internet (desktop app)
 In the desktop app's Reader Setup, choose **"No, connect without internet"** under "Will the track have internet?". The reader and the laptop only need to share a local network; no internet is involved. The setup has four steps:
 1. **Put the reader and this computer on one network**
-   - **Router or switch (recommended):** any home or travel router works without internet and gives every device an address. Plug the reader into a LAN port; connect the laptop by cable or the router's Wi-Fi. Impinj and Zebra readers need Power over Ethernet (a PoE switch or PoE injector). For an F2000, set **Config → Network** to TCP mode; its IP is under **Config → About** and its first three numbers must match the laptop's address (set a free fixed IP such as 192.168.1.200 on a 192.168.1.x router if not).
-   - **Direct cable (no router):** RFID readers — leave both on automatic addressing; with no router each picks a 169.254.x.x address after about a minute, so connect by hostname: Impinj `impinj-xx-xx-xx.local` (last 6 MAC characters), Zebra model + last 6 MAC characters, e.g. `FX9600A1B2C3.local`. Zebra doesn't guarantee a direct-cable connection, so use a router if it doesn't answer. F2000 — give it a fixed IP (192.168.1.200, mask 255.255.255.0) and give the laptop's Ethernet adapter a fixed IP on the same network (192.168.1.10, mask 255.255.255.0, no gateway). Windows: Settings → Network & internet → Ethernet → IP assignment → Edit → Manual. Mac: System Settings → Network → Ethernet → Details → TCP/IP → Configure IPv4: Manually. Set it back to automatic after the race.
+   - **Router or switch (recommended):** any home or travel router works without internet and gives every device an address. Plug the reader into a LAN port; connect the laptop by cable or the router's Wi-Fi. Impinj and Zebra readers need Power over Ethernet (a PoE switch or PoE injector). For an RM TrackR, set **Config → Network** to TCP mode; its IP is under **Config → About** and its first three numbers must match the laptop's address (set a free fixed IP such as 192.168.1.200 on a 192.168.1.x router if not).
+   - **Direct cable (no router):** RFID readers — leave both on automatic addressing; with no router each picks a 169.254.x.x address after about a minute, so connect by hostname: Impinj `impinj-xx-xx-xx.local` (last 6 MAC characters), Zebra model + last 6 MAC characters, e.g. `FX9600A1B2C3.local`. Zebra doesn't guarantee a direct-cable connection, so use a router if it doesn't answer. RM TrackR — give it a fixed IP (192.168.1.200, mask 255.255.255.0) and give the laptop's Ethernet adapter a fixed IP on the same network (192.168.1.10, mask 255.255.255.0, no gateway). Windows: Settings → Network & internet → Ethernet → IP assignment → Edit → Manual. Mac: System Settings → Network → Ethernet → Details → TCP/IP → Configure IPv4: Manually. Set it back to automatic after the race.
 2. **Check this computer's network** — lists the laptop's network connections and addresses, and whether it has internet (not needed).
-3. **Find the reader** — **Scan this network** checks the laptop's local network for F2000 readers (TCP 55555) and LLRP RFID readers (TCP 5084) and lists what it finds with a **Use** button. 169.254 (direct cable) networks are too large to scan — type the hostname or IP and click **Check** instead.
-4. **Connect and test** — RFID: pick Impinj, Zebra, or Other LLRP reader → **Connect**, then hold a tag near an antenna and watch the read count rise. F2000: **Connect**, wait for "F2000 ready", and pass a PowerTag through the loop. Close RM Connect first if it's open — a reader accepts only one connection. Reads are timed whenever a moto or practice is running.
+3. **Find the reader** — **Scan this network** checks the laptop's local network for RM TrackR readers (TCP 55555) and LLRP RFID readers (TCP 5084) and lists what it finds with a **Use** button. 169.254 (direct cable) networks are too large to scan — type the hostname or IP and click **Check** instead.
+4. **Connect and test** — RFID: pick Impinj, Zebra, or Other LLRP reader → **Connect**, then hold a tag near an antenna and watch the read count rise. RM TrackR: **Connect**, wait for "RM TrackR ready", and pass an RM TrackR Transponder through the loop. Close RM Connect first if it's open — a reader accepts only one connection. Reads are timed whenever a moto or practice is running.
 
 ### Sync from an offline export (older method)
 Organizers who used the older standalone offline server package can still upload its `.db` or `.zip` export at `/offline/sync` to push those results to the cloud. New setups should use the desktop app.
@@ -697,7 +697,7 @@ Organizers who used the older standalone offline server package can still upload
 - Search by name, bib, phone, or email.
 - **Export** → **Export CSV**, **Export Excel**, or **Export PDF**.
 - **Add Rider** to create a rider manually.
-- Click a rider for their page: **Edit Profile**, **Assign RFID Sticker**, active timing transponder, rider-locked **Discount Codes** (**Generate Code**, copy, revoke), **Recent Results**, and **Waiver History**.
+- Click a rider for their page: **Edit Profile**, **Assign RFID Sticker**, RM TrackR Transponder, rider-locked **Discount Codes** (**Generate Code**, copy, revoke), **Recent Results**, and **Waiver History**.
 
 ---
 

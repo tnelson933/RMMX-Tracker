@@ -1199,7 +1199,7 @@ export default function RiderDetailScreen() {
 
             {/* Active Timing transponder */}
             <View style={s.fieldRow}>
-              <Text style={s.fieldLabel}>Active Timing Transponder #</Text>
+              <Text style={s.fieldLabel}>RM TrackR Transponder #</Text>
               {editing && form ? (
                 <TextInput
                   style={s.fieldInput}

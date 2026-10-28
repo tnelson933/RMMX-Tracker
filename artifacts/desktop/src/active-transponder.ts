@@ -78,19 +78,19 @@ const DEFAULT_CONFIGURATION: ActiveTransponderConfiguration = {
 
 export function normalizeActiveTransponderAddress(address: string): { host: string; port: number; address: string } {
   const value = address.trim();
-  if (!value) throw new Error("Enter an F2000 IP address or hostname.");
+  if (!value) throw new Error("Enter an RM TrackR IP address or hostname.");
   // Bracketed IPv6 is accepted; unbracketed IPv6 uses the default port.
   const bracketed = /^\[([^\]]+)\](?::(.+))?$/.exec(value);
   const colon = value.lastIndexOf(":");
   const hasSingleColonPort = colon > 0 && value.indexOf(":") === colon;
   const host = bracketed ? bracketed[1] : hasSingleColonPort ? value.slice(0, colon) : value;
   const portText = bracketed ? bracketed[2] : hasSingleColonPort ? value.slice(colon + 1) : undefined;
-  if (!host) throw new Error("Enter an F2000 IP address or hostname.");
+  if (!host) throw new Error("Enter an RM TrackR IP address or hostname.");
   if (portText !== undefined) {
-    if (!/^\d+$/.test(portText)) throw new Error("F2000 port must be a number between 1 and 65535.");
+    if (!/^\d+$/.test(portText)) throw new Error("RM TrackR port must be a number between 1 and 65535.");
     const port = Number(portText);
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
-      throw new Error("F2000 port must be between 1 and 65535.");
+      throw new Error("RM TrackR port must be between 1 and 65535.");
     }
     return { host, port, address: host.includes(":") ? `[${host}]:${port}` : `${host}:${port}` };
   }
@@ -244,7 +244,7 @@ export function configureActiveTransponder(config: ActiveTransponderConfiguratio
 /** Synchronizes the F2000's local clock using separate V3.2 date/time commands. */
 export function syncActiveTransponderClock(): void {
   if (!socket || socket.destroyed || !machineId) {
-    throw new Error("Connect to the F2000 and wait for its machine ID before syncing its clock.");
+    throw new Error("Connect to the RM TrackR and wait for its machine ID before syncing its clock.");
   }
   sendClockCommands();
   notifyStatus();
@@ -252,7 +252,7 @@ export function syncActiveTransponderClock(): void {
 
 /** Opens both loops for a hardware test. A crossing is only reported when the F2000 actually sends one. */
 export function startActiveTransponderTest(): void {
-  if (!desiredConnected) throw new Error("Connect to the F2000 before starting a loop test.");
+  if (!desiredConnected) throw new Error("Connect to the RM TrackR before starting a loop test.");
   testActive = true;
   connectError = null;
   syncReaders();
@@ -301,7 +301,7 @@ function createConnection(host: string, port: number, epoch: number, reportIniti
     });
     connection.once("timeout", () => {
       if (!isCurrent()) return;
-      const error = new Error(`Connection to ${host}:${port} timed out. Check the F2000 address, power, Ethernet/Wi-Fi network, and port ${port}.`);
+      const error = new Error(`Connection to ${host}:${port} timed out. Check the RM TrackR address, power, Ethernet/Wi-Fi network, and port ${port}.`);
       connectError = error.message;
       connection.destroy();
       notifyStatus();
@@ -314,7 +314,7 @@ function createConnection(host: string, port: number, epoch: number, reportIniti
     });
     connection.on("error", (error) => {
       if (!isCurrent()) return;
-      connectError = `F2000 network error at ${host}:${port}: ${error.message}`;
+      connectError = `RM TrackR network error at ${host}:${port}: ${error.message}`;
       notifyStatus();
       if (!connected) failInitial(new Error(connectError));
     });
@@ -323,7 +323,7 @@ function createConnection(host: string, port: number, epoch: number, reportIniti
       if (connectingSocket === connection) connectingSocket = null;
       if (!isCurrent()) { if (!connected) failInitial(new Error("Connection attempt cancelled.")); return; }
       clearHeartbeatWatch();
-      if (!intentionallyDisconnectedSockets.has(connection) && !connectError) connectError = "F2000 disconnected unexpectedly. Reconnecting…";
+      if (!intentionallyDisconnectedSockets.has(connection) && !connectError) connectError = "RM TrackR disconnected unexpectedly. Reconnecting…";
       clearDeviceSessionState();
       notifyStatus();
       if (!connected) failInitial(new Error(connectError ?? "Connection closed before it could be established."));
@@ -354,7 +354,7 @@ function armHeartbeatWatch(): void {
   clearHeartbeatWatch();
   heartbeatTimer = setTimeout(() => {
     if (socket && !socket.destroyed && !lastHeartbeatAt) {
-      connectError = `No F2000 heartbeat was received within ${HEARTBEAT_TIMEOUT_MS / 1000} seconds. Check the selected address and device network.`;
+      connectError = `No RM TrackR heartbeat was received within ${HEARTBEAT_TIMEOUT_MS / 1000} seconds. Check the selected address and device network.`;
       notifyStatus();
     }
   }, HEARTBEAT_TIMEOUT_MS);
@@ -393,7 +393,7 @@ function processPacket(packet: string, onPassing: ActiveTransponderPassingCallba
   if (command === "epc") processEpc(parameters, onPassing, receivedAt);
   else if (command === "heartBeat") {
     lastHeartbeatAt = new Date().toISOString();
-    if (connectError?.startsWith("No F2000 heartbeat")) connectError = null;
+    if (connectError?.startsWith("No RM TrackR heartbeat")) connectError = null;
     armHeartbeatWatch();
   }
   else if (command === "machineState") processMachineState(parameters);
@@ -503,13 +503,13 @@ function applyConfiguration(): void {
 }
 function validateConfiguration(config: ActiveTransponderConfiguration): void {
   if (!Number.isInteger(config.activeChannel) || config.activeChannel < 0 || config.activeChannel > 5) {
-    throw new Error("F2000 active channel must be an integer from 0 to 5.");
+    throw new Error("RM TrackR active channel must be an integer from 0 to 5.");
   }
   if (!Number.isInteger(config.activePower) || config.activePower < 0 || config.activePower > 100) {
-    throw new Error("F2000 active power must be an integer from 0 to 100.");
+    throw new Error("RM TrackR active power must be an integer from 0 to 100.");
   }
   if (!Array.isArray(config.loopEnabled) || config.loopEnabled.length !== 2 || config.loopEnabled.some((value) => typeof value !== "boolean")) {
-    throw new Error("F2000 loop settings must specify enabled/disabled values for loops 1 and 2.");
+    throw new Error("RM TrackR loop settings must specify enabled/disabled values for loops 1 and 2.");
   }
 }
 function isWorking(value: string | null): boolean {
@@ -530,15 +530,15 @@ function getState(connected: boolean): ActiveTransponderConnectionState {
   return connected ? "connected_idle" : "connecting";
 }
 function getDiagnosis(state: ActiveTransponderConnectionState): string {
-  if (state === "disconnected") return "Disconnected. Enter the F2000 address (port 55555 is used when no port is supplied).";
-  if (state === "connecting") return "Connecting to the F2000. Waiting for its first heartbeat to identify the machine.";
-  if (state === "reconnecting") return `F2000 connection dropped; retry ${reconnectAttempt} is scheduled. Reader intent will resume after reconnecting.`;
-  if (state === "error") return connectError ?? "F2000 requires attention. Check its address, network, and heartbeat.";
-  if (!machineId) return "TCP connected; waiting for the F2000 heartbeat before loop settings can be applied.";
-  if (!configApplied) return "F2000 is not ready: applying saved loop, channel, and power settings.";
-  if (readersShouldBeOpen() && !areEnabledLoopsTelemetryReady()) return "F2000 is not ready: enabled loops were opened and are waiting for reader telemetry confirmation.";
-  if (state === "testing") return lastPassingAt ? "Both loops are open for testing; a real F2000 crossing was observed." : "Both loops are open for testing. Pass a tagged transponder over a loop to verify it.";
-  if (state === "race_active") return "Local moto/practice reader state is active; both F2000 loops are open.";
+  if (state === "disconnected") return "Disconnected. Enter the RM TrackR address (port 55555 is used when no port is supplied).";
+  if (state === "connecting") return "Connecting to the RM TrackR. Waiting for its first heartbeat to identify the machine.";
+  if (state === "reconnecting") return `RM TrackR connection dropped; retry ${reconnectAttempt} is scheduled. Reader intent will resume after reconnecting.`;
+  if (state === "error") return connectError ?? "RM TrackR requires attention. Check its address, network, and heartbeat.";
+  if (!machineId) return "TCP connected; waiting for the RM TrackR heartbeat before loop settings can be applied.";
+  if (!configApplied) return "RM TrackR is not ready: applying saved loop, channel, and power settings.";
+  if (readersShouldBeOpen() && !areEnabledLoopsTelemetryReady()) return "RM TrackR is not ready: enabled loops were opened and are waiting for reader telemetry confirmation.";
+  if (state === "testing") return lastPassingAt ? "Both loops are open for testing; a real RM TrackR crossing was observed." : "Both loops are open for testing. Pass a tagged transponder over a loop to verify it.";
+  if (state === "race_active") return "Local moto/practice reader state is active; both RM TrackR loops are open.";
   return "Connected and idle; loops are closed until a moto, practice, or loop test starts.";
 }
 function notifyStatus(): void { statusCallback?.(getActiveTransponderStatus()); }
