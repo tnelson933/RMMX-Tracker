@@ -1,6 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ActivityIndicator, AppState, Linking, Pressable, Text, View } from "react-native";
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
@@ -10,7 +11,9 @@ import {
   distanceMiles,
   enableArrivalAlerts,
   notifyArrival,
+  requestAlwaysLocation,
   syncArrivalGeofences,
+  syncArrivalWatch,
   type ArrivalAlertStatus,
   type GeofenceEvent,
 } from "@/lib/quickCheckinGeofence";
@@ -22,6 +25,7 @@ import {
 type Row = {
   eventId: number;
   eventName: string;
+  eventDate: string;
   trackName: string | null;
   trackLat: number | null;
   trackLng: number | null;
@@ -37,9 +41,11 @@ const REASONS: Record<string, string> = {
   missing_rfid: "RFID sticker not assigned. See the organizer at the gate.",
   missing_transponder: "No transponder number on file. See the organizer at the gate.",
   missing_waiver: "Waiver not signed. Sign it at the gate.",
+  payment_required: "Payment not complete. Pay at the gate.",
 };
 
 const REFRESH_MS = 60_000;
+const ALWAYS_DISMISSED_KEY = "quickCheckin.alwaysPromptDismissed";
 
 // A fresh fix first: a cached one can be from miles back down the road. Fall
 // back to a recent cached position if GPS doesn't answer in time.
@@ -63,6 +69,10 @@ export function QuickCheckinCard() {
   const [busy, setBusy] = useState<number | "all" | null>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const announced = useRef(new Set<number>());
+  const [alwaysDismissed, setAlwaysDismissed] = useState(true);
+  useEffect(() => {
+    AsyncStorage.getItem(ALWAYS_DISMISSED_KEY).then(v => setAlwaysDismissed(v === "1")).catch(() => setAlwaysDismissed(false));
+  }, []);
 
   const refresh = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -77,6 +87,15 @@ export function QuickCheckinCard() {
       setUpcoming(fences.events);
       await syncArrivalGeofences(fences.events).catch(() => {});
       setAlertStatus(await arrivalAlertStatus());
+
+      // Keep watching for arrival (works with "while using" while the app is
+      // open or in the background) at tracks with a check-in still to do.
+      const watch = new Map<number, GeofenceEvent>();
+      for (const r of today) {
+        if (r.trackLat == null || r.trackLng == null || !r.eligible || r.checkedIn) continue;
+        watch.set(r.eventId, { eventId: r.eventId, eventName: r.eventName, eventDate: r.eventDate, trackName: r.trackName, trackLat: r.trackLat, trackLng: r.trackLng });
+      }
+      await syncArrivalWatch([...watch.values()]).catch(() => {});
 
       if (today.length > 0) {
         const perm = await Location.getForegroundPermissionsAsync();
@@ -158,15 +177,26 @@ export function QuickCheckinCard() {
   async function turnOnAlerts() {
     const status = await enableArrivalAlerts();
     setAlertStatus(status);
-    if (status === "on") await syncArrivalGeofences(upcoming).catch(() => {});
-    if (status !== "off") {
-      const perm = await Location.getForegroundPermissionsAsync();
-      setLocationAllowed(perm.granted);
-    }
+    const perm = await Location.getForegroundPermissionsAsync();
+    setLocationAllowed(perm.granted);
     void refresh();
   }
 
-  const showAlertsPrompt = upcoming.length > 0 && (alertStatus === "off" || alertStatus === "needs-always");
+  async function allowAlways() {
+    let status = await requestAlwaysLocation();
+    // Android 11+ and iOS often only offer "all the time" in Settings.
+    if (status === "while-using") await Linking.openSettings();
+    status = await arrivalAlertStatus();
+    setAlertStatus(status);
+    if (status === "always") await syncArrivalGeofences(upcoming).catch(() => {});
+  }
+
+  async function dismissAlways() {
+    setAlwaysDismissed(true);
+    await AsyncStorage.setItem(ALWAYS_DISMISSED_KEY, "1").catch(() => {});
+  }
+
+  const showAlertsPrompt = upcoming.length > 0 && (alertStatus === "off" || (alertStatus === "while-using" && !alwaysDismissed));
   if (events.length === 0 && !showAlertsPrompt) return null;
 
   const card = { marginHorizontal: 16, marginBottom: 16, borderRadius: 14, padding: 16, borderWidth: 1, gap: 10 } as const;
@@ -258,20 +288,32 @@ export function QuickCheckinCard() {
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <Feather name="bell" size={18} color={colors.primary} />
             <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
-              Get a check-in alert when you arrive
+              {alertStatus === "off" ? "Get a check-in alert when you arrive" : "Arrival alerts are on"}
             </Text>
           </View>
-          <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
-            {upcoming[0].eventName} has Quick Check-In. Allow location "all the time" and we'll notify you within {QUICK_CHECKIN_RADIUS_MILES} mile of {upcoming[0].trackName ?? "the track"} on race day, even when the app is closed.
-          </Text>
-          {alertStatus === "needs-always" ? (
-            <Pressable onPress={async () => { if ((await enableArrivalAlerts()) === "needs-always") void Linking.openSettings(); else void turnOnAlerts(); }} style={button(true)}>
-              <Text style={{ color: "#fff", fontWeight: "700", fontFamily: "Inter_700Bold" }}>Open Settings → Location → Always</Text>
-            </Pressable>
+          {alertStatus === "off" ? (
+            <>
+              <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+                {upcoming[0].eventName} has Quick Check-In. Allow notifications and location while using RM Roost and we'll alert you within {QUICK_CHECKIN_RADIUS_MILES} mile of {upcoming[0].trackName ?? "the track"} on race day, even with your phone locked, while the app is open in the background.
+              </Text>
+              <Pressable onPress={turnOnAlerts} style={button(true)}>
+                <Text style={{ color: "#fff", fontWeight: "700", fontFamily: "Inter_700Bold" }}>Turn on arrival alerts</Text>
+              </Pressable>
+            </>
           ) : (
-            <Pressable onPress={turnOnAlerts} style={button(true)}>
-              <Text style={{ color: "#fff", fontWeight: "700", fontFamily: "Inter_700Bold" }}>Turn on arrival alerts</Text>
-            </Pressable>
+            <>
+              <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+                Keep RM Roost open on race day (the background is fine, phone locked) and we'll alert you when you arrive. To get the alert even after closing the app, allow location all the time.
+              </Text>
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <Pressable onPress={allowAlways} style={[button(true), { flex: 1 }]}>
+                  <Text style={{ color: "#fff", fontWeight: "700", fontFamily: "Inter_700Bold" }}>Allow all the time</Text>
+                </Pressable>
+                <Pressable onPress={dismissAlways} style={[button(false), { flex: 1, backgroundColor: "transparent", borderWidth: 1, borderColor: colors.border }]}>
+                  <Text style={{ color: colors.foreground, fontWeight: "700", fontFamily: "Inter_700Bold" }}>Not now</Text>
+                </Pressable>
+              </View>
+            </>
           )}
         </View>
       )}

@@ -1431,9 +1431,11 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   const purchaseOptionsTotal = purchaseOptsList.reduce((sum, o) => sum + Number(o.amount), 0);
   if (validatedCompCode) {
     // Comp discount applies to total entry fees (all classes)
+    // Codes discount entry fees only; add-ons (rentals, stickers, RM TrackR,
+    // purchase options) are always paid, so a large fixed code can't zero them.
     compDiscount = compDiscountType === "percentage"
       ? totalEntryFees * compDiscountRaw / 100
-      : compDiscountRaw;
+      : Math.min(compDiscountRaw, totalEntryFees);
   }
   const netFee = Math.max(0, totalEntryFees + rentalFeeNum + rfidStickerFeeNum + purchaseOptionsTotal - compDiscount);
   const needsPayment = !!events[0].paymentEnabled && netFee > 0;
@@ -1612,6 +1614,10 @@ router.post("/public/events/:eventId/register", async (req, res) => {
           });
         }
       }
+      // Payment is due but no Stripe Checkout page was created (club has no
+      // connected Stripe account, or Stripe returned no URL). Never fall
+      // through to a "registered" response: undo it like any payment failure.
+      throw Object.assign(new Error("No checkout session"), { code: "NO_CHECKOUT" });
     } catch (err: any) {
       req.log?.error({ err: err?.message }, "[checkout] Failed to create Stripe Checkout session");
       // Roll back ALL pending registrations so the rider can try again cleanly: free the
@@ -1623,6 +1629,9 @@ router.post("/public/events/:eventId/register", async (req, res) => {
       await db.delete(registrationsTable).where(inArray(registrationsTable.id, rolledBackIds));
       await releaseCompCodeUse();
       const isConnectError = err?.message?.toLowerCase().includes("no such destination") || err?.message?.toLowerCase().includes("no such account");
+      if (err?.code === "NO_CHECKOUT") {
+        return res.status(503).json({ error: "This event can't take online payments right now, so registration couldn't be completed. Please contact the event organizer." });
+      }
       return res.status(500).json({
         error: isConnectError
           ? "This club's Stripe payment account is not set up correctly. The organizer needs to reconnect their Stripe account in Settings → Payments."

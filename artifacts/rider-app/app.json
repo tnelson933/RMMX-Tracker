@@ -54,9 +54,9 @@
           "locationWhenInUsePermission": "RM Roost uses your location to show races near you and to confirm you're at the track for Quick Check-In.",
           "locationAlwaysAndWhenInUsePermission": "RM Roost uses your location in the background on race day to notify you when you arrive at the track, so you can check in from your phone and skip the line.",
           "locationAlwaysPermission": "RM Roost uses your location in the background on race day to notify you when you arrive at the track, so you can check in from your phone and skip the line.",
-          "isIosBackgroundLocationEnabled": false,
+          "isIosBackgroundLocationEnabled": true,
           "isAndroidBackgroundLocationEnabled": true,
-          "isAndroidForegroundServiceEnabled": false
+          "isAndroidForegroundServiceEnabled": true
         }
       ],
       [

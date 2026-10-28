@@ -102,7 +102,7 @@ async function notifyForEvent(event: EventRow): Promise<void> {
     .where(
       and(
         eq(registrationsTable.eventId, event.id),
-        ne(registrationsTable.status, "void"),
+        eq(registrationsTable.status, "confirmed"), // unpaid registrations check in at the gate
       ),
     );
   if (regs.length === 0) return;
@@ -146,7 +146,7 @@ async function notifyForEvent(event: EventRow): Promise<void> {
     if (!email) continue;
     if (checkedInSet.has(`${r.riderId}:${r.raceClass ?? "Unknown"}`)) continue;
     if (event.timingTechnology === "rfid" && !rfidSet.has(r.riderId)) continue;
-    if (event.requireTransponder && (event.timingTechnology === "active_transponder" || event.timingTechnology === "mylaps") && !r.myLapsTransponderNumber && !r.riderTransponder) continue;
+    if ((event.timingTechnology === "active_transponder" || event.timingTechnology === "mylaps") && !r.myLapsTransponderNumber && !r.riderTransponder) continue;
     if (event.requireWaiver && !event.requireLiabilityWaiver && !r.waiverAcknowledgedAt) continue;
     if (event.requireLiabilityWaiver && !waiverRiderIds.has(r.riderId)) continue;
     eligibleEmails.add(email);

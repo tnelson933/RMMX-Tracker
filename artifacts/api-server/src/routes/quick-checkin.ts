@@ -189,14 +189,21 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
     let eligible = true;
     let ineligibleReason: string | null = null;
 
+    // Unpaid online registrations (checkout not completed) pay at the gate.
+    if (r.regStatus !== "confirmed") {
+      eligible = false;
+      ineligibleReason = "payment_required";
+    }
+
     // RFID events: must have an RFID assignment for this event
-    if (r.timingTechnology === "rfid" && !rfidSet.has(key)) {
+    if (eligible && r.timingTechnology === "rfid" && !rfidSet.has(key)) {
       eligible = false;
       ineligibleReason = "missing_rfid";
     }
 
     // Active transponder events must have a registration-level or rider-level number.
-    if (eligible && r.requireTransponder && ["active_transponder", "mylaps"].includes(r.timingTechnology)) {
+    // Like RFID: only riders with a transponder number already on file can skip the gate.
+    if (eligible && ["active_transponder", "mylaps"].includes(r.timingTechnology)) {
       const hasRegTransponder = !!r.myLapsTransponderNumber;
       const hasRiderTransponder = !!transponderByRiderId.get(r.riderId);
       if (!hasRegTransponder && !hasRiderTransponder) {
@@ -273,7 +280,7 @@ router.get("/rider/quick-checkin-geofences", requireRiderAuth, async (req, res) 
     .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
     .where(and(
       inArray(registrationsTable.riderId, riders.map(r => r.id)),
-      ne(registrationsTable.status, "void"),
+      eq(registrationsTable.status, "confirmed"),
       eq(eventsTable.quickCheckinEnabled, true),
       ne(eventsTable.status, "completed"),
       sql`${eventsTable.date}::date BETWEEN ${today}::date AND ${weekOut}::date`,
@@ -359,9 +366,9 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
     const [row] = await db
       .select()
       .from(registrationsTable)
-      .where(and(eq(registrationsTable.id, bodyRegistrationId), eq(registrationsTable.eventId, eventId), ne(registrationsTable.status, "void")));
+      .where(and(eq(registrationsTable.id, bodyRegistrationId), eq(registrationsTable.eventId, eventId), eq(registrationsTable.status, "confirmed")));
     if (!row || !familyRiderIds.includes(row.riderId)) {
-      return res.status(400).json({ error: "No active registration found" });
+      return res.status(400).json({ error: "No paid registration found for this event. Finish payment or check in at the gate." });
     }
     reg = row;
     riderId = row.riderId;
@@ -371,8 +378,8 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
     const [row] = await db
       .select()
       .from(registrationsTable)
-      .where(and(eq(registrationsTable.eventId, eventId), eq(registrationsTable.riderId, riderId), ne(registrationsTable.status, "void")));
-    if (!row) return res.status(400).json({ error: "No active registration found" });
+      .where(and(eq(registrationsTable.eventId, eventId), eq(registrationsTable.riderId, riderId), eq(registrationsTable.status, "confirmed")));
+    if (!row) return res.status(400).json({ error: "No paid registration found for this event. Finish payment or check in at the gate." });
     reg = row;
   }
 
@@ -386,7 +393,7 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
   }
 
   // Active transponder eligibility (including legacy stored values).
-  if (event.requireTransponder && ["active_transponder", "mylaps"].includes(event.timingTechnology)) {
+  if (["active_transponder", "mylaps"].includes(event.timingTechnology)) {
     const riderRow = familyRiders.find(r => r.id === riderId);
     if (!reg.myLapsTransponderNumber && !riderRow?.transponderId) {
       return res.status(400).json({ error: "Active transponder number not assigned — contact the organizer" });

@@ -4,6 +4,18 @@
     "appVersionSource": "local"
   },
   "build": {
+    "development": {
+      "pnpm": "10.26.1",
+      "developmentClient": true,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk",
+        "credentialsSource": "remote"
+      },
+      "ios": {
+        "simulator": true
+      }
+    },
     "preview": {
       "pnpm": "10.26.1",
       "distribution": "internal",
