@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "@/lib/apiBase";
 import { Feather } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -189,9 +190,7 @@ function fmtEventRange(date: string, endDate?: string | null): string {
   return `${startStr} – ${end.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
 }
 
-const BASE_URL = process.env.EXPO_PUBLIC_DOMAIN
-  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
-  : "";
+const BASE_URL = API_BASE_URL;
 
 async function publicFetch(path: string): Promise<Response> {
   return fetch(`${BASE_URL}${path}`);

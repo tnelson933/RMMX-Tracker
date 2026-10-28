@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "@/lib/apiBase";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
@@ -13,7 +14,7 @@ const BIOMETRIC_PASS_SKEY = "rider_bio_pass";
 const PUSH_TOKEN_KEY = "rider_expo_push_token";
 const PUSH_DENIED_PROMPTED_KEY = "rider_push_denied_prompted";
 
-const BASE_URL = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
+const BASE_URL = API_BASE_URL;
 
 export interface RiderAccount {
   id: number;

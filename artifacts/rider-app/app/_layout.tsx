@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "@/lib/apiBase";
 import {
   Inter_400Regular,
   Inter_500Medium,
@@ -31,7 +32,7 @@ function ThemedStatusBar() {
 }
 
 // Set API base URL for generated hooks (public endpoints like events list)
-setBaseUrl(`https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`);
+setBaseUrl(API_BASE_URL);
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();

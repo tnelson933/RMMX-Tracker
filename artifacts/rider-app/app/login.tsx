@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "@/lib/apiBase";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import * as LocalAuthentication from "expo-local-authentication";
@@ -34,7 +35,7 @@ function choose<T>(title: string, message: string, buttons: { text: string; valu
   });
 }
 
-const BASE_URL = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
+const BASE_URL = API_BASE_URL;
 
 export default function LoginScreen() {
   const colors = useColors();
@@ -415,7 +416,7 @@ export default function LoginScreen() {
           placeholder="Email address"
           placeholderTextColor={muted}
           value={email}
-          onChangeText={setEmail}
+          onChangeText={v => { setEmail(v); setError(null); }}
           autoCapitalize="none"
           keyboardType="email-address"
           autoCorrect={false}
@@ -431,7 +432,7 @@ export default function LoginScreen() {
           placeholder="Password"
           placeholderTextColor={muted}
           value={password}
-          onChangeText={setPassword}
+          onChangeText={v => { setPassword(v); setError(null); }}
           secureTextEntry={!showPassword}
           returnKeyType="done"
           onSubmitEditing={handleSubmit}

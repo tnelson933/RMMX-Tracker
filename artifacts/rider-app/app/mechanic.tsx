@@ -448,7 +448,9 @@ export default function MechanicScreen() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={[styles.followUpChipsRow, { borderTopColor: colors.border }]}
+          // Without this a horizontal ScrollView grows to fill spare height and stretches the chips.
+          style={{ flexGrow: 0 }}
+          contentContainerStyle={[styles.followUpChipsRow, { borderTopColor: colors.border, alignItems: "center" }]}
           keyboardShouldPersistTaps="handled"
         >
           {followUpChips.map((chip) => (

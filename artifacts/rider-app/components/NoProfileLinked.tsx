@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import React from "react";
-import { Pressable, Text, View } from "react-native";
+import React, { useState } from "react";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 
@@ -14,8 +14,16 @@ import { useColors } from "@/hooks/useColors";
 export function NoProfileLinked({ variant = "screen" }: { variant?: "screen" | "card" }) {
   const colors = useColors();
   const router = useRouter();
-  const { account, logout } = useRiderAuth();
+  const { account, logout, refreshProfiles } = useRiderAuth();
+  const [checking, setChecking] = useState(false);
   const card = variant === "card";
+
+  // A profile links as soon as a race registration uses this email, so let the
+  // rider re-check without signing out or restarting the app.
+  async function checkAgain() {
+    setChecking(true);
+    try { await refreshProfiles(); } finally { setChecking(false); }
+  }
 
   async function switchAccount() {
     await logout();
@@ -45,6 +53,12 @@ export function NoProfileLinked({ variant = "screen" }: { variant?: "screen" | "
         style={{ marginTop: 6, paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10, backgroundColor: colors.primary }}
       >
         <Text style={{ color: "#fff", fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold" }}>Sign in with a different email</Text>
+      </Pressable>
+      <Pressable onPress={checkAgain} disabled={checking} style={{ paddingVertical: 8, flexDirection: "row", alignItems: "center", gap: 6 }}>
+        {checking && <ActivityIndicator size="small" color={colors.mutedForeground} />}
+        <Text style={{ color: colors.foreground, fontSize: 13, fontFamily: "Inter_600SemiBold", textDecorationLine: "underline" }}>
+          {checking ? "Checking…" : "Just registered? Check again"}
+        </Text>
       </Pressable>
     </View>
   );

@@ -1,3 +1,4 @@
+import { toStateCode } from "@/lib/usStates";
 import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Location from "expo-location";
@@ -413,6 +414,7 @@ export default function MyRacesScreen() {
   const [refreshing, setRefreshing]         = useState(false);
   const [error, setError]                   = useState<string | null>(null);
   const [nearMeState, setNearMeState]       = useState<string | null>(null);
+  const [showAllOpen, setShowAllOpen]       = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
 
   // View stack for stat-box drill-down
@@ -502,10 +504,17 @@ export default function MyRacesScreen() {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== "granted") { setLocationLoading(false); return; }
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        const [geo] = await Location.reverseGeocodeAsync({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
-        if (geo?.region) setNearMeState(geo.region);
-      } catch { /* silently fail */ }
+        // A GPS fix can take forever indoors; fall back to every open race instead of spinning.
+        const withTimeout = <T,>(p: Promise<T>, ms: number) =>
+          Promise.race([p, new Promise<null>(resolve => setTimeout(() => resolve(null), ms))]);
+        const loc = (await Location.getLastKnownPositionAsync({ maxAge: 30 * 60_000 }))
+          ?? (await withTimeout(Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }), 10_000));
+        if (!loc) return;
+        const places = await withTimeout(
+          Location.reverseGeocodeAsync({ latitude: loc.coords.latitude, longitude: loc.coords.longitude }), 8_000);
+        const code = toStateCode(places?.[0]?.region);
+        if (code) setNearMeState(code);
+      } catch { /* fall back to all open races */ }
       finally { setLocationLoading(false); }
     })();
   }, [activeFilter]);
@@ -531,7 +540,7 @@ export default function MyRacesScreen() {
     const endStr  = e.endDate ? String(e.endDate).substring(0, 10) : dateStr;
     return endStr >= todayStr;
   });
-  const nearMeEvents = nearMeState ? allOpenEvents.filter(e => e.state === nearMeState) : allOpenEvents;
+  const nearMeEvents = nearMeState && !showAllOpen ? allOpenEvents.filter(e => toStateCode(e.state) === nearMeState) : allOpenEvents;
 
   const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
@@ -711,7 +720,7 @@ export default function MyRacesScreen() {
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginHorizontal: 16, marginTop: 20, marginBottom: 8 }}>
               <Feather name="map-pin" size={13} color={colors.primary} />
               <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>
-                {nearMeState ? `Open in ${nearMeState}` : "Open Near You"}
+                {showAllOpen ? "All open races" : nearMeState ? `Open in ${nearMeState}` : "Open Near You"}
               </Text>
             </View>
             {nearMeEvents.map(e => <UpcomingCard key={e.eventId} event={e} colors={colors} isRegistered={registeredEventIds.has(e.eventId)} />)}
@@ -721,7 +730,9 @@ export default function MyRacesScreen() {
             icon="map-pin"
             title={nearMeState ? `No open races in ${nearMeState}` : "No open races nearby"}
             message="Nothing's open for registration around you right now. Browse every race, or check back soon."
-            primary={{ label: "Browse all races", icon: "flag", onPress: () => router.push("/(tabs)/results" as any) }}
+            primary={allOpenEvents.length > 0
+              ? { label: "Show all open races", icon: "flag", onPress: () => setShowAllOpen(true) }
+              : { label: "Browse results", icon: "flag", onPress: () => router.push("/(tabs)/results" as any) }}
             secondary={{ label: "Refresh", onPress: onRefresh }}
           />
         );

@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "@/lib/apiBase";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
@@ -28,7 +29,7 @@ import { NETWORK_ERROR_MESSAGE, postJson } from "@/lib/friendlyErrors";
 import { PositionBadge, StatTile } from "@/components/RaceStats";
 import { displayDate } from "@/lib/format";
 
-const BASE_URL = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
+const BASE_URL = API_BASE_URL;
 const PRIVACY_URL = `${BASE_URL}/privacy`;
 
 // ─── Auth form (shown when logged out) ──────────────────────────────────────

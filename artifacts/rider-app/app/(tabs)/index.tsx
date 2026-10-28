@@ -112,7 +112,7 @@ export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { activeProfiles, profiles, riderFetch } = useRiderAuth();
+  const { activeProfiles, profiles, riderFetch, refreshProfiles } = useRiderAuth();
 
   const primaryProfile = activeProfiles[0] ?? null;
 
@@ -195,9 +195,10 @@ export default function HomeScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     setFeedRefreshKey(k => k + 1);
-    await loadData();
+    // Re-fetch profiles too: one may have linked since sign-in (first race registration).
+    await Promise.all([loadData(), refreshProfiles().catch(() => {})]);
     setRefreshing(false);
-  }, [loadData]);
+  }, [loadData, refreshProfiles]);
 
   // ── Sub-screen rendering ─────────────────────────────────────────────────────
 

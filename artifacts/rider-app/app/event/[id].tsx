@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "@/lib/apiBase";
 import { Feather } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -24,7 +25,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { eventDay, placeLabel } from "@/lib/format";
 import { goBack } from "@/lib/navigation";
 
-const BASE_URL = `https://${process.env.EXPO_PUBLIC_DOMAIN ?? ""}`;
+const BASE_URL = API_BASE_URL;
 
 interface EventDetail {
   id: number;
