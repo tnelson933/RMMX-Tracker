@@ -2,7 +2,7 @@
   "expo": {
     "name": "RM Roost",
     "slug": "rider-app",
-    "version": "1.0.20",
+    "version": "1.0.21",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "rider-app",
@@ -27,11 +27,11 @@
         "ITSAppUsesNonExemptEncryption": false,
         "NSFaceIDUsageDescription": "Use Face ID to sign in to RM Roost quickly and securely."
       },
-      "buildNumber": "4"
+      "buildNumber": "5"
     },
     "android": {
       "package": "com.rockymountain.riderapp",
-      "versionCode": 22,
+      "versionCode": 23,
       "googleServicesFile": "./google-services.json"
     },
     "web": {
