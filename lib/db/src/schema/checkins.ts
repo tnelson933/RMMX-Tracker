@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, boolean, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, boolean, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { eventsTable } from "./events";
@@ -15,7 +15,11 @@ export const checkinsTable = pgTable("checkins", {
   rfidNumber: text("rfid_number"),
   rfidLinked: boolean("rfid_linked").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (t) => [
+  // One row per rider, event and class (deploy/migrations/0012): concurrent payment
+  // confirmations can't create a second gate row.
+  uniqueIndex("checkins_event_rider_class_uq").on(t.eventId, t.riderId, t.raceClass),
+]);
 
 export const insertCheckinSchema = createInsertSchema(checkinsTable).omit({ id: true, createdAt: true });
 export type InsertCheckin = z.infer<typeof insertCheckinSchema>;

@@ -70,7 +70,7 @@ To delete an event: Overview tab → **Delete Event** (top right).
 - **Race Day Display** — jumbotron / announcer display link
 - **Reader Setup** — RM Connect download and setup steps, your readers with live status, tag scanner
 - **Offline Mode** — download the RM Roost desktop app for race days without internet
-- **Admin** — club settings: default race classes, brand contingencies, Track Library, rider acknowledgement form, liability waiver
+- **Admin** — club settings in four tabs along the top: **Forms** (rider acknowledgement form, liability waiver), **Track Library** (tracks and their course maps), **Race Classes** (default classes), **Brand Contingencies**. The open tab is kept in the link (e.g. `/team?tab=tracks`).
 - **Staff** — invite staff and choose which pages each can open; gate schedule link for staff
 
 Platform admins also see a separate section with Users, Clubs, and Notifications.
@@ -96,7 +96,11 @@ Main fields:
 
 **Classes:** in Edit, click Club Classes chips (or **Select All**) or **+ Add Class**, then set each class's Max Riders, Series, and details.
 
-**Purchase Options:** **+ Add Purchase Option** (name, price, optional discount category) for gate fees, pit passes, camping, etc. **Add RM TrackR Transponder ($40)** adds the RM TrackR transponder sale (see Timing Systems).
+**Purchase Options:** **+ Add Purchase Option** (a name and a price from $0 to $100,000) for gate fees, pit passes, camping, etc. Purchase options have no category. **Add RM TrackR Transponder ($40)** adds the RM TrackR transponder sale (see Timing Systems).
+
+**Date and fee rules** (checked when saving): registration must close after it opens and no later than the last race day; the early sign-up period can't end after the race date; the Early Bird Fee must be less than the Entry Fee.
+
+**Save as Draft** (New Event dialog) needs only a name and keeps everything else filled in; a draft with no date gets today's date and can be finished later.
 
 **Registration Link:** the Overview tab has a card with the public registration link and a copy button. Riders can only register while the status is Registration Open.
 
@@ -114,7 +118,7 @@ Tabs, in order:
 - **Registrations** — every class entry; add registrations on site; edit, change class, void; export
 - **Check-In** — check riders in, assign bibs and RFID tags or transponders, sign waivers, collect payments for add-ons
 - **Schedule** — build the run order: motos, practices, lineups, staggered starts, enduro tests
-- **Course Map** — place readers on the course: finish line and split readers (sector times), or enduro section start/end and time-check readers
+- **Course Map** — place readers on the course: finish line and split readers (segment times), or enduro section start/end and time-check readers
 - **Race Day Management** — live timing: start/finish motos, live leaderboard, crossing feed, manual laps, restarts, print, Live Video Feed, and **Review & finalize** for finished races (positions, total time, laps, DNF/DNS)
 - **Report** — overall standings per class, post-race summary, payments, class breakdown, AMA export, print
 - **Cancellations** — rider cancellations and refund tracking
@@ -547,7 +551,7 @@ On the Points Scoring Tables page, the **Auto DNF — Club-wide Setting** switch
 ### Creating a session
 Click the **+** icon ("New session") → enter a **Session name** → choose a track from your **Track Library** (or type a track name; a track is required) → **Add**. The session starts **live immediately** and begins timing; any other live session is ended automatically.
 
-**Practice sector times:** when the track has split readers on its course map (Track Library), the practice uses that course from the moment it starts. Expand a rider on the practice board to see a **Sectors** table (each lap's sector times, best per sector in red/bold, and a **Best** row); riders see the same in their practice history on the website. A rider's first pass starts lap 1; split reads before it are ignored. Laps count only timed laps (the first pass just starts the clock).
+**Practice segment times:** when the track has split readers on its course map (Track Library), the practice uses that course from the moment it starts. Expand a rider on the practice board to see a **Segments** table (each lap's segment times, best per segment in red/bold, and a **Best** row); riders see the same in their practice history on the website. A rider's first pass starts lap 1; split reads before it are ignored. Laps count only timed laps (the first pass just starts the clock).
 
 ### Ending and deleting
 - **End Session** closes a live session. Ended sessions stay in the list for history.
@@ -660,7 +664,7 @@ For checkpoints out on the course (enduro sections, time checks) where no laptop
 
 ### Course Map tab (several readers per event)
 
-**Set it up once per track.** A track's standard course (finish line + splits) lives in the **Track Library** (Admin/Team page → a track's **Course map** button). Every event at that track gets a copy automatically, and practices there use it for sector times. An event links to a library track when its track is picked from the library (or its track name matches one). The event's Course Map tab shows where its course comes from:
+**Set it up once per track.** A track's standard course (finish line + splits) lives in the **Track Library** (Admin/Team page → a track's **Course map** button). Every event at that track gets a copy automatically, and practices there use it for segment times. An event links to a library track when its track is picked from the library (or its track name matches one). The event's Course Map tab shows where its course comes from:
 - **From the track: <name>** — follows the track. Editing the track's course updates every upcoming event there that hasn't raced yet; events that have raced keep the course they raced with.
 - **Customized for this event** — the finish line or splits were changed on the event's tab, for this event only. **Reset to track** copies the track's course back.
 - Not linked — pick the track from the library on the event's Overview tab (or add it to the Track Library) to use a track course.
@@ -671,14 +675,14 @@ The event's **Course Map** tab places readers on the course. Readers come from R
 **Motocross / supercross (and cross country):**
 - **Finish line · scores laps** — the one reader that decides laps and placings, exactly as before. Required when there are splits.
 - **Splits** — click **Add split** (or drop a reader on it) for each extra reader around the track, name it (e.g. "Halfway", "Whoops"), and drag splits by their grip to put them in course order. A reader can only be in one place on the course.
-- **Sectors** — the page lists the sectors the splits create, e.g. one split at Halfway gives **S1 Finish → Halfway** and **S2 Halfway → Finish**. Lap 1's first sector starts at the moto start.
-- Split reads never change laps, placings or results. A missed split read only leaves those sector times blank. Repeat reads in the same pass count once. A split read never becomes a lap: with no moto running it's ignored, or recorded as a practice split when a practice at a track with that split is live.
+- **Segments** (the supercross term, as on AMA/SMX timing sheets; also called splits) — the page lists the segments the splits create, e.g. one split at Halfway gives **Seg 1 Finish → Halfway** and **Seg 2 Halfway → Finish**. Lap 1's first segment starts at the moto start.
+- Split reads never change laps, placings or results. A missed split read only leaves those segment times blank. Repeat reads in the same pass count once. A split read never becomes a lap: with no moto running it's ignored, or recorded as a practice split when a practice at a track with that split is live.
 - Readers not on the course keep timing laps the usual way, so an event with one reader needs no course map.
 - Warnings show when splits exist without a finish line, a split has no reader, or a placed reader isn't connected.
 
 **Enduro:** each special test from the Schedule tab is a **Section** card with a **Start** and an **End** slot ("Starts and ends at the same reader" for a single gate), and each time check has a slot. Add, rename or reorder sections on the Schedule tab. Role enforcement still applies (a start reader only starts a rider; an end reader only finishes an open start).
 
-**Where sector times show:** the public live page's **Sectors** tab (best per sector, fastest in green), the Race Day Management leaderboard (**Last lap sectors** and **Best sectors** under the leaderboard), expanded motos on the public results page, and the rider app's race results (**Best sectors** card).
+**Where segment times show:** the public live page's **Segments** tab (best per segment, fastest in green), the Race Day Management leaderboard (**Last lap segments** and **Best segments** under the leaderboard), expanded motos on the public results page, and the rider app's race results (**Best segments** card).
 
 **Desktop app / offline:** the Course Map tab works in the desktop app and syncs with the cloud. The desktop app connects to readers itself (it never uses RM Connect); today it times the finish line, and timing split readers offline is not available yet.
 
@@ -774,7 +778,7 @@ Sponsor or manufacturer brands that pay contingency at your events (e.g. Honda, 
 ### Track Library
 Save your tracks once and reuse them. **Add New Track** → name, address, city, ZIP, state → **Add Track**. Saved tracks fill the track field on new events and are the track choices for Practice sessions.
 
-**Course map per track:** click a track's **Course map** button → drag the finish-line reader onto the flag, add split readers in course order and name them (e.g. "Whoops") → **Save course map**. Each track shows a summary such as "Finish line + 2 splits". Races at the track copy it (see Course Map tab), and practices started there record **sector times** from its split readers. Track course maps are set up online; the desktop app gets each event's copy when it syncs.
+**Course map per track:** click a track's **Course map** button → drag the finish-line reader onto the flag, add split readers in course order and name them (e.g. "Whoops") → **Save course map**. Each track shows a summary such as "Finish line + 2 splits". Races at the track copy it (see Course Map tab), and practices started there record **segment times** from its split readers. Track course maps are set up online; the desktop app gets each event's copy when it syncs.
 
 ### Rider Acknowledgement Form
 Text riders must agree to at online registration (safety rules, code of conduct). Choose **Type Text** or **Upload PDF**.
@@ -805,7 +809,7 @@ RM Roost platform admins create clubs (Clubs page). Creating a club with an orga
 Riders use the **RM Roost** app (iPhone and Android) and the public website:
 - **Find and register** for events, pay by card, sign waivers, and enter discount codes.
 - **Profiles link by email:** rider profiles attach to the app account whose email matches the registration email. One account can manage several riders (e.g. a parent and kids). If a rider signs in with a different email than they registered with, the app shows no profile and offers **Sign in with a different email**.
-- **My Races** — upcoming races, results, and history. **Results** — race results (marked Unofficial or Official) and series standings; motos run with split readers show a **Best sectors** card. **Train** — practice laps from Practice sessions.
+- **My Races** — upcoming races, results, and history. **Results** — race results (marked Unofficial or Official) and series standings; motos run with split readers show a **Best segments** card. **Train** — practice laps from Practice sessions.
 - **Quick Check-In** on race day (when the event has it on) and push notifications (next up, 3 races away, organizer messages).
 - **Cancel Registration** from the event page, which shows up on the organizer's Cancellations tab.
 - **Rocky**, an AI mechanic, answers bike setup and maintenance questions.

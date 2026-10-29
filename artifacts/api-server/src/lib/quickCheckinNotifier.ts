@@ -4,7 +4,6 @@ import {
   eventsTable,
   registrationsTable,
   ridersTable,
-  riderAccountsTable,
   riderPushTokensTable,
   rfidAssignmentsTable,
   checkinsTable,
@@ -15,6 +14,7 @@ import {
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { sendPushNotifications, type PushMessage } from "./push";
+import { accountIdsForRiders } from "./riderAccess";
 
 // Race-day morning push for quick check-in.
 //
@@ -88,7 +88,7 @@ type EventRow = {
 };
 
 async function notifyForEvent(event: EventRow): Promise<void> {
-  // Non-void registrations with rider emails
+  // Confirmed registrations (class entries)
   const regs = await db
     .select({
       registrationId: registrationsTable.id,
@@ -96,7 +96,6 @@ async function notifyForEvent(event: EventRow): Promise<void> {
       raceClass: registrationsTable.raceClass,
       myLapsTransponderNumber: registrationsTable.myLapsTransponderNumber,
       waiverAcknowledgedAt: registrationsTable.waiverAcknowledgedAt,
-      email: ridersTable.email,
       riderTransponder: ridersTable.mylapsTransponderId,
     })
     .from(registrationsTable)
@@ -141,27 +140,21 @@ async function notifyForEvent(event: EventRow): Promise<void> {
     for (const r of regs) if (signedRegIds.has(r.registrationId)) waiverRiderIds.add(r.riderId);
   }
 
-  // Emails of riders with at least one eligible, unchecked-in registration
-  const eligibleEmails = new Set<string>();
+  // Riders with at least one eligible, unchecked-in registration (entries are per class)
+  const eligibleRiderIds = new Set<number>();
   for (const r of regs) {
-    const email = r.email?.toLowerCase();
-    if (!email) continue;
     if (checkedInSet.has(`${r.riderId}:${r.raceClass ?? "Unknown"}`)) continue;
     if (event.timingTechnology === "rfid" && !rfidSet.has(r.riderId)) continue;
     if (event.timingTechnology === "active_transponder" && !r.myLapsTransponderNumber && !r.riderTransponder) continue;
     if (event.requireWaiver && !event.requireLiabilityWaiver && !r.waiverAcknowledgedAt) continue;
     if (event.requireLiabilityWaiver && !waiverRiderIds.has(r.riderId)) continue;
-    eligibleEmails.add(email);
+    eligibleRiderIds.add(r.riderId);
   }
-  if (eligibleEmails.size === 0) return;
+  if (eligibleRiderIds.size === 0) return;
 
-  // Rider accounts for those emails
-  const accounts = await db
-    .select({ id: riderAccountsTable.id, email: riderAccountsTable.email })
-    .from(riderAccountsTable)
-    .where(inArray(sql`LOWER(${riderAccountsTable.email})`, [...eligibleEmails]));
-  if (accounts.length === 0) return;
-  let accountIds = accounts.map(a => a.id);
+  // Owner accounts and invited profile managers of those riders
+  let accountIds = await accountIdsForRiders([...eligibleRiderIds]);
+  if (accountIds.length === 0) return;
 
   // Respect club-level notification opt-outs
   if (event.clubId != null) {
@@ -219,23 +212,39 @@ async function notifyForEvent(event: EventRow): Promise<void> {
     }
   }
 
-  const ok = await sendPushNotifications(messages);
-  if (!ok) {
-    // Transport-level failure — release the claims so a later cycle retries
-    logger.warn({ eventId: event.id }, "Quick check-in morning push: transport failure, will retry");
+  const result = await sendPushNotifications(messages);
+
+  // An account counts as notified when at least one of its devices accepted the
+  // push. Release the claim only for accounts with no accepted device and a
+  // retryable failure, so a later cycle retries just those accounts.
+  const okTokens = new Set<string>();
+  const retryTokens = new Set<string>();
+  for (const r of result.results) {
+    if (r.ok) okTokens.add(r.to);
+    else if (r.retryable) retryTokens.add(r.to);
+  }
+  const toRelease = notifiableAccounts.filter(id => {
+    const toks = tokensByAccount.get(id) ?? [];
+    return !toks.some(t => okTokens.has(t)) && toks.some(t => retryTokens.has(t));
+  });
+  if (toRelease.length > 0) {
+    logger.warn(
+      { eventId: event.id, released: toRelease.length, accepted: result.accepted, failed: result.failed },
+      "Quick check-in morning push: some sends failed, will retry those accounts",
+    );
     await db
       .delete(quickCheckinNotificationsTable)
       .where(
         and(
           eq(quickCheckinNotificationsTable.eventId, event.id),
-          inArray(quickCheckinNotificationsTable.riderAccountId, notifiableAccounts),
+          inArray(quickCheckinNotificationsTable.riderAccountId, toRelease),
         ),
       );
-    return;
   }
+  if (result.accepted === 0) return;
 
   logger.info(
-    { eventId: event.id, accounts: notifiableAccounts.length, devices: messages.length },
+    { eventId: event.id, accounts: notifiableAccounts.length - toRelease.length, devices: result.accepted },
     "Quick check-in morning push sent",
   );
 }

@@ -77,6 +77,7 @@ export * from './errorEnvelope';
 export * from './event';
 export * from './eventCourseSource';
 export * from './eventInput';
+export * from './eventInputRaceClassDetails';
 export * from './eventInputRaceClassLimits';
 export * from './eventInputRaceClassSeriesMap';
 export * from './eventInputRaceStyle';

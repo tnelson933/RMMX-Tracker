@@ -70,6 +70,29 @@ function getStaffClubId(res: any): number | null {
   return typeof v === "number" ? v : null;
 }
 
+/**
+ * Gives back the discount-code use a checkout took, once every entry of that
+ * checkout carrying the code (same rider, event and code) is void or refunded.
+ * Call it only after an entry has just moved from active to void/refunded, so a
+ * checkout releases its one use once, when its last entry goes.
+ */
+export async function releaseCompCodeIfCheckoutInactive(eventId: number, riderId: number, code: string | null | undefined): Promise<void> {
+  if (!code) return;
+  const [{ active }] = await db.select({ active: sql<number>`count(*)::int` })
+    .from(registrationsTable)
+    .where(and(
+      eq(registrationsTable.eventId, eventId),
+      eq(registrationsTable.riderId, riderId),
+      eq(registrationsTable.compCode, code),
+      ne(registrationsTable.status, "void"),
+      ne(registrationsTable.paymentStatus, "refunded"),
+    ));
+  if (active > 0) return;
+  await db.update(compCodesTable)
+    .set({ usesCount: sql`GREATEST(${compCodesTable.usesCount} - 1, 0)` })
+    .where(eq(compCodesTable.code, code));
+}
+
 type RiderRow = typeof ridersTable.$inferSelect;
 
 type RiderResolution =
@@ -485,7 +508,7 @@ router.post("/events/:eventId/registrations", async (req, res) => {
         eventId, riderId: resolvedRiderId, raceClass,
         bibNumber: bibNumber || null,
         checkedIn: false, rfidLinked: false,
-      });
+      }).onConflictDoNothing();
     }
   }
 
@@ -525,7 +548,10 @@ router.patch("/registrations/:registrationId", async (req, res) => {
   if (newRiderId !== undefined) updates.riderId = newRiderId;
 
   // Snapshot the current riderId and raceClass BEFORE updating so we can cascade
-  const [before] = await db.select({ riderId: registrationsTable.riderId, eventId: registrationsTable.eventId, raceClass: registrationsTable.raceClass })
+  const [before] = await db.select({
+    riderId: registrationsTable.riderId, eventId: registrationsTable.eventId, raceClass: registrationsTable.raceClass,
+    status: registrationsTable.status, paymentStatus: registrationsTable.paymentStatus, compCode: registrationsTable.compCode,
+  })
     .from(registrationsTable).where(eq(registrationsTable.id, id));
   const oldRiderId = before?.riderId;
   const oldRaceClass = before?.raceClass;
@@ -539,13 +565,25 @@ router.patch("/registrations/:registrationId", async (req, res) => {
   const [reg] = await db.update(registrationsTable).set(updates as any).where(eq(registrationsTable.id, id)).returning();
   if (!reg) return res.status(404).json({ error: "Not found" });
 
+  // Voiding or refunding the last entry of a checkout gives its discount-code use back.
+  const wasActive = before.status !== "void" && before.paymentStatus !== "refunded";
+  const nowInactive = reg.status === "void" || reg.paymentStatus === "refunded";
+  if (wasActive && nowInactive && before.compCode) {
+    await releaseCompCodeIfCheckoutInactive(reg.eventId, before.riderId, before.compCode);
+  }
+
   // If riderId changed, re-point exactly one checkin row for this rider+event to the new rider
   if (newRiderId !== undefined && oldRiderId && oldRiderId !== newRiderId) {
-    const [checkinToMove] = await db.select({ id: checkinsTable.id })
+    const [checkinToMove] = await db.select({ id: checkinsTable.id, raceClass: checkinsTable.raceClass })
       .from(checkinsTable)
       .where(and(eq(checkinsTable.eventId, reg.eventId), eq(checkinsTable.riderId, oldRiderId)))
       .limit(1);
-    if (checkinToMove) {
+    // One check-in per rider, event and class (unique index): leave it if the new
+    // rider already has that one.
+    const [targetHas] = checkinToMove ? await db.select({ id: checkinsTable.id }).from(checkinsTable)
+      .where(and(eq(checkinsTable.eventId, reg.eventId), eq(checkinsTable.riderId, newRiderId), eq(checkinsTable.raceClass, checkinToMove.raceClass)))
+      .limit(1) : [];
+    if (checkinToMove && !targetHas) {
       await db.update(checkinsTable)
         .set({ riderId: newRiderId })
         .where(eq(checkinsTable.id, checkinToMove.id));
@@ -556,7 +594,11 @@ router.patch("/registrations/:registrationId", async (req, res) => {
   if (raceClass !== undefined && oldRaceClass && raceClass !== oldRaceClass) {
     const cascadeRiderId = reg.riderId;
     // Update the rider's check-in record so they appear in the correct class at gate
-    await db.update(checkinsTable)
+    // (unless they already have one for the new class: one per rider/event/class).
+    const [alreadyInNewClass] = await db.select({ id: checkinsTable.id }).from(checkinsTable)
+      .where(and(eq(checkinsTable.eventId, reg.eventId), eq(checkinsTable.riderId, cascadeRiderId), eq(checkinsTable.raceClass, raceClass)))
+      .limit(1);
+    if (!alreadyInNewClass) await db.update(checkinsTable)
       .set({ raceClass })
       .where(and(
         eq(checkinsTable.eventId, reg.eventId),
@@ -708,7 +750,7 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
     return res.json({ checkoutUrl: session.url, sessionId: session.id, entryFee, rentalFee, purchaseOptionsTotal });
   } catch (err: any) {
     req.log?.error({ err: err?.message }, "[charge] Error");
-    return res.status(500).json({ error: err?.message ?? "Failed to create checkout session" });
+    return res.status(500).json({ error: "Couldn't start the card payment. Please try again or take cash." });
   }
 });
 
@@ -1171,7 +1213,7 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
 // ── Public: self-service rider registration ───────────────────────────────────
 router.post("/public/events/:eventId/register", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, hometown, homeState, streetAddress, city, zip, raceClass, bibNumber, amaNumber, clubIdNumber, statsEmailOptIn, sponsors, rentTransponder, myLapsTransponderNumber, selectedPurchaseOptions, compCode, categoryId, waiverAcknowledgedAt, purchaseRfidSticker, riderId: hintedRiderId } = req.body;
+  const { firstName, lastName, email, phone, dateOfBirth, emergencyContact, emergencyPhone, hometown, homeState, streetAddress, city, zip, raceClass, bibNumber, amaNumber, clubIdNumber, statsEmailOptIn, sponsors, rentTransponder, myLapsTransponderNumber, selectedPurchaseOptions, compCode, waiverAcknowledgedAt, purchaseRfidSticker, riderId: hintedRiderId } = req.body;
 
   // Accept raceClasses[] (new multi-class) or raceClass string (backward compat)
   const rawClasses = Array.isArray(req.body.raceClasses) ? (req.body.raceClasses as string[]) : null;
@@ -1314,6 +1356,10 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     const abandoned = current.filter(r => r.status === "pending" && r.paymentStatus !== "paid");
     if (abandoned.length) {
       await db.update(registrationsTable).set({ status: "void" }).where(inArray(registrationsTable.id, abandoned.map(r => r.id)));
+      // The abandoned checkout no longer uses its discount code.
+      for (const code of new Set(abandoned.map(r => r.compCode).filter((c): c is string => !!c))) {
+        await releaseCompCodeIfCheckoutInactive(eventId, resolvedExistingRider.id, code);
+      }
     }
   }
 
@@ -1392,13 +1438,14 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     if (codeRow.usesCount >= codeRow.maxUses) {
       return res.status(400).json({ error: "Invalid or already-used discount code" });
     }
-    // Category restriction: only enforce when the caller explicitly passes a categoryId.
-    // Entry-fee registrations have no purchase-option category, so skip the check when
-    // categoryId is absent — the discount applies to the base entry fee in that case.
-    if (categoryId != null) {
-      const codeCatIds = (codeRow.categoryIds as number[]) ?? [];
-      if (codeCatIds.length > 0 && !codeCatIds.includes(Number(categoryId))) {
-        return res.status(400).json({ error: "This discount code is not valid for the selected category" });
+    // Category restriction: codes only discount entry fees, so a code limited to
+    // categories applies only when this event's entry-fee category is one of them.
+    // The category comes from the event, never from the request.
+    const codeCatIds = ((codeRow.categoryIds as number[]) ?? []).map(Number);
+    if (codeCatIds.length > 0) {
+      const entryCat = events[0].entryFeeCategoryId;
+      if (entryCat == null || !codeCatIds.includes(Number(entryCat))) {
+        return res.status(400).json({ error: "This discount code is not valid for this event's entry fee" });
       }
     }
     // If this is a rider-specific code, validate that the submitting person matches
@@ -1490,16 +1537,33 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   // Prices come from the event's configured options, never from the request body.
   const purchaseOptsList = resolvePurchaseOptions(selectedPurchaseOptions, events[0].purchaseOptions);
   const purchaseOptionsTotal = purchaseOptsList.reduce((sum, o) => sum + Number(o.amount), 0);
+  // All money below is in whole cents so the Stripe total, each entry's stored
+  // amount due and the stored discount always add up to the same figure.
+  const entryCents = Math.round(entryFeeNum * 100);
+  const totalEntryCents = entryCents * numClasses;
+  let discountCents = 0;
   if (validatedCompCode) {
-    // Comp discount applies to total entry fees (all classes)
-    // Codes discount entry fees only; add-ons (rentals, stickers, RM TrackR,
-    // purchase options) are always paid, so a large fixed code can't zero them.
-    compDiscount = compDiscountType === "percentage"
-      ? totalEntryFees * compDiscountRaw / 100
-      : Math.min(compDiscountRaw, totalEntryFees);
+    // Codes discount entry fees only (all classes); add-ons (rentals, stickers,
+    // RM TrackR, purchase options) are always paid, so a large code can't zero them.
+    // Percentages are rounded to the cent once, on the total.
+    discountCents = Math.min(
+      totalEntryCents,
+      compDiscountType === "percentage"
+        ? Math.round(totalEntryCents * compDiscountRaw / 100)
+        : Math.round(compDiscountRaw * 100),
+    );
   }
-  const netFee = Math.max(0, totalEntryFees + rentalFeeNum + rfidStickerFeeNum + purchaseOptionsTotal - compDiscount);
-  const needsPayment = !!events[0].paymentEnabled && netFee > 0;
+  compDiscount = discountCents / 100;
+  // Each entry carries its own share of the discount (the leftover cents on the
+  // first entry), so per-entry charges and the usage report sum to the real total.
+  const discountShareCents = raceClassList.map((_, idx) =>
+    Math.floor(discountCents / numClasses) + (idx === 0 ? discountCents % numClasses : 0));
+  const classChargeCents = discountShareCents.map(share => entryCents - share);
+  const addOnCents = Math.round(rentalFeeNum * 100) + Math.round(rfidStickerFeeNum * 100)
+    + purchaseOptsList.reduce((sum, o) => sum + (Number(o.amount) > 0 ? Math.round(Number(o.amount) * 100) : 0), 0);
+  const netCents = classChargeCents.reduce((a, b) => a + b, 0) + addOnCents;
+  const netFee = netCents / 100;
+  const needsPayment = !!events[0].paymentEnabled && netCents > 0;
   const regStatus = needsPayment ? "pending" : "confirmed";
 
   // Insert one registration row per class
@@ -1519,7 +1583,6 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     rmTrackrPurchased: includesRmTrackr(purchaseOptsList),
     myLapsTransponderNumber: normalizedTransponderNumber,
     compCode: validatedCompCode,
-    compDiscount: compDiscount > 0 ? String(compDiscount) : null,
     waiverAcknowledgedAt: waiverAcknowledgedAt ? new Date(waiverAcknowledgedAt) : null,
     waiverSnapshot: serverWaiverSnapshot,
   };
@@ -1527,6 +1590,8 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     raceClassList.map((cls, idx) => ({
       ...sharedRegFields,
       raceClass: cls,
+      // This entry's share of the code's discount (not the whole discount).
+      compDiscount: discountShareCents[idx] > 0 ? (discountShareCents[idx] / 100).toFixed(2) : null,
       // Purchase options and transponder rental attach to the first reg only
       selectedPurchaseOptions: idx === 0 ? purchaseOptsList : [],
     }))
@@ -1577,7 +1642,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
         eventId, riderId: rider.id, raceClass: raceClassList[0],
         bibNumber: bibNumber || rider.bibNumber || null,
         checkedIn: false, rfidLinked: false,
-      });
+      }).onConflictDoNothing();
     }
     // Auto-link transponder if the rider entered their own (not a rental)
     if (!wantsRental && normalizedTransponderNumber) {
@@ -1593,16 +1658,13 @@ router.post("/public/events/:eventId/register", async (req, res) => {
         const stripe = await getUncachableStripeClient();
         const appUrl = getAppUrl();
 
-        // Distribute comp discount evenly across classes
-        const discountedTotalEntry = Math.max(0, totalEntryFees - compDiscount);
-        const perClassFee = numClasses > 0 ? discountedTotalEntry / numClasses : 0;
-
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const lineItems: any[] = [];
 
-        // One line item per selected class
-        for (const cls of raceClassList) {
-          if (perClassFee > 0) {
+        // One line item per selected class, each at its entry fee minus its share
+        // of the discount (the same cents stored on the entry).
+        for (const [idx, cls] of raceClassList.entries()) {
+          if (classChargeCents[idx] > 0) {
             lineItems.push({
               price_data: {
                 currency: "usd",
@@ -1611,7 +1673,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
                     ? `${events[0].name} — ${cls} Entry (Comp ${validatedCompCode})`
                     : `${events[0].name} — ${cls} Entry`,
                 },
-                unit_amount: Math.round(perClassFee * 100),
+                unit_amount: classChargeCents[idx],
               },
               quantity: 1,
             });
@@ -1652,15 +1714,11 @@ router.post("/public/events/:eventId/register", async (req, res) => {
           }
         }
 
-        if (lineItems.length === 0) {
-          lineItems.push({
-            price_data: {
-              currency: "usd",
-              product_data: { name: `${events[0].name} — ${raceClassList.join(" + ")} Entry` },
-              unit_amount: 50,
-            },
-            quantity: 1,
-          });
+        // netCents > 0 is the sum of these line items, so there is always at least
+        // one. Never invent a charge the entries don't record.
+        const lineItemCents = lineItems.reduce((sum, li) => sum + li.price_data.unit_amount * li.quantity, 0);
+        if (lineItems.length === 0 || lineItemCents !== netCents) {
+          throw new Error(`Checkout total mismatch (${lineItemCents} vs ${netCents} cents)`);
         }
 
         const primaryRegId = insertedRegs[0].id;
@@ -1683,11 +1741,8 @@ router.post("/public/events/:eventId/register", async (req, res) => {
         });
 
         // Each entry's own charge: its class fee; add-ons ride on the first entry.
-        const classCents = perClassFee > 0 ? Math.round(perClassFee * 100) : 0;
-        const addOnCents = Math.round(rentalFeeNum * 100) + Math.round(rfidStickerFeeNum * 100)
-          + purchaseOptsList.reduce((sum, o) => sum + (Number(o.amount) > 0 ? Math.round(Number(o.amount) * 100) : 0), 0);
         for (const [idx, reg] of insertedRegs.entries()) {
-          const cents = classCents + (idx === 0 ? addOnCents : 0);
+          const cents = (classChargeCents[idx] ?? 0) + (idx === 0 ? addOnCents : 0);
           await db.update(registrationsTable)
             .set({ stripeSessionId: session.id, amountDue: (cents / 100).toFixed(2) })
             .where(eq(registrationsTable.id, reg.id));
@@ -2096,7 +2151,8 @@ export async function confirmRegistrationSession(
 
   const updatedRegs: Array<typeof registrationsTable.$inferSelect> = [];
   for (const regId of regIds) {
-    // Voided (cancelled) registrations are never re-confirmed by a later payment check.
+    // Only entries still waiting for payment are confirmed. Voided (cancelled) and
+    // refunded entries are never flipped back to paid by a later payment check.
     const [row] = await db.update(registrationsTable)
       .set({
         paymentStatus: "paid",
@@ -2106,13 +2162,31 @@ export async function confirmRegistrationSession(
         // Keep an amount the organizer corrected; only fill it in the first time.
         amountPaid: sql`coalesce(${registrationsTable.amountPaid}, ${amountFor(regId)})`,
       })
-      .where(and(eq(registrationsTable.id, regId), ne(registrationsTable.status, "void")))
+      .where(and(
+        eq(registrationsTable.id, regId),
+        ne(registrationsTable.status, "void"),
+        eq(registrationsTable.paymentStatus, "unpaid"),
+      ))
       .returning();
-    if (row) updatedRegs.push(row);
+    if (row) {
+      updatedRegs.push(row);
+      continue;
+    }
+    // Already recorded by another delivery (webhook, redirect or background check):
+    // report it as paid without writing it again.
+    const [already] = await db.select().from(registrationsTable).where(and(
+      eq(registrationsTable.id, regId),
+      ne(registrationsTable.status, "void"),
+      eq(registrationsTable.paymentStatus, "paid"),
+      eq(registrationsTable.stripeSessionId, session.id),
+    ));
+    if (already) updatedRegs.push(already);
   }
   if (!updatedRegs.length) return updatedRegs;
 
-  // One check-in record per rider per event.
+  // One check-in record per rider per event (and class). The webhook and the
+  // rider's redirect can confirm at the same moment, so the unique index
+  // (migration 0012) settles the race instead of a read-then-insert.
   const primaryReg = updatedRegs[0];
   const [existingCheckin] = await db.select({ id: checkinsTable.id })
     .from(checkinsTable)
@@ -2126,7 +2200,7 @@ export async function confirmRegistrationSession(
       bibNumber: primaryReg.bibNumber,
       checkedIn: false,
       rfidLinked: false,
-    });
+    }).onConflictDoNothing();
   }
   // Auto-link transponder if the rider entered their own number (not a rental)
   if (!primaryReg.transponderRental && primaryReg.myLapsTransponderNumber?.trim()) {

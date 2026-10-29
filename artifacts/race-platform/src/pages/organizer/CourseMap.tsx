@@ -376,7 +376,7 @@ function CourseMapEditor({ eventId, track, onSaved }: { eventId: number; track?:
   // Warnings the organizer can act on before race day.
   const warnings: string[] = [];
   if (!isEnduro) {
-    if (state.splits.length > 0 && !state.finish) warnings.push("Add the finish-line reader. It decides laps and placings; sector times need it too.");
+    if (state.splits.length > 0 && !state.finish) warnings.push("Add the finish-line reader. It decides laps and placings; segment times need it too.");
     if (state.splits.some(s => !s.readerId)) warnings.push("Every split needs a reader (or remove the empty split).");
   } else {
     for (const m of testMotos) {
@@ -436,7 +436,7 @@ function CourseMapEditor({ eventId, track, onSaved }: { eventId: number; track?:
                 ? "Set this track's finish-line reader and split readers once. Every race and practice here uses them, so split times show up without setting anything up per event."
                 : isEnduro
                 ? "Drag a reader onto the start and end of each section. Time checks are optional."
-                : "Drag your finish-line reader onto the flag. Add split readers around the track for sector times; drag splits to put them in course order. Only the finish line decides laps and placings."}
+                : "Drag your finish-line reader onto the flag. Add split readers around the track for segment times; drag splits to put them in course order. Only the finish line decides laps and placings."}
             </p>
           </div>
           <Button onClick={save} disabled={!dirty || saveMutation.isPending} className="gap-2">
@@ -541,13 +541,13 @@ function CourseMapEditor({ eventId, track, onSaved }: { eventId: number; track?:
             </div>
 
             <div className="rounded-xl border bg-card p-4">
-              <p className="font-heading font-bold uppercase tracking-wider text-sm flex items-center gap-2"><Timer size={15} className="text-primary" /> Sectors</p>
+              <p className="font-heading font-bold uppercase tracking-wider text-sm flex items-center gap-2"><Timer size={15} className="text-primary" /> Segments</p>
               {state.splits.length === 0 ? (
-                <p className="text-sm text-muted-foreground mt-1">Add a split to time sectors. With one split at the halfway point, riders see Finish → Halfway and Halfway → Finish times on the leaderboard, results and the app.</p>
+                <p className="text-sm text-muted-foreground mt-1">Add a split to time segments. With one split at the halfway point, riders see Finish → Halfway and Halfway → Finish times on the leaderboard, results and the app.</p>
               ) : (
                 <ol className="mt-2 grid gap-1.5 sm:grid-cols-2">
                   {sectorNames.map((name, i) => (
-                    <li key={name + i} className="text-sm flex gap-2"><span className="font-mono text-xs text-muted-foreground w-6">S{i + 1}</span>{name}</li>
+                    <li key={name + i} className="text-sm flex gap-2"><span className="font-mono text-xs text-muted-foreground w-12">Seg {i + 1}</span>{name}</li>
                   ))}
                 </ol>
               )}

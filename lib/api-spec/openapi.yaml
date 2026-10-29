@@ -3094,7 +3094,7 @@ paths:
             type: integer
       responses:
         "200":
-          description: Number of riders who will receive the notification
+          description: Rider accounts and devices that will receive the notification
           content:
             application/json:
               schema:
@@ -3231,8 +3231,17 @@ components:
       properties:
         count:
           type: integer
+          description: Same as accounts (kept for older clients)
+        accounts:
+          type: integer
+          description: Distinct rider accounts (owners and invited managers, minus club opt-outs) with at least one device
+        devices:
+          type: integer
+          description: Push-enabled devices the send would target
       required:
         - count
+        - accounts
+        - devices
     HealthStatus:
       type: object
       properties:
@@ -3449,7 +3458,8 @@ components:
           type: number
         categoryId:
           type: ["integer", "null"]
-          description: ID of the discount category this purchase option belongs to
+          deprecated: true
+          description: No longer used. Older events may still carry it; new saves drop it.
 
     ClubOrganizer:
       type: object
@@ -3705,7 +3715,7 @@ components:
 
     EventInput:
       type: object
-      required: [clubId, name, date, state]
+      required: [clubId, name]
       properties:
         clubId:
           type: integer
@@ -3808,6 +3818,24 @@ components:
         zip:
           type: string
           description: ZIP code of the track venue.
+        requireLiabilityWaiver:
+          type: boolean
+          description: When true, riders must e-sign the club liability waiver.
+        rfidStickerFee:
+          type: number
+        raceClassDetails:
+          type: object
+          additionalProperties:
+            type: string
+          description: Maps each race class name to a rules/details paragraph shown to riders.
+        contingencyBrands:
+          type: ["array", "null"]
+          items:
+            type: string
+          description: Brands selected for contingency sponsorships at this event.
+        draft:
+          type: boolean
+          description: Save as a draft. date and state are then optional (date defaults to today, state to TBD); without it both are required.
 
     EventUpdate:
       type: object

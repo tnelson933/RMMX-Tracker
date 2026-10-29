@@ -50,19 +50,29 @@ export function Notifications() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
-  const [pushCount, setPushCount] = useState<number | null>(null);
-  const [audienceCount, setAudienceCount] = useState<number | null>(null);
+  const [pushStats, setPushStats] = useState<{ accounts: number; devices: number | null } | null>(null);
+  const [pushStatsError, setPushStatsError] = useState(false);
+  const [audienceCount, setAudienceCount] = useState<{ accounts: number; devices: number } | null>(null);
   const [audienceCountLoading, setAudienceCountLoading] = useState(false);
+  const [audienceCountError, setAudienceCountError] = useState<string | null>(null);
   const audienceCountController = useRef<AbortController | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
-  const { data: events } = useListEvents(
-    { params: { query: { clubId: user?.clubId } } } as any,
-  );
+  // Same scoping as EventsList: super admins see every event, everyone else their club's.
+  const isSuperAdmin = user?.role === "super_admin";
+  const sessionClubId = user?.clubId ?? null;
+  const { data: events } = isSuperAdmin
+    ? useListEvents({})
+    : useListEvents({ clubId: sessionClubId ?? undefined }, { query: { enabled: !!sessionClubId } as any });
 
-  const { data: history, refetch: refetchHistory } = useGetNotificationHistory({ query: {} as any });
+  const {
+    data: history,
+    isLoading: historyLoading,
+    isError: historyError,
+    refetch: refetchHistory,
+  } = useGetNotificationHistory();
 
   const eventMap = new Map<number, string>(
     (events ?? []).map((e) => [e.id, e.name]),
@@ -74,9 +84,18 @@ export function Notifications() {
 
   useEffect(() => {
     fetch("/api/admin/notifications/push-stats")
-      .then((r) => r.json())
-      .then((d) => setPushCount(d.clubCount ?? d.total))
-      .catch(() => {});
+      .then(async (r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.json();
+      })
+      .then((d) => {
+        const club = typeof d.clubCount === "number";
+        setPushStats({
+          accounts: club ? d.clubCount : d.total,
+          devices: club ? (d.clubDevices ?? null) : (d.totalDevices ?? null),
+        });
+      })
+      .catch(() => setPushStatsError(true));
   }, []);
 
   // Fetch audience count whenever audience or eventId changes
@@ -86,6 +105,8 @@ export function Notifications() {
 
     if (!shouldFetch) {
       setAudienceCount(null);
+      setAudienceCountError(null);
+      setAudienceCountLoading(false);
       return;
     }
 
@@ -98,6 +119,7 @@ export function Notifications() {
 
     setAudienceCountLoading(true);
     setAudienceCount(null);
+    setAudienceCountError(null);
 
     const params = new URLSearchParams({ audience });
     if (audience === "event" && eventId) params.set("eventId", eventId);
@@ -105,12 +127,24 @@ export function Notifications() {
     fetch(`/api/admin/notifications/audience-count?${params}`, {
       signal: controller.signal,
     })
-      .then((r) => r.json())
-      .then((d) => {
-        if (typeof d.count === "number") setAudienceCount(d.count);
+      .then(async (r) => {
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || "Couldn't count recipients");
+        return d;
       })
-      .catch(() => {})
-      .finally(() => setAudienceCountLoading(false));
+      .then((d) => {
+        const accounts = typeof d.accounts === "number" ? d.accounts : d.count;
+        if (typeof accounts === "number") {
+          setAudienceCount({ accounts, devices: typeof d.devices === "number" ? d.devices : accounts });
+        }
+      })
+      .catch((e) => {
+        if (controller.signal.aborted) return;
+        setAudienceCountError(e?.message || "Couldn't count recipients");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setAudienceCountLoading(false);
+      });
 
     return () => controller.abort();
   }, [audience, eventId]);
@@ -131,6 +165,11 @@ export function Notifications() {
       const payload: Record<string, unknown> = {
         title: title.trim(),
         body: body.trim(),
+        // One id per click: the server ignores a repeat of the same request.
+        requestId:
+          typeof crypto !== "undefined" && "randomUUID" in crypto
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       };
       if (audience === "event" && eventId) {
         payload.eventId = parseInt(eventId, 10);
@@ -141,13 +180,28 @@ export function Notifications() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to send");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // A failed send is still logged; refresh history so it shows.
+        queryClient.invalidateQueries({ queryKey: getGetNotificationHistoryQueryKey() });
+        throw new Error(data.error || "Failed to send");
+      }
 
-      toast({
-        title: "Notifications sent",
-        description: `${data.sent} rider${data.sent !== 1 ? "s" : ""} notified`,
-      });
+      const accounts = typeof data.accounts === "number" ? data.accounts : 0;
+      const devices = typeof data.devices === "number" ? data.devices : (data.sent ?? 0);
+      const summary = `${accounts} rider account${accounts !== 1 ? "s" : ""} on ${devices} device${devices !== 1 ? "s" : ""}`;
+      if (data.partial) {
+        toast({
+          title: "Sent with some failures",
+          description: `Delivered to ${summary}; ${data.failed} device${data.failed !== 1 ? "s" : ""} failed.`,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: accounts === 0 ? "Nobody to notify" : "Notifications sent",
+          description: accounts === 0 ? "No one in this audience can receive push notifications." : `Sent to ${summary}`,
+        });
+      }
       setTitle("");
       setBody("");
       setAudience("");
@@ -174,15 +228,22 @@ export function Notifications() {
         </h1>
       </div>
 
-      {pushCount !== null && (
-        <div className="flex items-center gap-2 mb-6 text-sm text-muted-foreground">
-          <Smartphone size={14} />
+      <div className="flex items-center gap-2 mb-6 text-sm text-muted-foreground">
+        <Smartphone size={14} />
+        {pushStats !== null ? (
           <span>
-            {pushCount} rider{pushCount !== 1 ? "s" : ""} have the app
-            installed with notifications enabled
+            {pushStats.accounts} rider account{pushStats.accounts !== 1 ? "s" : ""}
+            {pushStats.devices !== null && (
+              <> ({pushStats.devices} device{pushStats.devices !== 1 ? "s" : ""})</>
+            )}{" "}
+            can receive push notifications
           </span>
-        </div>
-      )}
+        ) : pushStatsError ? (
+          <span>Couldn't load app install stats.</span>
+        ) : (
+          <span>Loading app install stats…</span>
+        )}
+      </div>
 
       <div className="bg-card border rounded-lg p-6 space-y-5">
         {/* Audience picker */}
@@ -211,16 +272,20 @@ export function Notifications() {
                 <Users size={12} />
                 {audienceCountLoading ? (
                   <span>Counting recipients…</span>
+                ) : audienceCountError ? (
+                  <span className="text-destructive">{audienceCountError}</span>
                 ) : audienceCount !== null ? (
                   <span>
                     <span className="font-medium text-foreground">
-                      ~{audienceCount}
+                      {audienceCount.accounts}
                     </span>{" "}
-                    rider{audienceCount !== 1 ? "s" : ""} will receive this
+                    rider account{audienceCount.accounts !== 1 ? "s" : ""} on{" "}
+                    <span className="font-medium text-foreground">{audienceCount.devices}</span>{" "}
+                    device{audienceCount.devices !== 1 ? "s" : ""} will receive this
                   </span>
                 ) : null}
               </div>
-              {!audienceCountLoading && audienceCount === 0 && (
+              {!audienceCountLoading && audienceCount?.accounts === 0 && (
                 <p className="text-xs text-destructive">
                   No riders in this audience have the app installed — nobody will receive this.
                 </p>
@@ -311,7 +376,18 @@ export function Notifications() {
         <h2 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground mb-3">
           Recent sends
         </h2>
-        {!history || history.length === 0 ? (
+        {historyLoading ? (
+          <div className="bg-card border rounded-lg p-6 text-sm text-muted-foreground text-center">
+            Loading recent sends…
+          </div>
+        ) : historyError ? (
+          <div className="bg-card border rounded-lg p-6 text-sm text-destructive text-center space-y-2">
+            <p>Couldn't load recent sends.</p>
+            <Button variant="outline" size="sm" onClick={() => refetchHistory()}>
+              Try again
+            </Button>
+          </div>
+        ) : !history || history.length === 0 ? (
           <div className="bg-card border rounded-lg p-6 text-sm text-muted-foreground text-center">
             No notifications sent yet.
           </div>
@@ -323,9 +399,12 @@ export function Notifications() {
                   <p className="font-medium text-sm leading-snug flex-1">
                     {entry.title}
                   </p>
-                  <span className="text-xs text-muted-foreground whitespace-nowrap flex items-center gap-1 mt-0.5">
-                    <Users size={11} />
-                    {entry.sentCount}
+                  <span
+                    className="text-xs text-muted-foreground whitespace-nowrap flex items-center gap-1 mt-0.5"
+                    title="Devices the push service accepted"
+                  >
+                    <Smartphone size={11} />
+                    {entry.sentCount} device{entry.sentCount !== 1 ? "s" : ""}
                   </span>
                 </div>
                 <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words">

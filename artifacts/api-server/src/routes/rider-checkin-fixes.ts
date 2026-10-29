@@ -83,7 +83,8 @@ router.post("/rider/registrations/:regId/checkout", requireRiderAuth, async (req
   const earlyBird = !!(event.earlyBirdEndsAt && event.earlyBirdFee && registeredOn <= event.earlyBirdEndsAt);
   const entryFee = Number(earlyBird ? event.earlyBirdFee : event.entryFee) || 0;
   const totalEntry = entryFee * pending.length;
-  const discount = Math.min(Number(first.compDiscount ?? 0) || 0, totalEntry);
+  // Each entry stores its own share of the code's discount: add them up.
+  const discount = Math.min(pending.reduce((sum, r) => sum + (Number(r.compDiscount ?? 0) || 0), 0), totalEntry);
 
   const lineItems: Array<{ name: string; amount: number }> = [];
   const perClass = pending.length > 0 ? (totalEntry - discount) / pending.length : 0;

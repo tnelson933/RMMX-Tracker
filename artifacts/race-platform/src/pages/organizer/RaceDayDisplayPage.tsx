@@ -1,14 +1,35 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Monitor, Copy, Check, ExternalLink, Tv2, ClipboardList, Radio } from "lucide-react";
+import { useListEvents } from "@workspace/api-client-react";
+import type { Event } from "@workspace/api-client-react";
 import { useAuth } from "@/contexts/AuthContext";
+
+// Events a display can be pinned to: race day first, then upcoming ones.
+const PINNABLE_STATUSES = ["race_day", "registration_closed", "registration_open"];
 
 export default function RaceDayDisplayPage() {
   const { user } = useAuth();
   const [copied, setCopied] = useState(false);
 
   const clubId = user?.clubId;
+  const { data: rawEvents } = useListEvents(
+    { clubId: clubId ?? undefined },
+    { query: { enabled: !!clubId } as any },
+  );
+  const pinnable = useMemo(
+    () => ((rawEvents ?? []) as Event[])
+      .filter((e) => PINNABLE_STATUSES.includes(e.status))
+      .sort((a, b) => PINNABLE_STATUSES.indexOf(a.status) - PINNABLE_STATUSES.indexOf(b.status)),
+    [rawEvents],
+  );
+  // null = not chosen yet: pin today's race-day event when there is exactly one.
+  const [pinChoice, setPinChoice] = useState<string | null>(null);
+  const raceDay = pinnable.filter((e) => e.status === "race_day");
+  const pinnedEventId = pinChoice === null
+    ? (raceDay.length === 1 ? raceDay[0].id : null)
+    : pinChoice === "auto" ? null : Number(pinChoice);
   const displayUrl = clubId
-    ? `${window.location.origin}/gate?club=${clubId}`
+    ? `${window.location.origin}/gate?club=${clubId}${pinnedEventId ? `&event=${pinnedEventId}` : ""}`
     : null;
 
   const handleCopy = async () => {
@@ -85,6 +106,27 @@ export default function RaceDayDisplayPage() {
 
         {displayUrl ? (
           <>
+            {pinnable.length > 0 && (
+              <label className="block space-y-1">
+                <span className="text-xs font-semibold text-foreground">Event</span>
+                <select
+                  value={pinnedEventId?.toString() ?? "auto"}
+                  onChange={(e) => setPinChoice(e.target.value)}
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+                >
+                  <option value="auto">Automatic: whichever event is on race day</option>
+                  {pinnable.map((ev) => (
+                    <option key={ev.id} value={ev.id.toString()}>
+                      {ev.name}{ev.status === "race_day" ? " (race day)" : ""}
+                    </option>
+                  ))}
+                </select>
+                <span className="block text-xs text-muted-foreground">
+                  A pinned link always shows that event while it is on race day, so the TV never needs the event picker.
+                  When the event isn't racing, the display falls back to the club's current race-day event.
+                </span>
+              </label>
+            )}
             <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
               <span className="flex-1 font-mono text-xs text-foreground truncate select-all">{displayUrl}</span>
             </div>

@@ -14,7 +14,7 @@ router.get("/stripe/connect/status", async (req, res) => {
     .get(userId) as Record<string, unknown> | undefined;
 
   if (!user?.club_id) {
-    return res.json({ connected: false, onboardingComplete: false, accountId: null, source: "local" });
+    return res.json({ connected: false, onboardingComplete: false, accountId: null, email: null, source: "local" });
   }
 
   const clubId = user.club_id as number;
@@ -45,7 +45,7 @@ router.get("/stripe/connect/status", async (req, res) => {
             "UPDATE clubs SET stripe_account_id = NULL WHERE id = ?",
           ).run(clubId);
         }
-        return res.json({ ...data, accountId: null, source: "cloud" });
+        return res.json({ ...data, accountId: null, email: null, source: "cloud" });
       }
     } catch {
       // Cloud unreachable — fall through to local SQLite.
@@ -58,13 +58,14 @@ router.get("/stripe/connect/status", async (req, res) => {
     .get(clubId) as Record<string, unknown> | undefined;
 
   if (!club) {
-    return res.json({ connected: false, onboardingComplete: false, accountId: null, source: "local" });
+    return res.json({ connected: false, onboardingComplete: false, accountId: null, email: null, source: "local" });
   }
 
   return res.json({
     connected: !!club.stripe_account_id,
     onboardingComplete: !!(club.stripe_onboarding_complete as number),
     accountId: club.stripe_account_id ?? null,
+    email: null,
     source: "local",
   });
 });

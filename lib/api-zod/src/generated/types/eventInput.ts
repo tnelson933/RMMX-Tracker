@@ -5,6 +5,7 @@
  * RM Roost API
  * OpenAPI spec version: 0.1.0
  */
+import type { EventInputRaceClassDetails } from './eventInputRaceClassDetails';
 import type { EventInputRaceClassLimits } from './eventInputRaceClassLimits';
 import type { EventInputRaceClassSeriesMap } from './eventInputRaceClassSeriesMap';
 import type { EventInputRaceStyle } from './eventInputRaceStyle';
@@ -14,8 +15,8 @@ import type { PurchaseOption } from './purchaseOption';
 export interface EventInput {
   clubId: number;
   name: string;
-  date: string;
-  state: string;
+  date?: string;
+  state?: string;
   location?: string;
   trackName?: string;
   raceClasses?: string[];
@@ -73,4 +74,16 @@ export interface EventInput {
   streetAddress?: string;
   /** ZIP code of the track venue. */
   zip?: string;
+  /** When true, riders must e-sign the club liability waiver. */
+  requireLiabilityWaiver?: boolean;
+  rfidStickerFee?: number;
+  /** Maps each race class name to a rules/details paragraph shown to riders. */
+  raceClassDetails?: EventInputRaceClassDetails;
+  /**
+     * Brands selected for contingency sponsorships at this event.
+     * @nullable
+     */
+  contingencyBrands?: string[] | null;
+  /** Save as a draft. date and state are then optional (date defaults to today, state to TBD); without it both are required. */
+  draft?: boolean;
 }

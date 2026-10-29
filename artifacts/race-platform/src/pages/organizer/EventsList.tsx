@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { StateSelect } from "@/components/ui/StateSelect";
 import { useAuth } from "@/contexts/AuthContext";
 import { RM_TRACKR_OPTION_ID, RM_TRACKR_NAME, RM_TRACKR_PRICE } from "@/lib/rmTrackr";
-import { useListEvents, useCreateEvent, useListClubs, useListSeries, useUpdateSeries, getListSeriesQueryKey, useListPointsTables, getListEventsQueryKey, useListDiscountCategories, useGetClubSettings, usePutClubSettings } from "@workspace/api-client-react";
+import { useListEvents, useCreateEvent, useListClubs, useListSeries, useUpdateSeries, getListSeriesQueryKey, useListPointsTables, getListEventsQueryKey, useGetClubSettings, usePutClubSettings } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -118,13 +118,45 @@ const createEventSchema = z.object({
     optionId: z.string().optional(),
     name: z.string().min(1, "Name required"),
     amount: z.string().min(1, "Amount required"),
-    categoryId: z.number().nullable().optional(),
   })).default([]),
   amaEventId: z.string().optional(),
 }).refine(
   (data) => !data.multiDay || !data.endDate || data.endDate >= data.date,
   { message: "End date must be on or after start date", path: ["endDate"] },
-);
+).superRefine((data, ctx) => {
+  const problem = eventDateOrderProblem(data);
+  if (problem) ctx.addIssue({ code: "custom", path: [problem.path], message: problem.message });
+});
+
+type CreateEventValues = z.infer<typeof createEventSchema>;
+
+/**
+ * Registration window, early sign-up period and fee checks (the server applies
+ * the same rules in validateEventInput). Registration times are the picker's
+ * local "YYYY-MM-DDTHH:mm"; race dates are "YYYY-MM-DD".
+ */
+function eventDateOrderProblem(data: {
+  date?: string; multiDay?: boolean; endDate?: string; registrationOpen?: string; registrationClose?: string;
+  paymentEnabled?: boolean; earlyBirdEnabled?: boolean; earlyBirdFee?: string; earlyBirdEndsAt?: string; entryFee?: string;
+}): { path: "registrationClose" | "earlyBirdEndsAt" | "earlyBirdFee"; message: string } | null {
+  const { registrationOpen: opens, registrationClose: closes } = data;
+  if (opens && closes && new Date(closes).getTime() <= new Date(opens).getTime()) {
+    return { path: "registrationClose", message: "Registration must close after it opens" };
+  }
+  const lastDay = (data.multiDay && data.endDate) || data.date;
+  if (closes && lastDay && closes.substring(0, 10) > lastDay) {
+    return { path: "registrationClose", message: "Registration can't close after the last race day" };
+  }
+  if (data.paymentEnabled && data.earlyBirdEnabled) {
+    if (data.earlyBirdEndsAt && data.date && data.earlyBirdEndsAt > data.date) {
+      return { path: "earlyBirdEndsAt", message: "The early sign-up period can't end after the race date" };
+    }
+    if (data.earlyBirdFee && data.entryFee && Number(data.earlyBirdFee) >= Number(data.entryFee)) {
+      return { path: "earlyBirdFee", message: "The early sign-up fee must be less than the entry fee" };
+    }
+  }
+  return null;
+}
 
 export default function EventsList() {
   const { user } = useAuth();
@@ -146,6 +178,8 @@ export default function EventsList() {
   const [createImgState, setCreateImgState] = useState<"idle" | "processing" | "uploading" | "done">("idle");
   const [removeBgOnCreate, setRemoveBgOnCreate] = useState(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
+  // One flag for both Create and Save as Draft so the event is never created twice.
+  const [isCreateBusy, setIsCreateBusy] = useState(false);
 
   // Track library state
   const [trackLibrary, setTrackLibrary] = useState<{ id: number; name: string; address: string | null; city: string | null; state: string | null; zip: string | null }[]>([]);
@@ -243,7 +277,6 @@ export default function EventsList() {
 
   const createMutation = useCreateEvent();
   const { data: pointsTables } = useListPointsTables({ query: {} as any });
-  const { data: discountCategories = [] } = useListDiscountCategories({ query: {} as any });
 
   const { data: clubSettingsData } = useGetClubSettings(sessionClubId ?? 0, { query: { enabled: !!sessionClubId && !isSuperAdmin } as any });
   const putClubSettings = usePutClubSettings();
@@ -291,7 +324,7 @@ export default function EventsList() {
   };
 
 
-  const form = useForm<z.infer<typeof createEventSchema>>({
+  const form = useForm<CreateEventValues>({
     resolver: zodResolver(createEventSchema),
     defaultValues: {
       raceStyle: "motocross" as const,
@@ -342,130 +375,171 @@ export default function EventsList() {
     !s.scoringTableId || !watchScoringTableId || s.scoringTableId === watchScoringTableId
   );
 
-  const onSubmit = async (data: z.infer<typeof createEventSchema>) => {
-    const classDetails: Record<string, string> = {};
-    data.raceClasses.forEach(r => {
-      const key = r.name.trim();
-      if (key && r.details && r.details.trim()) classDetails[key] = r.details.trim();
-    });
+  /** Clears the create dialog: after a create or draft save, and when it's closed without saving. */
+  const resetCreateForm = () => {
+    setCreateSeriesIds([]);
+    setCreateContingencyBrands([]);
+    setCreateNewBrandInput("");
+    setExpandedCreateDetailRows(new Set());
+    setPendingImageFile(null);
+    setImgValidationError(null);
+    setCreateImgState("idle");
+    setRemoveBgOnCreate(false);
+    form.reset();
+  };
 
+  /**
+   * The POST /events body. A draft is built from unvalidated form values, so
+   * blank rows are dropped and empty fields are left out.
+   */
+  const buildCreatePayload = (data: CreateEventValues, clubId: number, draft: boolean) => {
+    const classes = (data.raceClasses ?? []).filter(r => r.name?.trim());
+    const classDetails: Record<string, string> = {};
+    const classLimits: Record<string, number> = {};
+    classes.forEach(r => {
+      const key = r.name.trim();
+      if (r.details && r.details.trim()) classDetails[key] = r.details.trim();
+      const max = r.maxRiders === "" || r.maxRiders == null ? NaN : Number(r.maxRiders);
+      if (Number.isInteger(max) && max >= 1) classLimits[key] = max;
+    });
+    const activeTiming = data.timingTechnology === "active_transponder";
+    const paid = !!data.paymentEnabled;
+    const earlyBird = paid && !!data.earlyBirdEnabled;
+    const hasTrack = !!data.trackName?.trim();
+    return {
+      ...(draft ? { draft: true } : {}),
+      clubId,
+      name: data.name.trim(),
+      date: data.date || undefined,
+      endDate: data.multiDay && data.endDate ? data.endDate : null,
+      state: data.state || undefined,
+      location: data.location,
+      trackName: data.trackName || null,
+      trackId: hasTrack ? selectedLibraryTrackId : null,
+      streetAddress: hasTrack ? (manualTrackAddress.trim() || undefined) : undefined,
+      zip: hasTrack ? (manualTrackZip.trim() || undefined) : undefined,
+      raceStyle: data.raceStyle,
+      timingTechnology: data.timingTechnology,
+      raceClasses: classes.map(r => r.name.trim()),
+      raceClassLimits: classLimits,
+      raceClassSeriesMap: Object.fromEntries(
+        classes
+          .map(r => {
+            const merged = Array.from(new Set([...(r.seriesIds ?? []), ...createSeriesIds]));
+            return [r.name.trim(), merged] as [string, number[]];
+          })
+          .filter(([, ids]) => ids.length > 0)
+      ),
+      raceClassDetails: Object.keys(classDetails).length > 0 ? classDetails : undefined,
+      registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
+      registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
+      paymentEnabled: paid,
+      requireAma: data.requireAma,
+      requireClubId: data.requireClubId,
+      noDuplicateBibs: data.noDuplicateBibs,
+      requireWaiver: data.requireWaiver,
+      requireLiabilityWaiver: data.requireLiabilityWaiver,
+      // The control is only shown for active timing without Collect Payments.
+      requireTransponder: activeTiming && !paid ? !!data.requireTransponder : false,
+      quickCheckinEnabled: data.quickCheckinEnabled,
+      scoringTableId: data.scoringTableId ?? null,
+      entryFee: paid && data.entryFee ? Number(data.entryFee) : undefined,
+      earlyBirdFee: earlyBird && data.earlyBirdFee ? Number(data.earlyBirdFee) : undefined,
+      earlyBirdEndsAt: earlyBird && data.earlyBirdEndsAt ? data.earlyBirdEndsAt : undefined,
+      transponderRentalEnabled: activeTiming && paid ? data.transponderRentalEnabled : false,
+      transponderRentalFee: activeTiming && paid && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
+      rfidStickerFee: !activeTiming && paid && data.rfidStickerFee ? Number(data.rfidStickerFee) : undefined,
+      purchaseOptions: (data.purchaseOptions ?? [])
+        .filter(o => o.optionId === RM_TRACKR_OPTION_ID || (o.name?.trim() && o.amount !== ""))
+        .map(o => ({ id: o.optionId || crypto.randomUUID(), name: o.name.trim(), amount: Number(o.amount) })),
+      amaEventId: data.amaEventId || undefined,
+      contingencyBrands: createContingencyBrands.length > 0 ? createContingencyBrands : undefined,
+    };
+  };
+
+  /** Creates the event (full or draft), then its class defaults, track, series links and image. */
+  const createEvent = async (data: CreateEventValues, clubId: number, draft: boolean) => {
     let newEvent: Awaited<ReturnType<typeof createMutation.mutateAsync>>;
     try {
-      newEvent = await createMutation.mutateAsync({
-        data: {
-          clubId: data.clubId,
-          name: data.name,
-          date: data.date,
-          endDate: data.multiDay && data.endDate ? data.endDate : null,
-          state: data.state,
-          location: data.location,
-          trackName: data.trackName || null,
-          streetAddress: data.trackName?.trim() ? (manualTrackAddress.trim() || undefined) : undefined,
-          zip: data.trackName?.trim() ? (manualTrackZip.trim() || undefined) : undefined,
-          raceStyle: data.raceStyle,
-          timingTechnology: data.timingTechnology,
-          raceClasses: data.raceClasses.map(r => r.name.trim()).filter(Boolean),
-          raceClassSeriesMap: Object.fromEntries(
-            data.raceClasses
-              .map(r => {
-                const merged = Array.from(new Set([...(r.seriesIds ?? []), ...createSeriesIds]));
-                return [r.name.trim(), merged] as [string, number[]];
-              })
-              .filter(([, ids]) => ids.length > 0)
-          ),
-          raceClassDetails: Object.keys(classDetails).length > 0 ? classDetails : undefined,
-          registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
-          registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
-          paymentEnabled: data.paymentEnabled,
-          requireAma: data.requireAma,
-          requireClubId: data.requireClubId,
-          noDuplicateBibs: data.noDuplicateBibs,
-          requireWaiver: data.requireWaiver,
-          requireLiabilityWaiver: data.requireLiabilityWaiver,
-          requireTransponder: data.timingTechnology === "active_transponder" ? data.requireTransponder : false,
-          quickCheckinEnabled: data.quickCheckinEnabled,
-          scoringTableId: data.scoringTableId ?? null,
-          entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
-          earlyBirdFee: data.paymentEnabled && data.earlyBirdEnabled && data.earlyBirdFee ? Number(data.earlyBirdFee) : undefined,
-          earlyBirdEndsAt: data.paymentEnabled && data.earlyBirdEnabled && data.earlyBirdEndsAt ? data.earlyBirdEndsAt : undefined,
-          transponderRentalEnabled: data.timingTechnology === "active_transponder" && data.paymentEnabled ? data.transponderRentalEnabled : false,
-          transponderRentalFee: data.timingTechnology === "active_transponder" && data.paymentEnabled && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
-          rfidStickerFee: data.timingTechnology === "rfid" && data.paymentEnabled && data.rfidStickerFee ? Number(data.rfidStickerFee) : undefined,
-          purchaseOptions: data.purchaseOptions.map(o => ({ id: o.optionId || crypto.randomUUID(), name: o.name.trim(), amount: Number(o.amount), categoryId: o.categoryId ?? null })),
-          amaEventId: data.amaEventId || undefined,
-          contingencyBrands: createContingencyBrands.length > 0 ? createContingencyBrands : undefined,
-        },
-      } as any);
+      newEvent = await createMutation.mutateAsync({ data: buildCreatePayload(data, clubId, draft) } as any);
     } catch (err: any) {
-      toast({ title: "Failed to create event", description: err.message, variant: "destructive" });
+      toast({ title: draft ? "Failed to save draft" : "Failed to create event", description: err.message, variant: "destructive" });
       return;
     }
 
     // Silently sync class names and notes back to club defaults
     if (sessionClubId && !isSuperAdmin) {
+      const classes = (data.raceClasses ?? []).filter(r => r.name?.trim());
       const existingDefaultNames = new Set(defaultClasses.map(c => c.name));
-      const newClassNames = data.raceClasses.map(r => r.name.trim()).filter(n => n && !existingDefaultNames.has(n));
-      const hasNoteUpdates = data.raceClasses.some(r => {
+      const newClassNames = classes.map(r => r.name.trim()).filter(n => !existingDefaultNames.has(n));
+      const hasNoteUpdates = classes.some(r => {
         const key = r.name.trim();
         const existing = defaultClasses.find(c => c.name === key);
         return existing && r.details && r.details.trim() && existing.details !== r.details.trim();
       });
       if (newClassNames.length > 0 || hasNoteUpdates) {
         const updated = defaultClasses.map(c => {
-          const match = data.raceClasses.find(r => r.name.trim() === c.name);
+          const match = classes.find(r => r.name.trim() === c.name);
           return match && match.details && match.details.trim() ? { ...c, details: match.details.trim() } : c;
         });
         newClassNames.forEach(n => {
-          const match = data.raceClasses.find(r => r.name.trim() === n);
+          const match = classes.find(r => r.name.trim() === n);
           updated.push({ id: crypto.randomUUID(), name: n, details: match?.details?.trim() || undefined });
         });
         putClubSettings.mutate({ clubId: sessionClubId, data: { defaultClasses: updated } });
       }
     }
 
-    // Auto-save new track to library, or update address on an existing one
-    if (data.trackName?.trim() && !selectedLibraryTrackId) {
-      fetch("/api/tracks", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: data.trackName.trim(),
-          address: manualTrackAddress.trim() || undefined,
-          city: data.location?.trim() || undefined,
-          state: data.state?.trim() || undefined,
-          zip: manualTrackZip.trim() || undefined,
-        }),
-      }).then(r => r.ok ? r.json() : null).then(track => {
-        if (track) setTrackLibrary(prev => [...prev, track].sort((a, b) => a.name.localeCompare(b.name)));
-      }).catch(() => {});
-    } else if (selectedLibraryTrackId) {
-      fetch(`/api/tracks/${selectedLibraryTrackId}`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          address: manualTrackAddress.trim() || null,
-          city: data.location?.trim() || null,
-          state: data.state?.trim() || null,
-          zip: manualTrackZip.trim() || null,
-        }),
-      }).then(r => r.ok ? r.json() : null).then(track => {
-        if (track) setTrackLibrary(prev => prev.map(t => t.id === selectedLibraryTrackId ? track : t));
-      }).catch(() => {});
+    // Save a new track to the library, or update the address on the picked one.
+    // The event is already created, so a failure here only warns.
+    try {
+      if (data.trackName?.trim() && !selectedLibraryTrackId) {
+        const r = await fetch("/api/tracks", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: data.trackName.trim(),
+            address: manualTrackAddress.trim() || undefined,
+            city: data.location?.trim() || undefined,
+            state: data.state?.trim() || undefined,
+            zip: manualTrackZip.trim() || undefined,
+          }),
+        });
+        if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${r.status}`);
+        const track = await r.json();
+        setTrackLibrary(prev => [...prev, track].sort((a, b) => a.name.localeCompare(b.name)));
+      } else if (selectedLibraryTrackId) {
+        const r = await fetch(`/api/tracks/${selectedLibraryTrackId}`, {
+          method: "PATCH",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            address: manualTrackAddress.trim() || null,
+            city: data.location?.trim() || null,
+            state: data.state?.trim() || null,
+            zip: manualTrackZip.trim() || null,
+          }),
+        });
+        if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${r.status}`);
+        const track = await r.json();
+        setTrackLibrary(prev => prev.map(t => t.id === selectedLibraryTrackId ? track : t));
+      }
+    } catch (err: any) {
+      toast({ title: "Event saved, but the track library wasn't updated", description: err?.message, variant: "destructive" });
     }
 
-    // Link to series if selected
-    for (const sid of createSeriesIds) {
+    // Link to the selected series before leaving the page. Each failure is
+    // reported by updateSeriesMutation's onError toast.
+    await Promise.allSettled(createSeriesIds.flatMap(sid => {
       const targetSeries = seriesList?.find(s => s.id === sid);
-      if (targetSeries) {
-        const currentIds = (targetSeries.eventIds as number[]) ?? [];
-        updateSeriesMutation.mutate({
-          seriesId: targetSeries.id,
-          data: { eventIds: [...new Set([...currentIds, newEvent.id])] },
-        });
-      }
-    }
+      if (!targetSeries) return [];
+      const currentIds = (targetSeries.eventIds as number[]) ?? [];
+      return [updateSeriesMutation.mutateAsync({
+        seriesId: targetSeries.id,
+        data: { eventIds: [...new Set([...currentIds, newEvent.id])] },
+      } as any)];
+    }));
 
     // Upload image if one was selected
     if (pendingImageFile) {
@@ -477,13 +551,16 @@ export default function EventsList() {
           cleanBlob = await removeBackground(pendingImageFile);
         }
         setCreateImgState("uploading");
+        // Background removal always yields a PNG; otherwise keep the file's own type.
+        const contentType = removeBgOnCreate ? "image/png" : (pendingImageFile.type || "image/png");
+        const ext = ({ "image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp" } as Record<string, string>)[contentType] ?? "png";
         // Direct binary upload — server saves to local disk and syncs to cloud storage
         const uploadRes = await fetch("/api/storage/uploads/file", {
           method: "POST",
           headers: {
-            "Content-Type": "image/png",
-            "x-file-name": `event-${newEvent.id}-image.png`,
-            "x-content-type": "image/png",
+            "Content-Type": contentType,
+            "x-file-name": `event-${newEvent.id}-image.${ext}`,
+            "x-content-type": contentType,
           },
           credentials: "include",
           body: cleanBlob,
@@ -493,65 +570,65 @@ export default function EventsList() {
           throw new Error(body.error || "Upload failed");
         }
         const { objectPath } = await uploadRes.json() as { objectPath: string };
-        await fetch(`/api/events/${newEvent.id}`, {
+        const patchRes = await fetch(`/api/events/${newEvent.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({ imageUrl: `/api/storage${objectPath}` }),
         });
+        if (!patchRes.ok) {
+          const body = await patchRes.json().catch(() => ({})) as { error?: string };
+          throw new Error(body.error || "The image couldn't be attached to the event");
+        }
         setCreateImgState("done");
-      } catch {
-        toast({ title: "Event created, but image upload failed", variant: "destructive" });
+      } catch (err: any) {
+        toast({ title: "Event saved, but image upload failed", description: err?.message, variant: "destructive" });
       }
     }
 
     queryClient.invalidateQueries({ queryKey: getListEventsQueryKey() });
     setIsCreateOpen(false);
-    setCreateSeriesIds([]);
-    setCreateContingencyBrands([]);
-    setCreateNewBrandInput("");
-    setPendingImageFile(null);
-    setCreateImgState("idle");
-    setRemoveBgOnCreate(false);
-    form.reset();
-    toast({ title: "Event created successfully" });
+    resetCreateForm();
+    toast(draft
+      ? { title: "Draft saved", description: `"${data.name.trim()}" saved as a draft. Finish it anytime.` }
+      : { title: "Event created successfully" });
     setLocation(`/events/${newEvent.id}`);
   };
 
+  const onSubmit = async (data: CreateEventValues) => {
+    if (isCreateBusy) return;
+    setIsCreateBusy(true);
+    try {
+      await createEvent(data, data.clubId, false);
+    } finally {
+      setIsCreateBusy(false);
+    }
+  };
+
   const onSaveAsDraft = async () => {
+    if (isCreateBusy) return;
     const nameValid = await form.trigger("name");
     if (!nameValid) return;
-    const { name: draftName, clubId: formClubId } = form.getValues();
-    const effectiveClubId = isSuperAdmin ? formClubId : (sessionClubId ?? 0);
+    const values = form.getValues();
+    const effectiveClubId = isSuperAdmin ? values.clubId : (sessionClubId ?? 0);
     if (!effectiveClubId) {
       toast({ title: "No club selected", variant: "destructive" });
       return;
     }
+    // A draft may leave anything blank, but what is filled in must be in order.
+    const problem = eventDateOrderProblem(values);
+    if (problem) {
+      form.setError(problem.path, { type: "custom", message: problem.message });
+      toast({ title: "Check the dates", description: problem.message, variant: "destructive" });
+      return;
+    }
+    setIsCreateBusy(true);
     setIsSavingDraft(true);
     try {
-      const res = await fetch("/api/events", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ name: draftName, clubId: effectiveClubId, draft: true }),
-      });
-      if (!res.ok) throw new Error(((await res.json()) as any).error ?? "Failed to save draft");
-      const newEvent = await res.json() as { id: number };
-      queryClient.invalidateQueries({ queryKey: getListEventsQueryKey() });
-      setIsCreateOpen(false);
-      setCreateSeriesIds([]);
-      setCreateContingencyBrands([]);
-      setCreateNewBrandInput("");
-      setPendingImageFile(null);
-      setCreateImgState("idle");
-      setRemoveBgOnCreate(false);
-      form.reset();
-      toast({ title: "Draft saved", description: `"${draftName}" saved as a draft. Finish it anytime.` });
-      setLocation(`/events/${newEvent.id}`);
-    } catch (err: any) {
-      toast({ title: "Failed to save draft", description: err.message, variant: "destructive" });
+      await createEvent(values, effectiveClubId, true);
     } finally {
       setIsSavingDraft(false);
+      setIsCreateBusy(false);
     }
   };
 
@@ -621,7 +698,7 @@ export default function EventsList() {
               )}
             </Button>
           )}
-        <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if (!open) { setCreateSeriesIds([]); setCreateContingencyBrands([]); } }}>
+        <Dialog open={isCreateOpen} onOpenChange={(open) => { if (!open && isCreateBusy) return; setIsCreateOpen(open); if (!open) resetCreateForm(); }}>
           <DialogTrigger asChild>
             <Button className="font-heading uppercase tracking-wider">
               <Plus size={16} className="mr-2" /> Create Event
@@ -778,6 +855,7 @@ export default function EventsList() {
                 {form.watch("trackName")?.trim() && (
                   <Input
                     placeholder="Street address"
+                    aria-label="Track street address"
                     value={manualTrackAddress}
                     onChange={e => setManualTrackAddress(e.target.value)}
                   />
@@ -815,6 +893,7 @@ export default function EventsList() {
                 {form.watch("trackName")?.trim() && (
                   <Input
                     placeholder="ZIP code"
+                    aria-label="Track ZIP code"
                     value={manualTrackZip}
                     onChange={e => setManualTrackZip(e.target.value)}
                     className="w-36"
@@ -1297,9 +1376,9 @@ export default function EventsList() {
 
                   {/* Purchase Options */}
                   <div className="space-y-2 pt-1">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="text-sm font-medium text-foreground">Purchase Options</p>
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
                         <Button
                           type="button"
                           variant="outline"
@@ -1326,14 +1405,14 @@ export default function EventsList() {
                     ) : (
                       <div className="space-y-2">
                         {purchaseOptionFields.map((optField, idx) => (
-                          <div key={optField.id} className="flex gap-2 items-start">
+                          <div key={optField.id} className="flex flex-wrap sm:flex-nowrap gap-2 items-start">
                             <FormField
                               control={form.control}
                               name={`purchaseOptions.${idx}.name`}
                               render={({ field }) => (
-                                <FormItem className="flex-1">
+                                <FormItem className="w-full sm:w-auto sm:flex-1">
                                   <FormControl>
-                                    <Input placeholder="Gate fee, pit pass…" {...field} readOnly={form.watch(`purchaseOptions.${idx}.optionId`) === RM_TRACKR_OPTION_ID} />
+                                    <Input placeholder="Gate fee, pit pass…" aria-label={`Purchase option ${idx + 1} name`} {...field} readOnly={form.watch(`purchaseOptions.${idx}.optionId`) === RM_TRACKR_OPTION_ID} />
                                   </FormControl>
                                   <FormMessage />
                                 </FormItem>
@@ -1343,38 +1422,13 @@ export default function EventsList() {
                               control={form.control}
                               name={`purchaseOptions.${idx}.amount`}
                               render={({ field }) => (
-                                <FormItem className="w-28">
+                                <FormItem className="flex-1 sm:flex-none sm:w-28">
                                   <FormControl>
                                     <div className="relative">
                                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-                                      <Input type="number" min="0" step="0.01" placeholder="0.00" className="pl-6" {...field} readOnly={form.watch(`purchaseOptions.${idx}.optionId`) === RM_TRACKR_OPTION_ID} />
+                                      <Input type="number" min="0" step="0.01" placeholder="0.00" className="pl-6" aria-label={`Purchase option ${idx + 1} price`} {...field} readOnly={form.watch(`purchaseOptions.${idx}.optionId`) === RM_TRACKR_OPTION_ID} />
                                     </div>
                                   </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            <FormField
-                              control={form.control}
-                              name={`purchaseOptions.${idx}.categoryId`}
-                              render={({ field }) => (
-                                <FormItem className="w-36">
-                                  <Select
-                                    value={field.value != null ? String(field.value) : "none"}
-                                    onValueChange={(v) => field.onChange(v === "none" ? null : Number(v))}
-                                  >
-                                    <FormControl>
-                                      <SelectTrigger>
-                                        <SelectValue placeholder="Category" />
-                                      </SelectTrigger>
-                                    </FormControl>
-                                    <SelectContent>
-                                      <SelectItem value="none">No category</SelectItem>
-                                      {discountCategories.map((cat) => (
-                                        <SelectItem key={cat.id} value={String(cat.id)}>{cat.name}</SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
                                   <FormMessage />
                                 </FormItem>
                               )}
@@ -1384,6 +1438,7 @@ export default function EventsList() {
                               variant="ghost"
                               size="icon"
                               className="mt-0.5 shrink-0 text-muted-foreground hover:text-destructive"
+                              aria-label={`Remove purchase option ${idx + 1}`}
                               onClick={() => removePurchaseOption(idx)}
                             >
                               <X size={14} />
@@ -1449,7 +1504,7 @@ export default function EventsList() {
                       </div>
                     )}
                     {fields.length > 0 && (
-                      <div className="grid grid-cols-[1fr_1fr_140px_32px_32px] gap-2 mb-1">
+                      <div className="hidden sm:grid grid-cols-[1fr_1fr_140px_32px_32px] gap-2 mb-1">
                         <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Class Name</span>
                         <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Series</span>
                         <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Max Riders</span>
@@ -1459,14 +1514,14 @@ export default function EventsList() {
                     )}
                     {fields.map((field, index) => (
                       <div key={field.id} className="space-y-1">
-                      <div className="grid grid-cols-[1fr_1fr_140px_32px_32px] gap-2 items-start">
+                      <div className="grid grid-cols-2 sm:grid-cols-[1fr_1fr_140px_32px_32px] gap-2 items-start">
                         <FormField
                           control={form.control}
                           name={`raceClasses.${index}.name`}
                           render={({ field }) => (
-                            <FormItem>
+                            <FormItem className="col-span-2 sm:col-span-1">
                               <FormControl>
-                                <Input placeholder="e.g. 450 Pro" {...field} />
+                                <Input placeholder="e.g. 450 Pro" aria-label={`Class ${index + 1} name`} {...field} />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -1493,8 +1548,9 @@ export default function EventsList() {
                                       role="combobox"
                                       className="w-full"
                                       type="button"
+                                      aria-label={`Class ${index + 1} series: ${label}`}
                                     >
-                                      <span className="truncate text-sm">{label}</span>
+                                      <span className="truncate text-sm"><span className="sm:hidden text-muted-foreground">Series: </span>{label}</span>
                                       <ChevronsUpDown size={14} className="ml-1 shrink-0 opacity-50" />
                                     </Button>
                                   </PopoverTrigger>
@@ -1541,6 +1597,7 @@ export default function EventsList() {
                                   type="number"
                                   min="1"
                                   placeholder="Unlimited"
+                                  aria-label={`Class ${index + 1} max riders`}
                                   {...field}
                                   value={field.value ?? ""}
                                 />
@@ -1549,11 +1606,14 @@ export default function EventsList() {
                             </FormItem>
                           )}
                         />
+                        <div className="col-span-2 flex justify-end gap-2 sm:contents">
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
                           title={expandedCreateDetailRows.has(index) ? "Hide details" : "Add class rules / details"}
+                          aria-label={expandedCreateDetailRows.has(index) ? `Hide class ${index + 1} details` : `Add class ${index + 1} rules / details`}
+                          aria-expanded={expandedCreateDetailRows.has(index)}
                           className={`h-9 w-8 mt-0 ${expandedCreateDetailRows.has(index) ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-primary hover:bg-primary/10"}`}
                           onClick={() => setExpandedCreateDetailRows(prev => {
                             const next = new Set(prev);
@@ -1568,6 +1628,7 @@ export default function EventsList() {
                           variant="ghost"
                           size="icon"
                           className="h-9 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 mt-0"
+                          aria-label={`Remove class ${index + 1}`}
                           onClick={() => {
                             remove(index);
                             setExpandedCreateDetailRows(prev => {
@@ -1580,6 +1641,7 @@ export default function EventsList() {
                           <Trash2 size={14} />
                         </Button>
                         </div>
+                        </div>
                         {expandedCreateDetailRows.has(index) && (
                           <FormField
                             control={form.control}
@@ -1590,6 +1652,7 @@ export default function EventsList() {
                                   <textarea
                                     {...field}
                                     rows={3}
+                                    aria-label={`Class ${index + 1} rules and details`}
                                     placeholder="Class rules, eligibility requirements, bike specs, or any other details riders should know…"
                                     className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
                                   />
@@ -1664,12 +1727,13 @@ export default function EventsList() {
                         <div className="flex gap-2">
                           <Input
                             placeholder="Add new brand…"
+                            aria-label="New contingency brand"
                             value={createNewBrandInput}
                             onChange={e => setCreateNewBrandInput(e.target.value)}
                             onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleAddBrand(); } }}
                             className="h-8 text-sm"
                           />
-                          <Button type="button" variant="outline" size="sm" className="h-8 px-3 shrink-0" onClick={handleAddBrand}>
+                          <Button type="button" variant="outline" size="sm" className="h-8 px-3 shrink-0" aria-label="Add brand" onClick={handleAddBrand}>
                             <Plus size={14} />
                           </Button>
                         </div>
@@ -1689,6 +1753,7 @@ export default function EventsList() {
                           role="combobox"
                           className="w-full"
                           type="button"
+                          aria-label="Apply series to all classes"
                         >
                           <span className="truncate text-sm">
                             {createSeriesIds.length === 0
@@ -1762,7 +1827,7 @@ export default function EventsList() {
                         <Checkbox checked={removeBgOnCreate} onCheckedChange={v => setRemoveBgOnCreate(!!v)} />
                         Remove background
                       </label>
-                      <button type="button" onClick={() => { setPendingImageFile(null); setImgValidationError(null); }} className="text-muted-foreground hover:text-destructive shrink-0">
+                      <button type="button" aria-label="Remove image" onClick={() => { setPendingImageFile(null); setImgValidationError(null); }} className="text-muted-foreground hover:text-destructive shrink-0">
                         <X size={14} />
                       </button>
                     </div>
@@ -1785,14 +1850,14 @@ export default function EventsList() {
                   <Button
                     type="button"
                     variant="outline"
-                    disabled={isSavingDraft}
+                    disabled={isCreateBusy || createImgState === "processing" || createImgState === "uploading"}
                     onClick={onSaveAsDraft}
                     className="font-heading uppercase tracking-wider text-muted-foreground"
                   >
                     {isSavingDraft ? <><Loader2 size={14} className="mr-2 animate-spin" /> Saving…</> : <><Pencil size={14} className="mr-2" /> Save as Draft</>}
                   </Button>
-                  <Button type="submit" disabled={createMutation.isPending || createImgState === "processing" || createImgState === "uploading"} className="font-heading uppercase tracking-wider">
-                    {createMutation.isPending ? "Creating..." : createImgState === "processing" ? <><Loader2 size={14} className="mr-2 animate-spin" /> Removing background…</> : createImgState === "uploading" ? <><Loader2 size={14} className="mr-2 animate-spin" /> Uploading image…</> : "Create Event"}
+                  <Button type="submit" disabled={isCreateBusy || createImgState === "processing" || createImgState === "uploading"} className="font-heading uppercase tracking-wider">
+                    {createMutation.isPending && !isSavingDraft ? "Creating..." : createImgState === "processing" ? <><Loader2 size={14} className="mr-2 animate-spin" /> Removing background…</> : createImgState === "uploading" ? <><Loader2 size={14} className="mr-2 animate-spin" /> Uploading image…</> : "Create Event"}
                   </Button>
                 </div>
               </form>
@@ -1827,6 +1892,7 @@ export default function EventsList() {
               <button
                 type="button"
                 onClick={() => setSearchQuery("")}
+                aria-label="Clear search"
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               >
                 <X size={14} />

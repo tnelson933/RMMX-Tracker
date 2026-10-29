@@ -376,9 +376,9 @@ function SectorsCard({ detail, colors }: { detail: PublicMotoDetail; colors: Ret
   return (
     <View style={{ marginHorizontal: 16, marginTop: 18, borderWidth: 1, borderColor: colors.border, borderRadius: 14, overflow: "hidden" }}>
       <View style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 2 }}>
-        <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>Best sectors</Text>
+        <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>Best segments</Text>
         {names.map((name, i) => (
-          <Text key={i} style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>S{i + 1} · {name}</Text>
+          <Text key={i} style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>Seg {i + 1} · {name}</Text>
         ))}
       </View>
       {rows.map((e, r) => (

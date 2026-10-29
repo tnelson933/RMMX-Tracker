@@ -3,7 +3,8 @@ import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
 import { getDb } from "../db";
 import { resolveRegistrationRider } from "../registration-rider";
 import { markRiderFieldsDirty } from "../rider-profile-dirty";
-import { includesRmTrackr } from "../lib/rm-trackr";
+import { randomUUID } from "node:crypto";
+import { includesRmTrackr, RM_TRACKR_OPTION_ID, RM_TRACKR_NAME, RM_TRACKR_PRICE } from "../lib/rm-trackr";
 
 const router = Router();
 
@@ -27,6 +28,101 @@ function computeAutoStatus(event: any): string | null {
     if (eventDateStr && eventDateStr <= todayStr) correct = "race_day";
   }
   return correct !== status ? correct : null;
+}
+
+// ── Event input checks: same rules and messages as the cloud's
+// api-server/src/lib/validateInput.ts (validateEventInput) and
+// lib/rmTrackr.ts (normalizeEventPurchaseOptions). Keep them in step.
+const isBlank = (v: unknown) => v === undefined || v === null || v === "";
+const EVENT_STATUSES = ["draft", "registration_open", "registration_closed", "race_day", "completed", "results_published"];
+
+function isCalendarDate(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const day = value.substring(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
+  const d = new Date(`${day}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().startsWith(day);
+}
+
+function validateEventInput(body: Record<string, unknown>): string | null {
+  for (const f of ["date", "endDate"]) {
+    if (!isBlank(body[f]) && !isCalendarDate(body[f])) return `${f} must be a date like 2026-06-14`;
+  }
+  for (const f of ["registrationOpen", "registrationClose", "earlyBirdEndsAt"]) {
+    if (!isBlank(body[f]) && (typeof body[f] !== "string" || Number.isNaN(new Date(body[f] as string).getTime()))) {
+      return `${f} must be a valid date and time`;
+    }
+  }
+  for (const f of ["entryFee", "earlyBirdFee", "transponderRentalFee", "rfidStickerFee"]) {
+    if (isBlank(body[f])) continue;
+    const n = Number(body[f]);
+    if (!Number.isFinite(n) || n < 0) return `${f} must be a dollar amount of 0 or more`;
+    if (n > 100_000) return `${f} is too large`;
+  }
+  if (body.status !== undefined && !EVENT_STATUSES.includes(String(body.status))) {
+    return `status must be one of: ${EVENT_STATUSES.join(", ")}`;
+  }
+  if (!isBlank(body.maxRiders) && (!Number.isInteger(Number(body.maxRiders)) || Number(body.maxRiders) < 1)) {
+    return "maxRiders must be a whole number of 1 or more";
+  }
+  // Date order (only the pairs present in the body).
+  const day = (v: unknown) => (isBlank(v) ? null : String(v).substring(0, 10));
+  const opens = isBlank(body.registrationOpen) ? null : new Date(String(body.registrationOpen)).getTime();
+  const closes = isBlank(body.registrationClose) ? null : new Date(String(body.registrationClose)).getTime();
+  if (opens != null && closes != null && closes <= opens) return "Registration must close after it opens";
+  const lastDay = day(body.endDate) ?? day(body.date);
+  if (closes != null && lastDay && closes > Date.parse(`${lastDay}T23:59:59.999Z`) + 14 * 60 * 60 * 1000) {
+    return "Registration can't close after the last race day";
+  }
+  const earlyEnds = day(body.earlyBirdEndsAt);
+  const raceDay = day(body.date);
+  if (earlyEnds && raceDay && earlyEnds > raceDay) return "The early sign-up period can't end after the race date";
+  if (!isBlank(body.earlyBirdFee) && !isBlank(body.entryFee) && Number(body.earlyBirdFee) >= Number(body.entryFee)) {
+    return "The early sign-up fee must be less than the entry fee";
+  }
+  return checkPurchaseOptions(body.purchaseOptions);
+}
+
+function checkPurchaseOptions(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (!Array.isArray(value)) return "purchaseOptions must be a list";
+  const ids = new Set<string>();
+  for (const o of value) {
+    if (!o || typeof o !== "object") return "Each purchase option needs a name and a price";
+    const opt = o as Record<string, unknown>;
+    const id = isBlank(opt.id) ? null : String(opt.id);
+    if (id === RM_TRACKR_OPTION_ID) continue;
+    if (typeof opt.name !== "string" || !opt.name.trim()) return "Each purchase option needs a name";
+    const amount = typeof opt.amount === "string" && opt.amount.trim() !== "" ? Number(opt.amount) : opt.amount;
+    if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0) {
+      return `Purchase option "${opt.name.trim()}" needs a price of $0 or more`;
+    }
+    if (amount > 100_000) return `Purchase option "${opt.name.trim()}" price is too large`;
+    if (id != null) {
+      if (ids.has(id)) return "Purchase options must have unique ids";
+      ids.add(id);
+    }
+  }
+  return null;
+}
+
+/** Keep only { id, name, amount }; the RM TrackR gets its fixed name and price, once. */
+function normalizeEventPurchaseOptions(options: unknown): Array<{ id: string; name: string; amount: number }> {
+  if (!Array.isArray(options)) return [];
+  let hasTrackr = false;
+  const out: Array<{ id: string; name: string; amount: number }> = [];
+  for (const o of options as Array<Record<string, unknown> | null>) {
+    if (!o || typeof o !== "object") continue;
+    if (String(o.id) === RM_TRACKR_OPTION_ID) {
+      if (hasTrackr) continue;
+      hasTrackr = true;
+      out.push({ id: RM_TRACKR_OPTION_ID, name: RM_TRACKR_NAME, amount: RM_TRACKR_PRICE });
+    } else {
+      const id = isBlank(o.id) ? randomUUID() : String(o.id);
+      out.push({ id, name: String(o.name ?? "").trim(), amount: Number(o.amount) });
+    }
+  }
+  return out;
 }
 
 function serializeEvent(e: any) {
@@ -124,22 +220,41 @@ router.post("/events", (req, res) => {
     return res.status(403).json({ error: "No club associated with account" });
   }
 
+  const invalid = validateEventInput(req.body ?? {});
+  if (invalid) return res.status(400).json({ error: invalid });
+
   const {
     name, date, location, state, trackName, raceClasses,
     registrationOpen, registrationClose, paymentEnabled,
     requireAma, entryFee, earlyBirdFee, earlyBirdEndsAt, maxRiders, raceClassLimits, purchaseOptions,
     timingTechnology, transponderRentalEnabled, transponderRentalFee,
     noDuplicateBibs, requireClubId, scoringTableId, minLapMs, amaEventId, raceStyle, endDate,
+    rfidStickerFee, requireWaiver, requireLiabilityWaiver, requireTransponder, raceClassDetails, trackId,
   } = req.body;
 
-  if (!name || !date) {
-    return res.status(400).json({ error: "name and date are required" });
+  // Drafts need only a name, like the cloud: date defaults to today and state to "TBD".
+  const isDraftCreate = req.body.draft === true;
+  if (!name) return res.status(400).json({ error: "name is required" });
+  if (!isDraftCreate && (!date || !state)) {
+    return res.status(400).json({ error: "date and state are required for a full save" });
   }
 
   // Always store dates as plain YYYY-MM-DD — strip any time component that may
   // arrive from a datetime-local input or ISO timestamp (e.g. "2026-06-23T18:00").
-  const cleanDate = String(date).substring(0, 10);
+  const now0 = new Date();
+  const todayStr = `${now0.getFullYear()}-${String(now0.getMonth() + 1).padStart(2, "0")}-${String(now0.getDate()).padStart(2, "0")}`;
+  const cleanDate = date ? String(date).substring(0, 10) : todayStr;
+  const cleanState = state ? String(state) : (isDraftCreate ? "TBD" : "");
   const cleanEndDate = endDate ? String(endDate).substring(0, 10) : null;
+  if (cleanEndDate && cleanEndDate < cleanDate) return res.status(400).json({ error: "endDate must be on or after date" });
+
+  // A picked library track must be one of this club's.
+  const libraryTrack = trackId != null && Number.isInteger(Number(trackId))
+    ? db.prepare("SELECT id FROM tracks WHERE id = ? AND club_id = ?").get(Number(trackId), user.club_id) as { id: number } | undefined
+    : undefined;
+  const timing = timingTechnology === "mylaps" || timingTechnology === "active_transponder" ? "active_transponder" : "rfid";
+  const classDetails = raceClassDetails && typeof raceClassDetails === "object" && !Array.isArray(raceClassDetails)
+    ? raceClassDetails : {};
 
   const result = db
     .prepare(
@@ -150,12 +265,14 @@ router.post("/events", (req, res) => {
           race_class_limits, purchase_options,
           timing_technology, transponder_rental_enabled, transponder_rental_fee,
           no_duplicate_bibs, require_club_id, scoring_table_id, min_lap_ms,
-          ama_event_id, race_style, end_date, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', datetime('now'))`,
+          ama_event_id, race_style, end_date,
+          rfid_sticker_fee, require_waiver, require_liability_waiver, require_transponder,
+          race_class_details, track_id, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', datetime('now'))`,
     )
     .run(
       user.club_id, String(name), cleanDate,
-      location ?? null, state ?? "", trackName ?? null,
+      location ?? null, cleanState, trackName ?? null,
       JSON.stringify(raceClasses ?? []),
       registrationOpen ?? null, registrationClose ?? null,
       paymentEnabled ? 1 : 0, requireAma ? 1 : 0,
@@ -164,12 +281,16 @@ router.post("/events", (req, res) => {
       earlyBirdEndsAt ? String(earlyBirdEndsAt).substring(0, 10) : null,
       maxRiders ?? null,
       JSON.stringify(raceClassLimits ?? {}),
-      JSON.stringify(purchaseOptions ?? []),
-      timingTechnology ?? "rfid",
+      JSON.stringify(normalizeEventPurchaseOptions(purchaseOptions)),
+      timing,
       transponderRentalEnabled ? 1 : 0,
       transponderRentalFee ?? null,
       noDuplicateBibs ? 1 : 0, requireClubId ? 1 : 0,
       scoringTableId ?? null, minLapMs ?? null, amaEventId ?? null, raceStyle ?? "motocross", cleanEndDate ?? null,
+      rfidStickerFee ?? null,
+      requireWaiver ? 1 : 0, requireLiabilityWaiver ? 1 : 0, requireTransponder ? 1 : 0,
+      JSON.stringify(classDetails),
+      libraryTrack?.id ?? null,
     );
 
   const newEventId = Number(result.lastInsertRowid);
@@ -212,6 +333,8 @@ router.patch("/events/:eventId", (req, res) => {
   if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
   const db = getDb();
   const id = Number(req.params.eventId);
+  const invalid = validateEventInput(req.body ?? {});
+  if (invalid) return res.status(400).json({ error: invalid });
 
   const fieldMap: Record<string, string> = {
     name: "name",
@@ -276,7 +399,7 @@ router.patch("/events/:eventId", (req, res) => {
   for (const [jsKey, dbCol] of Object.entries(jsonFields)) {
     if (req.body[jsKey] !== undefined) {
       fields.push(`${dbCol} = ?`);
-      values.push(JSON.stringify(req.body[jsKey]));
+      values.push(JSON.stringify(jsKey === "purchaseOptions" ? normalizeEventPurchaseOptions(req.body[jsKey]) : req.body[jsKey]));
     }
   }
 

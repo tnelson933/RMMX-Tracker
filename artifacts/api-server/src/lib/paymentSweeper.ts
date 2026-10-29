@@ -1,6 +1,6 @@
 import { db } from "@workspace/db";
 import { registrationsTable } from "@workspace/db";
-import { and, gt, isNotNull, ne } from "drizzle-orm";
+import { and, desc, eq, gt, isNotNull, ne, sql } from "drizzle-orm";
 import { logger } from "./logger";
 
 /**
@@ -15,15 +15,19 @@ const LOOKBACK_MS = 3 * 24 * 60 * 60_000;
 const MAX_SESSIONS_PER_SWEEP = 25;
 
 export async function sweepPendingPayments(): Promise<number> {
+  // Only entries still waiting for payment (never refunded or voided ones),
+  // newest checkouts first so a backlog can't starve today's riders.
   const rows = await db
-    .selectDistinct({ sessionId: registrationsTable.stripeSessionId })
+    .select({ sessionId: registrationsTable.stripeSessionId })
     .from(registrationsTable)
     .where(and(
       isNotNull(registrationsTable.stripeSessionId),
-      ne(registrationsTable.paymentStatus, "paid"),
+      eq(registrationsTable.paymentStatus, "unpaid"),
       ne(registrationsTable.status, "void"),
       gt(registrationsTable.createdAt, new Date(Date.now() - LOOKBACK_MS)),
     ))
+    .groupBy(registrationsTable.stripeSessionId)
+    .orderBy(desc(sql`max(${registrationsTable.createdAt})`))
     .limit(MAX_SESSIONS_PER_SWEEP);
   if (rows.length === 0) return 0;
 
@@ -35,6 +39,17 @@ export async function sweepPendingPayments(): Promise<number> {
     if (!sessionId) continue;
     try {
       const session = await stripe.checkout.sessions.retrieve(sessionId);
+      if (session.status === "expired" && session.payment_status !== "paid") {
+        // An expired checkout can never be paid: stop sweeping it. The entry stays
+        // unpaid (pay at the gate, or start a new checkout).
+        await db.update(registrationsTable)
+          .set({ stripeSessionId: null })
+          .where(and(
+            eq(registrationsTable.stripeSessionId, sessionId),
+            eq(registrationsTable.paymentStatus, "unpaid"),
+          ));
+        continue;
+      }
       if (session.payment_status !== "paid") continue;
       const regs = await confirmRegistrationSession(session);
       if (regs.length) {

@@ -495,7 +495,7 @@ export const ListEventsResponseItem = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "amount": zod.number(),
-  "categoryId": zod.number().nullish().describe('ID of the discount category this purchase option belongs to')
+  "categoryId": zod.number().nullish().describe('No longer used. Older events may still carry it; new saves drop it.')
 })).optional(),
   "minLapMs": zod.number().nullish().describe('Minimum lap time in milliseconds (event-wide)'),
   "defaultGateConfigId": zod.string().nullish().describe('ID of the gate configuration to pre-select when generating lineups'),
@@ -532,8 +532,8 @@ export const createEventBodyQuickCheckinEnabledDefault = false;
 export const CreateEventBody = zod.object({
   "clubId": zod.number(),
   "name": zod.string(),
-  "date": zod.string(),
-  "state": zod.string(),
+  "date": zod.string().optional(),
+  "state": zod.string().optional(),
   "location": zod.string().optional(),
   "trackName": zod.string().optional(),
   "raceClasses": zod.array(zod.string()).optional(),
@@ -561,7 +561,7 @@ export const CreateEventBody = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "amount": zod.number(),
-  "categoryId": zod.number().nullish().describe('ID of the discount category this purchase option belongs to')
+  "categoryId": zod.number().nullish().describe('No longer used. Older events may still carry it; new saves drop it.')
 })).optional(),
   "minLapMs": zod.number().nullish().describe('Minimum lap time in milliseconds (event-wide)'),
   "defaultGateConfigId": zod.string().optional().describe('ID of the gate configuration to pre-select when generating lineups'),
@@ -570,7 +570,12 @@ export const CreateEventBody = zod.object({
   "raceStyle": zod.enum(['motocross', 'enduro', 'cross_country']).default(createEventBodyRaceStyleDefault).describe('Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time)'),
   "quickCheckinEnabled": zod.boolean().default(createEventBodyQuickCheckinEnabledDefault).describe('When true, riders within 1 mile of the track on race day can self-check-in from the rider app.'),
   "streetAddress": zod.string().optional().describe('Street address of the track venue.'),
-  "zip": zod.string().optional().describe('ZIP code of the track venue.')
+  "zip": zod.string().optional().describe('ZIP code of the track venue.'),
+  "requireLiabilityWaiver": zod.boolean().optional().describe('When true, riders must e-sign the club liability waiver.'),
+  "rfidStickerFee": zod.number().optional(),
+  "raceClassDetails": zod.record(zod.string(), zod.string()).optional().describe('Maps each race class name to a rules\/details paragraph shown to riders.'),
+  "contingencyBrands": zod.array(zod.string()).nullish().describe('Brands selected for contingency sponsorships at this event.'),
+  "draft": zod.boolean().optional().describe('Save as a draft. date and state are then optional (date defaults to today, state to TBD); without it both are required.')
 })
 
 
@@ -623,7 +628,7 @@ export const GetEventResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "amount": zod.number(),
-  "categoryId": zod.number().nullish().describe('ID of the discount category this purchase option belongs to')
+  "categoryId": zod.number().nullish().describe('No longer used. Older events may still carry it; new saves drop it.')
 })).optional(),
   "minLapMs": zod.number().nullish().describe('Minimum lap time in milliseconds (event-wide)'),
   "defaultGateConfigId": zod.string().nullish().describe('ID of the gate configuration to pre-select when generating lineups'),
@@ -690,7 +695,7 @@ export const UpdateEventBody = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "amount": zod.number(),
-  "categoryId": zod.number().nullish().describe('ID of the discount category this purchase option belongs to')
+  "categoryId": zod.number().nullish().describe('No longer used. Older events may still carry it; new saves drop it.')
 })).optional(),
   "minLapMs": zod.number().nullish().describe('Minimum lap time in milliseconds (event-wide)'),
   "defaultGateConfigId": zod.string().nullish().describe('ID of the gate configuration to pre-select when generating lineups'),
@@ -754,7 +759,7 @@ export const UpdateEventResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "amount": zod.number(),
-  "categoryId": zod.number().nullish().describe('ID of the discount category this purchase option belongs to')
+  "categoryId": zod.number().nullish().describe('No longer used. Older events may still carry it; new saves drop it.')
 })).optional(),
   "minLapMs": zod.number().nullish().describe('Minimum lap time in milliseconds (event-wide)'),
   "defaultGateConfigId": zod.string().nullish().describe('ID of the gate configuration to pre-select when generating lineups'),
@@ -1138,7 +1143,7 @@ export const ListRegistrationsResponseItem = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "amount": zod.number(),
-  "categoryId": zod.number().nullish().describe('ID of the discount category this purchase option belongs to')
+  "categoryId": zod.number().nullish().describe('No longer used. Older events may still carry it; new saves drop it.')
 })).optional(),
   "waiverAcknowledgedAt": zod.string().nullish().describe('ISO timestamp of when the rider accepted the club waiver, or null if not required\/accepted'),
   "waiverSnapshot": zod.string().nullish().describe('Full text of the club waiver at the time of acceptance'),
@@ -1166,7 +1171,7 @@ export const CreateRegistrationBody = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "amount": zod.number(),
-  "categoryId": zod.number().nullish().describe('ID of the discount category this purchase option belongs to')
+  "categoryId": zod.number().nullish().describe('No longer used. Older events may still carry it; new saves drop it.')
 })).optional()
 })
 
@@ -1266,7 +1271,7 @@ export const UpdateRegistrationResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "amount": zod.number(),
-  "categoryId": zod.number().nullish().describe('ID of the discount category this purchase option belongs to')
+  "categoryId": zod.number().nullish().describe('No longer used. Older events may still carry it; new saves drop it.')
 })).optional(),
   "waiverAcknowledgedAt": zod.string().nullish().describe('ISO timestamp of when the rider accepted the club waiver, or null if not required\/accepted'),
   "waiverSnapshot": zod.string().nullish().describe('Full text of the club waiver at the time of acceptance'),
@@ -2522,7 +2527,7 @@ export const GetClubDashboardResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
   "amount": zod.number(),
-  "categoryId": zod.number().nullish().describe('ID of the discount category this purchase option belongs to')
+  "categoryId": zod.number().nullish().describe('No longer used. Older events may still carry it; new saves drop it.')
 })).optional(),
   "minLapMs": zod.number().nullish().describe('Minimum lap time in milliseconds (event-wide)'),
   "defaultGateConfigId": zod.string().nullish().describe('ID of the gate configuration to pre-select when generating lineups'),
@@ -3156,7 +3161,9 @@ export const GetNotificationAudienceCountQueryParams = zod.object({
 })
 
 export const GetNotificationAudienceCountResponse = zod.object({
-  "count": zod.number()
+  "count": zod.number().describe('Same as accounts (kept for older clients)'),
+  "accounts": zod.number().describe('Distinct rider accounts (owners and invited managers, minus club opt-outs) with at least one device'),
+  "devices": zod.number().describe('Push-enabled devices the send would target')
 })
 
 

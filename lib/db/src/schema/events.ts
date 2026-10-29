@@ -4,7 +4,13 @@ import { z } from "zod/v4";
 import { clubsTable } from "./clubs";
 import { discountCategoriesTable } from "./discount-categories";
 
-export type PurchaseOption = { id: string; name: string; amount: number; categoryId?: number | null };
+export type PurchaseOption = {
+  id: string;
+  name: string;
+  amount: number;
+  /** @deprecated No longer set or shown; kept so older stored options still parse. */
+  categoryId?: number | null;
+};
 
 /** The RM TrackR active timing transponder: a purchase option with a fixed id and price. */
 export const RM_TRACKR_OPTION_ID = "rm-trackr";

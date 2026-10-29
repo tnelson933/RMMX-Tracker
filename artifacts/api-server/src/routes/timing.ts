@@ -617,7 +617,7 @@ export async function buildLeaderboard(motoId: number) {
     return {
       position: r.position,
       riderId: r.riderId,
-      riderName: `${r.firstName} ${r.lastName}`,
+      riderName: [r.firstName, r.lastName].filter(Boolean).join(" ") || (r.bibNumber ? `#${r.bibNumber}` : "Unknown rider"),
       bibNumber: r.bibNumber,
       laps: lapMs.length,
       lapTimes: lapMs.map(formatLapTime),
@@ -635,9 +635,11 @@ export async function buildLeaderboard(motoId: number) {
   });
 
   // Compute gaps relative to leader
-  const leader = leaderboard[0];
+  // The leader is the first rider still racing (a DNF/DNS can't be the reference).
+  const leader = leaderboard.find((e: any) => !e.dnf && !e.dns) ?? leaderboard[0];
   const withGaps = leaderboard.map((entry) => {
-    if (!leader || entry.position === 1) return { ...entry, gap: "Leader" };
+    if (!leader || entry === leader) return { ...entry, gap: "Leader" };
+    if ((entry as any).dnf || (entry as any).dns) return { ...entry, gap: (entry as any).dns ? "DNS" : "DNF" };
     // Lap-count gap (RFID motos where one rider is lapped)
     if (entry.laps > 0 && leader.laps > 0 && entry.laps < leader.laps)
       return { ...entry, gap: `+${leader.laps - entry.laps} lap${leader.laps - entry.laps > 1 ? "s" : ""}` };

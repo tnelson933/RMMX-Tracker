@@ -550,10 +550,16 @@ export default function Register() {
   const earlyBirdActive = !!(event?.earlyBirdEndsAt && today <= event.earlyBirdEndsAt && event?.earlyBirdFee != null);
   const effectiveEntryFee = earlyBirdActive ? (event?.earlyBirdFee ?? null) : (event?.entryFee ?? null);
   const totalEntryFees = (effectiveEntryFee ?? 0) * Math.max(1, numSelectedClasses);
+  // Same rule as the server: a code only discounts entry fees, rounded to the
+  // cent once, and never more than the entry fees (fixed or percentage).
+  const totalEntryCents = Math.round(totalEntryFees * 100);
   const compDiscountDollars = appliedComp && effectiveEntryFee
-    ? (appliedComp.discountType === "percentage"
-      ? totalEntryFees * appliedComp.amount / 100
-      : appliedComp.amount)
+    ? Math.min(
+      totalEntryCents,
+      appliedComp.discountType === "percentage"
+        ? Math.round(totalEntryCents * appliedComp.amount / 100)
+        : Math.round(appliedComp.amount * 100),
+    ) / 100
     : 0;
   const totalDue = event?.paymentEnabled && effectiveEntryFee
     ? Math.max(0, (effectiveEntryFee * Math.max(1, numSelectedClasses)) + selectedPurchasesTotal + rentalTotal + rfidStickerTotal - compDiscountDollars)

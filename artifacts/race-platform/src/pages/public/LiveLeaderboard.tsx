@@ -684,7 +684,7 @@ export function LiveRaceViews({
         <ViewTab active={activeView === "timing"} icon={<Radio size={15} />} label="Live Timing" onClick={() => setActiveView("timing")} />
         <ViewTab active={activeView === "analytics"} icon={<BarChart3 size={15} />} label="Quick Analytics" onClick={() => setActiveView("analytics")} />
         <ViewTab active={activeView === "fastest"} icon={<Timer size={15} />} label="Fastest Lap" onClick={() => setActiveView("fastest")} />
-        {data?.sectorNames?.length ? <ViewTab active={activeView === "sectors"} icon={<Route size={15} />} label="Sectors" onClick={() => setActiveView("sectors")} /> : null}
+        {data?.sectorNames?.length ? <ViewTab active={activeView === "sectors"} icon={<Route size={15} />} label="Segments" onClick={() => setActiveView("sectors")} /> : null}
       </div>
       <section role="tabpanel" className={`min-h-0 flex-1 overflow-y-auto overscroll-contain ${compact ? "text-xs" : ""}`}>
         {error ? (
@@ -958,7 +958,7 @@ function LegacyLiveLeaderboard() {
               <ViewTab
                 active={activeView === "sectors"}
                 icon={<Route size={16} />}
-                label="Sectors"
+                label="Segments"
                 onClick={() => setActiveView("sectors")}
               />
             ) : null}

@@ -6,7 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 export interface NotificationAudienceCount {
+  /** Same as accounts (kept for older clients) */
   count: number;
+  /** Distinct rider accounts (owners and invited managers, minus club opt-outs) with at least one device */
+  accounts: number;
+  /** Push-enabled devices the send would target */
+  devices: number;
 }
 
 export interface HealthStatus {
@@ -153,7 +158,8 @@ export interface PurchaseOption {
   name: string;
   amount: number;
   /**
-     * ID of the discount category this purchase option belongs to
+     * No longer used. Older events may still carry it; new saves drop it.
+     * @deprecated
      * @nullable
      */
   categoryId?: number | null;
@@ -439,11 +445,16 @@ export const EventInputRaceStyle = {
   cross_country: 'cross_country',
 } as const;
 
+/**
+ * Maps each race class name to a rules/details paragraph shown to riders.
+ */
+export type EventInputRaceClassDetails = {[key: string]: string};
+
 export interface EventInput {
   clubId: number;
   name: string;
-  date: string;
-  state: string;
+  date?: string;
+  state?: string;
   location?: string;
   trackName?: string;
   raceClasses?: string[];
@@ -501,6 +512,18 @@ export interface EventInput {
   streetAddress?: string;
   /** ZIP code of the track venue. */
   zip?: string;
+  /** When true, riders must e-sign the club liability waiver. */
+  requireLiabilityWaiver?: boolean;
+  rfidStickerFee?: number;
+  /** Maps each race class name to a rules/details paragraph shown to riders. */
+  raceClassDetails?: EventInputRaceClassDetails;
+  /**
+     * Brands selected for contingency sponsorships at this event.
+     * @nullable
+     */
+  contingencyBrands?: string[] | null;
+  /** Save as a draft. date and state are then optional (date defaults to today, state to TBD); without it both are required. */
+  draft?: boolean;
 }
 
 export type EventUpdateRaceClassLimits = {[key: string]: number | null};

@@ -1,6 +1,7 @@
 import { db, registrationsTable, RM_TRACKR_OPTION_ID, RM_TRACKR_NAME, RM_TRACKR_PRICE } from "@workspace/db";
 import type { PurchaseOption } from "@workspace/db";
 import { and, eq, isNull, ne } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 
 /** True when a list of purchase options includes the RM TrackR. */
 export function includesRmTrackr(options: PurchaseOption[] | null | undefined): boolean {
@@ -8,22 +9,25 @@ export function includesRmTrackr(options: PurchaseOption[] | null | undefined): 
 }
 
 /**
- * Normalize an event's configured purchase options before saving: the RM TrackR
- * always carries its fixed name and standard price, whatever the client sent,
- * and appears at most once.
+ * Normalize an event's configured purchase options before saving: keep only
+ * `{ id, name, amount }` (the old per-option discount category is dropped), give
+ * an option without an id a new one, and make the RM TrackR always carry its
+ * fixed name and standard price, whatever the client sent, at most once.
+ * Run checkPurchaseOptions (validateInput) first to reject bad names and prices.
  */
 export function normalizeEventPurchaseOptions(options: unknown): PurchaseOption[] {
   if (!Array.isArray(options)) return [];
   let hasTrackr = false;
   const out: PurchaseOption[] = [];
-  for (const o of options as PurchaseOption[]) {
+  for (const o of options as Array<Partial<PurchaseOption> | null>) {
     if (!o || typeof o !== "object") continue;
     if (String(o.id) === RM_TRACKR_OPTION_ID) {
       if (hasTrackr) continue;
       hasTrackr = true;
-      out.push({ id: RM_TRACKR_OPTION_ID, name: RM_TRACKR_NAME, amount: RM_TRACKR_PRICE, categoryId: o.categoryId ?? null });
+      out.push({ id: RM_TRACKR_OPTION_ID, name: RM_TRACKR_NAME, amount: RM_TRACKR_PRICE });
     } else {
-      out.push(o);
+      const id = o.id === undefined || o.id === null || String(o.id) === "" ? randomUUID() : String(o.id);
+      out.push({ id, name: String(o.name ?? "").trim(), amount: Number(o.amount) });
     }
   }
   return out;

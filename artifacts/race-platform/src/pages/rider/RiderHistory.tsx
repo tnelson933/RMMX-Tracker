@@ -1259,13 +1259,13 @@ function PracticeSessionCard({
             </div>
             {(session.sectorNames?.length ?? 0) > 0 && (session.sectorLaps?.length ?? 0) > 0 && (
               <div className="mt-4">
-                <div className="text-xs text-muted-foreground mb-2 font-heading uppercase tracking-wider">Sectors</div>
+                <div className="text-xs text-muted-foreground mb-2 font-heading uppercase tracking-wider">Segments</div>
                 <div className="overflow-x-auto">
                   <table className="text-xs font-mono w-max">
                     <thead>
                       <tr className="text-muted-foreground">
                         <th className="text-left px-1 py-1">Lap</th>
-                        {session.sectorNames!.map((n, i) => <th key={i} className="text-right px-2 py-1" title={n}>S{i + 1}</th>)}
+                        {session.sectorNames!.map((n, i) => <th key={i} className="text-right px-2 py-1" title={n}>Seg {i + 1}</th>)}
                       </tr>
                     </thead>
                     <tbody>
@@ -1289,7 +1289,7 @@ function PracticeSessionCard({
                     </tbody>
                   </table>
                 </div>
-                <p className="text-[11px] text-muted-foreground mt-1">{session.sectorNames!.map((n, i) => `S${i + 1} ${n}`).join(" · ")}</p>
+                <p className="text-[11px] text-muted-foreground mt-1">{session.sectorNames!.map((n, i) => `Seg ${i + 1} ${n}`).join(" · ")}</p>
               </div>
             )}
           </div>

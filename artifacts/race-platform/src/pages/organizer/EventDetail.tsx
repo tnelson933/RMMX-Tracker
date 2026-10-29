@@ -3,7 +3,7 @@ import { StateSelect } from "@/components/ui/StateSelect";
 import { useRoute, useLocation } from "wouter";
 import { usePublicOrigin } from "@/lib/publicOrigin";
 import { EmbedWidgetCard } from "@/components/organizer/EmbedWidgetCard";
-import { useGetEvent, useUpdateEvent, useGetRaceDaySummary, useListSeries, useUpdateSeries, getListSeriesQueryKey, useListPointsTables, getGetEventQueryKey, getListEventsQueryKey, useListDiscountCategories, useDeleteEvent, useGetClubSettings, usePutClubSettings } from "@workspace/api-client-react";
+import { useGetEvent, useUpdateEvent, useGetRaceDaySummary, useListSeries, useUpdateSeries, getListSeriesQueryKey, useListPointsTables, getGetEventQueryKey, getListEventsQueryKey, useDeleteEvent, useGetClubSettings, usePutClubSettings } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { RM_TRACKR_OPTION_ID, RM_TRACKR_NAME, RM_TRACKR_PRICE } from "@/lib/rmTrackr";
@@ -125,7 +125,6 @@ const updateEventSchema = z.object({
     optionId: z.string().optional(),
     name: z.string().min(1, "Name required"),
     amount: z.string().min(1, "Amount required"),
-    categoryId: z.number().nullable().optional(),
   })).default([]),
   amaEventId: z.string().optional(),
 }).refine(
@@ -162,7 +161,6 @@ export default function EventDetail() {
   } as any);
   const deleteMutation = useDeleteEvent();
   const { data: pointsTables } = useListPointsTables({ query: {} as any });
-  const { data: discountCategories = [] } = useListDiscountCategories({ query: {} as any });
   const publicOrigin = usePublicOrigin();
 
   const clubId = (event as any)?.clubId ?? user?.clubId ?? null;
@@ -480,7 +478,7 @@ export default function EventDetail() {
       requireTransponder: (evt as any).requireTransponder ?? false,
       quickCheckinEnabled: (evt as any).quickCheckinEnabled ?? false,
       scoringTableId: (evt as any).scoringTableId ?? undefined,
-      purchaseOptions: ((evt as any).purchaseOptions ?? []).map((o: { id: string; name: string; amount: number; categoryId?: number | null }) => ({ optionId: o.id, name: o.name, amount: String(o.amount), categoryId: o.categoryId ?? null })),
+      purchaseOptions: ((evt as any).purchaseOptions ?? []).map((o: { id: string; name: string; amount: number }) => ({ optionId: o.id, name: o.name, amount: String(o.amount) })),
       amaEventId: (evt as any).amaEventId ?? "",
     });
     const currentSeries = (seriesList ?? []).find(s => (s.eventIds as number[] ?? []).includes(evt.id));
@@ -601,7 +599,7 @@ export default function EventDetail() {
         transponderRentalEnabled: data.timingTechnology === "active_transponder" && data.paymentEnabled ? data.transponderRentalEnabled : false,
         transponderRentalFee: data.timingTechnology === "active_transponder" && data.paymentEnabled && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
         rfidStickerFee: data.timingTechnology === "rfid" && data.paymentEnabled && data.rfidStickerFee ? Number(data.rfidStickerFee) : undefined,
-        purchaseOptions: data.purchaseOptions.map(o => ({ id: o.optionId || crypto.randomUUID(), name: o.name.trim(), amount: Number(o.amount), categoryId: o.categoryId ?? null })),
+        purchaseOptions: data.purchaseOptions.map(o => ({ id: o.optionId || crypto.randomUUID(), name: o.name.trim(), amount: Number(o.amount) })),
         amaEventId: data.amaEventId || undefined,
         contingencyBrands: editContingencyBrands.length > 0 ? editContingencyBrands : null,
       } as any
@@ -1689,14 +1687,14 @@ export default function EventDetail() {
                       ) : (
                         <div className="space-y-2">
                           {purchaseOptionFields.map((optField, idx) => (
-                            <div key={optField.id} className="flex gap-2 items-start">
+                            <div key={optField.id} className="flex flex-wrap sm:flex-nowrap gap-2 items-start">
                               <FormField
                                 control={form.control}
                                 name={`purchaseOptions.${idx}.name`}
                                 render={({ field }) => (
-                                  <FormItem className="flex-1">
+                                  <FormItem className="w-full sm:w-auto sm:flex-1">
                                     <FormControl>
-                                      <Input placeholder="Gate fee, pit pass…" {...field} readOnly={form.watch(`purchaseOptions.${idx}.optionId`) === RM_TRACKR_OPTION_ID} />
+                                      <Input placeholder="Gate fee, pit pass…" aria-label={`Purchase option ${idx + 1} name`} {...field} readOnly={form.watch(`purchaseOptions.${idx}.optionId`) === RM_TRACKR_OPTION_ID} />
                                     </FormControl>
                                     <FormMessage />
                                   </FormItem>
@@ -1706,38 +1704,13 @@ export default function EventDetail() {
                                 control={form.control}
                                 name={`purchaseOptions.${idx}.amount`}
                                 render={({ field }) => (
-                                  <FormItem className="w-28">
+                                  <FormItem className="flex-1 sm:flex-none sm:w-28">
                                     <FormControl>
                                       <div className="relative">
                                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-                                        <Input type="number" min="0" step="0.01" placeholder="0.00" className="pl-6" {...field} readOnly={form.watch(`purchaseOptions.${idx}.optionId`) === RM_TRACKR_OPTION_ID} />
+                                        <Input type="number" min="0" step="0.01" placeholder="0.00" className="pl-6" aria-label={`Purchase option ${idx + 1} price`} {...field} readOnly={form.watch(`purchaseOptions.${idx}.optionId`) === RM_TRACKR_OPTION_ID} />
                                       </div>
                                     </FormControl>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                              <FormField
-                                control={form.control}
-                                name={`purchaseOptions.${idx}.categoryId`}
-                                render={({ field }) => (
-                                  <FormItem className="w-36">
-                                    <Select
-                                      value={field.value != null ? String(field.value) : "none"}
-                                      onValueChange={(v) => field.onChange(v === "none" ? null : Number(v))}
-                                    >
-                                      <FormControl>
-                                        <SelectTrigger>
-                                          <SelectValue placeholder="Category" />
-                                        </SelectTrigger>
-                                      </FormControl>
-                                      <SelectContent>
-                                        <SelectItem value="none">No category</SelectItem>
-                                        {discountCategories.map((cat) => (
-                                          <SelectItem key={cat.id} value={String(cat.id)}>{cat.name}</SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
                                     <FormMessage />
                                   </FormItem>
                                 )}
@@ -1747,6 +1720,7 @@ export default function EventDetail() {
                                 variant="ghost"
                                 size="icon"
                                 className="mt-0.5 shrink-0 text-muted-foreground hover:text-destructive"
+                                aria-label={`Remove purchase option ${idx + 1}`}
                                 onClick={() => removePurchaseOption(idx)}
                               >
                                 <X size={14} />

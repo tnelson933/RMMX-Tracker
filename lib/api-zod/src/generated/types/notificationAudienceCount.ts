@@ -7,5 +7,10 @@
  */
 
 export interface NotificationAudienceCount {
+  /** Same as accounts (kept for older clients) */
   count: number;
+  /** Distinct rider accounts (owners and invited managers, minus club opt-outs) with at least one device */
+  accounts: number;
+  /** Push-enabled devices the send would target */
+  devices: number;
 }

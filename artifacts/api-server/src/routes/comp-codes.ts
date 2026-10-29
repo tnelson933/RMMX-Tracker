@@ -171,7 +171,7 @@ router.get("/events/:eventId/comp-codes", async (req, res) => {
 // ── Shared helper: validate a resolved discount code row ──────────────────────
 function validateCodeRow(
   row: typeof compCodesTable.$inferSelect,
-  categoryId: number | null | undefined,
+  entryFeeCategoryId: number | null | undefined,
 ): { valid: false; error: string; status: number } | { valid: true; amount: number; discountType: string } {
   if (row.isActive === false) {
     return { valid: false, error: "This discount code is no longer active", status: 409 };
@@ -183,14 +183,12 @@ function validateCodeRow(
     return { valid: false, error: "This discount code has already been used", status: 409 };
   }
 
-  // Category check only applies when the caller passes a specific categoryId.
-  // When categoryId is null/undefined (e.g. entry-fee validation on the registration
-  // page), skip category enforcement — the entry fee has no purchase-option category.
-  if (categoryId != null) {
-    const catIds = (row.categoryIds as number[]) ?? [];
-    if (catIds.length > 0 && !catIds.includes(Number(categoryId))) {
-      return { valid: false, error: "This discount code is not valid for the selected category", status: 409 };
-    }
+  // Codes discount entry fees, so a code limited to categories is valid only when
+  // the event's entry-fee category is one of them (same rule as registration).
+  // The category comes from the event on the server, never from the request.
+  const catIds = ((row.categoryIds as number[]) ?? []).map(Number);
+  if (catIds.length > 0 && (entryFeeCategoryId == null || !catIds.includes(Number(entryFeeCategoryId)))) {
+    return { valid: false, error: "This discount code is not valid for this event's entry fee", status: 409 };
   }
 
   return { valid: true, amount: Number(row.amount), discountType: row.discountType };
@@ -199,18 +197,21 @@ function validateCodeRow(
 // ── Public: validate discount code ───────────────────────────────────────────
 router.post("/public/events/:eventId/validate-comp-code", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  const { code, categoryId } = req.body;
+  const { code } = req.body;
   if (!code) return res.status(400).json({ error: "code required" });
 
   const codeStr = String(code).trim().toUpperCase();
+
+  const [event] = await db.select({ clubId: eventsTable.clubId, entryFeeCategoryId: eventsTable.entryFeeCategoryId })
+    .from(eventsTable).where(eq(eventsTable.id, eventId));
+  if (!event) return res.status(404).json({ valid: false, error: "Invalid discount code" });
 
   let [row] = await db.select().from(compCodesTable).where(
     and(eq(compCodesTable.eventId, eventId), eq(compCodesTable.code, codeStr))
   );
 
   if (!row) {
-    const [event] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
-    if (event?.clubId) {
+    if (event.clubId) {
       [row] = await db.select().from(compCodesTable).where(
         and(
           eq(compCodesTable.clubId, event.clubId),
@@ -223,7 +224,7 @@ router.post("/public/events/:eventId/validate-comp-code", async (req, res) => {
 
   if (!row) return res.status(404).json({ valid: false, error: "Invalid discount code" });
 
-  const result = validateCodeRow(row, categoryId);
+  const result = validateCodeRow(row, event.entryFeeCategoryId);
   if (!result.valid) {
     return res.status(result.status).json({ valid: false, error: result.error });
   }

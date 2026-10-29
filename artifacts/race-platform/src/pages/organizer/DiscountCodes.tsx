@@ -66,6 +66,13 @@ function formatDate(iso: string | null | undefined): string {
   return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
+/** An ISO time as a datetime-local value in the browser's own time zone (not UTC). */
+function toLocalDateTimeInput(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function isExpired(code: DiscountCode): boolean {
   return !!code.expiresAt && new Date() > new Date(code.expiresAt);
 }
@@ -350,7 +357,7 @@ function DiscountCodesTable() {
       usageType,
       limitedCount: code.maxUses > 1 && code.maxUses < 999999 ? String(code.maxUses) : "10",
       hasExpiry: !!code.expiresAt,
-      expiresAt: code.expiresAt ? new Date(code.expiresAt).toISOString().slice(0, 16) : "",
+      expiresAt: code.expiresAt ? toLocalDateTimeInput(code.expiresAt) : "",
       categoryIds: (code.categoryIds as number[]) ?? [],
       riderId: code.riderId ?? null,
       riderSearch: "",
@@ -891,13 +898,20 @@ function DiscountCodesTable() {
 
 function UsageHistoryPanel({ code }: { code: DiscountCode }) {
   const { data: entries = [], isLoading } = useGetDiscountCodeUsage(code.id, { query: {} as any });
+  // Each entry stores its own share of the discount, so the shares add up to what riders saved.
+  const totalSavedCents = (entries as DiscountCodeUsageEntry[])
+    .reduce((sum, e) => sum + Math.round(Number(e.discountAmount ?? 0) * 100), 0);
 
   return (
     <div className="mt-4 space-y-4">
       <div className="rounded-md border bg-muted/40 px-4 py-3 space-y-0.5">
         <p className="font-mono font-bold tracking-wider text-sm">{code.code}</p>
         <p className="text-xs text-muted-foreground">
-          ${Number(code.amount).toFixed(2)} discount · {code.usesCount} {code.usesCount === 1 ? "use" : "uses"} recorded
+          {code.discountType === "percentage"
+            ? `${Number(code.amount).toFixed(0)}% off entry fees`
+            : `$${Number(code.amount).toFixed(2)} discount`}
+          {" "}· {code.usesCount} {code.usesCount === 1 ? "use" : "uses"} recorded
+          {entries.length > 0 && <> · ${(totalSavedCents / 100).toFixed(2)} saved in total</>}
         </p>
       </div>
 

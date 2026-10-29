@@ -14,6 +14,14 @@ import { PdfFieldEditor, type WaiverField } from "@/components/PdfFieldEditor";
 import { StateSelect } from "@/components/ui/StateSelect";
 import { TrackCourseMap, type LibraryTrack } from "./CourseMap";
 
+type AdminTab = "forms" | "tracks" | "classes" | "brands";
+const ADMIN_TABS: Array<{ key: AdminTab; label: string; icon: typeof FileText }> = [
+  { key: "forms", label: "Forms", icon: FileText },
+  { key: "tracks", label: "Track Library", icon: MapPin },
+  { key: "classes", label: "Race Classes", icon: ListChecks },
+  { key: "brands", label: "Brand Contingencies", icon: Flag },
+];
+
 /** "Finish line + 2 splits", or a nudge to set one up. */
 function courseSummary(course: LibraryTrack["course"]): string {
   const points = course ?? [];
@@ -130,6 +138,17 @@ export default function TeamPage() {
   const [tracks, setTracks] = useState<{ id: number; name: string; address: string | null; city: string | null; state: string | null; zip: string | null; course?: LibraryTrack["course"] }[]>([]);
   // Track whose course map (finish + split readers) is open for editing.
   const [courseTrackId, setCourseTrackId] = useState<number | null>(null);
+  // Which Admin section is showing (kept in the URL, e.g. /team?tab=tracks).
+  const [adminTab, setAdminTab] = useState<AdminTab>(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    return ADMIN_TABS.some(x => x.key === t) ? (t as AdminTab) : "forms";
+  });
+  const selectAdminTab = (tab: AdminTab) => {
+    setAdminTab(tab);
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", tab);
+    window.history.replaceState(null, "", url.toString());
+  };
   const [newTrackName, setNewTrackName] = useState("");
   const [newTrackAddress, setNewTrackAddress] = useState("");
   const [newTrackCity, setNewTrackCity] = useState("");
@@ -440,7 +459,7 @@ export default function TeamPage() {
 
   return (
     <>
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="p-4 sm:p-6 max-w-4xl mx-auto">
       {/* Page header */}
       <div className="flex items-center gap-3 mb-8">
         <Settings size={24} className="text-primary" />
@@ -450,6 +469,24 @@ export default function TeamPage() {
         </div>
       </div>
 
+      {/* Sections, one at a time */}
+      <div role="tablist" aria-label="Admin sections" className="flex gap-1 overflow-x-auto border-b mb-6 -mx-1 px-1">
+        {ADMIN_TABS.map(t => (
+          <button
+            key={t.key}
+            role="tab"
+            aria-selected={adminTab === t.key}
+            onClick={() => selectAdminTab(t.key)}
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm font-heading font-semibold uppercase tracking-wider whitespace-nowrap border-b-2 -mb-px transition-colors ${
+              adminTab === t.key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <t.icon size={14} /> {t.label}
+          </button>
+        ))}
+      </div>
+
+      {adminTab === "forms" && (<>
       {/* Rider Acknowledgement Form */}
       <div className="rounded-xl border bg-card p-6 mb-6">
         <div className="flex items-center gap-3 mb-4">
@@ -674,6 +711,9 @@ export default function TeamPage() {
         </div>
       </div>
 
+      </>)}
+
+      {adminTab === "tracks" && (<>
       {/* Track Library */}
       <div className="rounded-xl border bg-card p-6 mb-6">
         <div className="flex items-center gap-3 mb-4">
@@ -779,6 +819,9 @@ export default function TeamPage() {
         </DialogContent>
       </Dialog>
 
+      </>)}
+
+      {adminTab === "classes" && (<>
       {/* Default Race Classes */}
       <div className="rounded-xl border bg-card p-6 mb-6">
         <div className="flex items-center gap-3 mb-4">
@@ -830,6 +873,9 @@ export default function TeamPage() {
         )}
       </div>
 
+      </>)}
+
+      {adminTab === "brands" && (<>
       {/* Brand Contingencies */}
       <div className="rounded-xl border bg-card p-6 mb-6">
         <div className="flex items-center gap-3 mb-4">
@@ -883,6 +929,7 @@ export default function TeamPage() {
           <p className="text-xs text-muted-foreground mt-3">No brands yet. Add the brands you partner with for contingencies.</p>
         )}
       </div>
+      </>)}
 
     </div>
 

@@ -135,7 +135,19 @@ export async function searchPublicRiders(q: string, limit = 20) {
  * Push "results are in" to accounts following riders in this event. Fire-and-forget:
  * called when an event's results go from unpublished to published.
  */
+// Events whose "results are in" push already went out from this process, so an
+// unpublish/republish (or a re-finalized moto) doesn't re-send it. In-memory only:
+// a restart forgets it (durable dedupe would need a new table).
+const followResultsNotified = new Map<number, number>();
+const FOLLOW_RESULTS_DEDUPE_MS = 14 * 24 * 60 * 60 * 1000;
+
 export async function notifyFollowersOfResults(eventId: number): Promise<void> {
+  const now = Date.now();
+  for (const [id, at] of followResultsNotified) if (now - at > FOLLOW_RESULTS_DEDUPE_MS) followResultsNotified.delete(id);
+  if (followResultsNotified.has(eventId)) return;
+  // Claim before any await so concurrent calls for the same event can't both send.
+  followResultsNotified.set(eventId, now);
+  let sent = false;
   try {
     const [event] = await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, eventId));
     const results = await db
@@ -169,8 +181,16 @@ export async function notifyFollowersOfResults(eventId: number): Promise<void> {
         : `${riders.length} riders you follow have results from ${eventName}.`;
       return { to: t.token, title: "Results are in 🏁", body, data: { type: "follow-results", eventId } };
     });
-    if (messages.length) await sendPushNotifications(messages);
+    if (messages.length) {
+      const result = await sendPushNotifications(messages);
+      // Keep the claim if anyone got it; release on a total failure so a later publish can retry.
+      sent = result.accepted > 0 || !result.results.some(r => r.retryable);
+    } else {
+      sent = true;
+    }
   } catch (err) {
     logger.error({ err, eventId }, "notifyFollowersOfResults failed");
+  } finally {
+    if (!sent) followResultsNotified.delete(eventId);
   }
 }

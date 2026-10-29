@@ -30,12 +30,12 @@ export function SectorTimes({
   entries,
   view = "best",
   highlightRiderIds,
-  title = "Sector times",
+  title = "Segment times",
   tone = "card",
 }: {
   sectorNames: string[] | null | undefined;
   entries: SectorEntry[];
-  /** "best": each rider's best per sector. "last": their last completed lap. */
+  /** "best": each rider's best per segment. "last": their last completed lap. */
   view?: "best" | "last";
   highlightRiderIds?: number[];
   title?: string;
@@ -60,7 +60,7 @@ export function SectorTimes({
       <div className={`px-4 py-2.5 flex items-center gap-2 ${dark ? "border-b border-white/10" : "border-b bg-muted/30"}`}>
         <Timer size={15} className={dark ? "text-white/60" : "text-primary"} />
         <p className="font-heading font-bold uppercase tracking-wider text-sm">{title}</p>
-        <span className={`text-xs ${muted}`}>{view === "best" ? "best per sector" : "last lap"}</span>
+        <span className={`text-xs ${muted}`}>{view === "best" ? "best per segment" : "last lap"}</span>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -69,7 +69,7 @@ export function SectorTimes({
               <th className="text-left font-semibold px-3 py-2">Rider</th>
               {sectorNames.map((name, i) => (
                 <th key={i} className="text-right font-semibold px-3 py-2 whitespace-nowrap" title={name}>
-                  S{i + 1}<span className="hidden md:inline font-normal normal-case tracking-normal"> · {name}</span>
+                  Seg {i + 1}<span className="hidden md:inline font-normal normal-case tracking-normal"> · {name}</span>
                 </th>
               ))}
             </tr>

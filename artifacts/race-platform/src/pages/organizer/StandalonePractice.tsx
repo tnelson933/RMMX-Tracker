@@ -763,7 +763,7 @@ export default function StandalonePractice() {
   );
 }
 
-/** Sector times per lap from the track's split readers, best per sector highlighted. */
+/** Segment times per lap from the track's split readers, best per segment highlighted. */
 function SectorTable({ names, laps, best }: {
   names: string[];
   laps: Array<{ lapNumber: number; sectorsMs: Array<number | null>; complete: boolean }>;
@@ -772,12 +772,12 @@ function SectorTable({ names, laps, best }: {
   const fmt = (ms: number | null) => (ms == null ? "—" : (ms / 1000).toFixed(3));
   return (
     <div className="mt-3 overflow-x-auto">
-      <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-1 px-1">Sectors</p>
+      <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-1 px-1">Segments</p>
       <table className="text-xs font-mono w-max">
         <thead>
           <tr className="text-muted-foreground">
             <th className="text-left px-1 py-1 font-bold">Lap</th>
-            {names.map((n, i) => <th key={i} className="text-right px-2 py-1 font-bold" title={n}>S{i + 1}</th>)}
+            {names.map((n, i) => <th key={i} className="text-right px-2 py-1 font-bold" title={n}>Seg {i + 1}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -797,7 +797,7 @@ function SectorTable({ names, laps, best }: {
           </tr>
         </tbody>
       </table>
-      <p className="text-[11px] text-muted-foreground mt-1 px-1">{names.map((n, i) => `S${i + 1} ${n}`).join(" · ")}</p>
+      <p className="text-[11px] text-muted-foreground mt-1 px-1">{names.map((n, i) => `Seg ${i + 1} ${n}`).join(" · ")}</p>
     </div>
   );
 }

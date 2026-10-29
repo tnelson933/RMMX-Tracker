@@ -55,6 +55,8 @@ const STAFF_RULES: RouteRule[] = [
   { pattern: /^\/events\/\d+\/ama-export/, permissions: ["events"] },
 
   // ── Events list/detail: read-only for gate_schedule; writes need events ───
+  // The event list alone is also readable with notifications (to pick an audience).
+  { pattern: /^\/events\/?$/, permissions: ["events", "gate_schedule", "notifications"], methods: ["GET", "HEAD"] },
   { pattern: /^\/events(\/|$)/, permissions: ["events", "gate_schedule"], methods: ["GET", "HEAD"] },
   { pattern: /^\/events(\/|$)/, permissions: ["events"] }, // non-GET
 
@@ -102,6 +104,11 @@ const STAFF_RULES: RouteRule[] = [
   // ── Discount codes and discount categories ────────────────────────────────
   // Matches /discount-codes and /discount-categories (note: pattern uses hyphen, not slash).
   { pattern: /^\/discount-/, permissions: ["discount_codes"] },
+
+  // ── Organizer push notifications (club-scoped send, preview, stats, history) ─
+  // broadcast-all stays super-admin only (the route checks the role).
+  { pattern: /^\/admin\/notifications\/broadcast-all(\/|$)/, permissions: null },
+  { pattern: /^\/admin\/notifications(\/|$)/, permissions: ["notifications"] },
 
   // ── Team management: never for staff ─────────────────────────────────────
   { pattern: /^\/organizer\/team(\/|$)/, permissions: null },

@@ -1,4 +1,5 @@
 import { checkBirthDate, isEmail } from "../lib/validateInput";
+import { releaseCompCodeIfCheckoutInactive } from "./registrations";
 import { isLowerBetter } from "../lib/overallOrder";
 import { loadSeriesScoring } from "../lib/scoringTables";
 import { practiceSectors } from "../lib/practiceSplits";
@@ -49,6 +50,7 @@ import {
 } from "@workspace/db";
 import { eq, desc, asc, or, and, ne, inArray, sql, ilike, isNull } from "drizzle-orm";
 import { canManageRider, managedRiderIds, managedRiderWhere, ownsRider } from "../lib/riderAccess";
+import { EXPO_PUSH_TOKEN_RE } from "../lib/push";
 
 const router = Router();
 
@@ -476,10 +478,13 @@ router.post("/rider/push-token", requireRiderAuth, async (req, res) => {
   if (!expoPushToken || typeof expoPushToken !== "string") {
     return res.status(400).json({ error: "expoPushToken required" });
   }
+  if (!EXPO_PUSH_TOKEN_RE.test(expoPushToken.trim())) {
+    return res.status(400).json({ error: "expoPushToken is not a valid Expo push token" });
+  }
 
   await db
     .insert(riderPushTokensTable)
-    .values({ riderAccountId, expoPushToken })
+    .values({ riderAccountId, expoPushToken: expoPushToken.trim() })
     .onConflictDoUpdate({
       target: riderPushTokensTable.expoPushToken,
       set: { riderAccountId },
@@ -629,13 +634,27 @@ router.patch("/rider/events/:eventId/my-registrations/:regId", requireRiderAuth,
     .returning();
 
   if (oldRaceClass && updated && reg.riderId != null) {
-    await db.update(checkinsTable)
-      .set({ raceClass })
-      .where(and(
+    // One check-in per rider and class: if the new class already has one, keep it.
+    const [already] = await db.select({ id: checkinsTable.id }).from(checkinsTable).where(and(
+      eq(checkinsTable.eventId, eventId),
+      eq(checkinsTable.riderId, reg.riderId),
+      eq(checkinsTable.raceClass, raceClass),
+    ));
+    if (already) {
+      await db.delete(checkinsTable).where(and(
         eq(checkinsTable.eventId, eventId),
         eq(checkinsTable.riderId, reg.riderId),
         eq(checkinsTable.raceClass, oldRaceClass),
       ));
+    } else {
+      await db.update(checkinsTable)
+        .set({ raceClass })
+        .where(and(
+          eq(checkinsTable.eventId, eventId),
+          eq(checkinsTable.riderId, reg.riderId),
+          eq(checkinsTable.raceClass, oldRaceClass),
+        ));
+    }
     await db.update(raceResultsTable)
       .set({ raceClass })
       .where(and(
@@ -705,6 +724,15 @@ router.post("/rider/events/:eventId/registrations/cancel", requireRiderAuth, asy
   await db.update(registrationsTable)
     .set({ status: "void", cancelledAt: now, cancellationSource: "rider" })
     .where(inArray(registrationsTable.id, ids));
+  // Give discount-code uses back once nothing active carries the code.
+  const codeHolders = new Map<string, { riderId: number; code: string }>();
+  for (const r of regs) {
+    const code = (r as any).compCode as string | null;
+    if (r.riderId != null && code) codeHolders.set(`${r.riderId}:${code}`, { riderId: r.riderId, code });
+  }
+  for (const { riderId, code } of codeHolders.values()) {
+    await releaseCompCodeIfCheckoutInactive(eventId, riderId, code).catch(() => {});
+  }
 
   // Remove check-in records for these registrations so riders don't appear on race-day lists
   const cancelledRiderIds = [...new Set(regs.map(r => r.riderId!))];
@@ -1288,7 +1316,8 @@ router.delete("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => 
   // (bikes cascade via FK; maintenance tables have no cascade).
   await db.delete(riderMaintenanceHistoryTable).where(eq(riderMaintenanceHistoryTable.riderId, riderId));
   await db.delete(riderMaintenanceTable).where(eq(riderMaintenanceTable.riderId, riderId));
-  await db.update(compCodesTable).set({ riderId: null }).where(eq(compCodesTable.riderId, riderId));
+  // A rider-locked comp code would become usable by anyone once unlinked, so deactivate it too.
+  await db.update(compCodesTable).set({ riderId: null, isActive: false }).where(eq(compCodesTable.riderId, riderId));
   await db.delete(ridersTable).where(eq(ridersTable.id, riderId));
   return res.json({ ok: true, mode: "deleted" });
 });

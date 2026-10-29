@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -59,12 +59,25 @@ function useStripeConnectStatus() {
         const body = await res.json().catch(() => null);
         throw new Error(body?.error || `Failed to fetch Stripe Connect status (HTTP ${res.status})`);
       }
-      return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean; accountId: string | null }>;
+      return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean; accountId: string | null; email?: string | null; source?: string }>;
     },
     // Stripe onboarding opens in another tab (or, in RM Roost, the system
     // browser), so re-check whenever the organizer comes back to this window.
     refetchOnWindowFocus: "always",
   });
+}
+
+/**
+ * The offline desktop app (RM Roost) runs this page against its local server,
+ * which only reports status: Stripe setup has to happen on the website.
+ */
+function isDesktopOrOffline(source: string | undefined): boolean {
+  if (typeof window === "undefined") return false;
+  if (typeof (window as unknown as { electronAPI?: unknown }).electronAPI !== "undefined") return true;
+  const host = window.location.hostname;
+  if (host === "localhost" || host === "127.0.0.1") return true;
+  // Only the local server tags its status response with a source.
+  return source != null;
 }
 
 export default function StripeConnect() {
@@ -74,8 +87,13 @@ export default function StripeConnect() {
   const { user } = useAuth();
   const [justConnected, setJustConnected] = useState(false);
   const [stripeEmail, setStripeEmail] = useState("");
+  // Opened synchronously on the tap so phones don't block it as a popup.
+  const dashboardWindow = useRef<Window | null>(null);
 
   const { data: status, isLoading, isError, error: statusError, isFetching, refetch } = useStripeConnectStatus();
+  const offline = isDesktopOrOffline(status?.source);
+  // Connecting, disconnecting and the Stripe dashboard are for the club organizer.
+  const canManage = user?.role === "club_organizer" || user?.role === "super_admin";
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -111,7 +129,9 @@ export default function StripeConnect() {
       return res.json() as Promise<{ url: string }>;
     },
     onSuccess: (data) => {
-      window.open(data.url, "_blank");
+      // Same tab: a window opened after an await is blocked on phones. Stripe
+      // returns here (/payments) when setup is done.
+      window.location.assign(data.url);
     },
     onError: (err: Error) => {
       const isConnectNotEnabled = err.message?.toLowerCase().includes("signed up for connect");
@@ -148,12 +168,23 @@ export default function StripeConnect() {
       return res.json() as Promise<{ url: string }>;
     },
     onSuccess: (data) => {
-      window.open(data.url, "_blank");
+      const w = dashboardWindow.current;
+      dashboardWindow.current = null;
+      if (w && !w.closed) w.location.href = data.url;
+      else window.location.assign(data.url);
     },
     onError: (err: Error) => {
+      dashboardWindow.current?.close();
+      dashboardWindow.current = null;
       toast({ title: "Error", description: <LinkifiedStripeError message={err.message} />, variant: "destructive" });
     },
   });
+
+  const openDashboard = () => {
+    // Open the tab during the tap itself, then point it at Stripe once the link arrives.
+    dashboardWindow.current = window.open("about:blank", "_blank");
+    dashboardMutation.mutate();
+  };
 
   const disconnectMutation = useMutation({
     mutationFn: async () => {
@@ -185,11 +216,30 @@ export default function StripeConnect() {
         </p>
       </div>
 
-      {justConnected && (
+      {offline && (
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            Stripe is set up on the RM Roost website, not in the desktop app. Sign in on the website
+            and open Payments to connect, finish setup or open your Stripe dashboard. This page shows
+            the status from your last sync.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {justConnected && status?.onboardingComplete && (
         <Alert className="border-green-500/30 bg-green-500/5">
           <CheckCircle2 className="h-4 w-4 text-green-600" />
           <AlertDescription className="text-green-700">
-            Your Stripe account has been connected! You can now enable payment collection on events.
+            Your Stripe account is connected and ready. You can now enable payment collection on events.
+          </AlertDescription>
+        </Alert>
+      )}
+      {justConnected && status?.connected && !status.onboardingComplete && (
+        <Alert className="border-amber-500/30 bg-amber-500/5">
+          <AlertCircle className="h-4 w-4 text-amber-600" />
+          <AlertDescription className="text-amber-700">
+            Stripe still needs a few details before your club can take payments and receive payouts.
           </AlertDescription>
         </Alert>
       )}
@@ -242,6 +292,9 @@ export default function StripeConnect() {
               <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-green-500 shrink-0" /> Stripe handles card processing &amp; compliance</li>
               <li className="flex items-center gap-2"><CheckCircle2 size={14} className="text-green-500 shrink-0" /> Full payout history and reporting in Stripe dashboard</li>
             </ul>
+            {offline ? null : !canManage ? (
+              <p className="text-sm text-muted-foreground">Ask your club organizer to connect Stripe.</p>
+            ) : (<>
             <div className="space-y-1.5 pt-1">
               <Label htmlFor="stripe-email" className="text-sm font-medium">
                 Stripe account email
@@ -270,21 +323,30 @@ export default function StripeConnect() {
                 <><CreditCard size={16} className="mr-2" /> Connect with Stripe <ArrowRight size={16} className="ml-2" /></>
               )}
             </Button>
+            </>)}
           </CardContent>
         </Card>
       ) : (
-        <Card className="border-green-500/30">
+        <Card className={status.onboardingComplete ? "border-green-500/30" : "border-amber-500/30"}>
           <CardHeader className="pb-2">
             <div className="flex items-center gap-3">
-              <div className="bg-green-500/10 rounded-full p-3">
-                <CheckCircle2 size={24} className="text-green-600" />
+              <div className={status.onboardingComplete ? "bg-green-500/10 rounded-full p-3" : "bg-amber-500/10 rounded-full p-3"}>
+                {status.onboardingComplete
+                  ? <CheckCircle2 size={24} className="text-green-600" />
+                  : <AlertCircle size={24} className="text-amber-600" />}
               </div>
               <div>
                 <CardTitle className="font-heading uppercase flex items-center gap-2">
-                  Stripe Connected
-                  <Badge className="bg-green-500/15 text-green-700 border-green-500/30 text-xs normal-case font-normal">Active</Badge>
+                  {status.onboardingComplete ? "Stripe Connected" : "Stripe Setup Incomplete"}
+                  {status.onboardingComplete
+                    ? <Badge className="bg-green-500/15 text-green-700 border-green-500/30 text-xs normal-case font-normal">Active</Badge>
+                    : <Badge className="bg-amber-500/15 text-amber-700 border-amber-500/30 text-xs normal-case font-normal">Setup incomplete</Badge>}
                 </CardTitle>
-                <CardDescription>Payment collection is enabled for your club</CardDescription>
+                <CardDescription>
+                  {status.onboardingComplete
+                    ? "Payment collection is enabled for your club"
+                    : "Riders can't pay online until Stripe setup is finished"}
+                </CardDescription>
               </div>
             </div>
           </CardHeader>
@@ -295,9 +357,10 @@ export default function StripeConnect() {
                 <CreditCard size={16} className="text-muted-foreground shrink-0" />
                 <div className="min-w-0">
                   <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide leading-none mb-0.5">Connected account</p>
-                  <p className="text-sm font-medium truncate">{(status as any)?.email ?? "Stripe account"}</p>
+                  <p className="text-sm font-medium truncate">{status?.email ?? "Stripe account"}</p>
                 </div>
               </div>
+              {!offline && canManage && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="ghost" size="sm" className="text-muted-foreground shrink-0 ml-4">
@@ -322,20 +385,29 @@ export default function StripeConnect() {
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
+              )}
             </div>
 
             {!status?.onboardingComplete && (
               <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-700">
                 <AlertCircle size={15} className="mt-0.5 shrink-0" />
-                <span>Your Stripe account setup isn't fully complete. <button onClick={() => startMutation.mutate()} className="underline underline-offset-2 font-medium hover:opacity-80">Finish setup</button> to activate payouts.</span>
+                <span>
+                  Your Stripe account setup isn't fully complete.{" "}
+                  {offline ? "Finish setup on the RM Roost website to take payments and receive payouts."
+                    : canManage ? <><button onClick={() => startMutation.mutate()} className="underline underline-offset-2 font-medium hover:opacity-80">Finish setup</button> to take payments and receive payouts.</>
+                    : "Ask your club organizer to finish setup."}
+                </span>
               </div>
             )}
 
-            <p className="text-sm text-muted-foreground">
-              Payment collection is active. On any event, open the edit form and check <strong>Collect Payments</strong> to charge riders an entry fee at registration.
-            </p>
+            {status.onboardingComplete && (
+              <p className="text-sm text-muted-foreground">
+                Payment collection is active. On any event, open the edit form and check <strong>Collect Payments</strong> to charge riders an entry fee at registration.
+              </p>
+            )}
+            {!offline && canManage && (
             <Button
-              onClick={() => dashboardMutation.mutate()}
+              onClick={openDashboard}
               disabled={dashboardMutation.isPending}
               variant="outline"
               className="font-heading uppercase tracking-wider"
@@ -346,6 +418,7 @@ export default function StripeConnect() {
                 <><ExternalLink size={16} className="mr-2" /> Open Stripe Dashboard</>
               )}
             </Button>
+            )}
           </CardContent>
         </Card>
       )}

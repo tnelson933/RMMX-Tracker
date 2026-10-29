@@ -383,8 +383,8 @@ function LiveLeaderboard({ motoId, isElapsedTimeSport, isEnduro, lapCount, penal
       )}
       {snapshot?.sectorNames?.length ? (
         <div className="mt-3 space-y-3">
-          <SectorTimes title="Last lap sectors" view="last" sectorNames={snapshot.sectorNames} entries={snapshot.leaderboard as unknown as SectorEntry[]} />
-          <SectorTimes title="Best sectors" view="best" sectorNames={snapshot.sectorNames} entries={snapshot.leaderboard as unknown as SectorEntry[]} />
+          <SectorTimes title="Last lap segments" view="last" sectorNames={snapshot.sectorNames} entries={snapshot.leaderboard as unknown as SectorEntry[]} />
+          <SectorTimes title="Best segments" view="best" sectorNames={snapshot.sectorNames} entries={snapshot.leaderboard as unknown as SectorEntry[]} />
         </div>
       ) : null}
     </div>

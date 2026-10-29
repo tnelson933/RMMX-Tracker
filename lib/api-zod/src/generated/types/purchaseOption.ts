@@ -11,7 +11,8 @@ export interface PurchaseOption {
   name: string;
   amount: number;
   /**
-     * ID of the discount category this purchase option belongs to
+     * No longer used. Older events may still carry it; new saves drop it.
+     * @deprecated
      * @nullable
      */
   categoryId?: number | null;

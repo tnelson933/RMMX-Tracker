@@ -136,7 +136,7 @@ router.get("/events", async (req, res) => {
 router.post("/events", async (req, res) => {
   const invalid = validateEventInput(req.body ?? {});
   if (invalid) return res.status(400).json({ error: invalid });
-  const { name, date, state, location, trackName, raceClasses, raceClassLimits, raceClassSeriesMap, registrationOpen, registrationClose, paymentEnabled, requireAma, entryFee, earlyBirdFee, earlyBirdEndsAt, maxRiders, timingTechnology, transponderRentalEnabled, transponderRentalFee, rfidStickerFee, purchaseOptions, scoringTableId, endDate, requireWaiver, requireLiabilityWaiver, requireTransponder, raceStyle, quickCheckinEnabled, streetAddress, zip } = req.body;
+  const { name, date, state, location, trackName, raceClasses, raceClassLimits, raceClassSeriesMap, registrationOpen, registrationClose, paymentEnabled, requireAma, entryFee, earlyBirdFee, earlyBirdEndsAt, maxRiders, timingTechnology, transponderRentalEnabled, transponderRentalFee, rfidStickerFee, purchaseOptions, scoringTableId, endDate, requireWaiver, requireLiabilityWaiver, requireTransponder, raceStyle, quickCheckinEnabled, streetAddress, zip, requireClubId, noDuplicateBibs, raceClassDetails, contingencyBrands } = req.body;
   // Staff are always scoped to their own club; ignore any caller-supplied clubId.
   const staffCId = getStaffClubId(res);
   const clubId: number = staffCId ?? Number(req.body.clubId);
@@ -186,6 +186,10 @@ router.post("/events", async (req, res) => {
     requireWaiver: requireWaiver || false,
     requireLiabilityWaiver: requireLiabilityWaiver || false,
     requireTransponder: requireTransponder || false,
+    requireClubId: !!requireClubId,
+    noDuplicateBibs: !!noDuplicateBibs,
+    raceClassDetails: raceClassDetails && typeof raceClassDetails === "object" && !Array.isArray(raceClassDetails) ? raceClassDetails : {},
+    contingencyBrands: Array.isArray(contingencyBrands) ? contingencyBrands.map(String) : null,
     entryFee: entryFee ? String(entryFee) : null,
     earlyBirdFee: earlyBirdFee ? String(earlyBirdFee) : null,
     earlyBirdEndsAt: earlyBirdEndsAt ? String(earlyBirdEndsAt).substring(0, 10) : null,
