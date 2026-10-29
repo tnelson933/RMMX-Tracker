@@ -102,6 +102,8 @@ export function AIAssistant({ eventId }: { eventId?: number }) {
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [streamBuffer, setStreamBuffer] = useState("");
+  // What Rocky is checking right now (e.g. "Checking your readers…"), shown until text arrives.
+  const [streamStatus, setStreamStatus] = useState("");
   const [loadingConvs, setLoadingConvs] = useState(false);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -240,6 +242,9 @@ export function AIAssistant({ eventId }: { eventId?: number }) {
             } else if (payload.content) {
               full += payload.content;
               setStreamBuffer(full);
+              setStreamStatus("");
+            } else if (typeof payload.status === "string") {
+              setStreamStatus(payload.status);
             } else if (payload.error) {
               setMessages((prev) => [
                 ...prev,
@@ -260,6 +265,7 @@ export function AIAssistant({ eventId }: { eventId?: number }) {
     } finally {
       setStreaming(false);
       setStreamBuffer("");
+      setStreamStatus("");
       abortRef.current = null;
     }
   };
@@ -311,7 +317,7 @@ export function AIAssistant({ eventId }: { eventId?: number }) {
   };
 
   const allMessages = streaming
-    ? [...messages, { id: -1, role: "assistant" as const, content: streamBuffer, createdAt: "" }]
+    ? [...messages, { id: -1, role: "assistant" as const, content: streamBuffer || (streamStatus ? `_${streamStatus}_` : ""), createdAt: "" }]
     : messages;
 
   return (

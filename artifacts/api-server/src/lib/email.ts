@@ -286,3 +286,62 @@ export async function sendStatsEmail(opts: {
 
   return sendEmail(to, subject, html);
 }
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+}
+
+/**
+ * Rocky escalated a problem: email the RM Roost team with Approve / Decline
+ * links (they open a confirm page; the link itself decides nothing) and a link
+ * to the ticket. Every value is escaped: the ticket text comes from the chat.
+ */
+export async function sendSupportTicketEmail(opts: {
+  to: string[];
+  ticketId: number;
+  urgency: "normal" | "urgent";
+  summary: string;
+  details: string;
+  clubName: string | null;
+  eventName: string | null;
+  reporter: string | null;
+  /** Diagnostic tools Rocky ran before escalating. */
+  checked: string[];
+  approveUrl: string;
+  declineUrl: string;
+  ticketUrl: string;
+}): Promise<{ ok: boolean }> {
+  const urgent = opts.urgency === "urgent";
+  const subject = `${urgent ? "[URGENT] " : ""}Rocky support request #${opts.ticketId}: ${opts.summary}`.slice(0, 180);
+  const row = (label: string, value: string | null) => value
+    ? `<tr><td style="padding:4px 12px 4px 0;color:#777;font-size:13px;white-space:nowrap;vertical-align:top">${label}</td><td style="padding:4px 0;font-size:13px;color:#222">${escapeHtml(value)}</td></tr>`
+    : "";
+  const button = (href: string, label: string, bg: string) =>
+    `<a href="${escapeHtml(href)}" style="display:inline-block;padding:12px 22px;margin:0 8px 8px 0;background:${bg};color:#fff;text-decoration:none;font-weight:700;font-size:14px;text-transform:uppercase;letter-spacing:1px;border-radius:999px">${label}</a>`;
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px 20px;background:#f9f9f9">
+      <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:32px">
+        <p style="margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:${urgent ? "#B30000" : "#777"}">
+          ${urgent ? "Urgent: racing or check-in is blocked" : "Support request"} · #${opts.ticketId}
+        </p>
+        <h1 style="margin:0 0 16px;font-size:20px;color:#242424">${escapeHtml(opts.summary)}</h1>
+        <table style="border-collapse:collapse;margin-bottom:16px">
+          ${row("Club", opts.clubName)}${row("Event", opts.eventName)}${row("Reported by", opts.reporter)}
+          ${row("Rocky checked", opts.checked.length ? [...new Set(opts.checked)].join(", ") : "nothing yet")}
+        </table>
+        <div style="white-space:pre-wrap;font-size:14px;line-height:1.55;color:#333;background:#f6f6f6;border-radius:6px;padding:14px;margin-bottom:20px">${escapeHtml(opts.details)}</div>
+        ${button(opts.approveUrl, "Approve investigation", "#B30000")}${button(opts.declineUrl, "Decline", "#555")}
+        <p style="margin:16px 0 0;font-size:12px;color:#888;line-height:1.5">
+          Approving marks the request for investigation and tells the organizer the team is on it. Nothing is changed in RM Roost until you fix it.
+          The buttons work once and expire in 7 days. <a href="${escapeHtml(opts.ticketUrl)}" style="color:#555">Open the ticket in RM Roost</a> for what Rocky found.
+        </p>
+      </div>
+    </div>`;
+  let ok = true;
+  // One email per recipient, so team members don't see each other's addresses.
+  for (const to of opts.to) {
+    const result = await sendEmail(to, subject, html);
+    ok = ok && result.ok;
+  }
+  return { ok };
+}

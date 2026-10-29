@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Building2, Bell, UserCog, Eye, LogOut, Loader2, Search, ShieldCheck, Repeat } from "lucide-react";
+import { Building2, Bell, UserCog, Eye, LogOut, Loader2, Search, ShieldCheck, Repeat, LifeBuoy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -154,6 +154,7 @@ export function SuperAdminRail({ mirror, organizerName, organizerEmail }: { mirr
         {item("/admin/users", "Users", UserCog)}
         {item("/admin/clubs", "Clubs", Building2)}
         {item("/admin/notifications", "Notifications", Bell)}
+        {item("/admin/support", "Support", LifeBuoy)}
         {item("/admin/clubs?mirror=1", "Mirror someone else", Repeat)}
       </nav>
       <div className="p-3 border-t border-white/10">

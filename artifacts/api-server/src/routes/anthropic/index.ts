@@ -5,8 +5,30 @@ import { eq, and, desc, count, asc, ne } from "drizzle-orm";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import SYSTEM_PROMPT from "./SYSTEM_PROMPT.md";
 import { eventTimingTags, timingTagsLabel } from "../../lib/eventTimingTags";
+import type Anthropic from "@anthropic-ai/sdk";
+import { ROCKY_DIAGNOSTIC_TOOLS, runRockyDiagnosticTool } from "../../lib/rockyTools";
+import { CREATE_SUPPORT_TICKET_TOOL, createSupportTicket } from "../../lib/supportTickets";
 
 const router = Router();
+
+// Rocky's tools: read-only diagnostics for the organizer's own club, plus
+// escalation to the RM Roost team. Fixed order so the cached prefix is stable.
+const ROCKY_TOOLS: Anthropic.Tool[] = [...ROCKY_DIAGNOSTIC_TOOLS, CREATE_SUPPORT_TICKET_TOOL];
+// Model calls per answer (each tool round is one); keeps a confused loop short.
+const MAX_ROCKY_ROUNDS = 6;
+const TOOL_STATUS: Record<string, string> = {
+  get_reader_status: "Checking your readers…",
+  get_event_timing_status: "Checking the event's timing…",
+  find_rider_entry: "Looking up the rider…",
+  create_support_ticket: "Sending this to the RM Roost team…",
+};
+
+function getAppUrl(): string {
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
+  const domains = process.env.REPLIT_DOMAINS;
+  if (domains) return `https://${domains.split(",")[0]}`;
+  return "http://localhost:80";
+}
 
 // SYSTEM_PROMPT is loaded from SYSTEM_PROMPT.md at build time (esbuild text loader).
 // When you add a new organizer-facing feature, update SYSTEM_PROMPT.md — do NOT edit
@@ -134,15 +156,22 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
   // so it never invalidates the cached prefix.
   let eventContext: string | null = null;
 
+  const [user] = await db
+    .select({ clubId: usersTable.clubId, role: usersTable.role })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId));
+  // Tools are limited to this club: the organizer's own, or for a super admin
+  // (no club of their own) the club of the event they have open.
+  let toolClubId: number | null = user?.clubId ?? null;
+  let toolEventId: number | null = null;
+  if (toolClubId == null && user?.role === "super_admin" && eventId && Number.isInteger(Number(eventId))) {
+    const [owner] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, Number(eventId)));
+    toolClubId = owner?.clubId ?? null;
+  }
+
   if (eventId && Number.isInteger(Number(eventId))) {
     const numericEventId = Number(eventId);
-
-    const [user] = await db
-      .select({ clubId: usersTable.clubId })
-      .from(usersTable)
-      .where(eq(usersTable.id, userId));
-
-    const userClubId = user?.clubId;
+    const userClubId = toolClubId;
 
     const [event] = userClubId
       ? await db
@@ -152,6 +181,7 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
       : [];
 
     if (event) {
+      toolEventId = event.id;
       const [motoCountRow] = await db
         .select({ count: count() })
         .from(motosTable)
@@ -230,31 +260,77 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
   res.setHeader("Connection", "keep-alive");
 
   let fullResponse = "";
+  // What Rocky checked this answer, attached to a support ticket if it makes one.
+  const diagnostics: Array<{ tool: string; input: unknown; result: string }> = [];
+  const send = (payload: Record<string, unknown>) => res.write(`data: ${JSON.stringify(payload)}\n\n`);
 
   try {
-    const stream = anthropic.messages.stream({
-      model: "claude-opus-5-5",
-      max_tokens: 16000,
-      // Help-desk answers: low effort keeps replies quick.
-      output_config: { effort: "low" },
-      system: [
-        { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
-        ...(eventContext ? [{ type: "text" as const, text: eventContext }] : []),
-      ],
-      messages: chatMessages,
-    });
+    const loopMessages: Anthropic.MessageParam[] = chatMessages;
+    for (let round = 1; ; round++) {
+      const stream = anthropic.messages.stream({
+        model: "claude-opus-5-5",
+        max_tokens: 16000,
+        // Help-desk answers: low effort keeps replies quick.
+        output_config: { effort: "low" },
+        system: [
+          { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
+          ...(eventContext ? [{ type: "text" as const, text: eventContext }] : []),
+        ],
+        tools: ROCKY_TOOLS,
+        messages: loopMessages,
+      });
 
-    for await (const event of stream) {
-      if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-        fullResponse += event.delta.text;
-        res.write(`data: ${JSON.stringify({ content: event.delta.text })}\n\n`);
+      for await (const event of stream) {
+        if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+          fullResponse += event.delta.text;
+          send({ content: event.delta.text });
+        }
       }
-    }
 
-    const final = await stream.finalMessage();
-    if (final.stop_reason === "refusal" && !fullResponse) {
-      fullResponse = "Sorry, I can't help with that one. Try rephrasing, or ask about a specific RM Roost page or task.";
-      res.write(`data: ${JSON.stringify({ content: fullResponse })}\n\n`);
+      const final = await stream.finalMessage();
+      if (final.stop_reason === "refusal") {
+        if (!fullResponse) {
+          fullResponse = "Sorry, I can't help with that one. Try rephrasing, or ask about a specific RM Roost page or task.";
+          send({ content: fullResponse });
+        }
+        break;
+      }
+      const toolUses = final.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+      // Done, or a tool call cut off at max_tokens (never run a truncated input).
+      if (final.stop_reason !== "tool_use" || toolUses.length === 0) break;
+      if (round >= MAX_ROCKY_ROUNDS) {
+        const note = "\n\nI've run out of checks for this one. Tell me what you'd like me to look at next, or ask me to send it to the RM Roost team.";
+        fullResponse += note;
+        send({ content: note });
+        break;
+      }
+
+      // Text between checks reads as separate paragraphs.
+      if (fullResponse && !fullResponse.endsWith("\n")) {
+        fullResponse += "\n\n";
+        send({ content: "\n\n" });
+      }
+      loopMessages.push({ role: "assistant", content: final.content });
+      const results: Anthropic.ToolResultBlockParam[] = [];
+      for (const call of toolUses) {
+        send({ status: TOOL_STATUS[call.name] ?? "Checking…" });
+        let outcome: { content: string; isError: boolean };
+        if (call.name === "create_support_ticket") {
+          outcome = await createSupportTicket(
+            { clubId: toolClubId, userId, eventId: toolEventId, conversationId: id, appUrl: getAppUrl() },
+            call.input,
+            diagnostics,
+          );
+        } else if (toolClubId == null) {
+          outcome = { content: "No club to check: this account has no club. Open one of the club's events first.", isError: true };
+        } else {
+          outcome = await runRockyDiagnosticTool(call.name, call.input, { clubId: toolClubId, eventId: toolEventId });
+          diagnostics.push({ tool: call.name, input: call.input, result: outcome.content });
+        }
+        results.push({ type: "tool_result", tool_use_id: call.id, content: outcome.content, ...(outcome.isError ? { is_error: true } : {}) });
+      }
+      // Every result goes back in one user message.
+      loopMessages.push({ role: "user", content: results });
     }
 
     await db.insert(messages).values({

@@ -117,6 +117,9 @@ const STAFF_RULES: RouteRule[] = [
   // ── Team management: never for staff ─────────────────────────────────────
   { pattern: /^\/organizer\/team(\/|$)/, permissions: null },
 
+  // ── Support tickets (super admins; emailed links are public): never for staff ─
+  { pattern: /^\/support(\/|$)/, permissions: null },
+
   // ── Super-admin user management: never for staff ──────────────────────────
   { pattern: /^\/users(\/|$)/, permissions: null },
 ];

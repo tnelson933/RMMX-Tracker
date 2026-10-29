@@ -33,6 +33,7 @@ import {
   Bell,
   Monitor,
   Eye,
+  LifeBuoy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MirrorDialog, SuperAdminRail, MirrorBanner, quitMirror, type MirrorInfo } from "./MirrorControls";
@@ -242,6 +243,18 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
             >
               <Bell size={18} />
               Notifications
+            </Link>
+            <Link
+              href="/admin/support"
+              onClick={close}
+              className={`flex items-center gap-3 px-3 py-2 rounded-md font-medium text-sm transition-colors ${
+                location.startsWith("/admin/support")
+                  ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              }`}
+            >
+              <LifeBuoy size={18} />
+              Support
             </Link>
           </div>
         )}

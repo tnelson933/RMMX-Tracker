@@ -38,6 +38,8 @@ import ClubsAdmin from "@/pages/organizer/ClubsAdmin";
 import UsersAdmin from "@/pages/organizer/UsersAdmin";
 import AdminNotifications from "@/pages/organizer/AdminNotifications";
 import SetPassword from "@/pages/public/SetPassword";
+import SupportDecision from "@/pages/public/SupportDecision";
+import SupportTickets from "@/pages/organizer/SupportTickets";
 import StripeConnect from "@/pages/organizer/StripeConnect";
 import StandalonePractice from "@/pages/organizer/StandalonePractice";
 import DiscountCodesPage from "@/pages/organizer/DiscountCodes";
@@ -195,6 +197,9 @@ function Router() {
       <Route path="/setup-account">
         <PublicLayout><SetPassword /></PublicLayout>
       </Route>
+      <Route path="/support/decide">
+        <PublicLayout><SupportDecision /></PublicLayout>
+      </Route>
       <Route path="/forgot-password">
         <PublicLayout><ForgotPassword /></PublicLayout>
       </Route>
@@ -315,6 +320,9 @@ function Router() {
       </Route>
       <Route path="/admin/notifications">
         <OrganizerOnlyRoute><AdminNotifications /></OrganizerOnlyRoute>
+      </Route>
+      <Route path="/admin/support">
+        <OrganizerOnlyRoute><SupportTickets /></OrganizerOnlyRoute>
       </Route>
 
       <Route component={NotFound} />

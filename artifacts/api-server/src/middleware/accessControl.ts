@@ -60,6 +60,7 @@ export const PUBLIC_RULES: PublicRule[] = [
   { pattern: /^\/timing\/readers\/[^/]+\/(crossing|active\/crossing|ping)$/, methods: ["POST"], reason: "per-reader token ingest (token checked in handler)" },
   { pattern: /^\/timing\/readers\/[^/]+\/scanner$/, methods: READ, reason: "hand scanner page: name, placement, server clock (token checked in handler)" },
   { pattern: /^\/scanner\/pair$/, methods: ["POST"], reason: "hand scanner pairing (6-digit code checked in handler)" },
+  { pattern: /^\/support\/tickets\/\d+\/email-decision$/, methods: ["GET", "POST"], reason: "emailed approve/decline link for a support ticket (single-use token checked in handler)" },
   { pattern: /^\/practice\/(\d+|active)\/crossing$/, methods: ["POST"], reason: "practice reader ingest (S11 pending)" },
 ];
 

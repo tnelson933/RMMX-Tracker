@@ -29,6 +29,11 @@ process environment or add a reviewed development-only loader.
 | `STRIPE_PUBLISHABLE_KEY` | Stripe public client configuration |
 | `RESEND_API_KEY` | Resend server credential |
 | `EMAIL_FROM` | Verified sender identity |
+| `SUPPORT_ALERT_EMAILS` | Rocky support request email recipients (comma-separated; default every super admin) |
+| `SUPPORT_ALERT_PHONES` | Rocky support request text recipients (comma-separated, E.164) |
+| `TWILIO_ACCOUNT_SID` | Twilio account for support request texts |
+| `TWILIO_AUTH_TOKEN` | Twilio server credential |
+| `TWILIO_FROM_NUMBER` | Twilio sending number (or `TWILIO_MESSAGING_SERVICE_SID`) |
 | `PUBLIC_OBJECT_SEARCH_PATHS` | Current storage search prefixes, comma-separated |
 | `PRIVATE_OBJECT_DIR` | Current private object prefix |
 | `DEFAULT_OBJECT_STORAGE_BUCKET_ID` | Replit-provisioned bucket identifier; inventory may include it even where application code reads the other paths |

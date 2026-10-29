@@ -46,6 +46,7 @@ import liabilityWaiverRouter from "./liability-waiver";
 import quickCheckinRouter from "./quick-checkin";
 import riderCheckinFixesRouter from "./rider-checkin-fixes";
 import riderSocialRouter from "./rider-social";
+import supportRouter from "./support";
 
 const router: IRouter = Router();
 
@@ -96,5 +97,6 @@ router.use(liabilityWaiverRouter);
 router.use(quickCheckinRouter);
 router.use(riderCheckinFixesRouter);
 router.use(riderSocialRouter);
+router.use(supportRouter);
 
 export default router;
