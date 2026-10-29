@@ -345,3 +345,37 @@ export async function sendSupportTicketEmail(opts: {
   }
   return { ok };
 }
+
+/**
+ * A follow-up on a support request (investigation finished, fix ready):
+ * heading, plain-text body, optional buttons (confirm-page links) and a link to
+ * the ticket. Every value is escaped.
+ */
+export async function sendSupportUpdateEmail(opts: {
+  to: string[];
+  subject: string;
+  eyebrow: string;
+  heading: string;
+  body: string;
+  buttons: Array<{ href: string; label: string; primary?: boolean }>;
+  footer: string;
+  ticketUrl: string;
+}): Promise<{ ok: boolean }> {
+  const buttons = opts.buttons.map(b =>
+    `<a href="${escapeHtml(b.href)}" style="display:inline-block;padding:12px 22px;margin:0 8px 8px 0;background:${b.primary ? "#B30000" : "#555"};color:#fff;text-decoration:none;font-weight:700;font-size:14px;text-transform:uppercase;letter-spacing:1px;border-radius:999px">${escapeHtml(b.label)}</a>`).join("");
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:32px 20px;background:#f9f9f9">
+      <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:32px">
+        <p style="margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#777">${escapeHtml(opts.eyebrow)}</p>
+        <h1 style="margin:0 0 16px;font-size:20px;color:#242424">${escapeHtml(opts.heading)}</h1>
+        <div style="white-space:pre-wrap;font-size:14px;line-height:1.55;color:#333;background:#f6f6f6;border-radius:6px;padding:14px;margin-bottom:20px">${escapeHtml(opts.body)}</div>
+        ${buttons}
+        <p style="margin:16px 0 0;font-size:12px;color:#888;line-height:1.5">
+          ${escapeHtml(opts.footer)} <a href="${escapeHtml(opts.ticketUrl)}" style="color:#555">Open the ticket in RM Roost</a> for the full report.
+        </p>
+      </div>
+    </div>`;
+  let ok = true;
+  for (const to of opts.to) ok = (await sendEmail(to, opts.subject, html)).ok && ok;
+  return { ok };
+}

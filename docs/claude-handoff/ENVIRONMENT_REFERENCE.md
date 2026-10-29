@@ -34,6 +34,9 @@ process environment or add a reviewed development-only loader.
 | `TWILIO_ACCOUNT_SID` | Twilio account for support request texts |
 | `TWILIO_AUTH_TOKEN` | Twilio server credential |
 | `TWILIO_FROM_NUMBER` | Twilio sending number (or `TWILIO_MESSAGING_SERVICE_SID`) |
+| `GITHUB_TOKEN` | Support investigation: code search, and pull requests for approved code fixes (contents + pull requests write) |
+| `SUPPORT_GITHUB_REPO` | Repository the support investigation reads (default `tnelson933/RMMX-Tracker`) |
+| `SUPPORT_GITHUB_BRANCH` | Branch it reads and opens pull requests against (default `claude/railway-deploy`) |
 | `PUBLIC_OBJECT_SEARCH_PATHS` | Current storage search prefixes, comma-separated |
 | `PRIVATE_OBJECT_DIR` | Current private object prefix |
 | `DEFAULT_OBJECT_STORAGE_BUCKET_ID` | Replit-provisioned bucket identifier; inventory may include it even where application code reads the other paths |

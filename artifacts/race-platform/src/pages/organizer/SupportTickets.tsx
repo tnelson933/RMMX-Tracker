@@ -25,7 +25,36 @@ interface Ticket {
   createdAt: string;
   decidedAt: string | null;
   resolvedAt: string | null;
+  investigationStatus: "running" | "done" | "failed" | null;
+  investigationStartedAt: string | null;
+  investigationFinishedAt: string | null;
+  investigationReport: string | null;
+  investigationError: string | null;
+  investigationUsage: { inputTokens?: number; outputTokens?: number; rounds?: number } | null;
+  proposedFix: {
+    kind: "data" | "code" | "config" | "none";
+    rootCause: string;
+    summary: string;
+    organizerMessage: string;
+    sql?: string;
+    expectedRows?: number;
+    files?: Array<{ path: string; content: string }>;
+    steps?: string;
+  } | null;
+  fixStatus: string | null;
+  fixResult: string | null;
+  fixPrUrl: string | null;
 }
+
+const FIX_STATUS_LABEL: Record<string, string> = {
+  awaiting_approval: "Waiting for your approval",
+  applying: "Applying…",
+  applied: "Applied",
+  rolled_back: "Rolled back (row count didn't match)",
+  pr_opened: "Pull request opened",
+  declined: "Declined",
+  failed: "Failed",
+};
 
 const STATUS_STYLE: Record<Ticket["status"], string> = {
   open: "bg-amber-500/10 text-amber-800 border-amber-500/40",
@@ -70,6 +99,8 @@ export default function SupportTickets() {
   const { data: tickets = [], isLoading, isError, refetch } = useQuery<Ticket[]>({
     queryKey: ["/api/support/tickets"],
     enabled: user?.role === "super_admin",
+    // Watch a running investigation finish.
+    refetchInterval: (q) => ((q.state.data as Ticket[] | undefined)?.some(t => t.investigationStatus === "running") ? 10_000 : false),
     queryFn: async () => {
       const r = await fetch("/api/support/tickets", { credentials: "include" });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -92,7 +123,7 @@ export default function SupportTickets() {
       });
       const json = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(json.error ?? `HTTP ${r.status}`);
-      toast({ title: done });
+      toast({ title: done, description: typeof json.message === "string" ? json.message : undefined });
       setResolution("");
       await queryClient.invalidateQueries({ queryKey: ["/api/support/tickets"] });
     } catch (err: any) {
@@ -106,7 +137,7 @@ export default function SupportTickets() {
     <div className="p-6 md:p-8 max-w-6xl mx-auto space-y-6">
       <div>
         <h1 className="text-3xl font-heading font-bold uppercase tracking-tight flex items-center gap-2"><LifeBuoy className="text-primary" /> Support</h1>
-        <p className="text-muted-foreground mt-1">Problems Rocky couldn't solve, sent to the RM Roost team. Approving tells the organizer you're on it; resolving posts your note in their Rocky chat.</p>
+        <p className="text-muted-foreground mt-1">Problems Rocky couldn't solve, sent to the RM Roost team. Approving tells the organizer you're on it and starts an investigation that proposes a fix for you to approve; resolving posts your note in their Rocky chat.</p>
       </div>
 
       {isError ? (
@@ -168,6 +199,72 @@ export default function SupportTickets() {
                     </div>
                   )}
                 </div>
+
+                {(selected.status !== "open" && selected.status !== "declined") && (
+                  <div className="space-y-2 border-t pt-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Investigation</p>
+                      {selected.investigationStatus === "running" && (
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                          <Loader2 size={12} className="animate-spin" /> Running since {new Date(selected.investigationStartedAt!).toLocaleTimeString()}
+                        </span>
+                      )}
+                      {selected.investigationStatus === "failed" && <span className="text-xs font-semibold text-destructive">Stopped</span>}
+                      {selected.investigationStatus === "done" && selected.investigationUsage && (
+                        <span className="text-xs text-muted-foreground">
+                          {selected.investigationUsage.rounds} steps · {Math.round(((selected.investigationUsage.inputTokens ?? 0) + (selected.investigationUsage.outputTokens ?? 0)) / 1000)}k tokens
+                        </span>
+                      )}
+                      {selected.status === "approved" && selected.investigationStatus !== "running" && (
+                        <Button size="sm" variant="outline" className="h-7 ml-auto" disabled={busy} onClick={() => act("investigate", {}, "Investigation started")}>
+                          {selected.investigationStatus ? "Run again" : "Run investigation"}
+                        </Button>
+                      )}
+                    </div>
+                    {selected.investigationError && <p className="text-sm text-destructive">{selected.investigationError}</p>}
+                    {selected.investigationReport && (
+                      <details className="rounded-md border px-3 py-2 text-sm" open={!selected.proposedFix}>
+                        <summary className="cursor-pointer font-medium">Full report</summary>
+                        <pre className="mt-2 text-xs whitespace-pre-wrap break-words max-h-[28rem] overflow-auto">{selected.investigationReport}</pre>
+                      </details>
+                    )}
+                    {selected.proposedFix && (
+                      <div className="rounded-md border border-primary/30 bg-primary/[0.03] p-3 space-y-2 text-sm">
+                        <p className="text-xs font-bold uppercase tracking-wider text-primary">Proposed fix · {selected.proposedFix.kind}</p>
+                        <p className="font-semibold">{selected.proposedFix.summary}</p>
+                        <p className="whitespace-pre-wrap text-muted-foreground">{selected.proposedFix.rootCause}</p>
+                        {selected.proposedFix.sql && (
+                          <>
+                            <p className="text-xs text-muted-foreground">
+                              Runs in a transaction; commits only if it changes exactly {selected.proposedFix.expectedRows} row{selected.proposedFix.expectedRows === 1 ? "" : "s"}.
+                            </p>
+                            <pre className="rounded bg-muted p-2 text-xs whitespace-pre-wrap break-all">{selected.proposedFix.sql}</pre>
+                          </>
+                        )}
+                        {(selected.proposedFix.files ?? []).map(f => (
+                          <details key={f.path} className="rounded border bg-background px-2 py-1.5">
+                            <summary className="cursor-pointer font-mono text-xs">{f.path}</summary>
+                            <pre className="mt-1 text-[11px] whitespace-pre-wrap break-all max-h-80 overflow-auto">{f.content}</pre>
+                          </details>
+                        ))}
+                        {selected.proposedFix.steps && <pre className="rounded bg-muted p-2 text-xs whitespace-pre-wrap">{selected.proposedFix.steps}</pre>}
+                        <p className="text-xs"><span className="text-muted-foreground">The organizer will be told:</span> {selected.proposedFix.organizerMessage}</p>
+                        {selected.fixStatus && (
+                          <p className="text-xs font-semibold">{FIX_STATUS_LABEL[selected.fixStatus] ?? selected.fixStatus}{selected.fixResult ? `: ${selected.fixResult}` : ""}</p>
+                        )}
+                        {selected.fixPrUrl && <a href={selected.fixPrUrl} target="_blank" rel="noreferrer" className="text-xs underline">Open the pull request</a>}
+                        {selected.fixStatus === "awaiting_approval" && (
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            <Button size="sm" disabled={busy} onClick={() => act("fix-decision", { decision: "approve" }, selected.proposedFix?.kind === "data" ? "Fix run" : "Pull request opened")}>
+                              {selected.proposedFix.kind === "data" ? "Approve and run the fix" : "Approve and open the pull request"}
+                            </Button>
+                            <Button size="sm" variant="outline" disabled={busy} onClick={() => act("fix-decision", { decision: "decline" }, "Fix declined")}>Decline fix</Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {selected.resolution && (
                   <div className="rounded-md border border-green-600/30 bg-green-500/5 p-3 text-sm">

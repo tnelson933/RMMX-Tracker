@@ -29,7 +29,39 @@ export const supportTicketsTable = pgTable("support_tickets", {
   decidedByUserId: integer("decided_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   resolution: text("resolution"),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  // ── Investigation (runs after approval) ──
+  /** null | "running" | "done" | "failed". */
+  investigationStatus: text("investigation_status"),
+  investigationStartedAt: timestamp("investigation_started_at", { withTimezone: true }),
+  investigationFinishedAt: timestamp("investigation_finished_at", { withTimezone: true }),
+  /** The agent's write-up: root cause, evidence, what it proposes. */
+  investigationReport: text("investigation_report"),
+  investigationError: text("investigation_error"),
+  /** Token usage of the run ({ inputTokens, outputTokens, rounds }). */
+  investigationUsage: jsonb("investigation_usage").$type<Record<string, number> | null>(),
+  /** What the agent proposes (see lib/supportInvestigation ProposedFix). */
+  proposedFix: jsonb("proposed_fix").$type<ProposedFix | null>(),
+  // ── Fix approval ──
+  /** null | "awaiting_approval" | "applied" | "rolled_back" | "pr_opened" | "declined" | "failed". */
+  fixStatus: text("fix_status"),
+  fixTokenHash: text("fix_token_hash"),
+  fixTokenExpiresAt: timestamp("fix_token_expires_at", { withTimezone: true }),
+  fixResult: text("fix_result"),
+  fixPrUrl: text("fix_pr_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [index("support_tickets_status_idx").on(t.status, t.createdAt), index("support_tickets_club_idx").on(t.clubId, t.createdAt)]);
+
+export interface ProposedFix {
+  /** data: one SQL statement; code: file changes for a pull request; config: settings the organizer or owner changes; none. */
+  kind: "data" | "code" | "config" | "none";
+  rootCause: string;
+  summary: string;
+  /** What the organizer is told in Rocky when it's fixed. */
+  organizerMessage: string;
+  sql?: string;
+  expectedRows?: number;
+  files?: Array<{ path: string; content: string }>;
+  steps?: string;
+}
 
 export type SupportTicket = typeof supportTicketsTable.$inferSelect;

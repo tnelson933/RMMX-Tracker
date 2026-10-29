@@ -190,13 +190,13 @@ export async function decideTicket(ticketId: number, decision: TicketDecision, d
 }
 
 /** Mark a ticket fixed and tell the organizer. */
-export async function resolveTicket(ticketId: number, resolution: string, byUserId: number): Promise<SupportTicket | null> {
+export async function resolveTicket(ticketId: number, resolution: string, byUserId: number | null): Promise<SupportTicket | null> {
   const [ticket] = await db.update(supportTicketsTable)
     .set({
       status: "resolved",
       resolution,
       resolvedAt: new Date(),
-      decidedByUserId: byUserId,
+      ...(byUserId != null ? { decidedByUserId: byUserId } : {}),
       decidedAt: sql`coalesce(${supportTicketsTable.decidedAt}, now())`,
       approvalTokenHash: null,
       approvalTokenExpiresAt: null,
