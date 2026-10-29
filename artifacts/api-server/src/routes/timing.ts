@@ -15,7 +15,7 @@ import {
   registrationsTable,
 } from "@workspace/db";
 import { fetchEnduoPenaltyMap } from "./enduro-scoring";
-import { eq, and, asc, desc, isNotNull, isNull, or, gt, lt, sql, inArray, ilike } from "drizzle-orm";
+import { eq, and, asc, desc, isNotNull, isNull, or, gt, lt, sql, inArray, ilike, ne } from "drizzle-orm";
 import type { Request, Response } from "express";
 import { authorizeIngest, clubIdForEvent, clubIdForMoto } from "../lib/ingestAuth";
 import { textToSpeech, speakScript } from "@workspace/integrations-openai-ai-server/audio";
@@ -29,6 +29,14 @@ import {
   isImplausiblyFutureCrossing,
   parseTrustworthyReceivedAt,
 } from "../lib/crossingTimestamp";
+import {
+  compareStandings,
+  computeFinishAt,
+  everyoneFinished,
+  finishGraceMs,
+  scoreRider,
+  type ScoringMoto,
+} from "../lib/lapScoring";
 import {
   advanceAnnouncerLifecycle,
   calculateRaceTimeRemainingMs,
@@ -735,6 +743,185 @@ async function updateRaceResultPositions(sorted: Array<{ id: number }>) {
     .where(inArray(raceResultsTable.id, sorted.map(result => result.id)));
 }
 
+/** A crossing's time, or when it arrived if the reader's clock was implausibly ahead. */
+function effectiveCrossingTime(c: { crossingTime: Date; createdAt: Date }): Date {
+  return isImplausiblyFutureCrossing(c.crossingTime, c.createdAt) ? c.createdAt : c.crossingTime;
+}
+
+const scoringMoto = (moto: typeof motosTable.$inferSelect): ScoringMoto => ({
+  startedAt: new Date(moto.startedAt!),
+  lapCount: moto.lapCount ?? null,
+  timeLimitMs: moto.timeLimitMs ?? null,
+  plusLaps: moto.plusLaps ?? null,
+  timeExpiredAt: moto.timeExpiredAt ? new Date(moto.timeExpiredAt) : null,
+});
+
+/** Every rider's crossing times in a moto (unassigned tags left out). */
+async function riderCrossingTimes(motoId: number) {
+  const rows = await db.select().from(lapCrossingsTable).where(eq(lapCrossingsTable.motoId, motoId));
+  const byRider = new Map<number, Date[]>();
+  for (const row of rows) {
+    if (row.riderId == null) continue;
+    const list = byRider.get(row.riderId) ?? [];
+    list.push(effectiveCrossingTime(row));
+    byRider.set(row.riderId, list);
+  }
+  return { rows, byRider };
+}
+
+/**
+ * Rebuilds one rider's (or one unassigned tag's) laps in a moto from all of
+ * their crossings: lap numbers and lap times on each crossing, the rider's
+ * race result (up to their checkered flag), and everyone's positions.
+ * Must run inside the moto's lock. Returns the lap of `crossingId`, if given.
+ */
+export async function rescoreRiderInMoto(
+  moto: typeof motosTable.$inferSelect,
+  riderId: number | null,
+  rfidNumber: string,
+  crossingId?: number,
+): Promise<{ lapNumber: number | null; lapTimeMs: number | null }> {
+  const scoring = scoringMoto(moto);
+  const { rows, byRider } = await riderCrossingTimes(moto.id);
+  const tag = rfidNumber.trim().toLowerCase();
+  const mine = rows
+    .filter(r => (riderId ? r.riderId === riderId : r.riderId == null && r.rfidNumber.trim().toLowerCase() === tag))
+    .sort((x, y) => effectiveCrossingTime(x).getTime() - effectiveCrossingTime(y).getTime() || x.id - y.id);
+
+  // Lap numbers and times along the rider's own sequence.
+  let result: { lapNumber: number | null; lapTimeMs: number | null } = { lapNumber: null, lapTimeMs: null };
+  for (let i = 0; i < mine.length; i++) {
+    const lapNumber = i + 1;
+    const prev = i === 0 ? scoring.startedAt : effectiveCrossingTime(mine[i - 1]);
+    const lapTimeMs = Math.max(0, effectiveCrossingTime(mine[i]).getTime() - prev.getTime());
+    if (mine[i].lapNumber !== lapNumber || mine[i].lapTimeMs !== lapTimeMs) {
+      await db.update(lapCrossingsTable).set({ lapNumber, lapTimeMs }).where(eq(lapCrossingsTable.id, mine[i].id));
+    }
+    if (mine[i].id === crossingId) result = { lapNumber, lapTimeMs };
+  }
+  if (!riderId) return result;
+
+  const finishAt = computeFinishAt(scoring, [...byRider.values()]);
+  const score = scoreRider(scoring, byRider.get(riderId) ?? [], finishAt);
+  const [existing] = await db
+    .select()
+    .from(raceResultsTable)
+    .where(and(eq(raceResultsTable.motoId, moto.id), eq(raceResultsTable.riderId, riderId)));
+  if (existing) {
+    await db.update(raceResultsTable)
+      .set({ lapTimes: score.lapTimes, totalTime: score.lapTimes.length ? formatLapTime(score.totalMs) : null })
+      .where(eq(raceResultsTable.id, existing.id));
+  } else if (score.lapTimes.length > 0) {
+    const checkins = await db
+      .select()
+      .from(checkinsTable)
+      .where(and(eq(checkinsTable.eventId, moto.eventId), eq(checkinsTable.riderId, riderId)));
+    const checkin = checkins.find((c) => c.raceClass === moto.raceClass) ?? checkins[0];
+    await db.insert(raceResultsTable).values({
+      eventId: moto.eventId,
+      motoId: moto.id,
+      riderId,
+      raceClass: moto.raceClass,
+      position: 999,
+      lapTimes: score.lapTimes,
+      totalTime: formatLapTime(score.totalMs),
+      bibNumber: checkin?.bibNumber ?? null,
+      dnf: false,
+      dns: false,
+    });
+  }
+
+  const allResults = await db.select().from(raceResultsTable).where(eq(raceResultsTable.motoId, moto.id));
+  const sorted = allResults
+    .map((r) => {
+      const laps = Array.isArray(r.lapTimes) ? (r.lapTimes as number[]) : [];
+      return { id: r.id, laps: laps.length, totalMs: laps.reduce((sum, t) => sum + t, 0), out: !!(r.dnf || r.dns) };
+    })
+    .sort(compareStandings);
+  await updateRaceResultPositions(sorted);
+  return result;
+}
+
+/** Marks a moto completed (once) and runs the usual completion follow-ups. */
+export async function completeMotoNow(motoId: number): Promise<boolean> {
+  const [done] = await db.update(motosTable)
+    .set({ status: "completed", completedAt: new Date() })
+    .where(and(eq(motosTable.id, motoId), eq(motosTable.status, "in_progress")))
+    .returning();
+  if (!done) return false;
+  const snapshot = await buildLeaderboard(motoId);
+  if (snapshot) publishTimingSnapshot(snapshot);
+  const { afterMotoCompleted } = await import("./motos");
+  afterMotoCompleted(done).catch(() => {});
+  return true;
+}
+
+/**
+ * A timed race closes once every rider still racing has taken the checkered
+ * flag, or a grace period after the leader's finish (lapped riders who pulled
+ * off never cross again).
+ */
+export async function completeTimedMotoIfFinished(motoId: number, nowMs = Date.now()): Promise<boolean> {
+  const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, motoId));
+  if (!moto || moto.status !== "in_progress" || !moto.startedAt || !moto.timeLimitMs || !moto.timeExpiredAt) return false;
+  if (moto.type === "practice" || moto.type === "enduro_test") return false;
+  const scoring = scoringMoto(moto);
+  const { byRider } = await riderCrossingTimes(motoId);
+  const finishAt = computeFinishAt(scoring, [...byRider.values()]);
+  if (!finishAt) return false;
+  const results = await db.select().from(raceResultsTable).where(eq(raceResultsTable.motoId, motoId));
+  const out = new Set(results.filter(r => r.dnf || r.dns).map(r => r.riderId));
+  const scores = [...byRider.entries()].map(([id, times]) => ({ id, score: scoreRider(scoring, times, finishAt), out: out.has(id) }));
+  const leader = scores.filter(x => !x.out).sort((x, y) => compareStandings(
+    { laps: x.score.lapTimes.length, totalMs: x.score.totalMs },
+    { laps: y.score.lapTimes.length, totalMs: y.score.totalMs },
+  ))[0];
+  const graceOver = nowMs > finishAt.getTime() + finishGraceMs(leader?.score.lapTimes ?? []);
+  if (!everyoneFinished(scores) && !graceOver) return false;
+  return completeMotoNow(motoId);
+}
+
+/**
+ * The rider a tag belongs to for this event: the event's tag assignment, then
+ * (practice motos) any event's assignment, the transponder on this event's
+ * registration, then the rider profile. Tags compare case-insensitively.
+ */
+export async function resolveCrossingRider(rfidNumber: string, eventId: number, motoType: string): Promise<number | null> {
+  const tag = rfidNumber.trim();
+  const [assignment] = await db
+    .select({ riderId: rfidAssignmentsTable.riderId })
+    .from(rfidAssignmentsTable)
+    .where(and(ilike(rfidAssignmentsTable.rfidNumber, tag), eq(rfidAssignmentsTable.eventId, eventId)))
+    .limit(1);
+  if (assignment?.riderId) return assignment.riderId;
+
+  // Practice: any rider registered anywhere is recognized.
+  if (motoType === "practice") {
+    const [anyEvent] = await db
+      .select({ riderId: rfidAssignmentsTable.riderId })
+      .from(rfidAssignmentsTable)
+      .where(ilike(rfidAssignmentsTable.rfidNumber, tag))
+      .limit(1);
+    if (anyEvent?.riderId) return anyEvent.riderId;
+  }
+
+  // Transponder entered on this event's registration, before any profile value.
+  const [registration] = await db
+    .select({ riderId: registrationsTable.riderId })
+    .from(registrationsTable)
+    .where(and(eq(registrationsTable.eventId, eventId), ilike(registrationsTable.myLapsTransponderNumber, tag)))
+    .orderBy(asc(registrationsTable.id), asc(registrationsTable.riderId))
+    .limit(1);
+  if (registration?.riderId) return registration.riderId;
+
+  const [direct] = await db
+    .select({ id: ridersTable.id })
+    .from(ridersTable)
+    .where(or(ilike(ridersTable.rfidNumber, tag), ilike(ridersTable.mylapsTransponderId, tag)))
+    .limit(1);
+  return direct?.id ?? null;
+}
+
 // ── Core crossing processor (runs inside per-moto lock) ───────────────────────
 async function _processCrossing(opts: {
   rfidNumber: string;
@@ -778,57 +965,10 @@ async function _processCrossing(opts: {
   //     minLapMs is a scoring/flagging field only; it must NOT gate crossing acceptance.
   const debounceMs = BURST_DEBOUNCE_MS;
 
-  // 2. Resolve rider — use override if provided (manual crossing), else look up from RFID assignment
-  let riderId: number | null = overrideRiderId !== undefined ? overrideRiderId : null;
-  if (riderId === null && overrideRiderId === undefined) {
-    // Primary: event-scoped RFID assignment (set via the Assignments tab)
-    const assignments = await db
-      .select({ riderId: rfidAssignmentsTable.riderId })
-      .from(rfidAssignmentsTable)
-      .where(and(eq(rfidAssignmentsTable.rfidNumber, rfidNumber), eq(rfidAssignmentsTable.eventId, moto.eventId)));
-    riderId = assignments[0]?.riderId ?? null;
-
-    // Practice fallback: for practice-type motos, search RFID assignments across ALL events
-    // so any rider registered in the system (any club/organizer) is recognized during practice.
-    if (!riderId && moto.type === "practice") {
-      const [anyEventAssignment] = await db
-        .select({ riderId: rfidAssignmentsTable.riderId })
-        .from(rfidAssignmentsTable)
-        .where(eq(rfidAssignmentsTable.rfidNumber, rfidNumber))
-        .limit(1);
-      riderId = anyEventAssignment?.riderId ?? null;
-    }
-
-    // Active transponders can be entered per registration instead of being saved
-    // permanently on the rider profile. Prefer the registration for this event so
-    // a historical/global profile value cannot claim a tag assigned for this race.
-    if (!riderId) {
-      const [eventRegistration] = await db
-        .select({ riderId: registrationsTable.riderId })
-        .from(registrationsTable)
-        .where(and(
-          eq(registrationsTable.eventId, moto.eventId),
-          ilike(registrationsTable.myLapsTransponderNumber, rfidNumber.trim()),
-        ))
-        .orderBy(asc(registrationsTable.id), asc(registrationsTable.riderId))
-        .limit(1);
-      riderId = eventRegistration?.riderId ?? null;
-    }
-
-    // Fallback: permanent RFID or active-transponder identifier on the rider profile.
-    // F2000 transponder IDs are hexadecimal, so accept either letter case.
-    if (!riderId) {
-      const [directRider] = await db
-        .select({ id: ridersTable.id })
-        .from(ridersTable)
-        .where(or(
-          ilike(ridersTable.rfidNumber, rfidNumber.trim()),
-          ilike(ridersTable.mylapsTransponderId, rfidNumber.trim()),
-        ))
-        .limit(1);
-      riderId = directRider?.id ?? null;
-    }
-  }
+  // 2. Resolve rider — use override if provided (manual crossing), else look up the tag
+  const riderId: number | null = overrideRiderId !== undefined
+    ? overrideRiderId
+    : await resolveCrossingRider(rfidNumber, moto.eventId, moto.type);
 
   // ── ENDURO: per-rider start/stop toggle ─────────────────────────────────────
   // Enduro tests are run individually against the clock, not as a mass-start race.
@@ -981,116 +1121,47 @@ async function _processCrossing(opts: {
     return { crossing, lapNumber, lapTimeMs: elapsedMs, enduroAction: (isFinish ? "finished" : "started") as "started" | "finished", elapsedMs };
   }
 
-  // 3. Previous crossings for this tag+moto
-  const prevCrossings = await db
+  // 3. A tag read before it was assigned to anyone belongs to this rider now.
+  if (riderId) {
+    await db.update(lapCrossingsTable)
+      .set({ riderId })
+      .where(and(
+        eq(lapCrossingsTable.motoId, motoId),
+        isNull(lapCrossingsTable.riderId),
+        ilike(lapCrossingsTable.rfidNumber, rfidNumber.trim()),
+      ));
+  }
+
+  // 4. Laps belong to the rider (every tag and manual entry), or to the tag
+  //    while it's unassigned. Reject burst duplicates within the window on
+  //    either side: a retried read can arrive after later ones.
+  const mine = await db
     .select()
     .from(lapCrossingsTable)
-    .where(and(eq(lapCrossingsTable.motoId, motoId), eq(lapCrossingsTable.rfidNumber, rfidNumber)))
-    .orderBy(asc(lapCrossingsTable.lapNumber), asc(lapCrossingsTable.id));
-
-  // ── Debounce: reject burst reads from the same antenna pass ─────────────────
-  // Skipped for manual crossings (organizer is intentionally pressing a button).
-  if (!bypassDebounce && prevCrossings.length > 0) {
-    const lastCrossing = prevCrossings[prevCrossings.length - 1];
-    const lastTime = isImplausiblyFutureCrossing(lastCrossing.crossingTime, lastCrossing.createdAt)
-      ? lastCrossing.createdAt
-      : lastCrossing.crossingTime;
-    const gapMs = crossingTime.getTime() - lastTime.getTime();
-    if (gapMs < debounceMs) {
-      // Silent accept — not an error, just a duplicate burst read
-      return { debounced: true, crossing: null, lapNumber: null, lapTimeMs: null };
-    }
+    .where(and(
+      eq(lapCrossingsTable.motoId, motoId),
+      riderId ? eq(lapCrossingsTable.riderId, riderId) : ilike(lapCrossingsTable.rfidNumber, rfidNumber.trim()),
+    ));
+  if (!bypassDebounce) {
+    const duplicate = mine.some(c => Math.abs(crossingTime.getTime() - effectiveCrossingTime(c).getTime()) < debounceMs);
+    if (duplicate) return { debounced: true, crossing: null, lapNumber: null, lapTimeMs: null };
+  }
+  if (crossingTime.getTime() < new Date(moto.startedAt).getTime()) {
+    throw new Error("Crossing time precedes the moto start");
   }
 
-  const lapNumber = prevCrossings.length + 1;
-  const prevTime =
-    prevCrossings.length > 0
-      ? (isImplausiblyFutureCrossing(
-          prevCrossings[prevCrossings.length - 1].crossingTime,
-          prevCrossings[prevCrossings.length - 1].createdAt,
-        )
-          ? prevCrossings[prevCrossings.length - 1].createdAt
-          : prevCrossings[prevCrossings.length - 1].crossingTime)
-      : moto.startedAt;
-  const lapTimeMs = crossingTime.getTime() - new Date(prevTime).getTime();
-  if (!Number.isFinite(lapTimeMs) || lapTimeMs < 0) {
-    throw new Error("Crossing time precedes the moto start or previous lap");
-  }
-
-  // 4. Store crossing
-  const [crossing] = await db
+  // 5. Store the crossing, then rebuild this rider's laps in time order.
+  const [inserted] = await db
     .insert(lapCrossingsTable)
-    .values({ eventId: moto.eventId, motoId, riderId, rfidNumber, crossingTime, lapNumber, lapTimeMs, readerId: readerId ?? null, antennaId: antennaId ?? null })
+    .values({ eventId: moto.eventId, motoId, riderId, rfidNumber, crossingTime, lapNumber: 0, lapTimeMs: 0, readerId: readerId ?? null, antennaId: antennaId ?? null })
     .returning();
+  const rescored = await rescoreRiderInMoto(moto, riderId, rfidNumber, inserted.id);
+  const crossing = { ...inserted, lapNumber: rescored.lapNumber ?? 0, lapTimeMs: rescored.lapTimeMs ?? 0 };
+  const lapNumber = crossing.lapNumber;
+  const lapTimeMs = crossing.lapTimeMs;
   broadcastCrossingAccepted({ motoId, crossingId: crossing.id, lapNumber, lapTimeMs, crossingTime, readerId, readerReceivedAt, ingestStartedAt });
 
-  // 5. Upsert race_results for this rider
-  if (riderId) {
-    // Get checkin to find raceClass + bibNumber
-    const checkins = await db
-      .select()
-      .from(checkinsTable)
-      .where(and(eq(checkinsTable.eventId, moto.eventId), eq(checkinsTable.riderId, riderId)));
-    const checkin = checkins.find((c) => c.raceClass === moto.raceClass) ?? checkins[0];
-
-    const existing = await db
-      .select()
-      .from(raceResultsTable)
-      .where(and(eq(raceResultsTable.motoId, motoId), eq(raceResultsTable.riderId, riderId)));
-
-    if (existing[0]) {
-      const prevLaps = Array.isArray(existing[0].lapTimes) ? (existing[0].lapTimes as number[]) : [];
-      // Only cap by lapCount for fixed-lap races; time-limit races (timeLimitMs > 0) run until
-      // the flag + plusLaps logic fires — capping would silently drop the decisive final lap.
-      const timingLapCap = moto.lapCount != null && moto.lapCount > 0 && !moto.timeLimitMs ? Number(moto.lapCount) : null;
-      // If already at the lap cap, don't add another lap to race_results
-      if (timingLapCap != null && prevLaps.length >= timingLapCap) {
-        // crossing is stored in lap_crossings above; just don't update race_results
-      } else {
-      const newLaps = [...prevLaps, lapTimeMs];
-      const cappedLaps = timingLapCap != null ? newLaps.slice(0, timingLapCap) : newLaps;
-      const totalMs = cappedLaps.reduce((s, t) => s + t, 0);
-      await db
-        .update(raceResultsTable)
-        .set({ lapTimes: cappedLaps, totalTime: formatLapTime(totalMs) })
-        .where(eq(raceResultsTable.id, existing[0].id));
-      }
-    } else {
-      const timingLapCapNew = moto.lapCount != null && moto.lapCount > 0 && !moto.timeLimitMs ? Number(moto.lapCount) : null;
-      // Only create the result row if within the lap limit (lap 1 is always within limit)
-      if (timingLapCapNew == null || 1 <= timingLapCapNew) {
-      await db.insert(raceResultsTable).values({
-        eventId: moto.eventId,
-        motoId,
-        riderId,
-        raceClass: moto.raceClass,
-        position: 999,
-        lapTimes: [lapTimeMs],
-        totalTime: formatLapTime(lapTimeMs),
-        bibNumber: checkin?.bibNumber ?? null,
-        dnf: false,
-        dns: false,
-      });
-      }
-    }
-
-    // 6. Recalculate positions for all riders in moto
-    const allResults = await db
-      .select()
-      .from(raceResultsTable)
-      .where(eq(raceResultsTable.motoId, motoId));
-
-    const sorted = allResults
-      .map((r) => {
-        const laps = Array.isArray(r.lapTimes) ? (r.lapTimes as number[]) : [];
-        return { id: r.id, laps: laps.length, totalMs: laps.reduce((s, t) => s + t, 0) };
-      })
-      .sort((a, b) => b.laps - a.laps || a.totalMs - b.totalMs);
-
-    await updateRaceResultPositions(sorted);
-  }
-
-  // 7. Build & broadcast leaderboard (JSON SSE for the live scoreboard widget)
+  // 6. Build & broadcast leaderboard (JSON SSE for the live scoreboard widget)
   const snapshot = await buildLeaderboard(motoId);
   if (snapshot) {
     publishTimingSnapshot(snapshot);
@@ -1104,28 +1175,8 @@ async function _processCrossing(opts: {
     rmonitorBroadcast(moto.eventId, rmonLines);
   }
 
-  // 8. Time+Laps auto-complete: when timeExpiredAt is set and the leader has finished their plus-laps
-  if (moto.timeExpiredAt && moto.plusLaps != null && moto.plusLaps > 0 && snapshot) {
-    const leader = snapshot.leaderboard[0];
-    if (leader?.riderId != null && !leader.dnf && !leader.dns) {
-      const flagTime = new Date(moto.timeExpiredAt);
-      const [{ lapsAfterFlag }] = await db
-        .select({ lapsAfterFlag: sql<number>`cast(count(*) as int)` })
-        .from(lapCrossingsTable)
-        .where(and(
-          eq(lapCrossingsTable.motoId, motoId),
-          eq(lapCrossingsTable.riderId, leader.riderId),
-          gt(lapCrossingsTable.crossingTime, flagTime),
-        ));
-      if ((lapsAfterFlag ?? 0) >= moto.plusLaps) {
-        await db.update(motosTable)
-          .set({ status: "completed", completedAt: new Date() })
-          .where(eq(motosTable.id, motoId));
-        const completedSnapshot = await buildLeaderboard(motoId);
-        if (completedSnapshot) publishTimingSnapshot(completedSnapshot);
-      }
-    }
-  }
+  // 7. Timed races close once everyone still racing has taken the checkered flag.
+  await completeTimedMotoIfFinished(motoId);
 
   return { crossing, lapNumber, lapTimeMs };
 }
@@ -1133,8 +1184,49 @@ async function _processCrossing(opts: {
 // Public entry point — acquires the per-moto lock before running the processor
 // so concurrent crossings are serialised, preventing lap-number duplicates and
 // position flips when multiple tags arrive at the same instant.
-export function processCrossing(opts: Parameters<typeof _processCrossing>[0]) {
-  return withMotoLock(opts.motoId, () => _processCrossing(opts));
+export async function processCrossing(opts: Parameters<typeof _processCrossing>[0]) {
+  // Manual entries name their moto; reads from the track go to the rider's moto.
+  const motoId = opts.overrideRiderId === undefined
+    ? await motoForRider(opts.motoId, opts.rfidNumber).catch((err) => {
+      if (err instanceof RiderMotoFinishedError) throw err;
+      return opts.motoId;
+    })
+    : opts.motoId;
+  return withMotoLock(motoId, () => _processCrossing({ ...opts, motoId }));
+}
+
+/**
+ * Staggered starts run several motos at once over the same timing line. A
+ * read routed to one of them belongs to whichever running moto in that event
+ * has the rider in its lineup. Riders in no lineup (or unknown tags) stay
+ * with the moto they were routed to.
+ */
+const RECENTLY_FINISHED_MS = 30 * 60_000;
+export class RiderMotoFinishedError extends Error {
+  constructor() { super("This rider's moto has already finished"); }
+}
+
+export async function motoForRider(motoId: number, rfidNumber: string): Promise<number> {
+  const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, motoId));
+  if (!moto || moto.type === "enduro_test" || moto.type === "practice") return motoId;
+  if (!Array.isArray(moto.lineup) || moto.lineup.length === 0) return motoId;
+  const riderId = await resolveCrossingRider(rfidNumber, moto.eventId, moto.type);
+  if (!riderId) return motoId;
+  const inLineup = (m: typeof moto) =>
+    Array.isArray(m.lineup) && (m.lineup as Array<{ riderId?: number }>).some(e => e?.riderId === riderId);
+  if (inLineup(moto)) return motoId;
+  const others = (await db.select().from(motosTable).where(and(
+    eq(motosTable.eventId, moto.eventId),
+    ne(motosTable.id, motoId),
+  ))).filter(m => m.type !== "enduro_test" && m.type !== "practice" && inLineup(m));
+  const running = others.find(m => m.status === "in_progress");
+  if (running) return running.id;
+  // A rider from a moto that just finished (a cool-down lap, a staggered
+  // partner that closed first) must not score laps in someone else's race.
+  const justFinished = others.some(m => m.status === "completed" && m.completedAt
+    && Date.now() - new Date(m.completedAt).getTime() < RECENTLY_FINISHED_MS);
+  if (justFinished) throw new RiderMotoFinishedError();
+  return motoId;
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
@@ -1846,92 +1938,127 @@ router.delete("/timing/crossings/:crossingId", async (req, res) => {
     }
   }
 
-  // ── All mutations in a single transaction ────────────────────────────────
-  const newLapTimes: number[] = [];
-
-  await db.transaction(async (tx) => {
-    // Delete the crossing
-    await tx.delete(lapCrossingsTable).where(eq(lapCrossingsTable.id, crossingId));
-
-    // Reload remaining crossings for this rfid+moto in time order
-    const remaining = await tx
-      .select()
-      .from(lapCrossingsTable)
-      .where(and(eq(lapCrossingsTable.motoId, motoId), eq(lapCrossingsTable.rfidNumber, rfidNumber)))
-      .orderBy(asc(lapCrossingsTable.crossingTime));
-
-    // Split reads are filed under the lap in progress; refile them for the new
-    // numbering (lap = finish passes before the split + 1).
-    const splits = await tx.select({ id: splitCrossingsTable.id, splitSequence: splitCrossingsTable.splitSequence, crossingTime: splitCrossingsTable.crossingTime })
-      .from(splitCrossingsTable)
-      .where(and(eq(splitCrossingsTable.motoId, motoId), eq(splitCrossingsTable.rfidNumber, rfidNumber)))
-      .orderBy(asc(splitCrossingsTable.crossingTime), asc(splitCrossingsTable.id));
-    const kept = new Map<string, { id: number; lapNumber: number }>();
-    for (const split of splits) {
-      const lapNumber = remaining.filter(c => new Date(c.crossingTime).getTime() < new Date(split.crossingTime).getTime()).length + 1;
-      const key = `${split.splitSequence}:${lapNumber}`;
-      // Two laps merged into one: keep the first pass of each split.
-      if (kept.has(key)) await tx.delete(splitCrossingsTable).where(eq(splitCrossingsTable.id, split.id));
-      else kept.set(key, { id: split.id, lapNumber });
-    }
-    // Park on unique temporary lap numbers first so moves can't collide.
-    for (const { id } of kept.values()) await tx.update(splitCrossingsTable).set({ lapNumber: -id }).where(eq(splitCrossingsTable.id, id));
-    for (const { id, lapNumber } of kept.values()) await tx.update(splitCrossingsTable).set({ lapNumber }).where(eq(splitCrossingsTable.id, id));
-
-    // Renumber crossings and recalculate lap times
-    for (let i = 0; i < remaining.length; i++) {
-      const c = remaining[i];
-      const prevTime = i === 0 ? moto.startedAt! : remaining[i - 1].crossingTime;
-      const lapTimeMs = new Date(c.crossingTime).getTime() - new Date(prevTime).getTime();
-      const lapNumber = i + 1;
-      await tx
-        .update(lapCrossingsTable)
-        .set({ lapNumber, lapTimeMs })
-        .where(eq(lapCrossingsTable.id, c.id));
-      newLapTimes.push(lapTimeMs);
-    }
-
-    // Update race_results for this rider
-    if (riderId) {
-      const existingResults = await tx
+  // Motocross: rebuild the rider's laps from everything left (every tag and
+  // manual entry), inside the moto's lock so a lap arriving now can't interleave.
+  if (moto.type !== "enduro_test") {
+    await withMotoLock(motoId, async () => {
+      await db.delete(lapCrossingsTable).where(eq(lapCrossingsTable.id, crossingId));
+      const remaining = await db
         .select()
-        .from(raceResultsTable)
-        .where(and(eq(raceResultsTable.motoId, motoId), eq(raceResultsTable.riderId, riderId)));
+        .from(lapCrossingsTable)
+        .where(and(
+          eq(lapCrossingsTable.motoId, motoId),
+          riderId ? eq(lapCrossingsTable.riderId, riderId) : eq(lapCrossingsTable.rfidNumber, rfidNumber),
+        ));
+      // Split reads are filed under the lap in progress; refile them for the new
+      // numbering (lap = finish passes before the split + 1).
+      const splits = await db.select({ id: splitCrossingsTable.id, splitSequence: splitCrossingsTable.splitSequence, crossingTime: splitCrossingsTable.crossingTime })
+        .from(splitCrossingsTable)
+        .where(and(eq(splitCrossingsTable.motoId, motoId), eq(splitCrossingsTable.rfidNumber, rfidNumber)))
+        .orderBy(asc(splitCrossingsTable.crossingTime), asc(splitCrossingsTable.id));
+      const kept = new Map<string, { id: number; lapNumber: number }>();
+      for (const split of splits) {
+        const lapNumber = remaining.filter(c => new Date(c.crossingTime).getTime() < new Date(split.crossingTime).getTime()).length + 1;
+        const key = `${split.splitSequence}:${lapNumber}`;
+        if (kept.has(key)) await db.delete(splitCrossingsTable).where(eq(splitCrossingsTable.id, split.id));
+        else kept.set(key, { id: split.id, lapNumber });
+      }
+      for (const { id } of kept.values()) await db.update(splitCrossingsTable).set({ lapNumber: -id }).where(eq(splitCrossingsTable.id, id));
+      for (const { id, lapNumber } of kept.values()) await db.update(splitCrossingsTable).set({ lapNumber }).where(eq(splitCrossingsTable.id, id));
 
-      if (existingResults[0]) {
-        if (newLapTimes.length === 0) {
-          // No laps left — remove the result row entirely
-          await tx.delete(raceResultsTable).where(eq(raceResultsTable.id, existingResults[0].id));
-        } else {
-          const totalMs = newLapTimes.reduce((s, t) => s + t, 0);
+      await rescoreRiderInMoto(moto, riderId, rfidNumber);
+      if (riderId && remaining.length === 0) {
+        // No laps left: remove the rider's result row.
+        await db.delete(raceResultsTable).where(and(eq(raceResultsTable.motoId, motoId), eq(raceResultsTable.riderId, riderId)));
+      }
+    });
+  } else {
+    const newLapTimes: number[] = [];
+    await db.transaction(async (tx) => {
+      // Delete the crossing
+      await tx.delete(lapCrossingsTable).where(eq(lapCrossingsTable.id, crossingId));
+
+      // Reload remaining crossings for this rfid+moto in time order
+      const remaining = await tx
+        .select()
+        .from(lapCrossingsTable)
+        .where(and(eq(lapCrossingsTable.motoId, motoId), eq(lapCrossingsTable.rfidNumber, rfidNumber)))
+        .orderBy(asc(lapCrossingsTable.crossingTime));
+
+      // Split reads are filed under the lap in progress; refile them for the new
+      // numbering (lap = finish passes before the split + 1).
+      const splits = await tx.select({ id: splitCrossingsTable.id, splitSequence: splitCrossingsTable.splitSequence, crossingTime: splitCrossingsTable.crossingTime })
+        .from(splitCrossingsTable)
+        .where(and(eq(splitCrossingsTable.motoId, motoId), eq(splitCrossingsTable.rfidNumber, rfidNumber)))
+        .orderBy(asc(splitCrossingsTable.crossingTime), asc(splitCrossingsTable.id));
+      const kept = new Map<string, { id: number; lapNumber: number }>();
+      for (const split of splits) {
+        const lapNumber = remaining.filter(c => new Date(c.crossingTime).getTime() < new Date(split.crossingTime).getTime()).length + 1;
+        const key = `${split.splitSequence}:${lapNumber}`;
+        // Two laps merged into one: keep the first pass of each split.
+        if (kept.has(key)) await tx.delete(splitCrossingsTable).where(eq(splitCrossingsTable.id, split.id));
+        else kept.set(key, { id: split.id, lapNumber });
+      }
+      // Park on unique temporary lap numbers first so moves can't collide.
+      for (const { id } of kept.values()) await tx.update(splitCrossingsTable).set({ lapNumber: -id }).where(eq(splitCrossingsTable.id, id));
+      for (const { id, lapNumber } of kept.values()) await tx.update(splitCrossingsTable).set({ lapNumber }).where(eq(splitCrossingsTable.id, id));
+
+      // Renumber crossings and recalculate lap times
+      for (let i = 0; i < remaining.length; i++) {
+        const c = remaining[i];
+        const prevTime = i === 0 ? moto.startedAt! : remaining[i - 1].crossingTime;
+        const lapTimeMs = new Date(c.crossingTime).getTime() - new Date(prevTime).getTime();
+        const lapNumber = i + 1;
+        await tx
+          .update(lapCrossingsTable)
+          .set({ lapNumber, lapTimeMs })
+          .where(eq(lapCrossingsTable.id, c.id));
+        newLapTimes.push(lapTimeMs);
+      }
+
+      // Update race_results for this rider
+      if (riderId) {
+        const existingResults = await tx
+          .select()
+          .from(raceResultsTable)
+          .where(and(eq(raceResultsTable.motoId, motoId), eq(raceResultsTable.riderId, riderId)));
+
+        if (existingResults[0]) {
+          if (newLapTimes.length === 0) {
+            // No laps left — remove the result row entirely
+            await tx.delete(raceResultsTable).where(eq(raceResultsTable.id, existingResults[0].id));
+          } else {
+            const totalMs = newLapTimes.reduce((s, t) => s + t, 0);
+            await tx
+              .update(raceResultsTable)
+              .set({ lapTimes: newLapTimes, totalTime: formatLapTime(totalMs) })
+              .where(eq(raceResultsTable.id, existingResults[0].id));
+          }
+        }
+
+        // Recalculate positions for all riders in moto
+        const allResults = await tx
+          .select()
+          .from(raceResultsTable)
+          .where(eq(raceResultsTable.motoId, motoId));
+
+        const sorted = allResults
+          .map((r) => {
+            const laps = Array.isArray(r.lapTimes) ? (r.lapTimes as number[]) : [];
+            return { id: r.id, laps: laps.length, totalMs: laps.reduce((s, t) => s + t, 0) };
+          })
+          .sort((a, b) => b.laps - a.laps || a.totalMs - b.totalMs);
+
+        for (let i = 0; i < sorted.length; i++) {
           await tx
             .update(raceResultsTable)
-            .set({ lapTimes: newLapTimes, totalTime: formatLapTime(totalMs) })
-            .where(eq(raceResultsTable.id, existingResults[0].id));
+            .set({ position: i + 1 })
+            .where(eq(raceResultsTable.id, sorted[i].id));
         }
       }
+    });
 
-      // Recalculate positions for all riders in moto
-      const allResults = await tx
-        .select()
-        .from(raceResultsTable)
-        .where(eq(raceResultsTable.motoId, motoId));
-
-      const sorted = allResults
-        .map((r) => {
-          const laps = Array.isArray(r.lapTimes) ? (r.lapTimes as number[]) : [];
-          return { id: r.id, laps: laps.length, totalMs: laps.reduce((s, t) => s + t, 0) };
-        })
-        .sort((a, b) => b.laps - a.laps || a.totalMs - b.totalMs);
-
-      for (let i = 0; i < sorted.length; i++) {
-        await tx
-          .update(raceResultsTable)
-          .set({ position: i + 1 })
-          .where(eq(raceResultsTable.id, sorted[i].id));
-      }
-    }
-  });
+  }
 
   // Broadcast updated leaderboard (outside transaction — read-only)
   // Include correction: true so live viewers know a crossing was removed

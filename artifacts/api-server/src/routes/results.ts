@@ -6,6 +6,7 @@ import { logger } from "../lib/logger";
 import { formulaPoints } from "../lib/safeFormula";
 import { notifyFollowersOfResults } from "../lib/riderCareer";
 import { callerOwnsClub } from "../middleware/accessControl";
+import { withMotoLock } from "./timing";
 
 const FALLBACK_POINTS = [25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
 
@@ -423,7 +424,8 @@ router.post("/events/:eventId/results", async (req, res) => {
 
   // ── Delete existing results for this moto then re-insert (atomic) ────────
   const inserted: Record<string, unknown>[] = [];
-  await db.transaction(async (tx) => {
+  // Under the moto's lock so a late crossing can't rewrite a rider's laps mid-save.
+  await withMotoLock(motoId, () => db.transaction(async (tx) => {
     await tx.delete(raceResultsTable).where(eq(raceResultsTable.motoId, motoId));
 
     for (const r of riderResults) {
@@ -461,7 +463,7 @@ router.post("/events/:eventId/results", async (req, res) => {
 
     // Mark moto as completed
     await tx.update(motosTable).set({ status: "completed" }).where(eq(motosTable.id, motoId));
-  });
+  }));
 
   // Award series points — union of:
   //  (a) per-class series from this event's raceClassSeriesMap[raceClass] (new)

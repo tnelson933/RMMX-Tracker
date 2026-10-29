@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { compareStandings } from "../lib/lapScoring";
 import { eq, gt, and, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { buildLeaderboard, formatLapTime, publishTimingSnapshot, startSharedAnnouncer } from "./timing";
@@ -1435,11 +1436,16 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
             // Re-sort positions: most laps first, then shortest total time —
             // matches supercross / AMA time+laps convention and overrides whatever
             // the desktop app sent so the cloud is always the authoritative source.
+            // Only for motocross motos timed from laps: enduro tests are placed by
+            // pass time (recomputed separately), and results entered by hand
+            // (no lap data) keep the positions the desktop sent. DNF/DNS go last.
+            const [syncedMoto] = await db.select({ type: motosTable.type }).from(motosTable).where(eq(motosTable.id, motoId));
             const allResults = await db
               .select()
               .from(raceResultsTable)
               .where(eq(raceResultsTable.motoId, motoId));
-            if (allResults.length > 0) {
+            const hasLapData = allResults.some(r => Array.isArray(r.lapTimes) && (r.lapTimes as unknown[]).length > 0);
+            if (allResults.length > 0 && syncedMoto?.type !== "enduro_test" && hasLapData) {
               const sorted = allResults
                 .map((r) => {
                   const laps = Array.isArray(r.lapTimes) ? (r.lapTimes as number[]) : [];
@@ -1447,9 +1453,10 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
                     id: r.id,
                     laps: laps.length,
                     totalMs: laps.reduce((s: number, t: unknown) => s + (typeof t === "number" ? t : 0), 0),
+                    out: !!(r.dnf || r.dns),
                   };
                 })
-                .sort((a, b) => b.laps - a.laps || a.totalMs - b.totalMs);
+                .sort(compareStandings);
               for (let i = 0; i < sorted.length; i++) {
                 await db
                   .update(raceResultsTable)

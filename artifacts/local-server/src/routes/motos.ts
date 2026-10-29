@@ -137,7 +137,7 @@ router.patch("/motos/:motoId", (req, res) => {
   const fields: string[] = [];
   const values: unknown[] = [];
   const existingFormat = db
-    .prepare("SELECT lap_count, time_limit_ms, plus_laps, started_at FROM motos WHERE id = ?")
+    .prepare("SELECT lap_count, time_limit_ms, plus_laps, started_at, status, time_expired_at FROM motos WHERE id = ?")
     .get(id) as any;
   if (!existingFormat) return res.status(404).json({ error: "Not found" });
 
@@ -171,7 +171,7 @@ router.patch("/motos/:motoId", (req, res) => {
     values.push(resultingLapCount, resultingTimeLimitMs, resultingPlusLaps);
   }
 
-  let completedOnTimeExpiry = false;
+  const completedOnTimeExpiry = false;
   if (req.body.status !== undefined) {
     fields.push("status = ?");
     values.push(req.body.status);
@@ -180,7 +180,8 @@ router.patch("/motos/:motoId", (req, res) => {
       fields.push("started_at = ?");
       values.push(new Date().toISOString());
     }
-    if (req.body.status === "completed") {
+    // Completing an already completed moto keeps its original finish time.
+    if (req.body.status === "completed" && existingFormat.status !== "completed") {
       fields.push("completed_at = ?");
       values.push(new Date().toISOString());
     }
@@ -190,21 +191,12 @@ router.patch("/motos/:motoId", (req, res) => {
     if (timeExpiredAt !== null && Number.isNaN(new Date(timeExpiredAt).getTime())) {
       return res.status(400).json({ error: "timeExpiredAt must be a valid date" });
     }
-    fields.push("time_expired_at = ?");
-    values.push(timeExpiredAt === null ? null : new Date(timeExpiredAt).toISOString());
-
-    // The shared UI normally PATCHes status=completed directly for a timed
-    // race with +0 laps. Keep that checkered behavior if it sends the expiry
-    // marker itself, rather than leaving a zero-extra-lap race in progress.
-    if (
-      timeExpiredAt !== null &&
-      resultingTimeLimitMs !== null &&
-      resultingPlusLaps === 0 &&
-      req.body.status === undefined
-    ) {
-      fields.push("status = ?", "completed_at = ?");
-      values.push("completed", new Date().toISOString());
-      completedOnTimeExpiry = true;
+    // The race clock drops the flag at the exact time-limit moment; a page
+    // may still send it, but never moves it once set. A +0-lap race then ends
+    // as each rider crosses (the race clock closes it), as on the cloud.
+    if (timeExpiredAt === null || !existingFormat.time_expired_at) {
+      fields.push("time_expired_at = ?");
+      values.push(timeExpiredAt === null ? null : new Date(timeExpiredAt).toISOString());
     }
   }
   if (req.body.lineup !== undefined) {

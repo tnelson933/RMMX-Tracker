@@ -1860,7 +1860,15 @@ export default function Motos() {
     return new Map(visible.map((m, i) => [m.id, i + 1]));
   }, [motos]);
 
-  const doStartMoto = async (motoId: number, _motoName?: string) => {
+  // A double tap (or a slow network) must not send start/finish/pause twice.
+  const motoActionInFlight = useRef(new Set<number>());
+  const guardMotoAction = async (motoId: number, action: () => Promise<void>) => {
+    if (motoActionInFlight.current.has(motoId)) return;
+    motoActionInFlight.current.add(motoId);
+    try { await action(); } finally { motoActionInFlight.current.delete(motoId); }
+  };
+
+  const doStartMoto = (motoId: number, _motoName?: string) => guardMotoAction(motoId, async () => {
     const motoObj = (motos ?? []).find(m => m.id === motoId);
     const groupMembers: number[] = (motoObj as any)?.staggeredGroupMembers ?? [];
     const partnerIds = groupMembers.filter(id => id !== motoId);
@@ -1879,6 +1887,13 @@ export default function Motos() {
       const msg = err instanceof Error ? err.message : "Could not start moto";
       toast({ title: "Failed to start moto", description: msg, variant: "destructive" });
     }
+  });
+
+  // The race clock runs on the server (it drops the flag at the time limit and
+  // closes the race once everyone is in); when a countdown here reaches zero,
+  // just pick up what the server did.
+  const refreshAfterRaceClock = () => {
+    setTimeout(() => queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) }), 1500);
   };
 
   const handleStatusUpdate = (motoId: number, status: string) => {
@@ -1922,7 +1937,7 @@ export default function Motos() {
   };
 
   // Finish a moto — finish all motos in the stagger group simultaneously.
-  const doFinishMoto = async (motoId: number) => {
+  const doFinishMoto = (motoId: number) => guardMotoAction(motoId, async () => {
     const motoObj = (motos ?? []).find(m => m.id === motoId);
     const groupMembers: number[] = (motoObj as any)?.staggeredGroupMembers ?? [];
     const partnerIds = groupMembers.filter(id => id !== motoId);
@@ -1945,7 +1960,7 @@ export default function Motos() {
       const msg = err instanceof Error ? err.message : "Could not finish moto";
       toast({ title: "Failed to finish moto", description: msg, variant: "destructive" });
     }
-  };
+  });
 
   const handleFinishClick = (motoId: number) => {
     if (finishDontAskAgain) {
@@ -2019,29 +2034,34 @@ export default function Motos() {
     }
   };
 
-  const doPauseMoto = async (motoId: number) => {
+  const groupOf = (motoId: number): number[] => {
+    const members: number[] = ((motos ?? []).find(m => m.id === motoId) as any)?.staggeredGroupMembers ?? [];
+    return members.length ? Array.from(new Set([motoId, ...members])) : [motoId];
+  };
+
+  const doPauseMoto = (motoId: number) => guardMotoAction(motoId, async () => {
     try {
-      const r = await fetch(`/api/motos/${motoId}/pause`, { method: "POST" });
-      if (!r.ok) throw new Error("Failed");
+      const results = await Promise.all(groupOf(motoId).map(id => fetch(`/api/motos/${id}/pause`, { method: "POST" })));
+      if (results.some(r => !r.ok)) throw new Error("Failed");
       await queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
       await queryClient.refetchQueries({ queryKey: getListMotosQueryKey(eventId) });
       toast({ title: "⏸ Moto paused" });
     } catch {
       toast({ title: "Failed to pause moto", variant: "destructive" });
     }
-  };
+  });
 
-  const doResumeMoto = async (motoId: number) => {
+  const doResumeMoto = (motoId: number) => guardMotoAction(motoId, async () => {
     try {
-      const r = await fetch(`/api/motos/${motoId}/resume`, { method: "POST" });
-      if (!r.ok) throw new Error("Failed");
+      const results = await Promise.all(groupOf(motoId).map(id => fetch(`/api/motos/${id}/resume`, { method: "POST" })));
+      if (results.some(r => !r.ok)) throw new Error("Failed");
       await queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
       await queryClient.refetchQueries({ queryKey: getListMotosQueryKey(eventId) });
       toast({ title: "▶ Moto resumed" });
     } catch {
       toast({ title: "Failed to resume moto", variant: "destructive" });
     }
-  };
+  });
 
   const handleConflictStartWave = () => {
     const { pendingMotoId } = conflictDialog;
@@ -2077,8 +2097,19 @@ export default function Motos() {
     toast({ title: "Live timing link copied" });
   };
 
+  const manualLapInFlight = useRef(new Set<string>());
   const handleManualLap = async (riderId: number, motoId: number) => {
     const key = `${motoId}-${riderId}`;
+    // Enduro uses a second entry to finish a pass, so only motocross is guarded.
+    const isEnduroTest = (motos ?? []).find(m => m.id === motoId)?.type === "enduro_test";
+    if (!isEnduroTest) {
+      if (manualLapInFlight.current.has(key)) {
+        toast({ title: "Lap already recorded", description: "Wait a few seconds before adding another lap for this rider." });
+        return;
+      }
+      manualLapInFlight.current.add(key);
+      setTimeout(() => manualLapInFlight.current.delete(key), 4000);
+    }
     // Play the ping immediately on click — no waiting for the network round-trip.
     markManualOptimisticPing(motoId);
     void playRfidPing(1);
@@ -3463,14 +3494,7 @@ export default function Motos() {
                       timeLimitMs={(moto as any).timeLimitMs ?? null}
                       pausedAt={(moto as any).pausedAt ?? null}
                       totalPausedMs={(moto as any).totalPausedMs ?? 0}
-                      onExpire={() => {
-                        const mPlusLaps = (moto as any).plusLaps;
-                        if (moto.type !== "practice" && mPlusLaps != null && mPlusLaps > 0) {
-                          updateMutation.mutate({ motoId: moto.id, data: { timeExpiredAt: new Date().toISOString() } as any });
-                        } else {
-                          handleStatusUpdate(moto.id, "completed");
-                        }
-                      }}
+                      onExpire={refreshAfterRaceClock}
                     />
                   </div>
                 )}
@@ -3579,14 +3603,7 @@ export default function Motos() {
                       timeLimitMs={(moto as any).timeLimitMs ?? null}
                       pausedAt={(moto as any).pausedAt ?? null}
                       totalPausedMs={(moto as any).totalPausedMs ?? 0}
-                      onExpire={() => {
-                        const mPlusLaps = (moto as any).plusLaps;
-                        if (moto.type !== "practice" && mPlusLaps != null && mPlusLaps > 0) {
-                          updateMutation.mutate({ motoId: moto.id, data: { timeExpiredAt: new Date().toISOString() } as any });
-                        } else {
-                          handleStatusUpdate(moto.id, "completed");
-                        }
-                      }}
+                      onExpire={refreshAfterRaceClock}
                     />
                   ) : moto.status === "in_progress" && (moto as any).timeExpiredAt && (moto as any).plusLaps > 0 ? (
                     <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-bold bg-orange-500/10 border-orange-500/30 text-orange-500 shrink-0">
@@ -3932,7 +3949,7 @@ export default function Motos() {
                       timeLimitMs={(moto as any).timeLimitMs ?? null}
                       pausedAt={(moto as any).pausedAt ?? null}
                       totalPausedMs={(moto as any).totalPausedMs ?? 0}
-                      onExpire={() => { handleStatusUpdate(moto.id, "completed"); setExpandedMotoId(null); }}
+                      onExpire={refreshAfterRaceClock}
                     />
                   </div>
                 )}
@@ -4036,7 +4053,7 @@ export default function Motos() {
                     timeLimitMs={(moto as any).timeLimitMs ?? null}
                     pausedAt={(moto as any).pausedAt ?? null}
                     totalPausedMs={(moto as any).totalPausedMs ?? 0}
-                    onExpire={() => { handleStatusUpdate(moto.id, "completed"); setExpandedMotoId(null); }}
+                    onExpire={refreshAfterRaceClock}
                   />
                 ) : moto.type !== "practice" && moto.type !== "enduro_test" && moto.status === "in_progress" ? (
                   <FirstPlaceCountdown motoId={moto.id} lapCount={(moto as any).lapCount} variant="inline" />

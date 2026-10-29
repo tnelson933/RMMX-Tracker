@@ -6,6 +6,7 @@ import { attachConnectorWebSocket } from "./lib/connectorRelay";
 import { normalizeEventStates } from "./normalizeStateMigration";
 import { startEventStatusSweeper } from "./lib/eventStatus";
 import { startQuickCheckinNotifier } from "./lib/quickCheckinNotifier";
+import { startRaceClock } from "./lib/raceClock";
 
 const rawPort = process.env["PORT"];
 
@@ -37,4 +38,6 @@ httpServer.listen(port, (err?: Error) => {
   startEventStatusSweeper();
   // Race-morning push for events with Quick Check-In (7 AM–6 PM at each track).
   startQuickCheckinNotifier();
+  // Timed races: drop the flag and close finished races on the server clock.
+  startRaceClock();
 });

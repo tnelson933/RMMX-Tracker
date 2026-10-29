@@ -83,15 +83,20 @@ function isLeaderboardData(payload: unknown): payload is LeaderboardData {
     && typeof candidate.status === "string";
 }
 
-function ElapsedClock({ startedAt }: { startedAt: string }) {
+/** Race time so far: stops during a red flag and leaves out red-flag time. */
+function raceTimeMs(startedAt: string, pausedAt: string | null | undefined, totalPausedMs: number | null | undefined): number {
+  const end = pausedAt ? new Date(pausedAt).getTime() : Date.now();
+  return Math.max(0, end - new Date(startedAt).getTime() - Math.max(0, totalPausedMs ?? 0));
+}
+
+function ElapsedClock({ startedAt, pausedAt, totalPausedMs }: { startedAt: string; pausedAt?: string | null; totalPausedMs?: number | null }) {
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
-    const start = new Date(startedAt).getTime();
-    const tick = () => setElapsed(Date.now() - start);
+    const tick = () => setElapsed(raceTimeMs(startedAt, pausedAt, totalPausedMs));
     tick();
     const id = setInterval(tick, 100);
     return () => clearInterval(id);
-  }, [startedAt]);
+  }, [startedAt, pausedAt, totalPausedMs]);
 
   const totalSeconds = Math.floor(elapsed / 1000);
   const minutes = Math.floor(totalSeconds / 60);
@@ -104,15 +109,14 @@ function ElapsedClock({ startedAt }: { startedAt: string }) {
   );
 }
 
-function CountdownClock({ startedAt, timeLimitMs }: { startedAt: string; timeLimitMs: number }) {
+function CountdownClock({ startedAt, timeLimitMs, pausedAt, totalPausedMs }: { startedAt: string; timeLimitMs: number; pausedAt?: string | null; totalPausedMs?: number | null }) {
   const [remaining, setRemaining] = useState(0);
   useEffect(() => {
-    const start = new Date(startedAt).getTime();
-    const tick = () => setRemaining(Math.max(0, timeLimitMs - (Date.now() - start)));
+    const tick = () => setRemaining(Math.max(0, timeLimitMs - raceTimeMs(startedAt, pausedAt, totalPausedMs)));
     tick();
     const id = setInterval(tick, 100);
     return () => clearInterval(id);
-  }, [startedAt, timeLimitMs]);
+  }, [startedAt, timeLimitMs, pausedAt, totalPausedMs]);
 
   const totalSeconds = Math.floor(remaining / 1000);
   const minutes = Math.floor(totalSeconds / 60);
@@ -649,7 +653,7 @@ export function LiveRaceViews({
           {isLive && data.startedAt && data.timeLimitMs && !data.timeExpiredAt && (
             <span className="flex items-center gap-1.5 text-sm text-white/70">
               <Clock size={13} />
-              <CountdownClock startedAt={data.startedAt} timeLimitMs={data.timeLimitMs} />
+              <CountdownClock startedAt={data.startedAt} timeLimitMs={data.timeLimitMs} pausedAt={(data as any).pausedAt} totalPausedMs={(data as any).totalPausedMs} />
               {data.plusLaps != null && data.plusLaps > 0 && (
                 <span className="text-xs text-white/40">+{data.plusLaps} lap{data.plusLaps > 1 ? "s" : ""}</span>
               )}
@@ -664,7 +668,7 @@ export function LiveRaceViews({
           {isLive && data.startedAt && !data.timeLimitMs && (
             <span className="flex items-center gap-1.5 text-sm text-white/50">
               <Clock size={13} />
-              <ElapsedClock startedAt={data.startedAt} />
+              <ElapsedClock startedAt={data.startedAt} pausedAt={(data as any).pausedAt} totalPausedMs={(data as any).totalPausedMs} />
             </span>
           )}
           {data.status === "completed" && (
@@ -895,7 +899,7 @@ function LegacyLiveLeaderboard() {
               {isLive && data.startedAt && data.timeLimitMs && !data.timeExpiredAt && (
                 <span className="text-white/70 text-sm flex items-center gap-1.5">
                   <Clock size={13} />
-                  <CountdownClock startedAt={data.startedAt} timeLimitMs={data.timeLimitMs} />
+                  <CountdownClock startedAt={data.startedAt} timeLimitMs={data.timeLimitMs} pausedAt={(data as any).pausedAt} totalPausedMs={(data as any).totalPausedMs} />
                   {data.plusLaps != null && data.plusLaps > 0 && (
                     <span className="text-white/40 text-xs">+{data.plusLaps} lap{data.plusLaps > 1 ? "s" : ""}</span>
                   )}
@@ -912,7 +916,7 @@ function LegacyLiveLeaderboard() {
               {isLive && data.startedAt && !data.timeLimitMs && (
                 <span className="text-white/50 text-sm flex items-center gap-1.5">
                   <Clock size={13} />
-                  <ElapsedClock startedAt={data.startedAt} />
+                  <ElapsedClock startedAt={data.startedAt} pausedAt={(data as any).pausedAt} totalPausedMs={(data as any).totalPausedMs} />
                 </span>
               )}
 

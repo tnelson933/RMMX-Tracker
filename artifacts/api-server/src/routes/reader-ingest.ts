@@ -31,7 +31,7 @@ import {
   registrationsTable,
 } from "@workspace/db/schema";
 import { eq, and, count, ilike, or, desc } from "drizzle-orm";
-import { processCrossing, handleFacilityCrossing, handlePing, buildLeaderboard, sseBroadcast, withMotoLock } from "./timing";
+import { processCrossing, handleFacilityCrossing, handlePing, buildLeaderboard, sseBroadcast, withMotoLock, motoForRider, RiderMotoFinishedError } from "./timing";
 import { recordSplitCrossing, splitForReader } from "../lib/sectors";
 import { processPracticeCrossing } from "./practice";
 import { recomputeEnduroPositionsForEvent } from "./enduro-scoring";
@@ -92,7 +92,17 @@ async function resolveRider(
  * Record a split under the moto's lock, the same lock laps use, and publish
  * the leaderboard from inside it so snapshots go out in order.
  */
-function recordSplitLocked(input: Parameters<typeof recordSplitCrossing>[0]) {
+async function recordSplitLocked(routed: Parameters<typeof recordSplitCrossing>[0]) {
+  // In a staggered start the split belongs to the rider's own moto.
+  let motoId: number;
+  try {
+    motoId = await motoForRider(routed.motoId, routed.rfidNumber);
+  } catch (err) {
+    // A split from a rider whose moto already finished isn't recorded anywhere.
+    if (err instanceof RiderMotoFinishedError) return { recorded: false, lapNumber: 0 };
+    motoId = routed.motoId;
+  }
+  const input = { ...routed, motoId };
   return withMotoLock(input.motoId, async () => {
     const result = await recordSplitCrossing(input);
     if (result.recorded) {

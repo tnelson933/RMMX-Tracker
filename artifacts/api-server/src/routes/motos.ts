@@ -3,7 +3,7 @@ import { Router, type Response } from "express";
 import { db } from "@workspace/db";
 import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, pointsTablesTable, clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable, eventPublicationTable, lapCrossingsTable, splitCrossingsTable, registrationsTable, seriesTable, seriesPointsTable, riderAccountsTable, riderPushTokensTable } from "@workspace/db";
 import { eq, and, inArray, min, ne, gt, asc } from "drizzle-orm";
-import { sseBroadcast, buildLeaderboard, publishTimingSnapshot, resetSharedAnnouncer } from "./timing";
+import { sseBroadcast, buildLeaderboard, publishTimingSnapshot, resetSharedAnnouncer, withMotoLock } from "./timing";
 import { shouldPublishAnnouncerSnapshotForMotoPatch } from "../lib/announcerLifecycle";
 import { sendPushNotifications } from "../lib/push";
 import { sendConnectorCommand } from "../lib/connectorRelay";
@@ -339,10 +339,13 @@ router.patch("/motos/:motoId", async (req, res) => {
 
   const updates: Record<string, unknown> = {};
   const [existingFormat] = await db
-    .select({ lapCount: motosTable.lapCount, timeLimitMs: motosTable.timeLimitMs, plusLaps: motosTable.plusLaps })
+    .select({ lapCount: motosTable.lapCount, timeLimitMs: motosTable.timeLimitMs, plusLaps: motosTable.plusLaps, status: motosTable.status, timeExpiredAt: motosTable.timeExpiredAt })
     .from(motosTable)
     .where(eq(motosTable.id, id));
   if (!existingFormat) return res.status(404).json({ error: "Not found" });
+  // Completing an already completed moto (a second tab, a double tap, a timer)
+  // changes nothing: no new finish time, no second round of notifications.
+  const alreadyCompleted = req.body.status === "completed" && existingFormat.status === "completed";
   const requestedLapCount = req.body.lapCount === undefined ? undefined : (req.body.lapCount === null ? null : Number(req.body.lapCount));
   const requestedTimeLimitMs = req.body.timeLimitMs === undefined ? undefined : (req.body.timeLimitMs === null ? null : Number(req.body.timeLimitMs));
   if (requestedLapCount !== undefined && requestedLapCount !== null && (!Number.isInteger(requestedLapCount) || requestedLapCount <= 0)) {
@@ -388,11 +391,16 @@ router.patch("/motos/:motoId", async (req, res) => {
         .where(eq(motosTable.id, id));
       if (!existing?.startedAt) updates.startedAt = new Date();
     }
-    if (req.body.status === "completed") updates.completedAt = new Date();
+    if (req.body.status === "completed" && !alreadyCompleted) updates.completedAt = new Date();
   }
   if (req.body.lineup !== undefined) updates.lineup = req.body.lineup;
   if (req.body.scheduledTime !== undefined) updates.scheduledTime = req.body.scheduledTime;
-  if (req.body.timeExpiredAt !== undefined) updates.timeExpiredAt = req.body.timeExpiredAt !== null ? new Date(req.body.timeExpiredAt) : null;
+  // The race clock (lib/raceClock.ts) drops the flag at the exact time-limit
+  // moment. A browser can still send it (older pages), but never move it once set.
+  if (req.body.timeExpiredAt !== undefined) {
+    if (req.body.timeExpiredAt === null) updates.timeExpiredAt = null;
+    else if (!existingFormat.timeExpiredAt) updates.timeExpiredAt = new Date(req.body.timeExpiredAt);
+  }
   if (req.body.practiceMode !== undefined) updates.practiceMode = req.body.practiceMode !== null ? String(req.body.practiceMode) : null;
   if (req.body.countdownSeconds !== undefined) updates.countdownSeconds = req.body.countdownSeconds !== null ? Number(req.body.countdownSeconds) : null;
   if (req.body.motoNumber !== undefined) updates.motoNumber = Number(req.body.motoNumber);
@@ -410,17 +418,30 @@ router.patch("/motos/:motoId", async (req, res) => {
   // RM Connect: tell any connected tray apps to start/stop the reader
   if (req.body.status === "in_progress") {
     notifyConnectors(moto, "start_moto").catch(() => {});
-  } else if (req.body.status === "completed") {
-    notifyConnectors(moto, "stop_moto").catch(() => {});
+  } else if (req.body.status === "completed" && !alreadyCompleted) {
+    afterMotoCompleted(moto).catch(() => {});
   }
 
-  // Race-day push notifications: notify riders next up or 3 away when a moto completes
-  if (req.body.status === "completed") {
-    sendRaceNotifications(moto.eventId).catch(() => {});
-  }
+  return res.json({
+    ...moto,
+    lineup: Array.isArray(moto.lineup) ? moto.lineup : [],
+    createdAt: moto.createdAt.toISOString(),
+    startedAt: moto.startedAt?.toISOString() ?? null,
+    completedAt: moto.completedAt?.toISOString() ?? null,
+    pausedAt: moto.pausedAt?.toISOString() ?? null,
+    totalPausedMs: moto.totalPausedMs ?? 0,
+  });
+});
 
-  // Auto-advance to main when a heat completes (Supercross format only)
-  if (req.body.status === "completed" && moto.type === "heat") {
+/**
+ * Follow-ups once a moto is completed, by the organizer or by the race clock:
+ * stop the readers, notify riders who are up next, and in Supercross advance
+ * heat finishers to the main.
+ */
+export async function afterMotoCompleted(moto: typeof motosTable.$inferSelect): Promise<void> {
+  notifyConnectors(moto, "stop_moto").catch(() => {});
+  sendRaceNotifications(moto.eventId).catch(() => {});
+  if (moto.type === "heat") {
     getEventFormat(moto.eventId).then(async ({ isSupercross }) => {
       if (!isSupercross) return;
       // Calculate topPerHeat dynamically: 30% of the average heat lineup size for this class
@@ -436,17 +457,7 @@ router.patch("/motos/:motoId", async (req, res) => {
       await autoAdvanceToMain(moto.eventId, moto.raceClass, topPerHeat);
     }).catch(() => {});
   }
-
-  return res.json({
-    ...moto,
-    lineup: Array.isArray(moto.lineup) ? moto.lineup : [],
-    createdAt: moto.createdAt.toISOString(),
-    startedAt: moto.startedAt?.toISOString() ?? null,
-    completedAt: moto.completedAt?.toISOString() ?? null,
-    pausedAt: moto.pausedAt?.toISOString() ?? null,
-    totalPausedMs: moto.totalPausedMs ?? 0,
-  });
-});
+}
 
 // POST /motos/:motoId/restart — wipe all crossings and restart the clock
 router.post("/motos/:motoId/restart", async (req, res) => {
@@ -460,25 +471,30 @@ router.post("/motos/:motoId/restart", async (req, res) => {
     const evClubId = await getEventClubId(moto.eventId);
     if (evClubId !== staffCIdRestart) return res.status(403).json({ error: "Forbidden" });
   }
-  await db.delete(splitCrossingsTable).where(eq(splitCrossingsTable.motoId, id));
-  await db.delete(lapCrossingsTable).where(eq(lapCrossingsTable.motoId, id));
-  // Clear timing data from race_results so short-lap flags reset correctly
-  await db
-    .update(raceResultsTable)
-    .set({ lapTimes: [], totalTime: null })
-    .where(eq(raceResultsTable.motoId, id));
-  const [updated] = await db
-    .update(motosTable)
-    .set({
-      status: "scheduled",
-      startedAt: null,
-      completedAt: null,
-      pausedAt: null,
-      totalPausedMs: 0,
-      timeExpiredAt: null,
-    })
-    .where(eq(motosTable.id, id))
-    .returning();
+  // Under the moto's lock: a read still being processed can't land after the
+  // wipe and become "lap 1" of the restarted race.
+  const updated = await withMotoLock(id, async () => {
+    await db.delete(splitCrossingsTable).where(eq(splitCrossingsTable.motoId, id));
+    await db.delete(lapCrossingsTable).where(eq(lapCrossingsTable.motoId, id));
+    // Clear timing data from race_results so short-lap flags reset correctly
+    await db
+      .update(raceResultsTable)
+      .set({ lapTimes: [], totalTime: null })
+      .where(eq(raceResultsTable.motoId, id));
+    const [row] = await db
+      .update(motosTable)
+      .set({
+        status: "scheduled",
+        startedAt: null,
+        completedAt: null,
+        pausedAt: null,
+        totalPausedMs: 0,
+        timeExpiredAt: null,
+      })
+      .where(eq(motosTable.id, id))
+      .returning();
+    return row;
+  });
   await resetSharedAnnouncer(id);
   buildLeaderboard(id).then(snap => { if (snap) sseBroadcast(id, snap); }).catch(() => {});
   return res.json({ ok: true, moto: updated });
@@ -501,6 +517,8 @@ router.post("/motos/:motoId/pause", async (req, res) => {
     .set({ pausedAt: new Date() })
     .where(eq(motosTable.id, id))
     .returning();
+  // Live views and the announcer learn about the red flag right away.
+  buildLeaderboard(id).then(snapshot => { if (snapshot) publishTimingSnapshot(snapshot); }).catch(() => {});
   return res.json({
     ...updated,
     lineup: Array.isArray(updated.lineup) ? updated.lineup : [],
@@ -530,6 +548,8 @@ router.post("/motos/:motoId/resume", async (req, res) => {
     .set({ pausedAt: null, totalPausedMs: (moto.totalPausedMs ?? 0) + additionalMs })
     .where(eq(motosTable.id, id))
     .returning();
+  // Live views and the announcer learn about the red flag right away.
+  buildLeaderboard(id).then(snapshot => { if (snapshot) publishTimingSnapshot(snapshot); }).catch(() => {});
   return res.json({
     ...updated,
     lineup: Array.isArray(updated.lineup) ? updated.lineup : [],

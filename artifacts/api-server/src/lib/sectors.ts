@@ -14,7 +14,7 @@
  */
 import { db } from "@workspace/db";
 import { eventReaderAssignmentsTable, lapCrossingsTable, splitCrossingsTable, motosTable } from "@workspace/db/schema";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, lt, sql } from "drizzle-orm";
 
 export interface CoursePoint {
   assignmentId: number;
@@ -151,8 +151,16 @@ export async function recordSplitCrossing(input: {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(lapCrossingsTable)
-    // Same tag, any letter case (transponder IDs are hex).
-    .where(and(eq(lapCrossingsTable.motoId, input.motoId), sql`lower(${lapCrossingsTable.rfidNumber}) = lower(${input.rfidNumber})`));
+    // The lap in progress when the split was read: the rider's finish passes
+    // before it (a split that arrives late still lands on its own lap).
+    .where(and(
+      eq(lapCrossingsTable.motoId, input.motoId),
+      input.riderId
+        ? eq(lapCrossingsTable.riderId, input.riderId)
+        // Same tag, any letter case (transponder IDs are hex).
+        : sql`lower(${lapCrossingsTable.rfidNumber}) = lower(${input.rfidNumber})`,
+      lt(lapCrossingsTable.crossingTime, input.crossingTime),
+    ));
   const lapNumber = Number(row?.n ?? 0) + 1;
   const inserted = await db
     .insert(splitCrossingsTable)

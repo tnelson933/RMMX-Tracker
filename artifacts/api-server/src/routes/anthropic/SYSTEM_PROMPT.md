@@ -152,8 +152,11 @@ Standard MX races run for a set time, then give the leader one or more extra lap
 **What happens on race day (Race Day Management tab):**
 - While racing, the moto card shows a countdown labelled **"Race Timer +N Lap(s)"**.
 - At zero, the timer is replaced by an orange **"Time Expired — +N Lap(s) After the Flag"** banner, and an orange "+N Lap(s) to Go" pill shows while waiting for the leader.
-- When the **leader** completes their extra lap(s), the moto finishes automatically.
-- Clicking **Finish** earlier (e.g. red flag) completes the moto immediately.
+- RM Roost runs the race clock itself: the flag drops at exactly the time limit (plus any red-flag time), whether or not an organizer screen is open.
+- When the **leader** completes their extra lap(s), they take the checkered flag; every other rider finishes on their next crossing (lapped riders included), and laps after a rider's checkered don't count. The moto finishes automatically once everyone still racing has crossed, or a short grace period later (1–5 minutes, based on lap length) for riders who pulled off.
+- With **0** extra laps, each rider finishes on their first crossing after the flag.
+- A timed **practice** simply ends when its time is up.
+- Clicking **Finish** earlier completes the moto immediately.
 
 ### Staggered starts
 A staggered start links two motos so they run on track together but score separately — useful when two small classes share a gate.
@@ -199,7 +202,9 @@ When an organizer has an event open, your system context includes live race stat
 Use these to answer "what's next?" or "which class is racing?". If neither is present, no moto is active or pending.
 
 ### Starting and finishing a moto
-Find the moto card → **Start** (or **Start Group** for a staggered pair). The moto turns green and accepts crossings. When done, click **Finish** (or **Finish Group**); it asks **Finish Moto?** (with a don't-ask-again checkbox). Starting a moto while another is running offers **End Current & Start**.
+Find the moto card → **Start** (or **Start Group** for a staggered pair). The moto turns green and accepts crossings. In a staggered pair, each read is scored in the moto whose lineup has that rider; a rider whose moto has just finished (e.g. a cool-down lap) isn't scored in the other one.
+
+**How laps are counted:** laps belong to the rider, not the tag: a rider's crossings from every tag and manual laps are merged in time order, so a manual lap for a missed read fits in correctly and a rider with two tags isn't counted twice. Reads within 10 seconds of the rider's previous read are treated as the same pass. A tag assigned in the middle of a race keeps the laps it read before. **Red flag (Pause)** pauses every moto in a staggered group, and the race clock leaves out red-flag time. When done, click **Finish** (or **Finish Group**); it asks **Finish Moto?** (with a don't-ask-again checkbox). Starting a moto while another is running offers **End Current & Start**.
 
 ### Moving riders between heats
 Drag a rider from one heat to another on this tab. Only works between unfinished heats of the same class.
