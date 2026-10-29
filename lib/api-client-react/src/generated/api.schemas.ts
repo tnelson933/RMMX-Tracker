@@ -1307,6 +1307,10 @@ export interface GenerateMotoLineupInput {
 }
 
 export interface RaceResult {
+  /** The organizer finalized this race (otherwise unofficial results) */
+  official?: boolean;
+  /** The event uses Olympic scoring (lowest overall total wins) */
+  lowerIsBetter?: boolean;
   id: number;
   eventId: number;
   motoId: number;

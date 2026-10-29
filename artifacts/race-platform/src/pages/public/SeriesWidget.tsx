@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { rankClassOverall } from "@/lib/classOverall";
 import { useParams } from "wouter";
 import rmLogo from "@assets/rm-logo.png";
 
@@ -208,20 +209,11 @@ export default function SeriesWidget() {
         .sort((a, b) => (a.position ?? 999) - (b.position ?? 999));
     }
 
-    // Traditional multi-heat: rank by total accumulated points
-    const byRider = new Map<number, { result: RaceResult; totalPoints: number }>();
-    eventResults.filter(r => r.raceClass === displayEventClass).forEach(r => {
-      const pts = (r as any).points ?? 0;
-      const ex = byRider.get(r.riderId);
-      if (!ex) {
-        byRider.set(r.riderId, { result: r, totalPoints: pts });
-      } else {
-        byRider.set(r.riderId, { result: ex.result, totalPoints: ex.totalPoints + pts });
-      }
-    });
-    return Array.from(byRider.values())
-      .sort((a, b) => b.totalPoints - a.totalPoints || (a.result.position ?? 999) - (b.result.position ?? 999))
-      .map((entry, i) => ({ ...entry.result, position: i + 1 }));
+    // Traditional multi-heat: total across all motos (Olympic: lowest wins).
+    const classRows = eventResults.filter(r => r.raceClass === displayEventClass);
+    const lowerIsBetter = classRows.some(r => (r as any).lowerIsBetter);
+    return rankClassOverall(classRows as any[], lowerIsBetter)
+      .map(entry => ({ ...entry.result, position: entry.position }));
   })();
 
   const riderMotoResults = (riderId: number, raceClass: string) =>

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { getDb } from "../db";
 import { formulaPoints } from "../lib/safeFormula";
+import { isLowerBetter, olympicPenalty } from "../lib/overallOrder";
 
 const router = Router();
 
@@ -20,9 +21,15 @@ function calcPoints(opts: {
   autoDnfThreshold?: number;
   lapsCompleted?: number;
   leaderLapsCompleted?: number;
+  /** Riders in the class for this moto (Olympic DNF/DNS scores); defaults to the starters. */
+  classSize?: number;
 }): number {
-  if (opts.dnf || opts.dns) return 0;
   if (opts.mainEventOnly && opts.motoType !== "main") return 0;
+  // Olympic (lowest wins): a DNF or DNS scores a penalty, not 0 (lib/overallOrder.ts).
+  const olympic = isLowerBetter(opts.scoringMethod);
+  const classSize = opts.classSize ?? opts.totalStarters;
+  if (opts.dns) return olympic ? olympicPenalty("dns", classSize) : 0;
+  if (opts.dnf) return olympic ? olympicPenalty("dnf", classSize) : 0;
 
   if (
     opts.autoDnfEnabled &&
@@ -34,7 +41,7 @@ function calcPoints(opts: {
     const minLaps = Math.floor(
       (opts.leaderLapsCompleted * opts.autoDnfThreshold) / 100,
     );
-    if (opts.lapsCompleted < minLaps) return 0;
+    if (opts.lapsCompleted < minLaps) return olympic ? olympicPenalty("dnf", classSize) : 0;
   }
 
   switch (opts.scoringMethod) {
@@ -68,6 +75,11 @@ router.get("/events/:eventId/results", (req, res) => {
        ORDER BY rr.moto_id ASC, rr.position ASC`,
     )
     .all(eventId) as any[];
+  // Olympic tables rank the overall lowest first; the pages need to know.
+  const table = db.prepare(
+    "SELECT pt.scoring_method FROM events e LEFT JOIN points_tables pt ON pt.id = e.scoring_table_id WHERE e.id = ?",
+  ).get(eventId) as any;
+  const lowerIsBetter = isLowerBetter(table?.scoring_method);
 
   return res.json(
     results.map((r: any) => ({
@@ -89,6 +101,7 @@ router.get("/events/:eventId/results", (req, res) => {
       dnf: r.dnf === 1,
       dns: r.dns === 1,
       official: r.results_finalized_at != null || r.moto_type === "practice",
+      lowerIsBetter,
     })),
   );
 });
@@ -187,6 +200,7 @@ router.post("/events/:eventId/results", (req, res) => {
         dnf: !!r.dnf,
         dns: !!r.dns,
         totalStarters,
+        classSize: (raw as any[]).length,
         scoringMethod,
         pointsScale,
         scoringFormula,

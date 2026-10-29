@@ -4717,6 +4717,12 @@ components:
       type: object
       required: [id, eventId, motoId, riderId, riderName, position]
       properties:
+        official:
+          type: boolean
+          description: The organizer finalized this race (otherwise unofficial results)
+        lowerIsBetter:
+          type: boolean
+          description: The event uses Olympic scoring (lowest overall total wins)
         id:
           type: integer
         eventId:

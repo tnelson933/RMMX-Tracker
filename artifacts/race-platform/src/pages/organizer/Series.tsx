@@ -515,7 +515,9 @@ export default function SeriesManagement() {
                   </Card>
 
                   <p className="text-xs text-muted-foreground px-1">
-                    Standings ranked by highest total points. Riders who miss an event receive 0 points for each moto missed (shown in parentheses).
+                    {(leaderboard as any[] | undefined)?.some((r) => r.lowerIsBetter)
+                      ? "Olympic scoring: lowest total wins. A DNF scores the number of riders in the class (at least 20), a DNS or missed moto scores riders + 30, and ties go to the better finish in the last moto."
+                      : "Standings ranked by highest total points. Riders who miss an event receive 0 points for each moto missed (shown in parentheses)."}
                   </p>
                 </>
               ) : leaderboardError ? (

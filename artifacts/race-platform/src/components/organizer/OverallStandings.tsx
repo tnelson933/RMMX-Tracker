@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { rankClassOverall } from "@/lib/classOverall";
+import { olympicPenalty } from "@/lib/overallOrder";
 import { useListMotos, useListResults } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -52,29 +54,37 @@ export function OverallStandings({ eventId }: { eventId: number }) {
     entry.times.set(r.motoId, parseTimeSeconds(r.totalTime));
   });
 
+  // Olympic tables: lowest total wins; DNF/DNS/missed motos score penalties.
+  const lowerIsBetter = classResults.some((r) => (r as any).lowerIsBetter);
+  const classSize = (motoId: number) => classResults.filter((r) => r.motoId === motoId).length;
+  const ranking = rankClassOverall(classResults as any[], lowerIsBetter, completedClassMotos.map((m) => m.id));
+  const rankByRider = new Map(ranking.map((e) => [e.result.riderId as number, e]));
+
   const overallStandings = Array.from(riderMap.entries())
     .map(([riderId, data]) => {
       const motoPoints = completedClassMotos.map((moto) => {
         const result = data.motos.get(moto.id);
-        if (!result) return { display: "-" as string | number, value: 0 };
-        if (result.dnf) return { display: "DNF", value: 0 };
-        if (result.dns) return { display: "DNS", value: 0 };
+        if (!result) return { display: "-" as string | number, value: lowerIsBetter ? olympicPenalty("dns", classSize(moto.id)) : 0 };
+        if (result.dnf) return { display: "DNF", value: lowerIsBetter ? olympicPenalty("dnf", classSize(moto.id)) : 0 };
+        if (result.dns) return { display: "DNS", value: lowerIsBetter ? olympicPenalty("dns", classSize(moto.id)) : 0 };
         return { display: result.points, value: result.points };
       });
-      const total = motoPoints.reduce((sum, p) => sum + p.value, 0);
+      const total = lowerIsBetter ? rankByRider.get(riderId)?.total ?? 0 : motoPoints.reduce((sum, p) => sum + p.value, 0);
       const totalTimeSeconds = completedClassMotos.reduce((sum, moto) => {
         const t = data.times.get(moto.id);
         return isFinite(t ?? Infinity) ? sum + (t ?? 0) : sum;
       }, 0);
       return { riderId, riderName: data.riderName, motoPoints, total, totalTimeSeconds };
     })
-    .sort((a, b) => b.total - a.total || a.totalTimeSeconds - b.totalTimeSeconds);
+    .sort((a, b) => lowerIsBetter
+      ? (rankByRider.get(a.riderId)?.position ?? 999) - (rankByRider.get(b.riderId)?.position ?? 999)
+      : b.total - a.total || a.totalTimeSeconds - b.totalTimeSeconds);
 
   const standingsWithPos: Array<(typeof overallStandings)[0] & { overallPos: number; totalTimeDisplay: string }> = [];
   for (let idx = 0; idx < overallStandings.length; idx++) {
     const row = overallStandings[idx];
-    let overallPos = idx + 1;
-    if (
+    let overallPos = lowerIsBetter ? rankByRider.get(row.riderId)?.position ?? idx + 1 : idx + 1;
+    if (!lowerIsBetter &&
       idx > 0 &&
       row.total === overallStandings[idx - 1].total &&
       row.totalTimeSeconds === overallStandings[idx - 1].totalTimeSeconds
@@ -114,7 +124,7 @@ export function OverallStandings({ eventId }: { eventId: number }) {
 
             <div className="space-y-4 pt-6 border-t">
               <h2 className="text-2xl font-heading font-bold uppercase tracking-tight flex items-center gap-2">
-                <Trophy className="text-primary" /> Total Points — {displayClass}
+                <Trophy className="text-primary" /> {lowerIsBetter ? "Olympic Score (lowest wins)" : "Total Points"} — {displayClass}
               </h2>
 
               <Card className="border-sidebar-border">
@@ -135,7 +145,7 @@ export function OverallStandings({ eventId }: { eventId: number }) {
                               Moto {m.motoNumber}
                             </TableHead>
                           ))}
-                          <TableHead className="w-20 text-center">Total Pts</TableHead>
+                          <TableHead className="w-20 text-center">{lowerIsBetter ? "Score" : "Total Pts"}</TableHead>
                           <TableHead className="w-32 text-center">Total Time</TableHead>
                         </TableRow>
                       </TableHeader>

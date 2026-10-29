@@ -1,4 +1,5 @@
 import { advanceEventStatuses } from "../lib/eventStatus";
+import { computeEventOverall } from "../lib/eventOverall";
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { clubsTable, eventsTable, ridersTable, registrationsTable, checkinsTable, motosTable, raceResultsTable, eventPublicationTable, lapCrossingsTable, liabilityWaiverSignaturesTable } from "@workspace/db";
@@ -619,85 +620,8 @@ router.get("/public/events/:eventId/schedule", async (req, res) => {
 router.get("/public/events/:eventId/overall-standings", async (req, res) => {
   const eventId = Number(req.params.eventId);
   if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
-
-  const rows = await db.select({
-    riderId: raceResultsTable.riderId,
-    raceClass: raceResultsTable.raceClass,
-    position: raceResultsTable.position,
-    points: raceResultsTable.points,
-    dnf: raceResultsTable.dnf,
-    dns: raceResultsTable.dns,
-    bibNumber: raceResultsTable.bibNumber,
-    firstName: ridersTable.firstName,
-    lastName: ridersTable.lastName,
-  }).from(raceResultsTable)
-    .leftJoin(ridersTable, eq(raceResultsTable.riderId, ridersTable.id))
-    .where(eq(raceResultsTable.eventId, eventId));
-
-  if (rows.length === 0) return res.json({ classes: [] });
-
-  // Aggregate per rider+class: sum points, best position, moto count
-  const key = (riderId: number, raceClass: string) => `${riderId}::${raceClass}`;
-  const agg = new Map<string, {
-    riderId: number; raceClass: string; riderName: string;
-    bibNumber: string | null; totalPoints: number;
-    bestPosition: number; motosRaced: number; dnf: boolean;
-  }>();
-
-  for (const row of rows) {
-    const raceClass = row.raceClass ?? "Unknown";
-    const k = key(row.riderId, raceClass);
-    const existing = agg.get(k);
-    const name = [row.firstName, row.lastName].filter(Boolean).join(" ") || `Rider #${row.riderId}`;
-    if (!existing) {
-      agg.set(k, {
-        riderId: row.riderId,
-        raceClass,
-        riderName: name,
-        bibNumber: row.bibNumber ?? null,
-        totalPoints: row.points ?? 0,
-        bestPosition: row.dnf || row.dns ? 999 : (row.position ?? 999),
-        motosRaced: 1,
-        dnf: !!(row.dnf && !row.dns),
-      });
-    } else {
-      existing.totalPoints += row.points ?? 0;
-      const pos = row.dnf || row.dns ? 999 : (row.position ?? 999);
-      if (pos < existing.bestPosition) existing.bestPosition = pos;
-      existing.motosRaced += 1;
-      if (!row.dnf && !row.dns) existing.dnf = false;
-    }
-  }
-
-  type AggEntry = { riderId: number; raceClass: string; riderName: string; bibNumber: string | null; totalPoints: number; bestPosition: number; motosRaced: number; dnf: boolean };
-  // Group by class, rank within each class
-  const classMap = new Map<string, AggEntry[]>();
-  for (const entry of agg.values()) {
-    if (!classMap.has(entry.raceClass)) classMap.set(entry.raceClass, []);
-    classMap.get(entry.raceClass)!.push(entry);
-  }
-
-  const hasPoints = [...agg.values()].some(e => e.totalPoints > 0);
-
-  const classes = [...classMap.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([raceClass, riders]) => {
-    const sorted = [...riders].sort((a, b) => {
-      if (hasPoints) return b.totalPoints - a.totalPoints || a.bestPosition - b.bestPosition;
-      return a.bestPosition - b.bestPosition;
-    });
-    return {
-      raceClass,
-      riders: sorted.map((r, i) => ({
-        position: i + 1,
-        riderName: r.riderName,
-        bibNumber: r.bibNumber,
-        totalPoints: r.totalPoints,
-        motosRaced: r.motosRaced,
-        bestPosition: r.bestPosition >= 999 ? null : r.bestPosition,
-      })),
-    };
-  });
-
-  return res.json({ classes, hasPoints });
+  // Finished races only; Olympic tables rank lowest first (lib/eventOverall.ts).
+  return res.json(await computeEventOverall(eventId));
 });
 
 // GET /public/motos/:motoId/laps/:riderId — public rider lap times (no auth)

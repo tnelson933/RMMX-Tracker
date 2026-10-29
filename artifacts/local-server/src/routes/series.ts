@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { compareOverall, isLowerBetter, olympicPenalty, overallPositions } from "../lib/overallOrder";
 import { getDb } from "../db";
 
 const router = Router();
@@ -26,6 +27,13 @@ function getUserClubId(session: any): number | null {
 }
 
 // GET /series
+/** Olympic series (lowest total wins), from the series' points table. */
+function seriesLowerIsBetter(series: any): boolean {
+  if (!series?.scoring_table_id) return false;
+  const table = getDb().prepare("SELECT scoring_method FROM points_tables WHERE id = ?").get(series.scoring_table_id) as any;
+  return isLowerBetter(table?.scoring_method);
+}
+
 /** Event ids without duplicates (a duplicate would count an event twice). */
 function uniqueIds(ids: unknown): number[] {
   return Array.isArray(ids) ? [...new Set(ids.map(Number).filter(Number.isFinite))] : [];
@@ -137,6 +145,7 @@ router.get("/series/:seriesId/leaderboard", (req, res) => {
 
   const series = db.prepare("SELECT * FROM series WHERE id = ?").get(id) as any;
   if (!series) return res.status(404).json({ error: "Not found" });
+  const lowerIsBetter = seriesLowerIsBetter(series);
 
   const eventIds: number[] = uniqueIds((() => { try { return JSON.parse(series.event_ids || "[]"); } catch { return []; } })());
   if (eventIds.length === 0) return res.json([]);
@@ -187,6 +196,8 @@ router.get("/series/:seriesId/leaderboard", (req, res) => {
     for (const riderId of Object.keys(riderNames).map(Number)) {
       let totalScore = 0;
       let eventsEntered = 0;
+      let finishedAny = false;
+      let lastMotoFinish: number | null = null;
       const eventBreakdowns: any[] = [];
 
       for (const eventId of eventIds) {
@@ -200,9 +211,18 @@ router.get("/series/:seriesId/leaderboard", (req, res) => {
 
         for (const { results: motoResults } of sortedMotos) {
           const result = motoResults.find((r: any) => r.rider_id === riderId);
+          lastMotoFinish = result && !result.dnf && !result.dns ? (result.position ?? null) : null;
+          if (lastMotoFinish != null) finishedAny = true;
           if (result) {
             attended = true;
-            const pts = (result.dnf || result.dns) ? 0 : (result.points ?? 0);
+            const pts = lowerIsBetter && (result.dnf || result.dns)
+              ? olympicPenalty(result.dns ? "dns" : "dnf", motoResults.length)
+              : (result.dnf || result.dns) ? 0 : (result.points ?? 0);
+            eventScore += pts;
+            motoPositions.push(pts);
+          } else if (lowerIsBetter) {
+            // Olympic: a missed moto scores as a DNS.
+            const pts = olympicPenalty("dns", motoResults.length);
             eventScore += pts;
             motoPositions.push(pts);
           } else {
@@ -221,15 +241,13 @@ router.get("/series/:seriesId/leaderboard", (req, res) => {
         });
       }
 
-      classRows.push({ position: 0, riderId, riderName: riderNames[riderId], raceClass, totalScore, eventsEntered, official: classOfficial(motos, raceClass), events: eventBreakdowns } as any);
+      classRows.push({ position: 0, riderId, riderName: riderNames[riderId], raceClass, totalScore, eventsEntered, official: classOfficial(motos, raceClass), events: eventBreakdowns, lowerIsBetter, _order: { total: totalScore, finishedAny, lastMotoFinish } } as any);
     }
 
-    classRows.sort((a, b) => b.totalScore - a.totalScore);
-    classRows.forEach((row, idx) => {
-      row.position = (idx > 0 && row.totalScore === classRows[idx - 1].totalScore)
-        ? classRows[idx - 1].position
-        : idx + 1;
-    });
+    // Highest total first, or Olympic (lowest first, finishers ahead, ties to the last moto).
+    classRows.sort((a, b) => compareOverall(a._order, b._order, lowerIsBetter));
+    const positions = overallPositions(classRows.map((r: any) => r._order), lowerIsBetter);
+    classRows.forEach((row, idx) => { row.position = positions[idx]; delete row._order; });
 
     standings.push(...classRows);
   }
@@ -247,6 +265,7 @@ router.post("/series/:seriesId/recalculate", (req, res) => {
 
   const series = db.prepare("SELECT * FROM series WHERE id = ?").get(id) as any;
   if (!series) return res.status(404).json({ error: "Not found" });
+  const lowerIsBetter = seriesLowerIsBetter(series);
 
   const eventIds: number[] = uniqueIds((() => { try { return JSON.parse(series.event_ids || "[]"); } catch { return []; } })());
 
@@ -280,7 +299,8 @@ router.post("/series/:seriesId/recalculate", (req, res) => {
     if (!pointsMap[key]) {
       pointsMap[key] = { riderId: r.rider_id, raceClass: r.race_class, totalPoints: 0, byEvent: {} };
     }
-    const pts = (r.dnf || r.dns) ? 0 : (Number(r.points) || 0);
+    // Olympic tables store DNF/DNS penalty points on the result; keep them.
+    const pts = lowerIsBetter ? (Number(r.points) || 0) : (r.dnf || r.dns) ? 0 : (Number(r.points) || 0);
     const eventId = motoEventMap[r.moto_id];
     pointsMap[key].totalPoints += pts;
     pointsMap[key].byEvent[eventId] = (pointsMap[key].byEvent[eventId] ?? 0) + pts;
@@ -347,6 +367,7 @@ router.get("/public/series/:seriesId", (req, res) => {
 
   const series = db.prepare("SELECT * FROM series WHERE id = ?").get(id) as any;
   if (!series) return res.status(404).json({ error: "Not found" });
+  const lowerIsBetter = seriesLowerIsBetter(series);
 
   const eventIds: number[] = uniqueIds((() => { try { return JSON.parse(series.event_ids || "[]"); } catch { return []; } })());
 
@@ -378,6 +399,7 @@ router.get("/public/series/:seriesId/standings", (req, res) => {
 
   const series = db.prepare("SELECT * FROM series WHERE id = ?").get(id) as any;
   if (!series) return res.status(404).json({ error: "Not found" });
+  const lowerIsBetter = seriesLowerIsBetter(series);
 
   const eventIds: number[] = uniqueIds((() => { try { return JSON.parse(series.event_ids || "[]"); } catch { return []; } })());
   if (eventIds.length === 0) return res.json([]);
@@ -426,6 +448,8 @@ router.get("/public/series/:seriesId/standings", (req, res) => {
     for (const riderId of Object.keys(riderNames).map(Number)) {
       let totalScore = 0;
       let eventsEntered = 0;
+      let finishedAny = false;
+      let lastMotoFinish: number | null = null;
       const eventBreakdowns: any[] = [];
 
       for (const eventId of eventIds) {
@@ -438,9 +462,18 @@ router.get("/public/series/:seriesId/standings", (req, res) => {
 
         for (const { results: motoResults } of sortedMotos) {
           const result = motoResults.find((r: any) => r.rider_id === riderId);
+          lastMotoFinish = result && !result.dnf && !result.dns ? (result.position ?? null) : null;
+          if (lastMotoFinish != null) finishedAny = true;
           if (result) {
             attended = true;
-            const pts = (result.dnf || result.dns) ? 0 : (result.points ?? 0);
+            const pts = lowerIsBetter && (result.dnf || result.dns)
+              ? olympicPenalty(result.dns ? "dns" : "dnf", motoResults.length)
+              : (result.dnf || result.dns) ? 0 : (result.points ?? 0);
+            eventScore += pts;
+            motoPositions.push(pts);
+          } else if (lowerIsBetter) {
+            // Olympic: a missed moto scores as a DNS.
+            const pts = olympicPenalty("dns", motoResults.length);
             eventScore += pts;
             motoPositions.push(pts);
           } else {
@@ -453,15 +486,13 @@ router.get("/public/series/:seriesId/standings", (req, res) => {
         eventBreakdowns.push({ eventId, eventName: eventNameMap[eventId] ?? `Event ${eventId}`, eventScore, attended, motos: motoPositions });
       }
 
-      classRows.push({ position: 0, riderId, riderName: riderNames[riderId], raceClass, totalScore, eventsEntered, official: classOfficial(motos, raceClass), amaNumber: null, bikeBrand: null, events: eventBreakdowns } as any);
+      classRows.push({ position: 0, riderId, riderName: riderNames[riderId], raceClass, totalScore, eventsEntered, official: classOfficial(motos, raceClass), amaNumber: null, bikeBrand: null, events: eventBreakdowns, lowerIsBetter, _order: { total: totalScore, finishedAny, lastMotoFinish } } as any);
     }
 
-    classRows.sort((a, b) => b.totalScore - a.totalScore);
-    classRows.forEach((row, idx) => {
-      row.position = (idx > 0 && row.totalScore === classRows[idx - 1].totalScore)
-        ? classRows[idx - 1].position
-        : idx + 1;
-    });
+    // Highest total first, or Olympic (lowest first, finishers ahead, ties to the last moto).
+    classRows.sort((a, b) => compareOverall(a._order, b._order, lowerIsBetter));
+    const positions = overallPositions(classRows.map((r: any) => r._order), lowerIsBetter);
+    classRows.forEach((row, idx) => { row.position = positions[idx]; delete row._order; });
     standings.push(...classRows);
   }
 

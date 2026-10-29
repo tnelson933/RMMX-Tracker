@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { eventLowerIsBetter } from "../lib/eventOverall";
 import { syncEventPublication } from "../lib/resultsVisibility";
 import { lapTimeToMs } from "../lib/lapScoring";
 import { db } from "@workspace/db";
@@ -6,6 +7,7 @@ import { raceResultsTable, motosTable, ridersTable, eventPublicationTable, regis
 import { eq, and, inArray, ne, isNull, isNotNull, sql } from "drizzle-orm";
 import { motoCounts, seriesScope } from "../lib/seriesStandings";
 import { calcPoints, loadSeriesScoring } from "../lib/scoringTables";
+import { isLowerBetter, olympicPenalty } from "../lib/overallOrder";
 import { logger } from "../lib/logger";
 import { formulaPoints } from "../lib/safeFormula";
 import { notifyFollowersOfResults } from "../lib/riderCareer";
@@ -121,18 +123,24 @@ export async function recalculateSeriesPoints(seriesIds: number[]): Promise<void
 
       // Aggregate points per (riderId, raceClass)
       const aggregate = new Map<string, { riderId: number; raceClass: string; totalPoints: number; eventsEntered: Set<number> }>();
+      // Olympic (lowest wins): DNF/DNS and missed motos score penalties (lib/overallOrder.ts).
+      const lowerIsBetter = isLowerBetter(seriesScoringMethod);
+      const classSizeByMoto = new Map<number, number>();
+      for (const r of results) classSizeByMoto.set(r.motoId, (classSizeByMoto.get(r.motoId) ?? 0) + 1);
 
       for (const r of results) {
-        if (r.dns) continue; // DNS earns 0 points; skip entirely
         const motoType = motoTypeMap.get(r.motoId) ?? "heat";
         const motoEventId = motoEventMap.get(r.motoId) ?? 0;
         if (seriesMainEventOnly && motoType !== "main") continue;
+        if (r.dns && !lowerIsBetter) continue; // DNS earns 0 points; skip entirely
 
         const totalStarters = startersByMoto.get(r.motoId) ?? 1;
         // The points stored on the result (they include club auto-DNF); scored
         // with the series' table only when none were stored. Same rule as the
         // standings pages (lib/seriesStandings.ts).
-        const pts = r.dnf ? 0 : r.points ?? calcPoints({
+        const pts = lowerIsBetter && (r.dnf || r.dns)
+          ? olympicPenalty(r.dns ? "dns" : "dnf", classSizeByMoto.get(r.motoId) ?? 0)
+          : r.dnf ? 0 : r.points ?? calcPoints({
           position: r.position,
           dnf: !!r.dnf,
           dns: false,
@@ -151,7 +159,19 @@ export async function recalculateSeriesPoints(seriesIds: number[]): Promise<void
         }
         const entry = aggregate.get(key)!;
         entry.totalPoints += pts;
-        if (motoEventId) entry.eventsEntered.add(motoEventId);
+        if (motoEventId && !r.dns) entry.eventsEntered.add(motoEventId);
+      }
+
+      // Olympic: a moto of the rider's class they have no result in counts as a DNS.
+      if (lowerIsBetter) {
+        for (const entry of aggregate.values()) {
+          for (const m of eligibleMotos) {
+            if ((m.raceClass ?? "").trim() !== entry.raceClass) continue;
+            if (seriesMainEventOnly && (m.type ?? "heat") !== "main") continue;
+            if (results.some(r => r.motoId === m.id && r.riderId === entry.riderId)) continue;
+            entry.totalPoints += olympicPenalty("dns", classSizeByMoto.get(m.id) ?? 0);
+          }
+        }
       }
 
       // Replace this series' rows in one transaction. The advisory lock keeps two
@@ -263,6 +283,8 @@ router.get("/events/:eventId/results", async (req, res) => {
     .where(eq(raceResultsTable.eventId, eventId))
     .orderBy(raceResultsTable.position);
   const regDetails = await registrationDetailsLookup(eventId);
+  // Olympic tables rank the overall lowest first; the pages need to know.
+  const lowerIsBetter = await eventLowerIsBetter(eventId);
 
   return res.json(results.filter(r => ownerView || r.motoStatus === "completed").map(r => ({
     id: r.id,
@@ -270,6 +292,7 @@ router.get("/events/:eventId/results", async (req, res) => {
     motoId: r.motoId,
     // Practice isn't finalized; everything else is unofficial until it is.
     official: r.resultsFinalizedAt != null || r.motoType === "practice",
+    lowerIsBetter,
     motoName: r.motoName || "",
     riderId: r.riderId,
     riderName: `${r.firstName} ${r.lastName}`,
@@ -369,6 +392,7 @@ export async function scoreMotoPoints(motoId: number): Promise<void> {
       dnf: !!r.dnf,
       dns: !!r.dns,
       totalStarters,
+      classSize: rows.length,
       ...settings,
       motoType: moto.type ?? "heat",
       lapsCompleted: lapsOf(r),
@@ -419,6 +443,7 @@ router.post("/events/:eventId/results", async (req, res) => {
         dnf:           !!r.dnf,
         dns:           !!r.dns,
         totalStarters,
+        classSize:     riderResults.length,
         scoringMethod,
         pointsScale,
         scoringFormula,

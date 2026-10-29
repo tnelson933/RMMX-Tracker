@@ -2,6 +2,7 @@ import { db } from "@workspace/db";
 import { eventsTable, motosTable, raceResultsTable, ridersTable, seriesTable } from "@workspace/db";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { calcPoints, loadSeriesScoring } from "./scoringTables";
+import { compareOverall, isLowerBetter, olympicPenalty, overallPositions, type OverallRow } from "./overallOrder";
 
 type Series = typeof seriesTable.$inferSelect;
 
@@ -61,6 +62,8 @@ export interface SeriesStandingRow {
   eventsEntered: number;
   /** Every counted race in this class has been finalized by the organizer. */
   official: boolean;
+  /** Olympic scoring: the lowest total wins. */
+  lowerIsBetter: boolean;
   events: Array<{
     eventId: number;
     eventName: string;
@@ -110,7 +113,11 @@ export async function computeSeriesStandings(series: Series): Promise<{ standing
   const motoById = new Map(allMotos.map(m => [m.id, m]));
   const starters = new Map<number, number>();
   for (const r of allResults) if (!r.dns) starters.set(r.motoId, (starters.get(r.motoId) ?? 0) + 1);
+  // Olympic tables: lowest total wins and DNF/DNS/missed motos score penalties.
+  const lowerIsBetter = isLowerBetter(scoring.scoringMethod);
+  const classSizeOf = (motoId: number) => resultsByMoto.get(motoId)?.length ?? 0;
   const pointsFor = (r: (typeof allResults)[number]): number => {
+    if (lowerIsBetter && (r.dnf || r.dns)) return olympicPenalty(r.dns ? "dns" : "dnf", classSizeOf(r.motoId));
     if (r.dnf || r.dns) return 0;
     if (r.points != null) return r.points;
     return calcPoints({
@@ -172,7 +179,10 @@ export async function computeSeriesStandings(series: Series): Promise<{ standing
             motoPoints.push(pts);
             finishPositions.push(r.dnf || r.dns ? null : (r.position ?? null));
           } else {
-            motoPoints.push(0);
+            // A missed moto: nothing on a points table, a DNS on an Olympic one.
+            const pts = lowerIsBetter ? olympicPenalty("dns", classSizeOf(m.id)) : 0;
+            eventScore += pts;
+            motoPoints.push(pts);
             finishPositions.push(null);
           }
         }
@@ -187,14 +197,19 @@ export async function computeSeriesStandings(series: Series): Promise<{ standing
           finishPositions,
         });
       }
-      rows.push({ position: 0, riderId, riderName, raceClass, totalScore, eventsEntered, official, events: breakdown });
+      const finishes = breakdown.flatMap(e => e.finishPositions);
+      rows.push({
+        position: 0, riderId, riderName, raceClass, totalScore, eventsEntered, official, lowerIsBetter, events: breakdown,
+        // For ordering: a tie goes to the better finish in the class's last moto.
+        _order: { total: totalScore, finishedAny: finishes.some(f => f != null), lastMotoFinish: finishes[finishes.length - 1] ?? null },
+      } as SeriesStandingRow & { _order: OverallRow });
     }
 
-    rows.sort((a, b) => b.totalScore - a.totalScore || a.riderName.localeCompare(b.riderName));
-    rows.forEach((row, idx) => {
-      row.position = idx > 0 && row.totalScore === rows[idx - 1].totalScore ? rows[idx - 1].position : idx + 1;
-    });
-    standings.push(...rows);
+    const ordered = rows as Array<SeriesStandingRow & { _order: OverallRow }>;
+    ordered.sort((a, b) => compareOverall(a._order, b._order, lowerIsBetter) || a.riderName.localeCompare(b.riderName));
+    const positions = overallPositions(ordered.map(r => r._order), lowerIsBetter);
+    ordered.forEach((row, idx) => { row.position = positions[idx]; delete (row as any)._order; });
+    standings.push(...ordered);
   }
   return { standings, eventIds };
 }

@@ -1,4 +1,6 @@
 import { checkBirthDate, isEmail } from "../lib/validateInput";
+import { isLowerBetter } from "../lib/overallOrder";
+import { loadSeriesScoring } from "../lib/scoringTables";
 import { practiceSectors } from "../lib/practiceSplits";
 import { rejectIfThrottled, recordFailedLogin, clearFailedLogins } from "../lib/loginThrottle";
 import { eventDateReached } from "../lib/eventStatus";
@@ -2630,13 +2632,16 @@ router.get("/rider/series", requireRiderAuth, async (req, res) => {
         eq(seriesPointsTable.raceClass, myRow.raceClass),
       ));
 
-    // Sort by totalPoints descending, compute positions with tie handling
-    allInClass.sort((a, b) => b.totalPoints - a.totalPoints);
+    // Rank by total: highest first, or lowest first on an Olympic table. Ties share a position.
+    const [seriesRow] = await db.select({ scoringTableId: seriesTable.scoringTableId })
+      .from(seriesTable).where(eq(seriesTable.id, myRow.seriesId));
+    const lowerIsBetter = isLowerBetter((await loadSeriesScoring(seriesRow?.scoringTableId ?? null)).scoringMethod);
+    allInClass.sort((a, b) => lowerIsBetter ? a.totalPoints - b.totalPoints : b.totalPoints - a.totalPoints);
 
     let position = 1;
     let assignedPos = 1;
     for (let i = 0; i < allInClass.length; i++) {
-      if (i > 0 && allInClass[i].totalPoints < allInClass[i - 1].totalPoints) {
+      if (i > 0 && allInClass[i].totalPoints !== allInClass[i - 1].totalPoints) {
         assignedPos = i + 1;
       }
       if (riderIds.includes(allInClass[i].riderId)) {

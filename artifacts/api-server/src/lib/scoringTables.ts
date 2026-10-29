@@ -1,6 +1,7 @@
 import { db, pointsTablesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { formulaPoints } from "./safeFormula";
+import { isLowerBetter, olympicPenalty } from "./overallOrder";
 
 export const SCORING_METHODS = ["highest_points", "lowest_positions", "per_rider", "formula"] as const;
 
@@ -48,9 +49,15 @@ export function calcPoints(opts: {
   autoDnfThreshold?: number;
   lapsCompleted?: number;
   leaderLapsCompleted?: number;
+  /** Riders in the class for this moto (Olympic DNF/DNS scores); defaults to the starters. */
+  classSize?: number;
 }): number {
-  if (opts.dnf || opts.dns) return 0;
   if (opts.mainEventOnly && opts.motoType !== "main") return 0;
+  // Olympic (lowest wins): a DNF or DNS scores a penalty, not 0 (lib/overallOrder.ts).
+  const olympic = isLowerBetter(opts.scoringMethod);
+  const classSize = opts.classSize ?? opts.totalStarters;
+  if (opts.dns) return olympic ? olympicPenalty("dns", classSize) : 0;
+  if (opts.dnf) return olympic ? olympicPenalty("dnf", classSize) : 0;
 
   // Auto DNF: rider completed too few laps vs the leader → treat as DNF for scoring
   if (
@@ -61,7 +68,7 @@ export function calcPoints(opts: {
     opts.autoDnfThreshold != null
   ) {
     const minLaps = Math.floor(opts.leaderLapsCompleted * opts.autoDnfThreshold / 100);
-    if (opts.lapsCompleted < minLaps) return 0;
+    if (opts.lapsCompleted < minLaps) return olympic ? olympicPenalty("dnf", classSize) : 0;
   }
 
   switch (opts.scoringMethod) {

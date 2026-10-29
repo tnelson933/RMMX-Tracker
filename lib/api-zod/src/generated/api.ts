@@ -2042,6 +2042,8 @@ export const ListResultsParams = zod.object({
 })
 
 export const ListResultsResponseItem = zod.object({
+  "official": zod.boolean().optional().describe('The organizer finalized this race (otherwise unofficial results)'),
+  "lowerIsBetter": zod.boolean().optional().describe('The event uses Olympic scoring (lowest overall total wins)'),
   "id": zod.number(),
   "eventId": zod.number(),
   "motoId": zod.number(),

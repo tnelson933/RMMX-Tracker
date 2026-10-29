@@ -272,7 +272,7 @@ function AiResultExplanation({ form }: { form: FormState }) {
       <div className="px-4 py-3 border-b">
         {isLowest && (
           <div className="text-xs text-muted-foreground space-y-1">
-            <p><span className="font-semibold text-foreground">Olympic / Lowest Position:</span> Like golf — every finish earns a score equal to the position number. Add them up across all races. The rider with the <em>lowest</em> total wins the championship.</p>
+            <p><span className="font-semibold text-foreground">Olympic / Lowest Position:</span> Like golf — every finish earns a score equal to the position number. Add them up across all races. The rider with the <em>lowest</em> total wins. As in AMA amateur racing, a DNF scores the number of riders in the class (at least 20), a DNS or missed moto scores riders + 30, and a tie goes to the better finish in the last moto.</p>
             <p className="text-muted-foreground/70">Finishing 1st earns 1 point. Finishing 10th earns 10. Lower is better.</p>
           </div>
         )}

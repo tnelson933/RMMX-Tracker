@@ -507,6 +507,8 @@ Standings update as motos are completed. Public series standings are labelled **
 ### Points Scoring Tables
 Create reusable scoring configurations. **Points Scoring Tables** (sidebar) → **Create Table**. **Presets** buttons fill in common formats: **AMA**, **Enduro**, **Olympic**.
 
+**Olympic (Lowest Positions) scoring** follows the AMA amateur rules (as used at Loretta Lynn's): each moto scores the finishing position (or the table's value for it); **DNF** scores the number of riders in the class, never less than 20; **DNS** — and a moto the rider missed — scores riders + 30; the **lowest total wins**; a tie goes to the **better finish in the last moto**; a rider who finished no moto is placed after everyone who did. Event overall standings (Report tab, public results, widgets), series standings and the rider app all rank this way when the table is Olympic.
+
 **Scoring methods:**
 - **Highest Points wins** — each position earns a predetermined number of points (e.g., 25-22-20-18-16…). Works like AMA/Supercross.
 - **Lowest Positions wins** — position number is the score; lowest total wins, like golf. 1st = 1 point, 10th = 10 points.
