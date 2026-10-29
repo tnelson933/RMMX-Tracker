@@ -472,14 +472,15 @@ export default function TeamPage() {
       </div>
 
       {/* Sections, one at a time */}
-      <div role="tablist" aria-label="Admin sections" className="flex gap-1 overflow-x-auto border-b mb-6 -mx-1 px-1">
+      {/* All tabs always visible: they wrap on narrow screens instead of scrolling. */}
+      <div role="tablist" aria-label="Admin sections" className="flex flex-wrap gap-x-1 border-b mb-6">
         {ADMIN_TABS.map(t => (
           <button
             key={t.key}
             role="tab"
             aria-selected={adminTab === t.key}
             onClick={() => selectAdminTab(t.key)}
-            className={`flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm font-heading font-semibold uppercase tracking-wider whitespace-nowrap border-b-2 -mb-px transition-colors ${
+            className={`flex items-center gap-1.5 px-2.5 py-2 text-xs sm:text-sm font-heading font-semibold uppercase tracking-wide whitespace-nowrap border-b-2 -mb-px transition-colors ${
               adminTab === t.key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
