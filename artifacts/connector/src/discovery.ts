@@ -40,9 +40,8 @@ interface Adapter {
 /**
  * Addresses worth checking even when they are outside every adapter's /24:
  * a reader's own fallback address (Impinj answers on 169.254.1.1 when it got no
- * address from a router) and the fixed IP our setup steps suggest for an RM
- * TrackR (192.168.1.200). Readers are meant to be on a router; these only help
- * find one that was set up differently.
+ * address from a router) and a common fixed address (192.168.1.200). Readers are
+ * meant to be on a router; these only help find one that was set up differently.
  */
 const KNOWN_DEFAULT_ADDRESSES = ["169.254.1.1", "192.168.1.200"];
 

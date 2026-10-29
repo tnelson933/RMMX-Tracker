@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  Cable, CheckCircle2, Globe, Loader2, Radar, RefreshCw, Router, WifiOff, XCircle,
+  CheckCircle2, Globe, Loader2, Radar, RefreshCw, Router, WifiOff, XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -139,7 +139,6 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
 }
 
 function OfflineHardwareSetup({ tech, api }: { tech: Tech; api: DesktopApi }) {
-  const [layout, setLayout] = useState<"router" | "direct">("router");
   const [info, setInfo] = useState<NetworkInfo | null>(null);
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -192,41 +191,19 @@ function OfflineHardwareSetup({ tech, api }: { tech: Tech; api: DesktopApi }) {
   return (
     <div className="border rounded-lg divide-y overflow-hidden bg-background/40">
       <Step n={1} title="Put the reader and this computer on one network">
-        {/* RFID readers only get an address from a router; a direct cable is
-            offered for the RM TrackR only, with fixed IPs set on both ends. */}
-        {tech !== "rfid" && (
-          <div className="grid grid-cols-2 gap-2">
-            <Button size="sm" variant={layout === "router" ? "default" : "outline"} className="gap-1.5" onClick={() => setLayout("router")}>
-              <Router size={14} /> Router or switch
-            </Button>
-            <Button size="sm" variant={layout === "direct" ? "default" : "outline"} className="gap-1.5" onClick={() => setLayout("direct")}>
-              <Cable size={14} /> Direct cable (fixed IPs)
-            </Button>
-          </div>
-        )}
-        {layout === "router" || tech === "rfid" ? (
-          <ul className="text-sm text-muted-foreground list-disc pl-5 space-y-1">
-            <li><strong className="text-foreground">Recommended.</strong> Any home or travel router works without internet: it still gives every device an address.</li>
-            <li>Plug the reader into a LAN port and connect this computer by cable or the router's Wi-Fi.</li>
-            <li>A cable straight from this computer to the reader won't work on automatic settings: the reader only gets an address from a router.</li>
-            {tech === "rfid" ? (
-              <li>Impinj R700 and Zebra readers need Power over Ethernet: use a PoE switch or a PoE injector between the router and the reader.</li>
-            ) : (
-              <li>On the RM TrackR, open <strong className="text-foreground">Config → Network</strong> and choose TCP mode. Its IP is under <strong className="text-foreground">Config → About</strong>: the first three numbers must match this computer's address in step 2. If they don't, set a free fixed IP there that does (e.g. <code className="font-mono text-xs">192.168.1.200</code> on a 192.168.1.x router).</li>
-            )}
-            <li>Wait about a minute after power-up, then scan below.</li>
-          </ul>
-        ) : (
-          <ul className="text-sm text-muted-foreground list-disc pl-5 space-y-1">
-            <li>Only with fixed IPs on both ends: on automatic settings the RM TrackR gets no address without a router. If you can, use a router instead.</li>
-            <li>Cable the RM TrackR's Ethernet port straight to this computer.</li>
-            <li>On the RM TrackR, open <strong className="text-foreground">Config → Network</strong>, choose TCP mode, and set a fixed IP: <code className="font-mono text-xs">192.168.1.200</code>, mask <code className="font-mono text-xs">255.255.255.0</code>.</li>
-            <li>Give this computer's Ethernet adapter a fixed IP on the same network: <code className="font-mono text-xs">192.168.1.10</code>, mask <code className="font-mono text-xs">255.255.255.0</code>, no gateway.
-              <span className="block text-xs mt-0.5">Windows: Settings → Network &amp; internet → Ethernet → IP assignment → Edit → Manual. Mac: System Settings → Network → Ethernet → Details → TCP/IP → Configure IPv4: Manually.</span>
-            </li>
-            <li>Then enter <code className="font-mono text-xs">192.168.1.200</code> below. Set the adapter back to automatic after the race.</li>
-          </ul>
-        )}
+        {/* Every reader (RFID, and the RM TrackR in TCP server mode) only gets an
+            address from a router, so a router or switch is required. */}
+        <ul className="text-sm text-muted-foreground list-disc pl-5 space-y-1">
+          <li><strong className="text-foreground">A router or switch is required.</strong> Any home or travel router works without internet: it still gives every device an address.</li>
+          <li>Plug the reader into a LAN port and connect this computer by cable or the router's Wi-Fi.</li>
+          <li>A cable straight from this computer to the reader won't work: the reader only gets an address from a router.</li>
+          {tech === "rfid" ? (
+            <li>Impinj R700 and Zebra readers need Power over Ethernet: use a PoE switch or a PoE injector between the router and the reader.</li>
+          ) : (
+            <li>On the RM TrackR, open <strong className="text-foreground">Config → Network</strong> and choose TCP server mode. The router gives it an address, shown under <strong className="text-foreground">Config → About</strong>; its first three numbers should match this computer's address in step 2.</li>
+          )}
+          <li>Wait about a minute after power-up, then scan below.</li>
+        </ul>
       </Step>
 
       <Step n={2} title="Check this computer's network">
@@ -257,7 +234,7 @@ function OfflineHardwareSetup({ tech, api }: { tech: Tech; api: DesktopApi }) {
           </Button>
         </div>
         {linkLocal && !scanning && (
-          <p className="text-xs text-amber-700 dark:text-amber-400">This computer has a 169.254 address, so it isn't on a router. Connect it and the reader to a router (or use the RM TrackR fixed-IP setup above), then scan.</p>
+          <p className="text-xs text-amber-700 dark:text-amber-400">This computer has a 169.254 address, so it isn't on a router. Connect it and the reader to a router, then scan.</p>
         )}
         {scan && (
           <div className="space-y-1.5">
