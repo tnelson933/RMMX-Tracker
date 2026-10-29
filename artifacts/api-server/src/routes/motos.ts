@@ -440,6 +440,8 @@ router.patch("/motos/:motoId", async (req, res) => {
  */
 export async function afterMotoCompleted(moto: typeof motosTable.$inferSelect): Promise<void> {
   notifyConnectors(moto, "stop_moto").catch(() => {});
+  // Points from the finishing order (live timing never runs the manual results save).
+  import("./results").then(({ scoreMotoPoints }) => scoreMotoPoints(moto.id)).catch(() => {});
   sendRaceNotifications(moto.eventId).catch(() => {});
   if (moto.type === "heat") {
     getEventFormat(moto.eventId).then(async ({ isSupercross }) => {

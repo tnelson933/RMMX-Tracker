@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { lapTimeToMs } from "../lib/lapScoring";
 import { db } from "@workspace/db";
 import { raceResultsTable, motosTable, ridersTable, eventPublicationTable, registrationsTable, eventsTable, pointsTablesTable, clubsTable, seriesTable, seriesPointsTable } from "@workspace/db";
 import { eq, and, inArray, ne } from "drizzle-orm";
@@ -364,19 +365,8 @@ router.get("/events/:eventId/results", async (req, res) => {
   })));
 });
 
-router.post("/events/:eventId/results", async (req, res) => {
-  const eventId = Number(req.params.eventId);
-  if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
-  const { motoId, results: riderResults } = req.body;
-  if (!motoId || !Array.isArray(riderResults)) return res.status(400).json({ error: "motoId and results[] required" });
-
-  const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, Number(motoId)));
-  // The moto must belong to this (ownership-checked) event, or results could be written into another club's race.
-  if (!moto || moto.eventId !== eventId) return res.status(404).json({ error: "Moto not found" });
-  const raceClass = moto.raceClass;
-  const motoType: string = (moto as any).type ?? "heat";
-
-  // ── Resolve scoring table for this event ─────────────────────────────────
+/** The event's points table and the club's auto-DNF settings. */
+async function loadScoringSettings(eventId: number) {
   const [event] = await db.select({ scoringTableId: eventsTable.scoringTableId, clubId: eventsTable.clubId })
     .from(eventsTable)
     .where(eq(eventsTable.id, eventId));
@@ -408,6 +398,79 @@ router.post("/events/:eventId/results", async (req, res) => {
       autoDnfThreshold = club.autoDnfThreshold ?? 75;
     }
   }
+  return { scoringMethod, pointsScale, scoringFormula, mainEventOnly, autoDnfEnabled, autoDnfThreshold };
+}
+
+/**
+ * Recalculates series points for a class's series — union of:
+ *  (a) per-class series from this event's raceClassSeriesMap[raceClass] (new)
+ *  (b) legacy event-level series: all series that include this event in series.eventIds
+ */
+function awardSeriesPoints(eventId: number, raceClass: string, motoId: number): void {
+  void (async () => {
+    const fullEvent = await db.select({ raceClassSeriesMap: eventsTable.raceClassSeriesMap })
+      .from(eventsTable).where(eq(eventsTable.id, eventId));
+    const classSeriesMap = (fullEvent[0]?.raceClassSeriesMap ?? {}) as Record<string, number[]>;
+    const perClassIds = new Set<number>(
+      (classSeriesMap[raceClass] ?? []).filter((id: unknown) => typeof id === "number")
+    );
+    const allSeriesForClub = await db.select({ id: seriesTable.id, eventIds: seriesTable.eventIds })
+      .from(seriesTable);
+    for (const s of allSeriesForClub) {
+      const ids = (s.eventIds as number[]) ?? [];
+      if (ids.includes(eventId)) perClassIds.add(s.id);
+    }
+    if (perClassIds.size > 0) await recalculateSeriesPoints([...perClassIds]);
+  })().catch((err: unknown) => {
+    logger.error({ err, eventId, motoId }, "recalculateSeriesPoints failed after results save");
+  });
+}
+
+/**
+ * Points for a moto from its stored finishing order, the same way a manual
+ * results save scores them. Used when a moto finishes on live timing, so the
+ * results, the public page and series standings get points without the
+ * organizer having to open Enter Results and press Save.
+ */
+export async function scoreMotoPoints(motoId: number): Promise<void> {
+  const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, motoId));
+  if (!moto || moto.type === "practice") return;
+  const rows = await db.select().from(raceResultsTable).where(eq(raceResultsTable.motoId, motoId));
+  if (rows.length === 0) return;
+  const settings = await loadScoringSettings(moto.eventId);
+  const totalStarters = rows.filter(r => !r.dns).length;
+  const lapsOf = (r: typeof rows[number]) => (Array.isArray(r.lapTimes) ? r.lapTimes.length : 0);
+  const leader = rows.find(r => r.position === 1 && !r.dnf && !r.dns);
+  const leaderLapsCompleted = settings.autoDnfEnabled && leader ? lapsOf(leader) : undefined;
+  for (const r of rows) {
+    const points = calcPoints({
+      position: r.position,
+      dnf: !!r.dnf,
+      dns: !!r.dns,
+      totalStarters,
+      ...settings,
+      motoType: moto.type ?? "heat",
+      lapsCompleted: lapsOf(r),
+      leaderLapsCompleted,
+    });
+    if (points !== r.points) await db.update(raceResultsTable).set({ points }).where(eq(raceResultsTable.id, r.id));
+  }
+  awardSeriesPoints(moto.eventId, moto.raceClass, motoId);
+}
+
+router.post("/events/:eventId/results", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
+  const { motoId, results: riderResults } = req.body;
+  if (!motoId || !Array.isArray(riderResults)) return res.status(400).json({ error: "motoId and results[] required" });
+
+  const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, Number(motoId)));
+  // The moto must belong to this (ownership-checked) event, or results could be written into another club's race.
+  if (!moto || moto.eventId !== eventId) return res.status(404).json({ error: "Moto not found" });
+  const raceClass = moto.raceClass;
+  const motoType: string = (moto as any).type ?? "heat";
+
+  const { scoringMethod, pointsScale, scoringFormula, mainEventOnly, autoDnfEnabled, autoDnfThreshold } = await loadScoringSettings(eventId);
 
   // Total starters = riders who are NOT dns (did not start)
   const totalStarters = riderResults.filter((r: any) => !r.dns).length;
@@ -447,7 +510,10 @@ router.post("/events/:eventId/results", async (req, res) => {
       });
 
       // Don't cap laps by lapCount for time-limit motos — extra laps after the flag are valid
-      const cappedLaps = capLapTimes(r.lapTimes || [], (moto as any).timeLimitMs ? null : (moto as any).lapCount);
+      // Stored as milliseconds, like live timing (the page sends "1:05.32" text).
+      const cappedLaps = capLapTimes(r.lapTimes || [], (moto as any).timeLimitMs ? null : (moto as any).lapCount)
+        .map(lapTimeToMs)
+        .filter((ms): ms is number => ms != null);
       const [result] = await tx.insert(raceResultsTable).values({
         eventId, motoId, riderId: r.riderId, raceClass,
         position:  r.position,
@@ -465,29 +531,7 @@ router.post("/events/:eventId/results", async (req, res) => {
     await tx.update(motosTable).set({ status: "completed" }).where(eq(motosTable.id, motoId));
   }));
 
-  // Award series points — union of:
-  //  (a) per-class series from this event's raceClassSeriesMap[raceClass] (new)
-  //  (b) legacy event-level series: all series that include this event in series.eventIds
-  const fullEvent = await db.select({ raceClassSeriesMap: eventsTable.raceClassSeriesMap })
-    .from(eventsTable).where(eq(eventsTable.id, eventId));
-  const classSeriesMap = (fullEvent[0]?.raceClassSeriesMap ?? {}) as Record<string, number[]>;
-  const perClassIds = new Set<number>(
-    (classSeriesMap[raceClass] ?? []).filter((id: unknown) => typeof id === "number")
-  );
-
-  // Legacy: find all series that contain this event in their eventIds
-  const allSeriesForClub = await db.select({ id: seriesTable.id, eventIds: seriesTable.eventIds })
-    .from(seriesTable);
-  for (const s of allSeriesForClub) {
-    const ids = (s.eventIds as number[]) ?? [];
-    if (ids.includes(eventId)) perClassIds.add(s.id);
-  }
-
-  if (perClassIds.size > 0) {
-    recalculateSeriesPoints([...perClassIds]).catch((err: unknown) => {
-      logger.error({ err, eventId, motoId }, "recalculateSeriesPoints failed after results save");
-    });
-  }
+  awardSeriesPoints(eventId, raceClass, motoId);
 
   return res.status(201).json(inserted.map(r => ({
     id: r.id,

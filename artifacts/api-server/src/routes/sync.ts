@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { resolveSyncUser } from "../lib/offlineSyncAccess";
 import {
@@ -329,9 +329,11 @@ router.post("/clubs/:clubId/sync", async (req, res) => {
           .update(registrationsTable)
           .set({
             bibNumber: r.bibNumber ?? null,
-            status:    r.status    ?? "confirmed",
+            // A cancellation (void) made online stays void; the desktop's copy
+            // may be from before it.
+            status: sql`case when ${registrationsTable.status} = 'void' then 'void' else ${r.status ?? "confirmed"} end`,
           })
-          .where(eq(registrationsTable.id, r.id));
+          .where(and(eq(registrationsTable.id, r.id), eq(registrationsTable.eventId, Number(r.eventId))));
         results.registrationsUpdated++;
       } else {
         // Locally-created walk-in — INSERT if not already present by (event, rider, class)

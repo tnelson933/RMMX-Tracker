@@ -34,6 +34,7 @@ import {
   computeFinishAt,
   everyoneFinished,
   finishGraceMs,
+  lapTimeToMs,
   scoreRider,
   type ScoringMoto,
 } from "../lib/lapScoring";
@@ -835,7 +836,8 @@ export async function rescoreRiderInMoto(
   const sorted = allResults
     .map((r) => {
       const laps = Array.isArray(r.lapTimes) ? (r.lapTimes as number[]) : [];
-      return { id: r.id, laps: laps.length, totalMs: laps.reduce((sum, t) => sum + t, 0), out: !!(r.dnf || r.dns) };
+      // Older manual entries stored lap times as text.
+      return { id: r.id, laps: laps.length, totalMs: laps.reduce((sum, t) => sum + (lapTimeToMs(t) ?? 0), 0), out: !!(r.dnf || r.dns) };
     })
     .sort(compareStandings);
   await updateRaceResultPositions(sorted);

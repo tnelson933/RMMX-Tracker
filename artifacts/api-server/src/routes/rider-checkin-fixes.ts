@@ -17,6 +17,7 @@ import { requireRiderAuth } from "./rider-portal";
 import { canManageRider } from "../lib/riderAccess";
 import { resolvePurchaseOptions } from "../lib/purchaseOptions";
 import { getUncachableStripeClient } from "../stripeClient";
+import { confirmRegistrationSession } from "./registrations";
 
 // Lets a rider fix what keeps them from Quick Check-In without staff:
 // pay an unfinished registration, sign the waiver, or add the transponder or
@@ -105,6 +106,17 @@ router.post("/rider/registrations/:regId/checkout", requireRiderAuth, async (req
     const appUrl = getAppUrl();
     // Never start a second charge for the same entries: reuse a checkout that's
     // still open (from registration or an earlier tap), and stop if one was paid.
+    // The entries' own checkout sessions first (exact, however busy Stripe is).
+    for (const sessionId of new Set(pending.map(r => r.stripeSessionId).filter((v): v is string => !!v))) {
+      const own = await stripe.checkout.sessions.retrieve(sessionId).catch(() => null);
+      if (own?.payment_status === "paid") {
+        await confirmRegistrationSession(own);
+        return res.status(409).json({ error: "Your payment went through. It can take a minute to show; pull down to refresh." });
+      }
+      if (own?.status === "open" && own.url) {
+        return res.json({ checkoutUrl: own.url, total: lineItems.reduce((sum, li) => sum + li.amount, 0) });
+      }
+    }
     const regIds = new Set(pending.map(r => String(r.id)));
     const covers = (s: { metadata?: Record<string, string> | null }) =>
       (s.metadata?.registrationIds ?? "").split(",").some(id => regIds.has(id.trim()));
@@ -131,6 +143,16 @@ router.post("/rider/registrations/:regId/checkout", requireRiderAuth, async (req
       success_url: `${appUrl}/register/${event.id}?reg_id=${first.id}&session_id={CHECKOUT_SESSION_ID}&payment_success=1`,
       cancel_url: `${appUrl}/register/${event.id}?payment_cancelled=1`,
     });
+    // Remember the session on each entry, with its own share: class fee, and
+    // add-ons on the first entry (same split as the line items above).
+    const classCents = perClass > 0 ? Math.round(perClass * 100) : 0;
+    const totalCents = lineItems.reduce((sum, li) => sum + Math.round(li.amount * 100), 0);
+    const addOnCents = totalCents - classCents * pending.length;
+    for (const [idx, r] of pending.entries()) {
+      await db.update(registrationsTable)
+        .set({ stripeSessionId: session.id, amountDue: ((classCents + (idx === 0 ? addOnCents : 0)) / 100).toFixed(2) })
+        .where(eq(registrationsTable.id, r.id));
+    }
     return res.json({ checkoutUrl: session.url, total: lineItems.reduce((s, li) => s + li.amount, 0) });
   } catch (err: any) {
     req.log?.error({ err: err?.message }, "[rider checkout] Stripe error");

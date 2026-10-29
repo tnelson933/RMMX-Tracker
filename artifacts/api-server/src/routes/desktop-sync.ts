@@ -1030,7 +1030,8 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
         await tx
           .update(registrationsTable)
           .set({
-            status:        r.status        != null ? String(r.status)         : undefined,
+            // A cancellation (void) made online stays void; the desktop's copy may be older.
+            status:        r.status        != null ? sql`case when ${registrationsTable.status} = 'void' then 'void' else ${String(r.status)} end` : undefined,
             paymentStatus: r.payment_status != null ? String(r.payment_status) : undefined,
             bibNumber:     r.bib_number    != null ? String(r.bib_number)     : undefined,
             bikeBrand:     r.bike_brand    != null ? String(r.bike_brand)     : undefined,

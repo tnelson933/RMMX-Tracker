@@ -7,6 +7,7 @@ import { normalizeEventStates } from "./normalizeStateMigration";
 import { startEventStatusSweeper } from "./lib/eventStatus";
 import { startQuickCheckinNotifier } from "./lib/quickCheckinNotifier";
 import { startRaceClock } from "./lib/raceClock";
+import { startPaymentSweeper } from "./lib/paymentSweeper";
 
 const rawPort = process.env["PORT"];
 
@@ -40,4 +41,6 @@ httpServer.listen(port, (err?: Error) => {
   startQuickCheckinNotifier();
   // Timed races: drop the flag and close finished races on the server clock.
   startRaceClock();
+  // Card payments the rider's browser and Stripe's webhook both missed.
+  startPaymentSweeper();
 });

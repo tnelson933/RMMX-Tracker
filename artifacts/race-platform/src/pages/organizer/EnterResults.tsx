@@ -476,34 +476,16 @@ export default function EnterResults() {
         };
       });
 
-      // When there are existing results, auto-assign positions by performance so the
-      // organizer always sees the correct ranking without having to do anything.
-      // Rule: most laps → shortest total time. DNF below finishers, DNS last.
-      // The organizer can still edit any position and Save will respect their changes.
+      // Keep the stored finishing order: it already reflects the timing and any
+      // changes the organizer made (penalties, flag calls). Re-ranking here by
+      // laps and time silently undid those on the next Save. Riders with no
+      // result yet follow, in lineup order.
       if (motoRes.length > 0) {
-        const getPerf = (riderId: number) => {
-          const s = motoResults[riderId];
-          if (!s) return { laps: 0, totalMs: Infinity };
-          const validLaps = (s.laps ?? []).map((l) => parseLapMs(l)).filter((ms): ms is number => ms != null);
-          const totalMs = validLaps.length
-            ? validLaps.reduce((sum, ms) => sum + ms, 0)
-            : (parseLapMs(s.time) ?? Infinity);
-          return { laps: validLaps.length, totalMs };
-        };
-        const riderIds: number[] = moto.lineup.map((e: any) => e.riderId as number);
-        const active = riderIds.filter((id) => !motoResults[id]?.dnf && !motoResults[id]?.dns);
-        const dnf    = riderIds.filter((id) => motoResults[id]?.dnf  && !motoResults[id]?.dns);
-        const dns    = riderIds.filter((id) => motoResults[id]?.dns);
-        const byPerf = (a: number, b: number) => {
-          const ap = getPerf(a); const bp = getPerf(b);
-          if (bp.laps !== ap.laps) return bp.laps - ap.laps;
-          return ap.totalMs - bp.totalMs;
-        };
-        active.sort(byPerf);
-        dnf.sort(byPerf);
-        let pos = 1;
-        for (const id of [...active, ...dnf, ...dns]) {
-          if (motoResults[id]) motoResults[id].pos = (pos++).toString();
+        let next = Math.max(0, ...motoRes.map((r) => r.position).filter((p) => p < 999)) + 1;
+        for (const entry of moto.lineup as any[]) {
+          if (!motoRes.some((r) => r.riderId === entry.riderId) && motoResults[entry.riderId]) {
+            motoResults[entry.riderId].pos = (next++).toString();
+          }
         }
       }
 
@@ -537,6 +519,7 @@ export default function EnterResults() {
           totalOverridden: false, bibNumber: "", riderName: "",
         };
         const lapCap = moto.lapCount != null && moto.lapCount > 0 ? moto.lapCount : data.laps.length;
+        // Sent as text per the API contract; the server stores milliseconds.
         const lapTimesMs = data.laps
           .slice(0, lapCap)
           .map((l) => parseLapMs(l))

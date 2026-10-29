@@ -353,7 +353,7 @@ Click ✕ ("Void this registration") → confirm. Voided entries are hidden; **S
 
 ## Cancellations Tab
 
-Riders can cancel their own class registrations from the Rider App (event detail page → **Cancel Registration** button). When they cancel, the registration is voided immediately and appears in the organizer's **Cancellations tab**.
+Riders can cancel their own class registrations from the Rider App (event detail page → **Cancel Registration** button). When they cancel, the registration is voided immediately and appears in the organizer's **Cancellations tab**. Riders can cancel online only while registration is open and before the event date; after that they have to contact the organizer. A cancellation made online stays cancelled even if the desktop app syncs an older copy of the entry.
 
 ### What the tab shows
 - Rider name, class, bib number, amount paid, payment method (card / cash), and date/time of cancellation
@@ -604,7 +604,7 @@ In the desktop app, broadcasting needs cloud sync set up ("Go to Settings → Cl
 2. Once connected, **Open Stripe Dashboard** takes you to Stripe for payment history, refunds, and payouts. **Disconnect** unlinks the account.
 3. Turn payments on per event with the **Collect Payments** checkbox in the event settings.
 
-**How the money flows:** riders pay by card at online registration. The club receives the **full entry fee** in its own Stripe account; RM Roost takes no platform fee and covers Stripe's processing fees. Refunds and payouts are handled in the Stripe Dashboard (RM Roost's Cancellations tab only tracks whether a refund was done).
+**How the money flows:** riders pay by card at online registration. A card payment is recorded even if the rider closes the page before returning from Stripe (RM Roost checks with Stripe in the background within a few minutes), and each entry records what it was charged. The club receives the **full entry fee** in its own Stripe account; RM Roost takes no platform fee and covers Stripe's processing fees. Refunds and payouts are handled in the Stripe Dashboard (RM Roost's Cancellations tab only tracks whether a refund was done).
 
 ---
 

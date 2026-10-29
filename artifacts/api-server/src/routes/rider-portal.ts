@@ -687,6 +687,15 @@ router.post("/rider/events/:eventId/registrations/cancel", requireRiderAuth, asy
     return res.status(404).json({ error: "One or more registrations not found" });
   }
 
+  // After registration closes (lineups built, race day, results), a rider
+  // can't cancel online any more: they talk to the organizer.
+  const [cancelEvent] = await db.select({ status: eventsTable.status, date: eventsTable.date })
+    .from(eventsTable).where(eq(eventsTable.id, eventId));
+  if (!cancelEvent) return res.status(404).json({ error: "Event not found" });
+  if (cancelEvent.status !== "registration_open" || eventDateReached(cancelEvent)) {
+    return res.status(409).json({ error: "Registration has closed, so entries can't be cancelled online. Contact the event organizer." });
+  }
+
   const now = new Date();
 
   await db.update(registrationsTable)

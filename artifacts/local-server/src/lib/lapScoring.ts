@@ -128,3 +128,15 @@ export function flagTimeFor(
   const flag = ms(moto.startedAt) + moto.timeLimitMs + Math.max(0, moto.totalPausedMs);
   return nowMs >= flag ? new Date(flag) : null;
 }
+
+/**
+ * A stored lap time in milliseconds. Live timing stores numbers; older manual
+ * entries stored text like "1:05.32" or "58.40". Null when unreadable.
+ */
+export function lapTimeToMs(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string") return null;
+  const m = value.trim().match(/^(?:(\d+):)?(\d{1,2})(?:\.(\d{1,3}))?$/);
+  if (!m) return null;
+  return Number(m[1] ?? 0) * 60_000 + Number(m[2]) * 1000 + Number((m[3] ?? "0").padEnd(3, "0"));
+}

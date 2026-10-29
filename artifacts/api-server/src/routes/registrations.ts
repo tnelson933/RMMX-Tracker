@@ -605,6 +605,22 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
     const [reg] = await db.select().from(registrationsTable).where(eq(registrationsTable.id, regId));
     if (!reg) return res.status(404).json({ error: "Registration not found" });
     if (reg.eventId !== eventId) return res.status(403).json({ error: "Registration does not belong to this event" });
+    if (reg.paymentStatus === "paid") return res.status(409).json({ error: "This entry is already paid." });
+    if (reg.status === "void") return res.status(409).json({ error: "This entry was cancelled." });
+
+    const stripeForCheck = await getUncachableStripeClient();
+    // A checkout already started for this entry: if it was paid, record it; if
+    // it's still open, reuse it rather than starting a second charge.
+    if (reg.stripeSessionId) {
+      const previous = await stripeForCheck.checkout.sessions.retrieve(reg.stripeSessionId).catch(() => null);
+      if (previous?.payment_status === "paid") {
+        await confirmRegistrationSession(previous);
+        return res.status(409).json({ error: "This entry was already paid by card. Refresh to see it." });
+      }
+      if (previous?.status === "open" && previous.url) {
+        return res.json({ checkoutUrl: previous.url, sessionId: previous.id });
+      }
+    }
 
     const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
     if (!event?.entryFee) return res.status(400).json({ error: "This event has no entry fee configured" });
@@ -627,17 +643,25 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
     const purchaseOptsList = resolvePurchaseOptions(reg.selectedPurchaseOptions, event.purchaseOptions);
     const purchaseOptionsTotal = purchaseOptsList.reduce((sum, o) => sum + Number(o.amount), 0);
 
+    // Same price as registering online: the rider's comp discount comes off the entry.
+    const entryAfterDiscount = Math.max(0, entryFee - (Number(reg.compDiscount ?? 0) || 0));
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const lineItems: any[] = [
+    const lineItems: any[] = entryAfterDiscount > 0 ? [
       {
         price_data: {
           currency: "usd",
           product_data: { name: `${event.name} — ${reg.raceClass} Entry` },
-          unit_amount: Math.round(entryFee * 100),
+          unit_amount: Math.round(entryAfterDiscount * 100),
         },
         quantity: 1,
       },
-    ];
+    ] : [];
+    if (reg.rfidStickerPurchased && Number(event.rfidStickerFee) > 0) {
+      lineItems.push({
+        price_data: { currency: "usd", product_data: { name: "RFID Sticker" }, unit_amount: Math.round(Number(event.rfidStickerFee) * 100) },
+        quantity: 1,
+      });
+    }
 
     if (rentalFee > 0) {
       lineItems.push({
@@ -663,6 +687,8 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
       }
     }
 
+    if (lineItems.length === 0) return res.status(409).json({ error: "Nothing is due on this entry. Mark it paid instead." });
+
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       line_items: lineItems,
@@ -670,10 +696,14 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
       payment_intent_data: {
         transfer_data: { destination: club.stripeAccountId },
       },
-      metadata: { registrationId: String(regId) },
+      metadata: { registrationId: String(regId), registrationIds: String(regId), type: "registration" },
       success_url: `${appUrl}/events/${eventId}/registrations`,
       cancel_url: `${appUrl}/events/${eventId}/registrations`,
     });
+    const chargeCents = lineItems.reduce((sum, li) => sum + li.price_data.unit_amount * li.quantity, 0);
+    await db.update(registrationsTable)
+      .set({ stripeSessionId: session.id, amountDue: (chargeCents / 100).toFixed(2) })
+      .where(eq(registrationsTable.id, regId));
 
     return res.json({ checkoutUrl: session.url, sessionId: session.id, entryFee, rentalFee, purchaseOptionsTotal });
   } catch (err: any) {
@@ -1257,6 +1287,36 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   }
   const resolvedExistingRider = riderResolution.rider;
 
+  // One entry per rider per class. An earlier checkout the rider never finished
+  // is cleared so they can register again, unless Stripe says it was paid.
+  if (resolvedExistingRider) {
+    const earlier = await db.select().from(registrationsTable).where(and(
+      eq(registrationsTable.eventId, eventId),
+      eq(registrationsTable.riderId, resolvedExistingRider.id),
+      inArray(registrationsTable.raceClass, raceClassList),
+      ne(registrationsTable.status, "void"),
+    ));
+    for (const prior of earlier) {
+      if (prior.paymentStatus !== "paid" && prior.status === "pending" && prior.stripeSessionId) {
+        const stripe = await getUncachableStripeClient().catch(() => null);
+        const session = stripe ? await stripe.checkout.sessions.retrieve(prior.stripeSessionId).catch(() => null) : null;
+        if (session?.payment_status === "paid") await confirmRegistrationSession(session);
+        else if (session?.status === "open") await stripe!.checkout.sessions.expire(prior.stripeSessionId).catch(() => {});
+      }
+    }
+    const current = earlier.length
+      ? await db.select().from(registrationsTable).where(inArray(registrationsTable.id, earlier.map(r => r.id)))
+      : [];
+    const settled = current.filter(r => r.status !== "void" && (r.paymentStatus === "paid" || r.status === "confirmed"));
+    if (settled.length) {
+      return res.status(409).json({ error: `Already registered for ${[...new Set(settled.map(r => r.raceClass))].join(", ")} at this event.` });
+    }
+    const abandoned = current.filter(r => r.status === "pending" && r.paymentStatus !== "paid");
+    if (abandoned.length) {
+      await db.update(registrationsTable).set({ status: "void" }).where(inArray(registrationsTable.id, abandoned.map(r => r.id)));
+    }
+  }
+
   // Enforce per-class rider limits for each selected class
   const limits = (events[0].raceClassLimits ?? {}) as Record<string, number | null>;
   for (const cls of raceClassList) {
@@ -1472,6 +1532,28 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     }))
   ).returning();
 
+  // Two submissions at once (a double tap, two tabs, two riders after the last
+  // spot): both pass the checks above. After saving, the earlier entry wins.
+  const lostRace: string[] = [];
+  for (const reg of insertedRegs) {
+    const [{ earlierDuplicate, aheadInClass }] = await db.select({
+      earlierDuplicate: sql<number>`count(*) filter (where ${registrationsTable.riderId} = ${reg.riderId} and ${registrationsTable.id} < ${reg.id})::int`,
+      aheadInClass: sql<number>`count(*) filter (where ${registrationsTable.id} < ${reg.id})::int`,
+    }).from(registrationsTable).where(and(
+      eq(registrationsTable.eventId, eventId),
+      eq(registrationsTable.raceClass, reg.raceClass),
+      ne(registrationsTable.status, "void"),
+    ));
+    const classLimit = limits[reg.raceClass];
+    if (earlierDuplicate > 0) lostRace.push(`Already registered for ${reg.raceClass} at this event.`);
+    else if (classLimit != null && classLimit > 0 && aheadInClass >= classLimit) lostRace.push(`${reg.raceClass} is full (${classLimit} rider limit reached)`);
+  }
+  if (lostRace.length) {
+    await db.delete(registrationsTable).where(inArray(registrationsTable.id, insertedRegs.map(r => r.id)));
+    await releaseCompCodeUse();
+    return res.status(409).json({ error: lostRace[0] });
+  }
+
   // Link liability waiver signature to the registration
   if (events[0].requireLiabilityWaiver && liabilityWaiverSignatureId && insertedRegs[0]?.id) {
     await db.update(liabilityWaiverSignaturesTable)
@@ -1599,6 +1681,17 @@ router.post("/public/events/:eventId/register", async (req, res) => {
           },
           customer_email: email,
         });
+
+        // Each entry's own charge: its class fee; add-ons ride on the first entry.
+        const classCents = perClassFee > 0 ? Math.round(perClassFee * 100) : 0;
+        const addOnCents = Math.round(rentalFeeNum * 100) + Math.round(rfidStickerFeeNum * 100)
+          + purchaseOptsList.reduce((sum, o) => sum + (Number(o.amount) > 0 ? Math.round(Number(o.amount) * 100) : 0), 0);
+        for (const [idx, reg] of insertedRegs.entries()) {
+          const cents = classCents + (idx === 0 ? addOnCents : 0);
+          await db.update(registrationsTable)
+            .set({ stripeSessionId: session.id, amountDue: (cents / 100).toFixed(2) })
+            .where(eq(registrationsTable.id, reg.id));
+        }
 
         if (session.url) {
           return res.status(201).json({
@@ -1971,6 +2064,77 @@ router.patch("/events/:eventId/cancellations/:registrationId/verify", async (req
 });
 
 // ── Public: verify Stripe payment and confirm registration(s) ─────────────────
+/**
+ * Records a paid Stripe Checkout session against the entries it covers: paid,
+ * confirmed, the amount each entry was charged, a check-in row, and the
+ * rider's own transponder. Safe to run more than once (the rider's browser,
+ * Stripe's webhook and the background check can all deliver the same
+ * session). Cancelled entries are never re-confirmed. Returns the entries
+ * that are now paid.
+ */
+export async function confirmRegistrationSession(
+  session: { id: string; payment_status: string | null; amount_total: number | null; metadata?: Record<string, string> | null },
+) {
+  if (session.payment_status !== "paid") return [];
+  const sessionType = session.metadata?.type;
+  if (sessionType && sessionType !== "registration") return [];
+  const regIdsStr = session.metadata?.registrationIds || session.metadata?.registrationId;
+  const regIds = (regIdsStr ?? "").split(",").map(Number).filter(Boolean);
+  if (regIds.length === 0) return [];
+
+  const regs = await db.select().from(registrationsTable).where(inArray(registrationsTable.id, regIds));
+  // Each entry's own charge when it was stored at checkout; otherwise split the
+  // total, with any leftover cent on the last entry so the parts add up.
+  const totalCents = session.amount_total ?? 0;
+  const evenCents = regIds.length ? Math.floor(totalCents / regIds.length) : 0;
+  const amountFor = (regId: number) => {
+    const reg = regs.find(r => r.id === regId);
+    if (reg?.amountDue != null && reg.stripeSessionId === session.id) return String(reg.amountDue);
+    const cents = regId === regIds[regIds.length - 1] ? totalCents - evenCents * (regIds.length - 1) : evenCents;
+    return (cents / 100).toFixed(2);
+  };
+
+  const updatedRegs: Array<typeof registrationsTable.$inferSelect> = [];
+  for (const regId of regIds) {
+    // Voided (cancelled) registrations are never re-confirmed by a later payment check.
+    const [row] = await db.update(registrationsTable)
+      .set({
+        paymentStatus: "paid",
+        status: "confirmed",
+        paymentMethod: "card",
+        stripeSessionId: session.id,
+        // Keep an amount the organizer corrected; only fill it in the first time.
+        amountPaid: sql`coalesce(${registrationsTable.amountPaid}, ${amountFor(regId)})`,
+      })
+      .where(and(eq(registrationsTable.id, regId), ne(registrationsTable.status, "void")))
+      .returning();
+    if (row) updatedRegs.push(row);
+  }
+  if (!updatedRegs.length) return updatedRegs;
+
+  // One check-in record per rider per event.
+  const primaryReg = updatedRegs[0];
+  const [existingCheckin] = await db.select({ id: checkinsTable.id })
+    .from(checkinsTable)
+    .where(and(eq(checkinsTable.eventId, primaryReg.eventId), eq(checkinsTable.riderId, primaryReg.riderId)))
+    .limit(1);
+  if (!existingCheckin) {
+    await db.insert(checkinsTable).values({
+      eventId: primaryReg.eventId,
+      riderId: primaryReg.riderId,
+      raceClass: primaryReg.raceClass,
+      bibNumber: primaryReg.bibNumber,
+      checkedIn: false,
+      rfidLinked: false,
+    });
+  }
+  // Auto-link transponder if the rider entered their own number (not a rental)
+  if (!primaryReg.transponderRental && primaryReg.myLapsTransponderNumber?.trim()) {
+    await autoLinkTransponder(primaryReg.riderId, primaryReg.eventId, primaryReg.myLapsTransponderNumber).catch(() => {});
+  }
+  return updatedRegs;
+}
+
 router.post("/public/registrations/:id/verify-payment", async (req, res) => {
   const id = Number(req.params.id);
   const { sessionId } = req.body;
@@ -2001,42 +2165,11 @@ router.post("/public/registrations/:id/verify-payment", async (req, res) => {
     }
 
     const amountPaidTotal = session.amount_total != null ? session.amount_total / 100 : null;
-    // Distribute total evenly across all registrations in this session
-    const amountPerReg = amountPaidTotal != null && regIds.length > 0
-      ? String(Math.round((amountPaidTotal / regIds.length) * 100) / 100)
-      : null;
-
-    // Voided (cancelled) registrations are never re-confirmed by a later payment check.
-    const updatedRegs = await db.update(registrationsTable)
-      .set({ paymentStatus: "paid", status: "confirmed", paymentMethod: "card", amountPaid: amountPerReg })
-      .where(and(inArray(registrationsTable.id, regIds), ne(registrationsTable.status, "void")))
-      .returning();
-
+    const updatedRegs = await confirmRegistrationSession(session);
     if (!updatedRegs.length) {
       return res.status(409).json({ error: "This registration was cancelled or no longer exists. Contact the event organizer about your payment." });
     }
-
     const primaryReg = updatedRegs.find(r => r.id === id) ?? updatedRegs[0];
-
-    // Create one check-in record per rider per event
-    const [existingCheckin] = await db.select({ id: checkinsTable.id })
-      .from(checkinsTable)
-      .where(and(eq(checkinsTable.eventId, primaryReg.eventId), eq(checkinsTable.riderId, primaryReg.riderId)))
-      .limit(1);
-    if (!existingCheckin) {
-      await db.insert(checkinsTable).values({
-        eventId: primaryReg.eventId,
-        riderId: primaryReg.riderId,
-        raceClass: primaryReg.raceClass,
-        bibNumber: primaryReg.bibNumber,
-        checkedIn: false,
-        rfidLinked: false,
-      });
-    }
-    // Auto-link transponder if the rider entered their own number (not a rental)
-    if (!primaryReg.transponderRental && primaryReg.myLapsTransponderNumber?.trim()) {
-      await autoLinkTransponder(primaryReg.riderId, primaryReg.eventId, primaryReg.myLapsTransponderNumber);
-    }
 
     const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, primaryReg.riderId));
     const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, primaryReg.eventId));
