@@ -3627,6 +3627,13 @@ components:
           description: When true, riders must read and accept the club waiver before completing registration
         scoringTableId:
           type: ["integer", "null"]
+        trackId:
+          type: ["integer", "null"]
+          description: Track Library track this event runs at; its course map is copied to the event
+        courseSource:
+          type: string
+          enum: [track, custom]
+          description: "track: the course map follows the track's; custom: changed for this event"
         entryFeeCategoryId:
           type: ["integer", "null"]
           description: Discount category ID assigned to the base entry fee
@@ -3759,6 +3766,9 @@ components:
           description: When true, riders must read and accept the club waiver before completing registration
         scoringTableId:
           type: ["integer", "null"]
+        trackId:
+          type: ["integer", "null"]
+          description: Track Library track (matched by trackName when omitted)
         entryFeeCategoryId:
           type: ["integer", "null"]
           description: Discount category ID assigned to the base entry fee
@@ -3861,6 +3871,9 @@ components:
           description: When true, riders must read and accept the club waiver before completing registration
         scoringTableId:
           type: ["integer", "null"]
+        trackId:
+          type: ["integer", "null"]
+          description: Track Library track (matched by trackName when omitted)
         entryFeeCategoryId:
           type: ["integer", "null"]
           description: Discount category ID assigned to the base entry fee

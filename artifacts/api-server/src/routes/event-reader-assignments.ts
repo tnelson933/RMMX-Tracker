@@ -2,6 +2,7 @@ import { Router, type Response } from "express";
 import { db } from "@workspace/db";
 import { eventReaderAssignmentsTable, eventsTable, readersTable, usersTable } from "@workspace/db/schema";
 import { eq, and } from "drizzle-orm";
+import { copyTrackCourseToEvent } from "../lib/trackCourse";
 
 const router = Router();
 
@@ -85,13 +86,37 @@ router.put("/events/:eventId/reader-assignments", async (req, res) => {
     .sort((a, b) => (a.sequence ?? Number.MAX_SAFE_INTEGER) - (b.sequence ?? Number.MAX_SAFE_INTEGER))
     .forEach((a, i) => { a.sequence = i + 1; });
 
+  // Changing the finish line or splits here makes the course this event's own
+  // (it stops following its track). Enduro gates and time checks don't.
+  const courseKey = (rows: Array<{ motoId: number | null; role: string; readerId: number; sequence: number | null; label: string | null }>) =>
+    JSON.stringify(rows
+      .filter(r => r.motoId == null && (r.role === "finish" || r.role === "split"))
+      .map(r => [r.role, r.readerId, r.role === "split" ? r.sequence : null, r.role === "split" ? (r.label ?? null) : null])
+      .sort());
+  const previous = await db.select().from(eventReaderAssignmentsTable).where(eq(eventReaderAssignmentsTable.eventId, eventId));
+  const courseChanged = courseKey(previous) !== courseKey(incoming);
+
   const saved = await db.transaction(async (tx) => {
     await tx.delete(eventReaderAssignmentsTable).where(eq(eventReaderAssignmentsTable.eventId, eventId));
+    if (courseChanged) await tx.update(eventsTable).set({ courseSource: "custom" }).where(eq(eventsTable.id, eventId));
     if (incoming.length === 0) return [];
     return tx.insert(eventReaderAssignmentsTable).values(incoming).returning();
   });
 
   return res.json(saved);
+});
+
+// POST /events/:eventId/course/reset — follow the track's course again (copies it now).
+router.post("/events/:eventId/course/reset", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  if (!eventId) return res.status(400).json({ error: "Invalid eventId" });
+  if (!(await authEvent(req, res, eventId))) return;
+  const [ev] = await db.select({ trackId: eventsTable.trackId }).from(eventsTable).where(eq(eventsTable.id, eventId));
+  if (!ev?.trackId) return res.status(400).json({ error: "This event isn't linked to a Track Library track" });
+  await db.update(eventsTable).set({ courseSource: "track" }).where(eq(eventsTable.id, eventId));
+  await copyTrackCourseToEvent(eventId, { force: true });
+  const rows = await db.select().from(eventReaderAssignmentsTable).where(eq(eventReaderAssignmentsTable.eventId, eventId));
+  return res.json(rows);
 });
 
 export default router;

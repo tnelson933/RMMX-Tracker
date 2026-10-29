@@ -488,6 +488,8 @@ export const ListEventsResponseItem = zod.object({
   "requireTransponder": zod.boolean().optional().describe('When true, active-timing registrations require a personal transponder or an available rental'),
   "requireWaiver": zod.boolean().optional().describe('When true, riders must read and accept the club waiver before completing registration'),
   "scoringTableId": zod.number().nullish(),
+  "trackId": zod.number().nullish().describe('Track Library track this event runs at; its course map is copied to the event'),
+  "courseSource": zod.enum(['track', 'custom']).optional().describe('track: the course map follows the track\'s; custom: changed for this event'),
   "entryFeeCategoryId": zod.number().nullish().describe('Discount category ID assigned to the base entry fee'),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
@@ -553,6 +555,7 @@ export const CreateEventBody = zod.object({
   "requireTransponder": zod.boolean().optional().describe('When true, active-timing registrations require a personal transponder or an available rental'),
   "requireWaiver": zod.boolean().optional().describe('When true, riders must read and accept the club waiver before completing registration'),
   "scoringTableId": zod.number().nullish(),
+  "trackId": zod.number().nullish().describe('Track Library track (matched by trackName when omitted)'),
   "entryFeeCategoryId": zod.number().nullish().describe('Discount category ID assigned to the base entry fee'),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
@@ -613,6 +616,8 @@ export const GetEventResponse = zod.object({
   "requireTransponder": zod.boolean().optional().describe('When true, active-timing registrations require a personal transponder or an available rental'),
   "requireWaiver": zod.boolean().optional().describe('When true, riders must read and accept the club waiver before completing registration'),
   "scoringTableId": zod.number().nullish(),
+  "trackId": zod.number().nullish().describe('Track Library track this event runs at; its course map is copied to the event'),
+  "courseSource": zod.enum(['track', 'custom']).optional().describe('track: the course map follows the track\'s; custom: changed for this event'),
   "entryFeeCategoryId": zod.number().nullish().describe('Discount category ID assigned to the base entry fee'),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
@@ -679,6 +684,7 @@ export const UpdateEventBody = zod.object({
   "requireTransponder": zod.boolean().optional().describe('When true, active-timing registrations require a personal transponder or an available rental'),
   "requireWaiver": zod.boolean().optional().describe('When true, riders must read and accept the club waiver before completing registration'),
   "scoringTableId": zod.number().nullish(),
+  "trackId": zod.number().nullish().describe('Track Library track (matched by trackName when omitted)'),
   "entryFeeCategoryId": zod.number().nullish().describe('Discount category ID assigned to the base entry fee'),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
@@ -741,6 +747,8 @@ export const UpdateEventResponse = zod.object({
   "requireTransponder": zod.boolean().optional().describe('When true, active-timing registrations require a personal transponder or an available rental'),
   "requireWaiver": zod.boolean().optional().describe('When true, riders must read and accept the club waiver before completing registration'),
   "scoringTableId": zod.number().nullish(),
+  "trackId": zod.number().nullish().describe('Track Library track this event runs at; its course map is copied to the event'),
+  "courseSource": zod.enum(['track', 'custom']).optional().describe('track: the course map follows the track\'s; custom: changed for this event'),
   "entryFeeCategoryId": zod.number().nullish().describe('Discount category ID assigned to the base entry fee'),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),
@@ -2505,6 +2513,8 @@ export const GetClubDashboardResponse = zod.object({
   "requireTransponder": zod.boolean().optional().describe('When true, active-timing registrations require a personal transponder or an available rental'),
   "requireWaiver": zod.boolean().optional().describe('When true, riders must read and accept the club waiver before completing registration'),
   "scoringTableId": zod.number().nullish(),
+  "trackId": zod.number().nullish().describe('Track Library track this event runs at; its course map is copied to the event'),
+  "courseSource": zod.enum(['track', 'custom']).optional().describe('track: the course map follows the track\'s; custom: changed for this event'),
   "entryFeeCategoryId": zod.number().nullish().describe('Discount category ID assigned to the base entry fee'),
   "purchaseOptions": zod.array(zod.object({
   "id": zod.string(),

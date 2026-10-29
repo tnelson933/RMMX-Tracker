@@ -12,6 +12,16 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Settings, Plus, Trash2, RefreshCw, Flag, FileText, ListChecks, MapPin, Info, UploadCloud, X, ExternalLink, ShieldCheck, LayoutTemplate } from "lucide-react";
 import { PdfFieldEditor, type WaiverField } from "@/components/PdfFieldEditor";
 import { StateSelect } from "@/components/ui/StateSelect";
+import { TrackCourseMap, type LibraryTrack } from "./CourseMap";
+
+/** "Finish line + 2 splits", or a nudge to set one up. */
+function courseSummary(course: LibraryTrack["course"]): string {
+  const points = course ?? [];
+  if (points.length === 0) return "No course map yet";
+  const finish = points.some(p => p.role === "finish");
+  const splits = points.filter(p => p.role === "split").length;
+  return [finish ? "Finish line" : "No finish line", splits ? `${splits} split${splits === 1 ? "" : "s"}` : null].filter(Boolean).join(" + ");
+}
 
 
 function ClassDetailRow({
@@ -117,7 +127,9 @@ export default function TeamPage() {
   const [fieldsSaving, setFieldsSaving] = useState(false);
 
   // Track Library state
-  const [tracks, setTracks] = useState<{ id: number; name: string; address: string | null; city: string | null; state: string | null; zip: string | null }[]>([]);
+  const [tracks, setTracks] = useState<{ id: number; name: string; address: string | null; city: string | null; state: string | null; zip: string | null; course?: LibraryTrack["course"] }[]>([]);
+  // Track whose course map (finish + split readers) is open for editing.
+  const [courseTrackId, setCourseTrackId] = useState<number | null>(null);
   const [newTrackName, setNewTrackName] = useState("");
   const [newTrackAddress, setNewTrackAddress] = useState("");
   const [newTrackCity, setNewTrackCity] = useState("");
@@ -149,12 +161,13 @@ export default function TeamPage() {
   }, [settingsData]);
 
   // Load track library
-  useEffect(() => {
+  const loadTracks = () => {
     fetch("/api/tracks", { credentials: "include" })
       .then(r => r.ok ? r.json() : [])
       .then(setTracks)
       .catch(() => {});
-  }, []);
+  };
+  useEffect(loadTracks, []);
 
   // Track Library functions
   const addTrack = async () => {
@@ -669,7 +682,7 @@ export default function TeamPage() {
           </div>
           <div>
             <h2 className="font-heading font-semibold text-base uppercase tracking-wider">Track Library</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Save your venues here — pick one when starting a practice session</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Save your venues and their timing readers once. Every race and practice at a track uses its course map.</p>
           </div>
         </div>
 
@@ -684,7 +697,11 @@ export default function TeamPage() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium">{track.name}</p>
                     {addressLine && <p className="text-xs text-muted-foreground mt-0.5">{addressLine}</p>}
+                    <p className="text-xs text-muted-foreground mt-0.5">{courseSummary(track.course)}</p>
                   </div>
+                  <Button size="sm" variant="outline" className="h-7 gap-1 text-xs shrink-0" onClick={() => setCourseTrackId(track.id)}>
+                    <Flag size={12} /> Course map
+                  </Button>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -745,6 +762,22 @@ export default function TeamPage() {
           <p className="text-xs text-muted-foreground mt-2">No tracks yet — add your first venue above.</p>
         )}
       </div>
+
+      {/* A track's course map: finish-line reader and split readers */}
+      <Dialog open={courseTrackId != null} onOpenChange={open => { if (!open) setCourseTrackId(null); }}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          {(() => {
+            const track = tracks.find(t => t.id === courseTrackId);
+            if (!track) return null;
+            return (
+              <div className="space-y-2">
+                <h3 className="font-heading font-bold uppercase tracking-wider text-lg">{track.name}: Course Map</h3>
+                <TrackCourseMap key={track.id} track={track} onSaved={loadTracks} />
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
 
       {/* Default Race Classes */}
       <div className="rounded-xl border bg-card p-6 mb-6">

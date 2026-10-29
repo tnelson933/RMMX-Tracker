@@ -1,4 +1,5 @@
 import { checkBirthDate, isEmail } from "../lib/validateInput";
+import { practiceSectors } from "../lib/practiceSplits";
 import { rejectIfThrottled, recordFailedLogin, clearFailedLogins } from "../lib/loginThrottle";
 import { eventDateReached } from "../lib/eventStatus";
 import { Router } from "express";
@@ -25,6 +26,7 @@ import {
   eventsTable,
   practiceCrossingsTable,
   practiceSessionsTable,
+  practiceSplitCrossingsTable,
   registrationsTable,
   lapCrossingsTable,
   checkinsTable,
@@ -1505,7 +1507,31 @@ router.get("/rider/profiles/:riderId/practice", requireRiderAuth, async (req, re
       };
     });
 
-  return res.json({ rider: { id: rider.id, firstName: rider.firstName, lastName: rider.lastName }, sessions });
+  // Sector times for sessions at a track with split readers.
+  const sessionIds = sessions.map(s => s.sessionId);
+  const courses = sessionIds.length === 0 ? [] : await db.select({ id: practiceSessionsTable.id, course: practiceSessionsTable.course })
+    .from(practiceSessionsTable).where(inArray(practiceSessionsTable.id, sessionIds));
+  const withSplits = courses.filter(c => c.course?.splits.length);
+  const splitRows = withSplits.length === 0 ? [] : await db.select().from(practiceSplitCrossingsTable)
+    .where(inArray(practiceSplitCrossingsTable.sessionId, withSplits.map(c => c.id)));
+  const withSectors = sessions.map(s => {
+    const course = withSplits.find(c => c.id === s.sessionId)?.course;
+    if (!course) return s;
+    const mine = ownedCrossings.filter(c => c.sessionId === s.sessionId);
+    const tags = new Set(mine.map(c => c.rfidNumber.toLowerCase()));
+    const sectors = practiceSectors(
+      course,
+      mine.map(c => ({ rfidNumber: c.rfidNumber, crossingTime: c.crossingTime })),
+      splitRows.filter(r => r.sessionId === s.sessionId && tags.has(r.rfidNumber.toLowerCase())),
+    );
+    // One tag per rider per session in practice; take the first that has sectors.
+    const rider = sectors ? [...sectors.byTag.values()][0] : undefined;
+    return sectors && rider
+      ? { ...s, sectorNames: sectors.names, sectorLaps: rider.laps, bestSectors: rider.best }
+      : s;
+  });
+
+  return res.json({ rider: { id: rider.id, firstName: rider.firstName, lastName: rider.lastName }, sessions: withSectors });
 });
 
 // GET /rider/profiles/:riderId/event-practice — class gate-pick leaderboard from event practice motos

@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { EnduroPenaltyConfig } from './enduroPenaltyConfig';
+import type { EventCourseSource } from './eventCourseSource';
 import type { EventRaceClassDetails } from './eventRaceClassDetails';
 import type { EventRaceClassLimits } from './eventRaceClassLimits';
 import type { EventRaceClassSeriesMap } from './eventRaceClassSeriesMap';
@@ -67,6 +68,13 @@ export interface Event {
   requireWaiver?: boolean;
   /** @nullable */
   scoringTableId?: number | null;
+  /**
+     * Track Library track this event runs at; its course map is copied to the event
+     * @nullable
+     */
+  trackId?: number | null;
+  /** track: the course map follows the track's; custom: changed for this event */
+  courseSource?: EventCourseSource;
   /**
      * Discount category ID assigned to the base entry fee
      * @nullable

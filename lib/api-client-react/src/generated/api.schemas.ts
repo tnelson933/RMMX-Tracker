@@ -241,6 +241,17 @@ export const EventTimingTechnology = {
 } as const;
 
 /**
+ * track: the course map follows the track's; custom: changed for this event
+ */
+export type EventCourseSource = typeof EventCourseSource[keyof typeof EventCourseSource];
+
+
+export const EventCourseSource = {
+  track: 'track',
+  custom: 'custom',
+} as const;
+
+/**
  * Maps each race class name to an array of series IDs that should award points for that class.
  */
 export type EventRaceClassSeriesMap = {[key: string]: number[]};
@@ -337,6 +348,13 @@ export interface Event {
   requireWaiver?: boolean;
   /** @nullable */
   scoringTableId?: number | null;
+  /**
+     * Track Library track this event runs at; its course map is copied to the event
+     * @nullable
+     */
+  trackId?: number | null;
+  /** track: the course map follows the track's; custom: changed for this event */
+  courseSource?: EventCourseSource;
   /**
      * Discount category ID assigned to the base entry fee
      * @nullable
@@ -451,6 +469,11 @@ export interface EventInput {
   /** @nullable */
   scoringTableId?: number | null;
   /**
+     * Track Library track (matched by trackName when omitted)
+     * @nullable
+     */
+  trackId?: number | null;
+  /**
      * Discount category ID assigned to the base entry fee
      * @nullable
      */
@@ -541,6 +564,11 @@ export interface EventUpdate {
   requireWaiver?: boolean;
   /** @nullable */
   scoringTableId?: number | null;
+  /**
+     * Track Library track (matched by trackName when omitted)
+     * @nullable
+     */
+  trackId?: number | null;
   /**
      * Discount category ID assigned to the base entry fee
      * @nullable

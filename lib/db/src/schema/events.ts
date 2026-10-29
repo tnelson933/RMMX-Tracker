@@ -27,6 +27,10 @@ export const eventsTable = pgTable("events", {
   state: text("state").notNull(),
   location: text("location"),
   trackName: text("track_name"),
+  /** Library track this event runs at (tracks.id; FK in deploy/migrations/0011). */
+  trackId: integer("track_id"),
+  /** "track": course map kept in step with the track's; "custom": changed for this event. */
+  courseSource: text("course_source").notNull().default("track"),
   raceClasses: text("race_classes").array().notNull().default([]),
   registrationOpen: text("registration_open"),
   registrationClose: text("registration_close"),

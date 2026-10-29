@@ -75,6 +75,7 @@ export * from './enduroTimeCheckInput';
 export * from './enduroTimeCheckTarget';
 export * from './errorEnvelope';
 export * from './event';
+export * from './eventCourseSource';
 export * from './eventInput';
 export * from './eventInputRaceClassLimits';
 export * from './eventInputRaceClassSeriesMap';

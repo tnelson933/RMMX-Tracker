@@ -91,6 +91,14 @@ router.patch("/tracks/:id", (req, res) => {
   return res.json(serializeTrack(db.prepare("SELECT * FROM tracks WHERE id = ?").get(id)));
 });
 
+// PUT /tracks/:id/course — track course maps are set up online; the desktop
+// gets each event's copy when it syncs.
+router.put("/tracks/:id/course", (_req, res) => {
+  return res.status(409).json({
+    error: "Set up a track's course map online (Team → Track Library at rmroost.com). The desktop app uses it for each event after it syncs.",
+  });
+});
+
 // DELETE /tracks/:id — remove a track
 router.delete("/tracks/:id", (req, res) => {
   const userId = (req.session as any)?.userId;

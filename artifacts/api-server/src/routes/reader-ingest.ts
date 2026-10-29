@@ -33,7 +33,8 @@ import {
 import { eq, and, count, ilike, or, desc } from "drizzle-orm";
 import { processCrossing, handleFacilityCrossing, handlePing, buildLeaderboard, sseBroadcast, withMotoLock, motoForRider, RiderMotoFinishedError } from "./timing";
 import { recordSplitCrossing, splitForReader } from "../lib/sectors";
-import { processPracticeCrossing } from "./practice";
+import { broadcastPracticeBoard, processPracticeCrossing } from "./practice";
+import { practiceSplitFor, recordPracticeSplit } from "../lib/practiceSplits";
 import { recomputeEnduroPositionsForEvent } from "./enduro-scoring";
 import { recordTagSeen } from "../lib/recentTags";
 import { canonicalizeCrossingTimestamp, parseTrustworthyReceivedAt } from "../lib/crossingTimestamp";
@@ -114,6 +115,32 @@ async function recordSplitLocked(routed: Parameters<typeof recordSplitCrossing>[
 }
 
 /** True when the reader is a split on any course: its reads must never become laps. */
+/**
+ * Reads from a split reader on the running practice's course become practice
+ * sector splits. Null when no practice is running or the reader isn't one of
+ * its splits (the read is then handled as before).
+ */
+async function practiceSplitReads(
+  reader: { id: number; clubId: number },
+  tags: Array<{ rfidNumber: string; time: unknown }>,
+): Promise<{ recorded: number; split: string } | null> {
+  const practice = await activePracticeForClub(reader.clubId);
+  const split = practiceSplitFor(practice?.course, reader.id);
+  if (!practice || !split) return null;
+  let recorded = 0;
+  for (const tag of tags) {
+    recordTagSeen(reader.clubId, tag.rfidNumber.toUpperCase());
+    const receivedAt = new Date();
+    const crossingTime = tag.time instanceof Date
+      ? tag.time
+      : canonicalizeCrossingTimestamp((tag.time as any) ?? receivedAt, receivedAt, { source: "practice_split", readerId: reader.id });
+    const result = await recordPracticeSplit({ session: practice, readerId: reader.id, rfidNumber: tag.rfidNumber, crossingTime });
+    if (result?.recorded) recorded++;
+  }
+  if (recorded > 0) void broadcastPracticeBoard(practice.id);
+  return { recorded, split: split.label };
+}
+
 async function isSplitReader(readerId: number): Promise<boolean> {
   const [row] = await db.select({ id: eventReaderAssignmentsTable.id }).from(eventReaderAssignmentsTable)
     .where(and(eq(eventReaderAssignmentsTable.readerId, readerId), eq(eventReaderAssignmentsTable.role, "split")))
@@ -167,6 +194,12 @@ router.post("/timing/readers/:token/active/crossing", async (req, res) => {
   markReaderSeen(reader.id);
   const moto = await liveMotoForClub(reader.clubId);
   const split = moto && moto.type !== "enduro_test" ? await splitForReader(moto.eventId, reader.id) : null;
+  if (!moto) {
+    // A split reader on the running practice's track: sector times, not laps.
+    const tags = tagsFromPayload(req.body);
+    const practiceResults = await practiceSplitReads(reader, tags);
+    if (practiceResults) return res.json({ ok: true, processed: tags.length, ...practiceResults });
+  }
   if (!split) {
     // A split reader with no motocross moto running must not score practice laps.
     if (await isSplitReader(reader.id)) {
@@ -307,6 +340,10 @@ router.post("/timing/readers/:token/crossing", express.text({ type: "text/*" }),
   if (!eventId) {
     const activeMoto = await liveMotoForClub(reader.clubId);
 
+    const practiceSplit = activeMoto ? null : await practiceSplitReads(reader, [{ rfidNumber: String(body.rfidNumber), time: crossingTime }]);
+    if (practiceSplit) {
+      return res.json({ ok: true, message: practiceSplit.recorded ? `${practiceSplit.split} recorded` : `${practiceSplit.split} not recorded (no lap in progress, or already recorded)` });
+    }
     if (activeMoto) {
       eventId = activeMoto.eventId;
     } else if (await isSplitReader(reader.id)) {
@@ -314,14 +351,8 @@ router.post("/timing/readers/:token/crossing", express.text({ type: "text/*" }),
       // 422, so RM Connect doesn't retry them on the facility URL.
       return res.status(409).json({ ok: false, message: "Split readers only record sector times during a moto" });
     } else {
-      const [practice] = await db
-        .select()
-        .from(practiceSessionsTable)
-        .where(and(
-          eq(practiceSessionsTable.clubId, reader.clubId),
-          eq(practiceSessionsTable.status, "active"),
-        ))
-        .limit(1);
+      // The newest live practice (same rule as every other ingest path).
+      const practice = await activePracticeForClub(reader.clubId);
 
       if (practice) {
         const result = await processPracticeCrossing(practice, String(body.rfidNumber), crossingTime);

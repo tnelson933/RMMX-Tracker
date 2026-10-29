@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { tracksTable } from "@workspace/db/schema";
-import { eq, and } from "drizzle-orm";
+import { tracksTable, trackCoursePointsTable } from "@workspace/db/schema";
+import { eq, and, inArray } from "drizzle-orm";
+import { normaliseCourse, propagateTrackCourse } from "../lib/trackCourse";
 import { usersTable } from "@workspace/db/schema";
 
 const router = Router();
@@ -24,7 +25,16 @@ router.get("/tracks", async (req, res) => {
     .where(eq(tracksTable.clubId, clubId))
     .orderBy(tracksTable.name);
 
-  return res.json(tracks);
+  // Each track's course map (finish + ordered splits).
+  const points = tracks.length === 0 ? [] : await db.select().from(trackCoursePointsTable)
+    .where(inArray(trackCoursePointsTable.trackId, tracks.map(t => t.id)));
+  return res.json(tracks.map(t => ({
+    ...t,
+    course: points
+      .filter(p => p.trackId === t.id)
+      .sort((a, b) => (a.role === "finish" ? -1 : 0) - (b.role === "finish" ? -1 : 0) || (a.sequence ?? 0) - (b.sequence ?? 0))
+      .map(p => ({ readerId: p.readerId, role: p.role, sequence: p.sequence, label: p.label })),
+  })));
 });
 
 // POST /tracks — create a track in the library
@@ -75,6 +85,29 @@ router.patch("/tracks/:id", async (req, res) => {
 
   if (!track) return res.status(404).json({ error: "Not found" });
   return res.json(track);
+});
+
+// PUT /tracks/:id/course — the track's course map (finish reader + ordered
+// splits). Events at the track that follow it get the new course, unless they
+// were customized or have already raced.
+router.put("/tracks/:id/course", async (req, res) => {
+  const clubId = await getClubId(req);
+  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  const id = Number(req.params.id);
+  const [track] = await db.select().from(tracksTable).where(and(eq(tracksTable.id, id), eq(tracksTable.clubId, clubId)));
+  if (!track) return res.status(404).json({ error: "Not found" });
+
+  const checked = await normaliseCourse((req.body as any)?.points, clubId);
+  if (!checked.ok) return res.status(400).json({ error: checked.error });
+
+  await db.transaction(async (tx) => {
+    await tx.delete(trackCoursePointsTable).where(eq(trackCoursePointsTable.trackId, id));
+    if (checked.points.length > 0) {
+      await tx.insert(trackCoursePointsTable).values(checked.points.map(p => ({ trackId: id, ...p })));
+    }
+  });
+  const eventsUpdated = await propagateTrackCourse(id);
+  return res.json({ ok: true, course: checked.points, eventsUpdated });
 });
 
 // DELETE /tracks/:id — remove a track

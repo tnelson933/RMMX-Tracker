@@ -718,6 +718,10 @@ export function initDb() {
     ["motos", "staggered_group_id     INTEGER"],
     // Set when the organizer finalizes the race: results become official.
     ["motos", "results_finalized_at   TEXT"],
+    // Library track + where the course map comes from (pulled from the cloud).
+    ["events", "track_id                   INTEGER"],
+    ["events", "course_source              TEXT NOT NULL DEFAULT 'track'"],
+    ["practice_sessions", "track_id INTEGER"],
     // race_results
     ["race_results", "event_id   INTEGER"],
     ["race_results", "race_class TEXT"],

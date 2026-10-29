@@ -7,12 +7,13 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, horizontalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   useGetEvent, useListMotos, useListReaders, useGetConnectorStatus, useListEnduroTimeChecks,
   useListEventReaderAssignments, useSetEventReaderAssignments, getListEventReaderAssignmentsQueryKey,
+  getGetEventQueryKey,
 } from "@workspace/api-client-react";
-import { Flag, GripVertical, Plus, Radio, X, AlertTriangle, Save, Loader2, ArrowRight, Timer } from "lucide-react";
+import { Flag, GripVertical, Plus, Radio, X, AlertTriangle, Save, Loader2, ArrowRight, Timer, MapPin, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -24,6 +25,29 @@ import { useToast } from "@/hooks/use-toast";
 //   Enduro: each special test (section) has a start and an end reader, plus
 //   optional time-check readers.
 // Everything here saves as the event's reader assignments.
+//
+// The finish line and splits normally come from the event's Track Library
+// track (set up once per track; see TrackCourseMap below). Changing them here
+// customizes this event only; "Reset to track" follows the track again.
+
+/** A Track Library track with its course map, as GET /api/tracks returns it. */
+export interface LibraryTrack {
+  id: number;
+  name: string;
+  course?: Array<{ readerId: number; role: "finish" | "split"; sequence: number | null; label: string | null }>;
+}
+
+export function useLibraryTracks(enabled = true) {
+  return useQuery<LibraryTrack[]>({
+    queryKey: ["/api/tracks"],
+    enabled,
+    queryFn: async () => {
+      const res = await fetch("/api/tracks", { credentials: "include" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    },
+  });
+}
 
 type Split = { key: string; readerId: number | null; label: string };
 type Gate = { start: number | null; end: number | null; sameGate: boolean };
@@ -198,17 +222,36 @@ function SortableSplit({ split, index, readers, onPick, onLabel, onRemove }: {
 
 export default function CourseMap() {
   const params = useParams();
-  const eventId = Number(params.eventId);
+  return <CourseMapEditor eventId={Number(params.eventId)} />;
+}
+
+/** The Track Library version: a track's standard finish line and splits. */
+export function TrackCourseMap({ track, onSaved }: { track: LibraryTrack; onSaved?: () => void }) {
+  return <CourseMapEditor eventId={0} track={track} onSaved={onSaved} />;
+}
+
+function CourseMapEditor({ eventId, track, onSaved }: { eventId: number; track?: LibraryTrack; onSaved?: () => void }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const trackMode = !!track;
 
   const { data: event, isError: eventFailed, refetch: refetchEvent } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
-  const isEnduro = (event as any)?.raceStyle === "enduro";
+  const isEnduro = !trackMode && (event as any)?.raceStyle === "enduro";
+  const { data: libraryTracks = NONE } = useLibraryTracks(!trackMode);
+  const eventTrack = (libraryTracks as LibraryTrack[]).find(t => t.id === (event as any)?.trackId);
+  const [resetting, setResetting] = useState(false);
   const { data: motos = NONE } = useListMotos(eventId, { query: { enabled: !!eventId } as any });
   const { data: timeChecksData } = useListEnduroTimeChecks(eventId, { query: { enabled: !!eventId && isEnduro } as any });
   const { data: clubReaders = NONE } = useListReaders();
   const { data: connectorStatuses = NONE } = useGetConnectorStatus({ query: { refetchInterval: 10_000 } as any });
-  const { data: saved = NONE, isLoading, isError: assignmentsFailed, refetch: refetchAssignments } = useListEventReaderAssignments(eventId, { query: { enabled: !!eventId } as any });
+  const { data: eventSaved = NONE, isLoading: eventLoading, isError: assignmentsFailed, refetch: refetchAssignments } = useListEventReaderAssignments(eventId, { query: { enabled: !!eventId } as any });
+  // In track mode the "saved" rows are the track's course points.
+  const trackSaved = useMemo(
+    () => (track?.course ?? []).map(p => ({ ...p, motoId: null, timeCheckId: null, antennaId: null })),
+    [track],
+  );
+  const saved = trackMode ? trackSaved : eventSaved;
+  const isLoading = !trackMode && eventLoading;
   const saveMutation = useSetEventReaderAssignments();
 
   const [state, setState] = useState<CourseState>(EMPTY);
@@ -292,12 +335,37 @@ export default function CourseMap() {
 
   async function save() {
     const sent = state;
+    if (trackMode) {
+      try {
+        const res = await fetch(`/api/tracks/${track!.id}/course`, {
+          method: "PUT",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ points: toAssignments(sent, false).map(({ readerId, role, sequence, label }) => ({ readerId, role, sequence, label })) }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+        if (stateRef.current === sent) setDirty(false);
+        await queryClient.invalidateQueries({ queryKey: ["/api/tracks"] });
+        toast({
+          title: "Track course saved",
+          description: body.eventsUpdated
+            ? `Updated ${body.eventsUpdated} upcoming event${body.eventsUpdated === 1 ? "" : "s"} at ${track!.name}. Practices here use it from their next session.`
+            : `Races and practices at ${track!.name} use it from now on.`,
+        });
+        onSaved?.();
+      } catch (err: any) {
+        toast({ title: "Couldn't save", description: String(err?.message ?? err), variant: "destructive" });
+      }
+      return;
+    }
     try {
       await saveMutation.mutateAsync({ eventId, data: { assignments: toAssignments(sent, isEnduro) } as any });
       // Edits made while saving stay marked unsaved (and aren't replaced by the refetch).
       const unchanged = stateRef.current === sent;
       if (unchanged) setDirty(false);
       await queryClient.invalidateQueries({ queryKey: getListEventReaderAssignmentsQueryKey(eventId) });
+      await queryClient.invalidateQueries({ queryKey: getGetEventQueryKey(eventId) });
       toast({ title: "Course map saved", description: "Readers start routing to these places right away." });
     } catch (err: any) {
       const message = err?.response?.data?.error ?? err?.data?.error ?? err?.message ?? "Couldn't save the course map";
@@ -327,8 +395,25 @@ export default function CourseMap() {
     return points.slice(1).map((to, i) => `${points[i]} → ${to}`);
   }, [state.splits]);
 
+  async function resetToTrack() {
+    setResetting(true);
+    try {
+      const res = await fetch(`/api/events/${eventId}/course/reset`, { method: "POST", credentials: "include" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      setDirty(false);
+      await queryClient.invalidateQueries({ queryKey: getListEventReaderAssignmentsQueryKey(eventId) });
+      await queryClient.invalidateQueries({ queryKey: getGetEventQueryKey(eventId) });
+      toast({ title: "Using the track's course", description: eventTrack ? `Course map copied from ${eventTrack.name}.` : undefined });
+    } catch (err: any) {
+      toast({ title: "Couldn't reset", description: String(err?.message ?? err), variant: "destructive" });
+    } finally {
+      setResetting(false);
+    }
+  }
+
   // A failed load must not show an empty map: saving it would erase the event's readers.
-  if (eventFailed || assignmentsFailed) {
+  if (!trackMode && (eventFailed || assignmentsFailed)) {
     return (
       <div className="p-8 space-y-3">
         <p className="font-semibold">Couldn't load the course map.</p>
@@ -337,16 +422,19 @@ export default function CourseMap() {
       </div>
     );
   }
-  if (isLoading || !event) return <div className="p-8">Loading course map…</div>;
+  if (!trackMode && (isLoading || !event)) return <div className="p-8">Loading course map…</div>;
+  const courseSource = (event as any)?.courseSource as "track" | "custom" | undefined;
 
   return (
     <DndContext sensors={sensors} collisionDetection={pointerFirst} onDragStart={onDragStart} onDragEnd={onDragEnd}>
-      <div className="p-6 md:p-8 max-w-5xl mx-auto space-y-6">
+      <div className={trackMode ? "space-y-6" : "p-6 md:p-8 max-w-5xl mx-auto space-y-6"}>
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h2 className="text-2xl font-heading font-bold uppercase tracking-tight">Course Map</h2>
+            {!trackMode && <h2 className="text-2xl font-heading font-bold uppercase tracking-tight">Course Map</h2>}
             <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-              {isEnduro
+              {trackMode
+                ? "Set this track's finish-line reader and split readers once. Every race and practice here uses them, so split times show up without setting anything up per event."
+                : isEnduro
                 ? "Drag a reader onto the start and end of each section. Time checks are optional."
                 : "Drag your finish-line reader onto the flag. Add split readers around the track for sector times; drag splits to put them in course order. Only the finish line decides laps and placings."}
             </p>
@@ -356,6 +444,33 @@ export default function CourseMap() {
             {dirty ? "Save course map" : "Saved"}
           </Button>
         </div>
+
+        {/* Where this event's finish line and splits come from */}
+        {!trackMode && !isEnduro && (
+          <div className="rounded-lg border bg-muted/20 p-3 flex items-center gap-3 flex-wrap text-sm">
+            <MapPin size={16} className="text-primary shrink-0" />
+            {!eventTrack ? (
+              <p className="flex-1 min-w-48 text-muted-foreground">
+                This event isn't linked to a Track Library track. Pick the track from the library on the Overview tab
+                (or add it under Team → Track Library) to set its course up once for every race and practice there.
+              </p>
+            ) : courseSource === "custom" ? (
+              <>
+                <p className="flex-1 min-w-48"><strong>Customized for this event.</strong> {eventTrack.name}'s standard course isn't used here.</p>
+                <Button variant="outline" size="sm" onClick={resetToTrack} disabled={resetting} className="gap-1.5">
+                  {resetting ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />} Reset to track
+                </Button>
+              </>
+            ) : (
+              <p className="flex-1 min-w-48">
+                <strong>From the track: {eventTrack.name}.</strong>{" "}
+                {(eventTrack.course?.length ?? 0) > 0
+                  ? "Edit it in Team → Track Library to change it for every event here, or change it below for this event only."
+                  : "That track has no course map yet: set it up in Team → Track Library, or place readers below for this event only."}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Reader tray */}
         <section className="rounded-xl border bg-card p-4 space-y-3">

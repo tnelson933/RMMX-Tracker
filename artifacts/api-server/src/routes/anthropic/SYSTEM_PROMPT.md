@@ -545,6 +545,8 @@ On the Points Scoring Tables page, the **Auto DNF — Club-wide Setting** switch
 ### Creating a session
 Click the **+** icon ("New session") → enter a **Session name** → choose a track from your **Track Library** (or type a track name; a track is required) → **Add**. The session starts **live immediately** and begins timing; any other live session is ended automatically.
 
+**Practice sector times:** when the track has split readers on its course map (Track Library), the practice uses that course from the moment it starts. Expand a rider on the practice board to see a **Sectors** table (each lap's sector times, best per sector in red/bold, and a **Best** row); riders see the same in their practice history on the website. A rider's first pass starts lap 1; split reads before it are ignored. Laps count only timed laps (the first pass just starts the clock).
+
 ### Ending and deleting
 - **End Session** closes a live session. Ended sessions stay in the list for history.
 - **Delete** (trash icon) is available on sessions that aren't live.
@@ -656,13 +658,19 @@ For checkpoints out on the course (enduro sections, time checks) where no laptop
 
 ### Course Map tab (several readers per event)
 
+**Set it up once per track.** A track's standard course (finish line + splits) lives in the **Track Library** (Admin/Team page → a track's **Course map** button). Every event at that track gets a copy automatically, and practices there use it for sector times. An event links to a library track when its track is picked from the library (or its track name matches one). The event's Course Map tab shows where its course comes from:
+- **From the track: <name>** — follows the track. Editing the track's course updates every upcoming event there that hasn't raced yet; events that have raced keep the course they raced with.
+- **Customized for this event** — the finish line or splits were changed on the event's tab, for this event only. **Reset to track** copies the track's course back.
+- Not linked — pick the track from the library on the event's Overview tab (or add it to the Track Library) to use a track course.
+Enduro sections and time checks always stay on the event.
+
 The event's **Course Map** tab places readers on the course. Readers come from Reader Setup (added with **Find readers** in RM Connect); the tab shows each reader's live dot (green ready, amber starting up, grey RM Connect not running). Drag a reader chip onto a slot, or pick it from the slot's list (works on phones and tablets). Click **Save course map**; readers route to their places right away.
 
 **Motocross / supercross (and cross country):**
 - **Finish line · scores laps** — the one reader that decides laps and placings, exactly as before. Required when there are splits.
 - **Splits** — click **Add split** (or drop a reader on it) for each extra reader around the track, name it (e.g. "Halfway", "Whoops"), and drag splits by their grip to put them in course order. A reader can only be in one place on the course.
 - **Sectors** — the page lists the sectors the splits create, e.g. one split at Halfway gives **S1 Finish → Halfway** and **S2 Halfway → Finish**. Lap 1's first sector starts at the moto start.
-- Split reads never change laps, placings or results. A missed split read only leaves those sector times blank. Repeat reads in the same pass count once. A split read with no moto running is ignored (it never becomes a practice or race lap).
+- Split reads never change laps, placings or results. A missed split read only leaves those sector times blank. Repeat reads in the same pass count once. A split read never becomes a lap: with no moto running it's ignored, or recorded as a practice split when a practice at a track with that split is live.
 - Readers not on the course keep timing laps the usual way, so an event with one reader needs no course map.
 - Warnings show when splits exist without a finish line, a split has no reader, or a placed reader isn't connected.
 
@@ -763,6 +771,8 @@ Sponsor or manufacturer brands that pay contingency at your events (e.g. Honda, 
 
 ### Track Library
 Save your tracks once and reuse them. **Add New Track** → name, address, city, ZIP, state → **Add Track**. Saved tracks fill the track field on new events and are the track choices for Practice sessions.
+
+**Course map per track:** click a track's **Course map** button → drag the finish-line reader onto the flag, add split readers in course order and name them (e.g. "Whoops") → **Save course map**. Each track shows a summary such as "Finish line + 2 splits". Races at the track copy it (see Course Map tab), and practices started there record **sector times** from its split readers. Track course maps are set up online; the desktop app gets each event's copy when it syncs.
 
 ### Rider Acknowledgement Form
 Text riders must agree to at online registration (safety rules, code of conduct). Choose **Type Text** or **Upload PDF**.

@@ -1233,7 +1233,7 @@ function PracticeSessionCard({
               Lap Times
             </div>
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-              {displayLaps.map((lap) => {
+              {displayLaps.map((lap, lapIdx) => {
                 const isSessionBest = lap.lapTimeMs === displayBestMs;
                 const isVenuePb = isSessionBest && (venueBestBeforeSessionMs == null || (lap.lapTimeMs != null && lap.lapTimeMs < venueBestBeforeSessionMs));
                 return (
@@ -1247,7 +1247,7 @@ function PracticeSessionCard({
                           : "bg-muted border-transparent"
                     }`}
                   >
-                    <div className="text-xs text-muted-foreground">Lap {lap.lapNumber}</div>
+                    <div className="text-xs text-muted-foreground">Lap {lapIdx + 1}</div>
                     <div className={`font-mono text-xs font-bold mt-0.5 ${isVenuePb ? "text-yellow-600" : isSessionBest ? "text-primary" : ""}`}>
                       {formatMs(lap.lapTimeMs)}
                     </div>
@@ -1257,6 +1257,41 @@ function PracticeSessionCard({
                 );
               })}
             </div>
+            {(session.sectorNames?.length ?? 0) > 0 && (session.sectorLaps?.length ?? 0) > 0 && (
+              <div className="mt-4">
+                <div className="text-xs text-muted-foreground mb-2 font-heading uppercase tracking-wider">Sectors</div>
+                <div className="overflow-x-auto">
+                  <table className="text-xs font-mono w-max">
+                    <thead>
+                      <tr className="text-muted-foreground">
+                        <th className="text-left px-1 py-1">Lap</th>
+                        {session.sectorNames!.map((n, i) => <th key={i} className="text-right px-2 py-1" title={n}>S{i + 1}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {session.sectorLaps!.filter(l => l.complete).map(l => (
+                        <tr key={l.lapNumber}>
+                          <td className="px-1 py-0.5 text-muted-foreground">{l.lapNumber}</td>
+                          {session.sectorNames!.map((_, i) => {
+                            const v = l.sectorsMs[i] ?? null;
+                            const best = v != null && v === session.bestSectors?.[i];
+                            return <td key={i} className={`text-right px-2 py-0.5 ${best ? "text-primary font-bold" : ""}`}>{v == null ? "—" : (v / 1000).toFixed(3)}</td>;
+                          })}
+                        </tr>
+                      ))}
+                      <tr className="border-t">
+                        <td className="px-1 py-1 font-bold text-primary">Best</td>
+                        {session.sectorNames!.map((_, i) => {
+                          const v = session.bestSectors?.[i] ?? null;
+                          return <td key={i} className="text-right px-2 py-1 font-bold text-primary">{v == null ? "—" : (v / 1000).toFixed(3)}</td>;
+                        })}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">{session.sectorNames!.map((n, i) => `S${i + 1} ${n}`).join(" · ")}</p>
+              </div>
+            )}
           </div>
         </CardContent>
       )}

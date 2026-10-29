@@ -1,4 +1,5 @@
 import { geocodeTrack } from "../lib/geocodeTrack";
+import { copyTrackCourseToEvent, resolveTrackId } from "../lib/trackCourse";
 import { scoringTableUsable } from "../lib/scoringTables";
 import { validateEventInput } from "../lib/validateInput";
 import { advanceEventStatuses } from "../lib/eventStatus";
@@ -92,6 +93,8 @@ router.get("/events", async (req, res) => {
     rfidStickerFee: eventsTable.rfidStickerFee,
     purchaseOptions: eventsTable.purchaseOptions,
     scoringTableId: eventsTable.scoringTableId,
+    trackId: eventsTable.trackId,
+    courseSource: eventsTable.courseSource,
     entryFeeCategoryId: eventsTable.entryFeeCategoryId,
     minLapMs: eventsTable.minLapMs,
     amaEventId: eventsTable.amaEventId,
@@ -202,7 +205,10 @@ router.post("/events", async (req, res) => {
     zip: zip || null,
     trackLat: trackCoords?.lat ?? null,
     trackLng: trackCoords?.lng ?? null,
+    // The library track (picked, or matched by name): its course map comes along.
+    trackId: await resolveTrackId(clubId, req.body.trackId, trackName),
   }).returning();
+  if (event.trackId) await copyTrackCourseToEvent(event.id);
 
   return res.status(201).json({
     ...event,
@@ -250,6 +256,8 @@ router.get("/events/:eventId", async (req, res) => {
     rfidStickerFee: eventsTable.rfidStickerFee,
     purchaseOptions: eventsTable.purchaseOptions,
     scoringTableId: eventsTable.scoringTableId,
+    trackId: eventsTable.trackId,
+    courseSource: eventsTable.courseSource,
     entryFeeCategoryId: eventsTable.entryFeeCategoryId,
     minLapMs: eventsTable.minLapMs,
     amaEventId: eventsTable.amaEventId,
@@ -371,8 +379,21 @@ router.patch("/events/:eventId", async (req, res) => {
     updates.trackLng = null;
   }
 
+  // Changing the track links the event to that library track.
+  let trackChanged = false;
+  if (before && (req.body.trackId !== undefined || req.body.trackName !== undefined)) {
+    const nextTrackId = await resolveTrackId(before.clubId, req.body.trackId, req.body.trackName ?? before.trackName);
+    const [current] = await db.select({ trackId: eventsTable.trackId }).from(eventsTable).where(eq(eventsTable.id, id));
+    if ((current?.trackId ?? null) !== nextTrackId) {
+      updates.trackId = nextTrackId;
+      trackChanged = true;
+    }
+  }
+
   const [event] = await db.update(eventsTable).set(updates as any).where(eq(eventsTable.id, id)).returning();
   if (!event) return res.status(404).json({ error: "Not found" });
+  // A new track brings its course map (unless this event's course is custom).
+  if (trackChanged && event.trackId) await copyTrackCourseToEvent(event.id);
 
   // Recompute status from the updated registration window (bidirectional)
   const nextStatus = computeCorrectStatus({

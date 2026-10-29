@@ -153,6 +153,10 @@ export interface PracticeSessionHistory {
   lapCount: number;
   bestLapMs: number | null;
   laps: PracticeLap[];
+  /** Sector times when the practice's track has split readers. */
+  sectorNames?: string[];
+  sectorLaps?: Array<{ lapNumber: number; sectorsMs: Array<number | null>; complete: boolean }>;
+  bestSectors?: Array<number | null>;
 }
 
 export interface RiderPracticeResponse {

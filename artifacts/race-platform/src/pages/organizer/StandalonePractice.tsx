@@ -54,11 +54,16 @@ type PracticeRiderRow = {
   lastLapMs: number | null;
   lastCrossingTime: string;
   laps: { lapNumber: number; lapTimeMs: number | null; crossingTime: string }[];
+  /** Sector times per timed lap (track with split readers only). */
+  sectorLaps?: Array<{ lapNumber: number; sectorsMs: Array<number | null>; complete: boolean }>;
+  bestSectors?: Array<number | null>;
 };
 
 type LiveBoard = {
   session: PracticeSession;
   riders: PracticeRiderRow[];
+  /** "Finish → Whoops", … — empty when the track has no split readers. */
+  sectorNames?: string[];
 };
 
 export default function StandalonePractice() {
@@ -695,7 +700,7 @@ export default function StandalonePractice() {
                                 <span />
                               </div>
                               <div className="space-y-1">
-                                {lapsWithTime.map(lap => {
+                                {lapsWithTime.map((lap, lapIdx) => {
                                   const isBest = lap.lapTimeMs === rider.bestLapMs;
                                   return (
                                     <div
@@ -704,7 +709,8 @@ export default function StandalonePractice() {
                                         isBest ? "bg-primary/10 text-primary" : "text-foreground"
                                       }`}
                                     >
-                                      <span className="font-mono font-bold text-muted-foreground">{lap.lapNumber}</span>
+                                      {/* Timed lap number (the first pass only starts the clock). */}
+                                      <span className="font-mono font-bold text-muted-foreground">{lapIdx + 1}</span>
                                       <span className={`font-mono font-bold ${isBest ? "text-primary" : ""}`}>
                                         {formatMs(lap.lapTimeMs)}
                                       </span>
@@ -718,6 +724,9 @@ export default function StandalonePractice() {
                                   );
                                 })}
                               </div>
+                              {(liveBoard?.sectorNames?.length ?? 0) > 0 && (rider.sectorLaps?.length ?? 0) > 0 && (
+                                <SectorTable names={liveBoard!.sectorNames!} laps={rider.sectorLaps!} best={rider.bestSectors ?? []} />
+                              )}
                             </div>
                           )}
                         </div>
@@ -750,6 +759,45 @@ export default function StandalonePractice() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Sector times per lap from the track's split readers, best per sector highlighted. */
+function SectorTable({ names, laps, best }: {
+  names: string[];
+  laps: Array<{ lapNumber: number; sectorsMs: Array<number | null>; complete: boolean }>;
+  best: Array<number | null>;
+}) {
+  const fmt = (ms: number | null) => (ms == null ? "—" : (ms / 1000).toFixed(3));
+  return (
+    <div className="mt-3 overflow-x-auto">
+      <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-1 px-1">Sectors</p>
+      <table className="text-xs font-mono w-max">
+        <thead>
+          <tr className="text-muted-foreground">
+            <th className="text-left px-1 py-1 font-bold">Lap</th>
+            {names.map((n, i) => <th key={i} className="text-right px-2 py-1 font-bold" title={n}>S{i + 1}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {laps.map(l => (
+            <tr key={l.lapNumber} className={l.complete ? "" : "text-muted-foreground/60"}>
+              <td className="px-1 py-0.5 font-bold text-muted-foreground">{l.lapNumber}</td>
+              {names.map((_, i) => {
+                const v = l.sectorsMs[i] ?? null;
+                const isBest = v != null && v === best[i];
+                return <td key={i} className={`text-right px-2 py-0.5 ${isBest ? "text-primary font-bold" : ""}`}>{fmt(v)}</td>;
+              })}
+            </tr>
+          ))}
+          <tr className="border-t border-border/50">
+            <td className="px-1 py-1 font-bold text-primary">Best</td>
+            {names.map((_, i) => <td key={i} className="text-right px-2 py-1 font-bold text-primary">{fmt(best[i] ?? null)}</td>)}
+          </tr>
+        </tbody>
+      </table>
+      <p className="text-[11px] text-muted-foreground mt-1 px-1">{names.map((n, i) => `S${i + 1} ${n}`).join(" · ")}</p>
     </div>
   );
 }

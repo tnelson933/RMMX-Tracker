@@ -41,6 +41,11 @@ export interface EventInput {
   /** @nullable */
   scoringTableId?: number | null;
   /**
+     * Track Library track (matched by trackName when omitted)
+     * @nullable
+     */
+  trackId?: number | null;
+  /**
      * Discount category ID assigned to the base entry fee
      * @nullable
      */

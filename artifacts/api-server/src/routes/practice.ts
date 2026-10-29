@@ -18,6 +18,8 @@ import { managedRiderIds } from "../lib/riderAccess";
 import type { Response } from "express";
 import { sendConnectorCommand } from "../lib/connectorRelay";
 import { authorizeIngest } from "../lib/ingestAuth";
+import { listPracticeSplits, practiceSectors } from "../lib/practiceSplits";
+import { practiceCourseFor, resolveTrackId } from "../lib/trackCourse";
 import {
   canonicalizeCrossingTimestamp,
   isTrustedDirectActiveTimingSource,
@@ -80,7 +82,40 @@ type PracticeRiderRow = {
   lastLapMs: number | null;
   lastCrossingTime: string;
   laps: { lapNumber: number; lapTimeMs: number | null; crossingTime: string }[];
+  /** Sector times per timed lap, when the practice's track has split readers. */
+  sectorLaps?: Array<{ lapNumber: number; sectorsMs: Array<number | null>; complete: boolean }>;
+  bestSectors?: Array<number | null>;
 };
+
+type BoardPayload = { session: object; riders: PracticeRiderRow[]; sectorNames: string[] };
+
+/** The live board with sector times (when the track's course has splits). */
+async function boardFor(
+  session: typeof practiceSessionsTable.$inferSelect,
+  crossings: (typeof practiceCrossingsTable.$inferSelect)[],
+): Promise<BoardPayload> {
+  const riders = buildLiveBoard(crossings);
+  const splits = session.course?.splits.length ? await listPracticeSplits(session.id) : [];
+  const sectors = practiceSectors(session.course, crossings, splits);
+  if (sectors) {
+    for (const row of riders) {
+      const mine = sectors.byTag.get(row.rfidNumber.toLowerCase());
+      if (mine) { row.sectorLaps = mine.laps; row.bestSectors = mine.best; }
+    }
+  }
+  return { session: toJson(session), riders, sectorNames: sectors?.names ?? [] };
+}
+
+/** Push the current board to everyone watching the session. */
+export async function broadcastPracticeBoard(sessionId: number): Promise<void> {
+  if (!practiceSSEClients.get(sessionId)?.size) return;
+  const [session] = await db.select().from(practiceSessionsTable).where(eq(practiceSessionsTable.id, sessionId));
+  if (!session) return;
+  const crossings = await db.select().from(practiceCrossingsTable)
+    .where(eq(practiceCrossingsTable.sessionId, sessionId))
+    .orderBy(asc(practiceCrossingsTable.crossingTime));
+  broadcast(sessionId, await boardFor(session, crossings));
+}
 
 function buildLiveBoard(crossings: (typeof practiceCrossingsTable.$inferSelect)[]): PracticeRiderRow[] {
   const byRfid = new Map<string, typeof crossings>();
@@ -138,7 +173,7 @@ function toJson(s: typeof practiceSessionsTable.$inferSelect) {
   };
 }
 
-function broadcast(sessionId: number, payload: { session: object; riders: PracticeRiderRow[] }) {
+function broadcast(sessionId: number, payload: BoardPayload) {
   const clients = practiceSSEClients.get(sessionId);
   if (!clients || clients.size === 0) return;
   const data = JSON.stringify(payload);
@@ -274,7 +309,7 @@ export async function processPracticeCrossing(
   const allCrossings = await db.select().from(practiceCrossingsTable)
     .where(eq(practiceCrossingsTable.sessionId, sessionId))
     .orderBy(asc(practiceCrossingsTable.crossingTime));
-  broadcast(sessionId, { session: toJson(session), riders: buildLiveBoard(allCrossings) });
+  broadcast(sessionId, await boardFor(session, allCrossings));
 
   return { crossing };
 }
@@ -391,9 +426,16 @@ router.post("/practice", async (req, res) => {
     sendConnectorCommand(clubId, { type: "stop_moto", motoId: prev.id, eventId: null });
   }
 
+  // The library track (picked, or matched by name) and its course right now:
+  // its split readers give sector times for this session.
+  const trackId = await resolveTrackId(clubId, req.body.trackId, venueName);
+  const course = await practiceCourseFor(trackId);
+
   const [session] = await db.insert(practiceSessionsTable).values({
     clubId,
     name,
+    trackId,
+    course,
     status: "active",
     startedAt: new Date(),
     debounceMs: Number.isInteger(Number(debounceMs)) && Number(debounceMs) >= 0 && Number(debounceMs) <= 600_000 && debounceMs !== undefined && debounceMs !== null && debounceMs !== ""
@@ -473,7 +515,7 @@ router.patch("/practice/:id", async (req, res) => {
   const crossings = await db.select().from(practiceCrossingsTable)
     .where(eq(practiceCrossingsTable.sessionId, id))
     .orderBy(asc(practiceCrossingsTable.crossingTime));
-  broadcast(id, { session: toJson(session), riders: buildLiveBoard(crossings) });
+  broadcast(id, await boardFor(session, crossings));
 
   // Keep RM Connect in sync with practice session lifecycle
   const effectiveClubId = session.clubId ?? existing.clubId;
@@ -628,7 +670,8 @@ router.get("/practice/:id/live", async (req, res) => {
   const crossings = await db.select().from(practiceCrossingsTable)
     .where(eq(practiceCrossingsTable.sessionId, sessionId))
     .orderBy(asc(practiceCrossingsTable.crossingTime));
-  res.write(`data: ${JSON.stringify({ session: toJson(session), riders: boardForClient(res, buildLiveBoard(crossings)) })}\n\n`);
+  const board = await boardFor(session, crossings);
+  res.write(`data: ${JSON.stringify({ ...board, riders: boardForClient(res, board.riders) })}\n\n`);
 
   const heartbeat = setInterval(() => {
     try { res.write(": heartbeat\n\n"); } catch { /* ignore */ }
