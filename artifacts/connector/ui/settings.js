@@ -122,10 +122,12 @@ function updateCard(card, r) {
   f.status.textContent = statusText(r);
 
   if (r.hardware === "active_transponder" && r.device.connected) {
-    // The RM TrackR reports each loop as 1/0 (or a word on some firmware).
-    const loop = (state) => !state ? "waiting" : /^1$|working|running|open/i.test(state) ? "running" : /^0$|stop|closed/i.test(state) ? "off" : state;
+    // Loops as set in RM TrackR settings; a transponder pass proves they read.
+    // (The reader's own loop status isn't shown: some firmware reports a loop
+    // as off while it reads.)
+    const loop = (enabled) => !enabled ? "not used" : r.device.loopsReading ? "reading" : "on, waiting for a pass";
     f.checks.textContent = (r.device.machineId ? "ID " + r.device.machineId : "Waiting for the RM TrackR to identify itself")
-      + " · Loop 1 " + loop(r.device.loop1State) + " · Loop 2 " + loop(r.device.loop2State);
+      + " · Loop 1 " + loop(r.device.loop1Enabled) + " · Loop 2 " + loop(r.device.loop2Enabled);
   } else if (r.hardware !== "active_transponder" && r.device.connected && r.device.antennaIds.length) {
     f.checks.textContent = "Antennas seen: " + r.device.antennaIds.join(", ");
   } else {

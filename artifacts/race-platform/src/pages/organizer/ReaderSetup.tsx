@@ -41,6 +41,19 @@ interface ActiveTransponderStatus {
   batteryPercent: number | null;
   reader1Working: string | null;
   reader2Working: string | null;
+  loopEnabled?: [boolean, boolean];
+  loopsReading?: boolean;
+}
+
+/**
+ * Loops as set in RM TrackR settings; a transponder pass proves they read.
+ * The reader's own loop status isn't used: some firmware reports a loop as
+ * 0 (off) while it reads.
+ */
+type LoopShow = "reading" | "waiting" | "unused";
+function loopShows(status: { loopEnabled?: [boolean, boolean]; loopsReading?: boolean }): { l1: LoopShow; l2: LoopShow } {
+  const show = (enabled: boolean | undefined): LoopShow => enabled === false ? "unused" : status.loopsReading ? "reading" : "waiting";
+  return { l1: show(status.loopEnabled?.[0]), l2: show(status.loopEnabled?.[1]) };
 }
 
 // ── RF Configuration (LLRP) ───────────────────────────────────────────────────
@@ -241,7 +254,7 @@ function ActiveTransponderGuidedSetup({
   let hasError = false;
   let readCount = 0;
   let heartbeat: string | null = null;
-  let loops: { l1: boolean; l2: boolean } | null = null;
+  let loops: { l1: LoopShow; l2: LoopShow } | null = null;
   let battery: number | null = null;
   let errorMsg = connectError;
   let machineId: string | null = null;
@@ -254,9 +267,7 @@ function ActiveTransponderGuidedSetup({
     heartbeat = activeStatus.lastHeartbeatAt;
     battery = activeStatus.batteryPercent;
     machineId = activeStatus.machineId;
-    if (activeStatus.reader1Working != null) {
-      loops = { l1: activeStatus.reader1Working === "1", l2: activeStatus.reader2Working === "1" };
-    }
+    if (activeStatus.connected) loops = loopShows(activeStatus);
   } else if (!isDesktop && activeConnector) {
     isConnected = activeConnector.hardware.connected;
     readCount = activeConnector.hardware.readCount;
@@ -383,12 +394,14 @@ function ActiveTransponderGuidedSetup({
                     <div>
                          <p className="text-muted-foreground mb-1">Finish-gate coverage loops</p>
                       <div className="flex items-center gap-3 font-medium">
-                        <span className={loops?.l1 ? "text-green-600" : "text-red-500 flex items-center gap-1"}>
-                           {!loops?.l1 && <AlertCircle size={12} />} Loop 1
-                        </span>
-                        <span className={loops?.l2 ? "text-green-600" : "text-red-500 flex items-center gap-1"}>
-                           {!loops?.l2 && <AlertCircle size={12} />} Loop 2
-                        </span>
+                        {(["l1", "l2"] as const).map((key, i) => {
+                          const show = loops?.[key] ?? "waiting";
+                          return (
+                            <span key={key} className={show === "reading" ? "text-green-600" : "text-muted-foreground"}>
+                              Loop {i + 1}{show === "reading" ? ": reading" : show === "unused" ? ": not used" : ": on, waiting for a pass"}
+                            </span>
+                          );
+                        })}
                       </div>
                          <p className="text-[11px] text-muted-foreground mt-1">
                            Both loops cover the same finish gate; either loop reports the same crossing.

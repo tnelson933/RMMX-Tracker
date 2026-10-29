@@ -52,6 +52,8 @@ export interface ActiveTransponderStatus {
   reconnectCountdownMs: number | null;
   configApplied: boolean;
   loopsReady: boolean;
+  /** A transponder pass since the loops were opened: they're reading. */
+  loopsReading: boolean;
   ready: boolean;
   activeChannel: number;
   activePower: number;

@@ -12,6 +12,9 @@ const CONNECT_TIMEOUT_MS = 8_000;
 const HEARTBEAT_STALE_MS = 5_000;
 const READER_OPEN_RETRY_MS = 2_000;
 const FULL_CONFIGURATION_RETRY_INTERVAL = 5;
+// readerOpen has no acknowledgement and some firmware never reports a loop as
+// running, so stop re-sending it after a few tries (about 12 s).
+const MAX_READER_OPEN_RETRIES = 6;
 export const MAX_DIRECT_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 export interface ActiveTimingReceiptMetadata {
@@ -59,6 +62,8 @@ export interface ActiveTransponderStatus {
   loop2State: string | null;
   loop1Enabled: boolean;
   loop2Enabled: boolean;
+  /** A transponder pass since the loops were opened: they're reading. */
+  loopsReading: boolean;
   configurationApplied: boolean;
   ready: boolean;
   diagnosis: string | null;
@@ -199,11 +204,14 @@ export class ActiveTransponderClient extends EventEmitter {
       !enabled || this.loopsProvenByReads || isLoopWorking(state[`reader${index + 1}Working`] ?? ""));
     const hasLoopTelemetry = state.reader1Working !== undefined || state.reader2Working !== undefined;
     const readersWorking = enabledLoops.every(Boolean);
+    // Ready once connected, beating, configured and told to open its loops.
+    // Loop telemetry doesn't gate this: some RM TrackR firmware reports a loop
+    // as 0 (off) while it reads. A transponder pass is the proof it reads.
     const ready = connected && heartbeatFresh && this.desiredReading && this.configurationApplied
-      && this.readerCommandMachineId === this.machineId && readersWorking;
+      && this.readerCommandMachineId === this.machineId;
     const loop1State = state.reader1Working ?? null;
     const loop2State = state.reader2Working ?? null;
-    const machineSummary = ["batteryPercent", "reader1Working", "reader2Working"]
+    const machineSummary = ["batteryPercent"]
       .filter((key) => state[key] !== undefined)
       .map((key) => `${key.replace("Percent", "")}: ${state[key]}`)
       .join(", ");
@@ -223,10 +231,10 @@ export class ActiveTransponderClient extends EventEmitter {
         ? "Transport is connected. Waiting for the RM TrackR machine identification and heartbeat."
         : !heartbeatFresh
           ? "Waiting for a fresh RM TrackR heartbeat."
-          : this.desiredReading && !readersWorking
+          : this.desiredReading && !readersWorking && !ready
             ? silentLoopMessage(enabledLoops, this.readerOpenRetryCount, hasLoopTelemetry)
             : this.desiredReading
-              ? "Reading transponders."
+              ? (this.loopsProvenByReads ? "Reading transponders." : "Ready. The first transponder pass confirms the loop is reading.")
               : "RM TrackR transport, heartbeat, and machine identification are ready.");
     return {
       connected, host: this.host, port: this.port, machineId: this.machineId,
@@ -235,7 +243,7 @@ export class ActiveTransponderClient extends EventEmitter {
       machineState: { ...state }, activeSystemState: this.activeSystemState,
       reading: ready, transportReady: connected && !!this.machineId, heartbeatFresh,
       loop1State, loop2State, loop1Enabled: this.loopEnabled[0],
-      loop2Enabled: this.loopEnabled[1], configurationApplied: this.configurationApplied,
+      loop2Enabled: this.loopEnabled[1], loopsReading: this.loopsProvenByReads, configurationApplied: this.configurationApplied,
       ready, diagnosis, detail, hostTimezone: getHostTimezone(),
       utcOffsetMinutes: getCurrentUtcOffsetMinutes(),
     };
@@ -452,7 +460,8 @@ export class ActiveTransponderClient extends EventEmitter {
    * enabled loop is running.
    */
   private ensureReaderOpenRetry(): void {
-    if (!this.desiredReading || !this.socket || this.socket.destroyed || !this.machineId || this.enabledLoopsAreRunning()) {
+    if (!this.desiredReading || !this.socket || this.socket.destroyed || !this.machineId || this.enabledLoopsAreRunning()
+      || this.readerOpenRetryCount >= MAX_READER_OPEN_RETRIES) {
       this.clearReaderOpenRetry();
       return;
     }

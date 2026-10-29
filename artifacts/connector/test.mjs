@@ -841,7 +841,7 @@ test("loop status counts 1 and words like working as running", () => {
   for (const value of ["0", "", "stopped", "closed"]) assert.equal(isLoopWorking(value), false, value);
 });
 
-test("a transponder pass shows the loop running when the reader sends no loop status", async () => {
+test("ready without trusting loop status; a pass marks the loop reading and stops retries", async () => {
   const messages = [];
   let peer;
   const server = net.createServer(connection => {
@@ -856,17 +856,19 @@ test("a transponder pass shows the loop running when the reader sends no loop st
   try {
     await client.connect(`127.0.0.1:${server.address().port}`);
     client.startReading();
-    // Firmware that reports battery but no loop telemetry.
-    peer.write("unit-1@heartBeat@0001@;unit-1@machineState@0002@batteryPercent=80;");
+    // Firmware that reports Loop 1 as 0 (off) even while it reads.
+    peer.write("unit-1@heartBeat@0001@;unit-1@machineState@0002@batteryPercent=80,reader1Working=0,reader2Working=0;");
     await waitFor(() => client.getStatus().heartbeatFresh);
-    assert.equal(client.getStatus().ready, false);
-    assert.doesNotMatch(client.getStatus().diagnosis, /cables/);
+    assert.equal(client.getStatus().ready, true, "connected, beating and configured is ready");
+    assert.equal(client.getStatus().loopsReading, false);
+    assert.doesNotMatch(client.getStatus().diagnosis, /cables|aren't reporting/);
+    assert.doesNotMatch(client.getStatus().detail, /reader1Working/, "raw loop status isn't shown");
 
     const now = new Date();
     const pad = (n, w = 2) => String(n).padStart(w, "0");
     const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}.000`;
     peer.write(`unit-1@heartBeat@0003@;unit-1@epc@0004@${stamp},ABC123;`);
-    await waitFor(() => client.getStatus().ready);
+    await waitFor(() => client.getStatus().loopsReading);
     assert.equal(client.getStatus().diagnosis, "Reading transponders.");
 
     // No more "open the loops" retries once reads prove they run.

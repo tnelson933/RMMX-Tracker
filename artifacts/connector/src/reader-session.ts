@@ -46,6 +46,9 @@ export interface ReaderSessionStatus {
     detail: string | null;
     machineId: string | null;
     loop1State: string | null;
+    loop1Enabled: boolean;
+    loop2Enabled: boolean;
+    loopsReading: boolean;
     loop2State: string | null;
     heartbeatFresh: boolean;
     readCount: number;
@@ -549,6 +552,9 @@ export class ReaderSession extends EventEmitter {
         machineId: active?.machineId ?? null,
         loop1State: active?.loop1State ?? null,
         loop2State: active?.loop2State ?? null,
+        loop1Enabled: active?.loop1Enabled ?? false,
+        loop2Enabled: active?.loop2Enabled ?? false,
+        loopsReading: active?.loopsReading ?? false,
         heartbeatFresh: active?.heartbeatFresh ?? false,
         readCount: rfid?.readCount ?? active?.passingCount ?? 0,
         lastReadAt: rfid?.lastReadAt ?? active?.lastPassingAt ?? null,

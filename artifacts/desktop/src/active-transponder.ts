@@ -29,6 +29,8 @@ export interface ActiveTransponderStatus {
   reconnectCountdownMs: number | null;
   configApplied: boolean;
   loopsReady: boolean;
+  /** A transponder pass since the loops were opened: they're reading. */
+  loopsReading: boolean;
   ready: boolean;
   activeChannel: number;
   activePower: number;
@@ -110,6 +112,9 @@ let differentTagsRead: number | null = null;
 // A transponder pass after the loops were opened proves they run, whatever the
 // loop telemetry says (some RM TrackR firmware never reports it).
 let loopsProvenByReads = false;
+// readerOpen has no acknowledgement: re-send it a few times, then stop.
+const MAX_READER_OPEN_ATTEMPTS = 6;
+let readerOpenAttempts = 0;
 let reader1Working: string | null = null;
 let reader2Working: string | null = null;
 let eventId: string | null = null;
@@ -167,7 +172,11 @@ export function getActiveTransponderStatus(): ActiveTransponderStatus {
     reconnectCountdownMs: reconnectAt === null ? null : Math.max(0, reconnectAt - Date.now()),
     configApplied,
     loopsReady,
-    ready: configApplied && (!readersShouldBeOpen() || loopsReady),
+    loopsReading: loopsProvenByReads,
+    // Ready once configured and the enabled loops were opened. Loop telemetry
+    // doesn't gate it: some RM TrackR firmware reports a loop as 0 (off) while
+    // it reads. A transponder pass is the proof.
+    ready: configApplied && (!readersShouldBeOpen() || enabledLoopsOpened()),
     activeChannel: configuration.activeChannel,
     activePower: configuration.activePower,
     loopEnabled: [...configuration.loopEnabled] as [boolean, boolean],
@@ -377,6 +386,7 @@ function clearDeviceSessionState(): void {
   batteryPercent = null; totalTagsRead = null; differentTagsRead = null; reader1Working = null; reader2Working = null;
   eventId = null; recvBuffer = ""; commandSerialNumber = 0; reader1State = "unknown"; reader2State = "unknown"; configApplied = false; lastReaderOpenRequestAt = 0;
   loopsProvenByReads = false;
+  readerOpenAttempts = 0;
 }
 
 function processPackets(onPassing: ActiveTransponderPassingCallback | undefined, receivedAt: Date): void {
@@ -472,6 +482,8 @@ function openReaders(): void {
     && (!configuration.loopEnabled[0] || reader1State === "open")
     && (!configuration.loopEnabled[1] || reader2State === "open")) return;
   if (!shouldRetry && reader1State === "open" && reader2State === "open") return;
+  if (enabledLoopsOpened() && readerOpenAttempts >= MAX_READER_OPEN_ATTEMPTS) return;
+  readerOpenAttempts++;
   if (needsReader1) {
     sendReaderCommand("readerOpen", 1); reader1State = "open";
   }
@@ -506,6 +518,7 @@ function applyConfiguration(): void {
   sendCommand(configuration.loopEnabled[1] ? "loopEnable" : "loopDisable", "2");
   configApplied = true;
   loopsProvenByReads = false;
+  readerOpenAttempts = 0;
   reader1State = "closed";
   reader2State = "closed";
   lastReaderOpenRequestAt = 0;
@@ -524,6 +537,9 @@ function validateConfiguration(config: ActiveTransponderConfiguration): void {
 }
 function isWorking(value: string | null): boolean {
   return value !== null && ["1", "true", "working", "open", "enabled"].includes(value.toLowerCase());
+}
+function enabledLoopsOpened(): boolean {
+  return (!configuration.loopEnabled[0] || reader1State === "open") && (!configuration.loopEnabled[1] || reader2State === "open");
 }
 function areEnabledLoopsTelemetryReady(): boolean {
   if (loopsProvenByReads) return true;
@@ -547,7 +563,7 @@ function getDiagnosis(state: ActiveTransponderConnectionState): string {
   if (state === "error") return connectError ?? "RM TrackR requires attention. Check its address, network, and heartbeat.";
   if (!machineId) return "TCP connected; waiting for the RM TrackR heartbeat before loop settings can be applied.";
   if (!configApplied) return "RM TrackR is not ready: applying saved loop, channel, and power settings.";
-  if (readersShouldBeOpen() && !areEnabledLoopsTelemetryReady()) return "RM TrackR is not ready: enabled loops were opened and are waiting for reader telemetry confirmation.";
+  if (readersShouldBeOpen() && !loopsProvenByReads && !areEnabledLoopsTelemetryReady()) return "Ready. The first transponder pass confirms the loop is reading.";
   if (state === "testing") return lastPassingAt ? "Both loops are open for testing; a real RM TrackR crossing was observed." : "Both loops are open for testing. Pass a tagged transponder over a loop to verify it.";
   if (state === "race_active") return "Local moto/practice reader state is active; both RM TrackR loops are open.";
   return "Connected and idle; loops are closed until a moto, practice, or loop test starts.";

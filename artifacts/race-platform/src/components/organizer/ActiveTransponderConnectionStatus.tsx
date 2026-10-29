@@ -14,6 +14,19 @@ interface ActiveTransponderStatus {
   batteryPercent: number | null;
   reader1Working: string | null;
   reader2Working: string | null;
+  loopEnabled?: [boolean, boolean];
+  loopsReading?: boolean;
+}
+
+/**
+ * Loops as set in RM TrackR settings; a transponder pass proves they read.
+ * The reader's own loop status isn't used: some firmware reports a loop as
+ * 0 (off) while it reads.
+ */
+type LoopShow = "reading" | "waiting" | "unused";
+function loopShows(status: { loopEnabled?: [boolean, boolean]; loopsReading?: boolean }): { l1: LoopShow; l2: LoopShow } {
+  const show = (enabled: boolean | undefined): LoopShow => enabled === false ? "unused" : status.loopsReading ? "reading" : "waiting";
+  return { l1: show(status.loopEnabled?.[0]), l2: show(status.loopEnabled?.[1]) };
 }
 
 export function ActiveTransponderConnectionStatus({ className = "" }: { className?: string }) {
@@ -40,7 +53,7 @@ export function ActiveTransponderConnectionStatus({ className = "" }: { classNam
   let isConnected = false;
   let hasError = false;
   let readCount = 0;
-  let loops: { l1: boolean; l2: boolean } | null = null;
+  let loops: { l1: LoopShow; l2: LoopShow } | null = null;
   let battery: number | null = null;
 
   if (isDesktop && activeStatus) {
@@ -48,12 +61,7 @@ export function ActiveTransponderConnectionStatus({ className = "" }: { classNam
     hasError = !!activeStatus.error;
     readCount = activeStatus.passingCount;
     battery = activeStatus.batteryPercent;
-    if (activeStatus.reader1Working != null) {
-      loops = {
-        l1: activeStatus.reader1Working === "1",
-        l2: activeStatus.reader2Working === "1"
-      };
-    }
+    if (activeStatus.connected) loops = loopShows(activeStatus);
   } else if (!isDesktop && activeConnector) {
     isConnected = activeConnector.hardware.connected;
     readCount = activeConnector.hardware.readCount;
@@ -61,12 +69,7 @@ export function ActiveTransponderConnectionStatus({ className = "" }: { classNam
       if (activeConnector.hardware.detail) {
         const detail = JSON.parse(activeConnector.hardware.detail);
         if (detail.batteryPercent != null) battery = detail.batteryPercent;
-        if (detail.reader1Working != null) {
-          loops = {
-            l1: detail.reader1Working === "1",
-            l2: detail.reader2Working === "1"
-          };
-        }
+        void detail;
       }
     } catch {
       // Ignore parse error
@@ -108,10 +111,11 @@ export function ActiveTransponderConnectionStatus({ className = "" }: { classNam
             )}
 
             {loops && (
-              <div className="flex items-center gap-1 ml-1" title={`Loops: L1 ${loops.l1 ? 'OK' : 'FAIL'}, L2 ${loops.l2 ? 'OK' : 'FAIL'}`}>
+              <div className="flex items-center gap-1 ml-1" title={`Loop 1 ${loops.l1 === "waiting" ? "on, waiting for a pass" : loops.l1 === "unused" ? "not used" : "reading"} · Loop 2 ${loops.l2 === "waiting" ? "on, waiting for a pass" : loops.l2 === "unused" ? "not used" : "reading"}`}>
                 <Radio size={12} />
-                <span className={!loops.l1 || !loops.l2 ? "text-amber-600 font-bold" : ""}>
-                  {loops.l1 ? "L1" : <del>L1</del>}/{loops.l2 ? "L2" : <del>L2</del>}
+                <span>
+                  {[loops.l1 !== "unused" ? "L1" : null, loops.l2 !== "unused" ? "L2" : null].filter(Boolean).join("/")}
+                  {loops.l1 !== "reading" && loops.l2 !== "reading" && <span className="text-muted-foreground"> · waiting for a pass</span>}
                 </span>
               </div>
             )}
