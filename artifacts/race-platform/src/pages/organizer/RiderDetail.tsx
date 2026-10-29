@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { StateSelect } from "@/components/ui/StateSelect";
 import { useRoute, Link } from "wouter";
-import { useGetRider, useUpdateRider, useAssignRfid, useListDiscountCodes, getGetRiderQueryKey, useGetRiderDiscountCode, getGetRiderDiscountCodeQueryKey } from "@workspace/api-client-react";
-import type { DiscountCode as DiscountCodeType } from "@workspace/api-client-react";
+import { useGetRider, useUpdateRider, useAssignRfid, useListDiscountCodes, getGetRiderQueryKey, getListRidersQueryKey, getListDiscountCodesQueryKey, useGetRiderDiscountCode, getGetRiderDiscountCodeQueryKey } from "@workspace/api-client-react";
+import type { DiscountCode as DiscountCodeType, RiderDetail as RiderDetailType } from "@workspace/api-client-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +19,7 @@ import { User, Tag, History, ChevronLeft, Save, Activity, Bike, Star, MapPin, Ti
 import { format } from "date-fns";
 import { useGetMe } from "@workspace/api-client-react";
 import { PdfSignedViewer } from "@/components/PdfSignedViewer";
+import { OfficialResultsBadge } from "@/components/OfficialResultsBadge";
 import { useAuth } from "@/contexts/AuthContext";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -158,7 +159,7 @@ function WaiverAcknowledgmentsCard({ riderId, clubId }: { riderId: number; clubI
   const [viewingSig, setViewingSig] = useState<PdfWaiverSignature | null>(null);
   const [downloading, setDownloading] = useState<number | null>(null);
 
-  const { data: acks, isLoading: acksLoading } = useQuery<WaiverAck[]>({
+  const { data: acks, isLoading: acksLoading, isError: acksFailed, refetch: refetchAcks } = useQuery<WaiverAck[]>({
     queryKey: ["waiver-acknowledgments", clubId, riderId],
     queryFn: async () => {
       const res = await fetch(`/api/clubs/${clubId}/riders/${riderId}/waiver-acknowledgments`, { credentials: "include" });
@@ -167,11 +168,11 @@ function WaiverAcknowledgmentsCard({ riderId, clubId }: { riderId: number; clubI
     },
   });
 
-  const { data: pdfSigs, isLoading: sigsLoading } = useQuery<PdfWaiverSignature[]>({
+  const { data: pdfSigs, isLoading: sigsLoading, isError: sigsFailed, refetch: refetchSigs } = useQuery<PdfWaiverSignature[]>({
     queryKey: ["liability-waiver-signatures", clubId, riderId],
     queryFn: async () => {
       const res = await fetch(`/api/clubs/${clubId}/riders/${riderId}/liability-waiver-signatures`, { credentials: "include" });
-      if (!res.ok) return [];
+      if (!res.ok) throw new Error("Failed to fetch signed waivers");
       return res.json();
     },
   });
@@ -179,7 +180,8 @@ function WaiverAcknowledgmentsCard({ riderId, clubId }: { riderId: number; clubI
   const isLoading = acksLoading || sigsLoading;
   const hasPdfSigs = pdfSigs && pdfSigs.length > 0;
   const hasTextAcks = acks && acks.some(a => a.waiverSnapshot && !a.waiverSnapshot.startsWith("http"));
-  const isEmpty = !hasPdfSigs && !hasTextAcks && !isLoading;
+  const loadFailed = (acksFailed || sigsFailed) && !isLoading;
+  const isEmpty = !hasPdfSigs && !hasTextAcks && !isLoading && !loadFailed;
 
   return (
     <>
@@ -194,6 +196,18 @@ function WaiverAcknowledgmentsCard({ riderId, clubId }: { riderId: number; clubI
           {isLoading ? (
             <div className="flex items-center justify-center py-6">
               <Loader2 size={18} className="animate-spin text-muted-foreground" />
+            </div>
+          ) : loadFailed ? (
+            <div className="p-6 space-y-3 text-center">
+              <p className="text-sm text-destructive">Couldn&apos;t load this rider&apos;s waiver history.</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="font-heading uppercase"
+                onClick={() => { if (acksFailed) refetchAcks(); if (sigsFailed) refetchSigs(); }}
+              >
+                Try Again
+              </Button>
             </div>
           ) : isEmpty ? (
             <div className="p-6 text-center text-muted-foreground text-sm">No waiver acknowledgments on record.</div>
@@ -362,6 +376,20 @@ const updateRiderSchema = z.object({
   mylapsTransponderId: z.string().optional(),
 });
 
+type RiderRecentResultView = NonNullable<RiderDetailType["recentResults"]>[number];
+
+/** 1 -> "1st", 2 -> "2nd", 11 -> "11th", 22 -> "22nd". */
+function ordinal(n: number): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1: return `${n}st`;
+    case 2: return `${n}nd`;
+    case 3: return `${n}rd`;
+    default: return `${n}th`;
+  }
+}
+
 function InfoRow({ label, value }: { label: string; value?: string | null }) {
   return (
     <div>
@@ -403,6 +431,8 @@ function DiscountCodeCard({ riderId, clubId }: { riderId: number; clubId: number
     : (codeData ?? null);
   const setCode = (next: DiscountCodeLegacy | null) => {
     queryClient.setQueryData(codeQueryKey, next as DiscountCodeLegacy);
+    // The rider's assigned-codes list (useListDiscountCodes) shows the same code.
+    queryClient.invalidateQueries({ queryKey: getListDiscountCodesQueryKey() });
   };
   const [copied, setCopied] = useState(false);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
@@ -694,7 +724,7 @@ export default function RiderDetail() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: rider, isLoading } = useGetRider(riderId, { query: { enabled: !!riderId } as any });
+  const { data: rider, isLoading, isError: riderLoadFailed, error: riderLoadError, refetch: refetchRider } = useGetRider(riderId, { query: { enabled: !!riderId, retry: false } as any });
   const { data: me } = useGetMe({ query: {} as any });
 
   const updateMutation = useUpdateRider();
@@ -734,7 +764,10 @@ export default function RiderDetail() {
     },
   });
 
-  if (rider && !isEditing && form.getValues("firstName") === "") {
+  // Fill the form from the latest rider data each time editing opens (and on
+  // Cancel), so a transponder/RFID assigned since the page loaded isn't reverted on Save.
+  const resetFormFromRider = () => {
+    if (!rider) return;
     form.reset({
       firstName: rider.firstName,
       lastName: rider.lastName,
@@ -755,14 +788,29 @@ export default function RiderDetail() {
       amaNumber: r.amaNumber || "",
       mylapsTransponderId: r.mylapsTransponderId || "",
     });
-  }
+  };
+
+  const startEditing = () => {
+    resetFormFromRider();
+    setIsEditing(true);
+  };
+
+  const cancelEditing = () => {
+    resetFormFromRider();
+    setIsEditing(false);
+  };
+
+  const invalidateRider = () => {
+    queryClient.invalidateQueries({ queryKey: getGetRiderQueryKey(riderId) });
+    queryClient.invalidateQueries({ queryKey: getListRidersQueryKey() });
+  };
 
   const onSubmit = (data: z.infer<typeof updateRiderSchema>) => {
     updateMutation.mutate(
       { riderId, data },
       {
         onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getGetRiderQueryKey(riderId) });
+          invalidateRider();
           setIsEditing(false);
           toast({ title: "Rider profile updated" });
         },
@@ -779,7 +827,7 @@ export default function RiderDetail() {
       { data: { riderId, rfidNumber: rfidInput } },
       {
         onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getGetRiderQueryKey(riderId) });
+          invalidateRider();
           setRfidInput("");
           toast({ title: "RFID assigned successfully" });
         },
@@ -797,7 +845,7 @@ export default function RiderDetail() {
       { riderId, data: { mylapsTransponderId: value } },
       {
         onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getGetRiderQueryKey(riderId) });
+          invalidateRider();
           setActiveTransponderInput("");
           toast({ title: "Active transponder assigned successfully" });
         },
@@ -809,6 +857,28 @@ export default function RiderDetail() {
   };
 
   if (isLoading) return <div className="p-8">Loading rider...</div>;
+  if (riderLoadFailed) {
+    const status = (riderLoadError as { status?: number } | null)?.status;
+    if (status !== 404) {
+      return (
+        <div className="p-8 space-y-3">
+          <p className="text-destructive font-medium">
+            {status === 403
+              ? "You don't have access to this rider."
+              : "Couldn't load this rider. Check your connection and try again."}
+          </p>
+          {status !== 403 && (
+            <Button variant="outline" size="sm" className="font-heading uppercase" onClick={() => refetchRider()}>
+              Try Again
+            </Button>
+          )}
+          <div>
+            <Link href="/riders" className="text-sm text-muted-foreground hover:text-foreground underline">Back to riders</Link>
+          </div>
+        </div>
+      );
+    }
+  }
   if (!rider) return <div className="p-8">Rider not found</div>;
 
   return (
@@ -849,7 +919,7 @@ export default function RiderDetail() {
                 <User className="text-primary" size={20} /> Personal Information
               </CardTitle>
               {!isEditing && (
-                <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>Edit Profile</Button>
+                <Button variant="outline" size="sm" onClick={startEditing}>Edit Profile</Button>
               )}
             </CardHeader>
             <CardContent className="p-6">
@@ -857,7 +927,7 @@ export default function RiderDetail() {
                 <Form {...form}>
                   <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
                     {/* Name */}
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <FormField control={form.control} name="firstName" render={({ field }) => (
                         <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
                       )} />
@@ -867,7 +937,7 @@ export default function RiderDetail() {
                     </div>
 
                     {/* Contact */}
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <FormField control={form.control} name="email" render={({ field }) => (
                         <FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" {...field} /></FormControl><FormMessage /></FormItem>
                       )} />
@@ -880,7 +950,7 @@ export default function RiderDetail() {
                     <FormField control={form.control} name="streetAddress" render={({ field }) => (
                       <FormItem><FormLabel>Street Address</FormLabel><FormControl><Input placeholder="123 Dirt Track Rd" {...field} /></FormControl><FormMessage /></FormItem>
                     )} />
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <FormField control={form.control} name="city" render={({ field }) => (
                         <FormItem><FormLabel>City</FormLabel><FormControl><Input placeholder="Tucson" {...field} /></FormControl><FormMessage /></FormItem>
                       )} />
@@ -900,7 +970,7 @@ export default function RiderDetail() {
                     {/* Racing info */}
                     <div className="border-t pt-4 mt-2">
                       <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-4">Racing Info</p>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <FormField control={form.control} name="bikeManufacturer" render={({ field }) => (
                           <FormItem><FormLabel>Bike Manufacturer</FormLabel><FormControl><Input placeholder="Honda, KTM, Yamaha…" {...field} /></FormControl><FormMessage /></FormItem>
                         )} />
@@ -908,7 +978,7 @@ export default function RiderDetail() {
                           <FormItem><FormLabel>Default Bib #</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
                         )} />
                       </div>
-                      <div className="grid grid-cols-2 gap-4 mt-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
                         <FormField control={form.control} name="bikeModel" render={({ field }) => (
                           <FormItem><FormLabel>Bike Model</FormLabel><FormControl><Input placeholder="450 SX-F, CRF450R…" {...field} /></FormControl><FormMessage /></FormItem>
                         )} />
@@ -916,7 +986,7 @@ export default function RiderDetail() {
                           <FormItem><FormLabel>Bike Year</FormLabel><FormControl><Input placeholder="2024" maxLength={4} {...field} /></FormControl><FormMessage /></FormItem>
                         )} />
                       </div>
-                      <div className="grid grid-cols-2 gap-4 mt-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
                         <FormField control={form.control} name="amaNumber" render={({ field }) => (
                           <FormItem><FormLabel>AMA #</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
                         )} />
@@ -934,7 +1004,7 @@ export default function RiderDetail() {
                     {/* Emergency */}
                     <div className="border-t pt-4 mt-2">
                       <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-4">Emergency Contact</p>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <FormField control={form.control} name="emergencyContact" render={({ field }) => (
                           <FormItem><FormLabel>Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
                         )} />
@@ -945,7 +1015,7 @@ export default function RiderDetail() {
                     </div>
 
                     <div className="pt-4 flex justify-end gap-2">
-                      <Button variant="ghost" type="button" onClick={() => setIsEditing(false)}>Cancel</Button>
+                      <Button variant="ghost" type="button" onClick={cancelEditing}>Cancel</Button>
                       <Button type="submit" disabled={updateMutation.isPending} className="font-heading uppercase">
                         <Save size={16} className="mr-2" /> Save Profile
                       </Button>
@@ -1050,19 +1120,27 @@ export default function RiderDetail() {
             <CardContent className="p-0">
               {rider.recentResults && rider.recentResults.length > 0 ? (
                 <div className="divide-y">
-                  {rider.recentResults.map((result, i) => (
-                    <div key={i} className="p-4 flex items-center justify-between hover:bg-muted/30 transition-colors">
-                      <div>
-                        <div className="font-heading font-bold text-lg">{result.raceClass}</div>
-                        <div className="text-sm text-muted-foreground flex items-center gap-2">
-                          <Activity size={14} /> Moto {result.motoId}
+                  {rider.recentResults.map((result: RiderRecentResultView) => (
+                    <div key={result.id} className="p-4 flex items-center justify-between gap-3 hover:bg-muted/30 transition-colors">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-heading font-bold text-lg">{result.raceClass}</span>
+                          <OfficialResultsBadge official={!!result.official} compact />
+                        </div>
+                        <div className="text-sm text-muted-foreground truncate">{result.eventName || `Event ${result.eventId}`}</div>
+                        <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                          <Activity size={12} /> {result.motoName || `Moto ${result.motoId}`}
                         </div>
                       </div>
-                      <div className="text-right">
-                        <div className="text-2xl font-heading font-bold text-primary">
-                          {result.position === 1 ? "1st" : result.position === 2 ? "2nd" : result.position === 3 ? "3rd" : `${result.position}th`}
-                        </div>
-                        {result.points !== null && (
+                      <div className="text-right shrink-0">
+                        {result.dns ? (
+                          <Badge variant="secondary" className="font-heading uppercase">DNS</Badge>
+                        ) : result.dnf ? (
+                          <Badge variant="destructive" className="font-heading uppercase">DNF</Badge>
+                        ) : (
+                          <div className="text-2xl font-heading font-bold text-primary">{ordinal(result.position)}</div>
+                        )}
+                        {result.points != null && (
                           <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{result.points} PTS</div>
                         )}
                       </div>

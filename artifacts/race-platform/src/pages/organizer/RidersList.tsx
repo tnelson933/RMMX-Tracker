@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { StateSelect } from "@/components/ui/StateSelect";
-import { Link } from "wouter";
+import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { useListRiders, useCreateRider, getListRidersQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -193,6 +193,7 @@ export default function RidersList() {
   const clubId = user?.clubId ?? null;
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
 
   const [search, setSearch] = useState("");
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -210,11 +211,11 @@ export default function RidersList() {
 
   const trimmedSearch = search.trim();
 
-  const { data: riders, isLoading } = useListRiders(
+  const { data: riders, isLoading, isError: ridersLoadFailed, error: ridersLoadError, refetch: refetchRiders } = useListRiders(
     isSuperAdmin
       ? { search: trimmedSearch.length > 2 ? trimmedSearch : undefined }
       : { clubId: clubId ?? 0, search: trimmedSearch.length > 2 ? trimmedSearch : undefined },
-    { query: { enabled: isSuperAdmin || !!clubId } as any }
+    { query: { enabled: isSuperAdmin || !!clubId, retry: false } as any }
   );
 
   const createMutation = useCreateRider();
@@ -301,7 +302,7 @@ export default function RidersList() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-wrap justify-between items-center gap-4">
         <div>
           <h1 className="text-4xl font-heading font-bold uppercase tracking-tight flex items-center gap-3">
             <Users className="text-primary" /> Rider Database
@@ -309,7 +310,7 @@ export default function RidersList() {
           <p className="text-muted-foreground mt-1">Manage rider profiles and assignments.</p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" className="font-heading uppercase tracking-wider gap-2">
@@ -335,13 +336,13 @@ export default function RidersList() {
                 <Plus size={16} className="mr-2" /> Add Rider
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-2xl">
+            <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="font-heading uppercase text-xl">Add New Rider</DialogTitle>
               </DialogHeader>
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5 pt-2">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <FormField control={form.control} name="firstName" render={({ field }) => (
                       <FormItem><FormLabel>First Name *</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
                     )} />
@@ -350,7 +351,7 @@ export default function RidersList() {
                     )} />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <FormField control={form.control} name="email" render={({ field }) => (
                       <FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" {...field} /></FormControl><FormMessage /></FormItem>
                     )} />
@@ -362,7 +363,7 @@ export default function RidersList() {
                   <FormField control={form.control} name="streetAddress" render={({ field }) => (
                     <FormItem><FormLabel>Street Address</FormLabel><FormControl><Input placeholder="123 Dirt Track Rd" {...field} /></FormControl><FormMessage /></FormItem>
                   )} />
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <FormField control={form.control} name="city" render={({ field }) => (
                       <FormItem><FormLabel>City</FormLabel><FormControl><Input placeholder="Tucson" {...field} /></FormControl><FormMessage /></FormItem>
                     )} />
@@ -377,7 +378,7 @@ export default function RidersList() {
                     <FormItem><FormLabel>Bike Manufacturer</FormLabel><FormControl><Input placeholder="Honda, KTM, Yamaha…" {...field} /></FormControl><FormMessage /></FormItem>
                   )} />
 
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <FormField control={form.control} name="bibNumber" render={({ field }) => (
                       <FormItem><FormLabel>#</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
                     )} />
@@ -489,12 +490,27 @@ export default function RidersList() {
                 <TableRow>
                   <TableCell colSpan={8} className="text-center py-12">Loading riders...</TableCell>
                 </TableRow>
+              ) : ridersLoadFailed ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-16">
+                    <p className="text-lg font-medium text-destructive">
+                      {(ridersLoadError as { status?: number } | null)?.status === 403
+                        ? "You don't have access to the rider database."
+                        : "Couldn't load riders. Check your connection and try again."}
+                    </p>
+                    {(ridersLoadError as { status?: number } | null)?.status !== 403 && (
+                      <Button variant="outline" size="sm" className="mt-4 font-heading uppercase" onClick={() => refetchRiders()}>
+                        Try Again
+                      </Button>
+                    )}
+                  </TableCell>
+                </TableRow>
               ) : displayRiders.length > 0 ? (
                 displayRiders.map((rider) => (
                   <TableRow
                     key={rider.id}
                     className="hover:bg-muted/50 cursor-pointer group"
-                    onClick={() => (window.location.href = `/riders/${rider.id}`)}
+                    onClick={() => navigate(`/riders/${rider.id}`)}
                   >
                     <TableCell className="font-bold">{rider.firstName} {rider.lastName}</TableCell>
                     <TableCell className="text-center">

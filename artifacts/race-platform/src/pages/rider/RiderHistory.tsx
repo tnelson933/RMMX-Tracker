@@ -1144,7 +1144,8 @@ function PracticeSessionCard({
 
   // Merge live laps into display (live overrides static when connected)
   const displayLaps = (liveLaps ?? session.laps).filter(l => l.lapTimeMs !== null && l.lapTimeMs > 0);
-  const displayLapCount = liveLaps != null ? liveLaps.length : session.lapCount;
+  // Timed laps only: the first pass just starts the clock.
+  const displayLapCount = liveLaps != null ? displayLaps.length : session.lapCount;
   const eligibleDisplayLaps = displayLaps;
   const displayBestMs = eligibleDisplayLaps.length > 0
     ? Math.min(...eligibleDisplayLaps.map(l => l.lapTimeMs!))

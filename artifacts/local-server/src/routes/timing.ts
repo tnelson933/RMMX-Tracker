@@ -3,6 +3,7 @@ import { compareStandings, computeFinishAt, everyoneFinished, finishGraceMs, fla
 import type { Response } from "express";
 import { getDb, parseJsonArr, parseJson } from "../db";
 import { rejectForeignBrowserIngest } from "../lib/request-origin";
+import { LIVE_WINDOW_MS, resolvePracticeRider } from "./practice";
 
 const router = Router();
 const MAX_CROSSING_FUTURE_MS = 5 * 60 * 1000;
@@ -541,17 +542,29 @@ function getActiveMotoForEvent(eventId: number): any {
   );
 }
 
+// Which session gets the reads, with the cloud's rule (api-server lib/liveSession.ts):
+// a moto left "in progress" (e.g. after testing) only counts while it started
+// within the live window and no practice was started after it.
 function getActiveMotoForAnyEvent(): any {
-  return (
-    getDb()
-      .prepare("SELECT * FROM motos WHERE status = 'in_progress' ORDER BY started_at DESC LIMIT 1")
-      .get() ?? null
-  );
+  const moto = getDb()
+    .prepare("SELECT * FROM motos WHERE status = 'in_progress' ORDER BY started_at DESC LIMIT 1")
+    .get() as any;
+  if (!moto?.started_at) return null;
+  const started = new Date(moto.started_at).getTime();
+  if (Date.now() - started > LIVE_WINDOW_MS) return null;
+  const practice = getActivePracticeSession();
+  if (practice && new Date(practice.started_at ?? practice.created_at).getTime() > started) return null;
+  return moto;
 }
 
 function getActivePracticeSession(): any {
   return (
-    getDb().prepare("SELECT * FROM practice_sessions WHERE status = 'active' LIMIT 1").get() ?? null
+    getDb()
+      .prepare(
+        `SELECT * FROM practice_sessions WHERE status = 'active'
+         AND COALESCE(started_at, created_at) >= ? ORDER BY id DESC LIMIT 1`,
+      )
+      .get(new Date(Date.now() - LIVE_WINDOW_MS).toISOString()) ?? null
   );
 }
 
@@ -573,44 +586,13 @@ function processPracticeCrossing(opts: {
 
   if (lastCrossing) {
     const elapsed = crossingTime.getTime() - new Date(lastCrossing.crossing_time).getTime();
-    if (elapsed < (session.debounce_ms ?? 30000)) return { debounced: true };
+    if (elapsed < (session.debounce_ms ?? 10000)) return { debounced: true };
   }
 
-  const assignment = db
-    .prepare(
-      `SELECT ra.rider_id, r.first_name, r.last_name, r.bib_number
-       FROM rfid_assignments ra
-       LEFT JOIN riders r ON ra.rider_id = r.id
-       LEFT JOIN events e ON ra.event_id = e.id
-       WHERE ra.rfid_number = ? AND e.club_id = ?
-       LIMIT 1`,
-    )
-    .get(tagNumber, session.club_id) as any;
-
-  let riderId: number | null = null;
-  let riderName: string | null = null;
-  let bibNumber: string | null = null;
-
-  if (assignment) {
-    riderId = assignment.rider_id;
-    riderName = [assignment.first_name, assignment.last_name].filter(Boolean).join(" ") || null;
-    bibNumber = assignment.bib_number;
-  } else {
-    const directRider = db
-      .prepare(
-        `SELECT id, first_name, last_name, bib_number
-         FROM riders
-         WHERE rfid_number = ? OR mylaps_transponder_id = ? COLLATE NOCASE
-         LIMIT 1`,
-      )
-      .get(tagNumber, tagNumber) as any;
-    if (directRider) {
-      riderId = directRider.id;
-      riderName =
-        [directRider.first_name, directRider.last_name].filter(Boolean).join(" ") || null;
-      bibNumber = directRider.bib_number;
-    }
-  }
+  // Same matching as the practice routes; unknown (ambient) tags are dropped.
+  const rider = resolvePracticeRider(db, session.club_id, tagNumber);
+  if (!rider) return null;
+  const { riderId, riderName, bibNumber } = rider;
 
   const lapNumber = (lastCrossing?.lap_number ?? 0) + 1;
   const lapTimeMs = lastCrossing

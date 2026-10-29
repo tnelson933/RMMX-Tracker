@@ -80,7 +80,11 @@ router.get("/clubs/:clubId/riders/:riderId/liability-waiver-signatures", async (
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, sessionUserId));
   if (!user) return res.status(401).json({ error: "Not authenticated" });
   const isSuperAdmin = user.role === "super_admin";
-  if (!isSuperAdmin && (user.role !== "club_organizer" || user.clubId !== clubId)) {
+  // Club organizers, and club staff with the riders permission (they see the rider page).
+  const canReadRiders =
+    user.role === "club_organizer" ||
+    (user.role === "staff" && (user.permissions ?? []).includes("riders"));
+  if (!isSuperAdmin && (!canReadRiders || user.clubId !== clubId)) {
     return res.status(403).json({ error: "Forbidden" });
   }
 

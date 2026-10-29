@@ -4068,12 +4068,57 @@ components:
           description: Race disciplines the rider competes in (e.g. Motocross, Supercross, Desert)
         recentResults:
           type: array
+          description: Completed motos from the caller's club events (all clubs for super admins), newest event first.
           items:
-            $ref: "#/components/schemas/RaceResult"
+            $ref: "#/components/schemas/RiderRecentResult"
         totalEvents:
           type: integer
+          description: Distinct events the rider registered for (caller's club only).
+        clubIdNumber:
+          type: ["string", "null"]
+          description: Club ID # from the rider's latest registration at the caller's club.
         createdAt:
           type: string
+
+    RiderRecentResult:
+      type: object
+      required: [id, eventId, motoId, riderId, position, eventName, motoName, official]
+      properties:
+        id:
+          type: integer
+        eventId:
+          type: integer
+        eventName:
+          type: string
+        eventDate:
+          type: ["string", "null"]
+        motoId:
+          type: integer
+        motoName:
+          type: string
+        riderId:
+          type: integer
+        raceClass:
+          type: string
+        position:
+          type: integer
+        totalTime:
+          type: ["string", "null"]
+        lapTimes:
+          type: array
+          items:
+            type: string
+        points:
+          type: ["integer", "null"]
+        dnf:
+          type: boolean
+        dns:
+          type: boolean
+        bibNumber:
+          type: ["string", "null"]
+        official:
+          type: boolean
+          description: True when the moto's results are finalized (or it is a practice moto).
 
     RiderInput:
       type: object

@@ -90,7 +90,8 @@ function buildLiveBoard(session: PracticeSessionRow, crossings: PracticeCrossing
       riderId: last.rider_id,
       riderName: last.rider_name,
       bibNumber: last.bib_number,
-      lapCount: sorted.length,
+      // The first pass only starts the clock: count timed laps.
+      lapCount: withLap.length,
       bestLapMs,
       lastLapMs: last.lap_time_ms,
       lastCrossingTime: last.crossing_time,
@@ -136,12 +137,64 @@ function getClubId(req: any): number | null {
   return user?.club_id ?? null;
 }
 
+/** Same window as the cloud (api-server lib/liveSession.ts). */
+export const LIVE_WINDOW_MS = 12 * 60 * 60_000;
+
+/**
+ * The rider a practice tag belongs to, matched like the cloud: the club's
+ * newest RFID assignment, then a registration's active transponder, then the
+ * rider profile (sticker or active transponder). Tags are compared without case.
+ */
+export function resolvePracticeRider(
+  db: ReturnType<typeof getDb>,
+  clubId: number,
+  tag: string,
+): { riderId: number; riderName: string | null; bibNumber: string | null } | null {
+  const name = (r: { first_name?: string | null; last_name?: string | null }) =>
+    [r.first_name, r.last_name].filter(Boolean).join(" ") || null;
+  const assignment = db
+    .prepare(
+      `SELECT ra.rider_id, r.first_name, r.last_name, r.bib_number
+       FROM rfid_assignments ra
+       LEFT JOIN riders r ON ra.rider_id = r.id
+       LEFT JOIN events e ON ra.event_id = e.id
+       WHERE ra.rfid_number = ? COLLATE NOCASE AND e.club_id = ? AND ra.rider_id IS NOT NULL
+       ORDER BY ra.id DESC
+       LIMIT 1`,
+    )
+    .get(tag, clubId) as any;
+  if (assignment) return { riderId: assignment.rider_id, riderName: name(assignment), bibNumber: assignment.bib_number ?? null };
+
+  const registration = db
+    .prepare(
+      `SELECT reg.rider_id, r.first_name, r.last_name, reg.bib_number, r.bib_number AS rider_bib
+       FROM registrations reg
+       LEFT JOIN riders r ON reg.rider_id = r.id
+       JOIN events e ON reg.event_id = e.id
+       WHERE e.club_id = ? AND reg.mylaps_transponder_number = ? COLLATE NOCASE AND reg.rider_id IS NOT NULL
+       ORDER BY reg.id ASC
+       LIMIT 1`,
+    )
+    .get(clubId, tag) as any;
+  if (registration) return { riderId: registration.rider_id, riderName: name(registration), bibNumber: registration.bib_number ?? registration.rider_bib ?? null };
+
+  const direct = db
+    .prepare(
+      `SELECT id, first_name, last_name, bib_number FROM riders
+       WHERE rfid_number = ? COLLATE NOCASE OR mylaps_transponder_id = ? COLLATE NOCASE
+       LIMIT 1`,
+    )
+    .get(tag, tag) as any;
+  if (direct) return { riderId: direct.id, riderName: name(direct), bibNumber: direct.bib_number ?? null };
+  return null;
+}
+
 function processCrossing(
   db: ReturnType<typeof getDb>,
   session: PracticeSessionRow,
   rfidNumber: string,
   crossingTime: Date,
-): { id: number } | null {
+): { id: number } | { skipped: "debounce" | "unknown_tag" } {
   const lastCrossing = db
     .prepare(
       "SELECT * FROM practice_crossings WHERE session_id = ? AND rfid_number = ? ORDER BY crossing_time DESC LIMIT 1",
@@ -150,44 +203,13 @@ function processCrossing(
 
   if (lastCrossing) {
     const elapsed = crossingTime.getTime() - new Date(lastCrossing.crossing_time).getTime();
-    if (elapsed < session.debounce_ms) return null;
+    if (elapsed < session.debounce_ms) return { skipped: "debounce" };
   }
 
-  const assignment = db
-    .prepare(
-      `SELECT ra.rider_id, r.first_name, r.last_name, r.bib_number
-       FROM rfid_assignments ra
-       LEFT JOIN riders r ON ra.rider_id = r.id
-       LEFT JOIN events e ON ra.event_id = e.id
-       WHERE ra.rfid_number = ? AND e.club_id = ?
-       LIMIT 1`,
-    )
-    .get(rfidNumber, session.club_id) as
-    | { rider_id: number; first_name: string; last_name: string; bib_number: string | null }
-    | undefined;
-
-  let riderId: number | null = null;
-  let riderName: string | null = null;
-  let bibNumber: string | null = null;
-
-  if (assignment) {
-    riderId = assignment.rider_id;
-    riderName =
-      [assignment.first_name, assignment.last_name].filter(Boolean).join(" ") || null;
-    bibNumber = assignment.bib_number;
-  } else {
-    const directRider = db
-      .prepare("SELECT id, first_name, last_name, bib_number FROM riders WHERE rfid_number = ? LIMIT 1")
-      .get(rfidNumber) as
-      | { id: number; first_name: string; last_name: string; bib_number: string | null }
-      | undefined;
-    if (directRider) {
-      riderId = directRider.id;
-      riderName =
-        [directRider.first_name, directRider.last_name].filter(Boolean).join(" ") || null;
-      bibNumber = directRider.bib_number;
-    }
-  }
+  // Unknown tags are ambient reads: dropped, as in the cloud.
+  const rider = resolvePracticeRider(db, session.club_id, rfidNumber);
+  if (!rider) return { skipped: "unknown_tag" };
+  const { riderId, riderName, bibNumber } = rider;
 
   const lapNumber = (lastCrossing?.lap_number ?? 0) + 1;
   const lapTimeMs = lastCrossing
@@ -236,11 +258,13 @@ router.post("/practice/active/crossing", rejectForeignBrowserIngest, (req, res) 
   }
 
   const db = getDb();
+  // Newest live session; one nobody ended (older than the live window) doesn't count.
   const session = db
     .prepare(
-      "SELECT * FROM practice_sessions WHERE club_id = ? AND status = 'active' LIMIT 1",
+      `SELECT * FROM practice_sessions WHERE club_id = ? AND status = 'active'
+       AND COALESCE(started_at, created_at) >= ? ORDER BY id DESC LIMIT 1`,
     )
-    .get(clubId) as PracticeSessionRow | undefined;
+    .get(clubId, new Date(Date.now() - LIVE_WINDOW_MS).toISOString()) as PracticeSessionRow | undefined;
 
   if (!session) {
     return res.status(409).json({
@@ -250,7 +274,7 @@ router.post("/practice/active/crossing", rejectForeignBrowserIngest, (req, res) 
   }
 
   const result = processCrossing(db, session, String(rfidNumber), crossingTime);
-  if (!result) return res.status(200).json({ skipped: true, reason: "debounce" });
+  if ("skipped" in result) return res.status(200).json({ skipped: true, reason: result.skipped });
 
   const crossings = db
     .prepare(
@@ -302,6 +326,9 @@ router.post("/practice", (req, res) => {
   if (!venueName?.trim()) return res.status(400).json({ error: "Track name is required" });
 
   const db = getDb();
+  // One live practice per club, as in the cloud: reads go to the newest.
+  db.prepare("UPDATE practice_sessions SET status = 'ended', ended_at = ? WHERE club_id = ? AND status = 'active'")
+    .run(new Date().toISOString(), clubId);
   const ins = db
     .prepare(
       "INSERT INTO practice_sessions (club_id, name, debounce_ms, venue_name, status, started_at) VALUES (?, ?, ?, ?, 'active', ?)",
@@ -342,15 +369,22 @@ router.patch("/practice/:id", (req, res) => {
     vals.push(venueName);
   }
   if (req.body.debounceMs !== undefined) {
+    const debounceMs = Number(req.body.debounceMs);
+    if (!Number.isInteger(debounceMs) || debounceMs < 0 || debounceMs > 600_000) {
+      return res.status(400).json({ error: "debounceMs must be a whole number of milliseconds between 0 and 600000" });
+    }
     sets.push("debounce_ms = ?");
-    vals.push(Number(req.body.debounceMs));
+    vals.push(debounceMs);
   }
   if (req.body.status !== undefined) {
     sets.push("status = ?");
     vals.push(req.body.status);
-    if (req.body.status === "active" && !existing.started_at) {
+    if (req.body.status === "active" && existing.status !== "active") {
+      // Resuming starts it fresh, and ends the club's other live session.
       sets.push("started_at = ?");
       vals.push(new Date().toISOString());
+      db.prepare("UPDATE practice_sessions SET status = 'ended', ended_at = ? WHERE club_id = ? AND status = 'active' AND id != ?")
+        .run(new Date().toISOString(), existing.club_id, id);
     }
     if (req.body.status === "ended") {
       sets.push("ended_at = ?");
@@ -445,9 +479,10 @@ router.post("/practice/:id/crossing", (req, res) => {
   const rawTime: string | undefined =
     body?.crossingTime ?? body?.passingTime ?? body?.timestamp;
   const crossingTime = rawTime ? new Date(rawTime) : new Date();
+  if (isNaN(crossingTime.getTime())) return res.status(400).json({ error: "Invalid crossingTime" });
 
   const result = processCrossing(db, session, String(rfidNumber), crossingTime);
-  if (!result) return res.status(200).json({ skipped: true, reason: "debounce" });
+  if ("skipped" in result) return res.status(200).json({ skipped: true, reason: result.skipped });
 
   const crossings = db
     .prepare(

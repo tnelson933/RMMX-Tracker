@@ -3,6 +3,41 @@ import { db } from "@workspace/db";
 import { pointsTablesTable, usersTable, seriesTable, eventsTable } from "@workspace/db";
 import { eq, isNull, or } from "drizzle-orm";
 import { evaluateFormula } from "../lib/safeFormula";
+import { pointsScaleError, scoringMethodError } from "../lib/scoringTables";
+import { recalculateSeriesPoints, scoreMotoPoints } from "./results";
+import { motosTable } from "@workspace/db";
+import { and, inArray, ne } from "drizzle-orm";
+import { logger } from "../lib/logger";
+
+/**
+ * After a table in use changes, re-score the finished races of events that use
+ * it and rebuild the series that use it, so standings follow the new points.
+ * Runs in the background; the edit itself is already saved.
+ */
+function rescoreUsers(tableId: number, clubId: number | null) {
+  setImmediate(() => {
+    void (async () => {
+      try {
+        const events = await db.select({ id: eventsTable.id }).from(eventsTable)
+          .where(clubId == null ? eq(eventsTable.scoringTableId, tableId)
+            : and(eq(eventsTable.scoringTableId, tableId), eq(eventsTable.clubId, clubId)));
+        if (events.length > 0) {
+          const motos = await db.select({ id: motosTable.id }).from(motosTable).where(and(
+            inArray(motosTable.eventId, events.map(e => e.id)),
+            eq(motosTable.status, "completed"),
+            ne(motosTable.type, "practice"),
+          ));
+          for (const m of motos) await scoreMotoPoints(m.id);
+        }
+        const series = await db.select({ id: seriesTable.id }).from(seriesTable)
+          .where(eq(seriesTable.scoringTableId, tableId));
+        await recalculateSeriesPoints(series.map(s => s.id));
+      } catch (err) {
+        logger.error({ err, tableId }, "Re-scoring after a points table edit failed");
+      }
+    })();
+  });
+}
 
 const router = Router();
 
@@ -54,6 +89,8 @@ router.post("/points-tables", async (req, res) => {
   if (!name || !scoringMethod || !Array.isArray(pointsScale)) {
     return res.status(400).json({ error: "name, scoringMethod, and pointsScale are required" });
   }
+  const postShapeError = scoringMethodError(scoringMethod) ?? pointsScaleError(pointsScale);
+  if (postShapeError) return res.status(400).json({ error: postShapeError });
   const postFormulaError = formulaError(scoringFormula);
   if (postFormulaError) return res.status(400).json({ error: postFormulaError });
 
@@ -94,7 +131,9 @@ router.patch("/points-tables/:tableId", async (req, res) => {
   if (userClubId !== null && existing.clubId !== userClubId) return res.status(403).json({ error: "Forbidden" });
 
   const { name, description, scoringMethod, mainEventOnly, pointsScale, scoringFormula, autoDnfEnabled, autoDnfThreshold } = req.body;
-  const patchFormulaError = formulaError(scoringFormula);
+  const patchFormulaError = formulaError(scoringFormula)
+    ?? (scoringMethod !== undefined ? scoringMethodError(scoringMethod) : null)
+    ?? (pointsScale !== undefined ? pointsScaleError(pointsScale) : null);
   if (patchFormulaError) return res.status(400).json({ error: patchFormulaError });
   const updates: Record<string, unknown> = {};
   if (name !== undefined) updates.name = name;
@@ -107,6 +146,9 @@ router.patch("/points-tables/:tableId", async (req, res) => {
   if (autoDnfThreshold !== undefined) updates.autoDnfThreshold = Number(autoDnfThreshold);
 
   const [updated] = await db.update(pointsTablesTable).set(updates as any).where(eq(pointsTablesTable.id, tableId)).returning();
+  const scoringChanged = ["scoringMethod", "mainEventOnly", "pointsScale", "scoringFormula", "autoDnfEnabled", "autoDnfThreshold"]
+    .some(k => k in updates);
+  if (scoringChanged) rescoreUsers(tableId, existing.clubId);
   return res.json({
     ...updated,
     pointsScale: updated.pointsScale as number[],
@@ -132,7 +174,8 @@ router.delete("/points-tables/:tableId", async (req, res) => {
 
   // Check for series using this table (FK constraint)
   const seriesUsing = await db.select({ id: seriesTable.id, name: seriesTable.name })
-    .from(seriesTable).where(eq(seriesTable.scoringTableId, tableId));
+    .from(seriesTable).where(existing.clubId == null ? eq(seriesTable.scoringTableId, tableId)
+      : and(eq(seriesTable.scoringTableId, tableId), eq(seriesTable.clubId, existing.clubId)));
   if (seriesUsing.length > 0) {
     const names = seriesUsing.map(s => `"${s.name}"`).join(", ");
     return res.status(409).json({
@@ -142,7 +185,8 @@ router.delete("/points-tables/:tableId", async (req, res) => {
 
   // Check for events using this table
   const eventsUsing = await db.select({ id: eventsTable.id, name: eventsTable.name })
-    .from(eventsTable).where(eq(eventsTable.scoringTableId, tableId));
+    .from(eventsTable).where(existing.clubId == null ? eq(eventsTable.scoringTableId, tableId)
+      : and(eq(eventsTable.scoringTableId, tableId), eq(eventsTable.clubId, existing.clubId)));
   if (eventsUsing.length > 0) {
     const names = eventsUsing.map(e => `"${e.name}"`).join(", ");
     return res.status(409).json({
@@ -150,7 +194,12 @@ router.delete("/points-tables/:tableId", async (req, res) => {
     });
   }
 
-  await db.delete(pointsTablesTable).where(eq(pointsTablesTable.id, tableId));
+  try {
+    await db.delete(pointsTablesTable).where(eq(pointsTablesTable.id, tableId));
+  } catch {
+    // Still referenced somewhere (e.g. an older link from another club).
+    return res.status(409).json({ error: "This scoring table is still in use and can't be deleted." });
+  }
   return res.status(204).end();
 });
 

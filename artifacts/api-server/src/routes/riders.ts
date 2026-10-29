@@ -130,6 +130,11 @@ router.get("/riders/:riderId", async (req, res) => {
     if (!riderIds.includes(id)) return res.status(403).json({ error: "Forbidden" });
   }
 
+  // Results and club data are limited to the caller's club events (super admins: all clubs).
+  // Only completed motos count; newest event first.
+  const resultConds = [eq(raceResultsTable.riderId, id), eq(motosTable.status, "completed")];
+  if (scopedClubId !== null) resultConds.push(eq(eventsTable.clubId, scopedClubId));
+
   const recentResults = await db.select({
     id: raceResultsTable.id,
     eventId: raceResultsTable.eventId,
@@ -144,30 +149,49 @@ router.get("/riders/:riderId", async (req, res) => {
     dns: raceResultsTable.dns,
     bibNumber: raceResultsTable.bibNumber,
     motoName: motosTable.name,
+    motoType: motosTable.type,
+    resultsFinalizedAt: motosTable.resultsFinalizedAt,
     lapCount: motosTable.lapCount,
     timeLimitMs: motosTable.timeLimitMs,
+    eventName: eventsTable.name,
+    eventDate: eventsTable.date,
   }).from(raceResultsTable)
-    .leftJoin(motosTable, eq(raceResultsTable.motoId, motosTable.id))
-    .where(eq(raceResultsTable.riderId, id))
+    .innerJoin(motosTable, eq(raceResultsTable.motoId, motosTable.id))
+    .innerJoin(eventsTable, eq(raceResultsTable.eventId, eventsTable.id))
+    .where(and(...resultConds))
+    .orderBy(desc(eventsTable.date), desc(raceResultsTable.id))
     .limit(10);
+
+  const regConds = [eq(registrationsTable.riderId, id)];
+  if (scopedClubId !== null) regConds.push(eq(eventsTable.clubId, scopedClubId));
 
   const [latestClubId] = await db
     .select({ clubIdNumber: registrationsTable.clubIdNumber })
     .from(registrationsTable)
-    .where(eq(registrationsTable.riderId, id) as any)
+    .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
+    .where(and(...regConds))
     .orderBy(desc(registrationsTable.createdAt))
     .limit(1);
+
+  // Registrations are class entries: count distinct events, not rows.
+  const [eventCount] = await db
+    .select({ count: sql<number>`count(distinct ${registrationsTable.eventId})::int` })
+    .from(registrationsTable)
+    .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
+    .where(and(...regConds));
 
   return res.json({
     ...rider,
     createdAt: rider.createdAt.toISOString(),
     clubIdNumber: latestClubId?.clubIdNumber ?? null,
-    recentResults: recentResults.map(r => ({
+    recentResults: recentResults.map(({ motoType, resultsFinalizedAt, lapCount, timeLimitMs, ...r }) => ({
       ...r,
-      lapTimes: capLapTimes(r.lapTimes, r.timeLimitMs ? null : r.lapCount),
+      lapTimes: capLapTimes(r.lapTimes, timeLimitMs ? null : lapCount),
       motoName: r.motoName || "",
+      eventName: r.eventName || "",
+      official: resultsFinalizedAt != null || motoType === "practice",
     })),
-    totalEvents: recentResults.length,
+    totalEvents: Number(eventCount?.count ?? 0),
   });
 });
 
@@ -180,6 +204,21 @@ router.patch("/riders/:riderId", async (req, res) => {
   if (scopedClubId !== null) {
     const riderIds = await getClubRiderIds(scopedClubId);
     if (!riderIds.includes(id)) return res.status(403).json({ error: "Forbidden" });
+  }
+
+  // Email is the rider profile ownership key (riderAccess.ts). Only the club that
+  // created the rider (or a super admin) may change it.
+  if (scopedClubId !== null && req.body.email !== undefined) {
+    const [existing] = await db.select({ email: ridersTable.email, clubId: ridersTable.clubId })
+      .from(ridersTable).where(eq(ridersTable.id, id));
+    if (!existing) return res.status(404).json({ error: "Not found" });
+    const current = (existing.email ?? "").trim().toLowerCase();
+    const next = (req.body.email == null ? "" : String(req.body.email)).trim().toLowerCase();
+    if (existing.clubId !== scopedClubId && next !== current) {
+      return res.status(400).json({
+        error: "This rider's email can't be changed here because the rider was not added by your club. The rider can update it from their own account.",
+      });
+    }
   }
 
   const fields = ["firstName", "lastName", "email", "phone", "bibNumber", "dateOfBirth", "emergencyContact", "emergencyPhone", "rfidNumber", "bikeManufacturer", "bikeModel", "bikeYear", "sponsors", "amaNumber", "mylapsTransponderId", "streetAddress", "city", "homeState", "zip"];

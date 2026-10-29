@@ -3,14 +3,15 @@ import { syncEventPublication } from "../lib/resultsVisibility";
 import { lapTimeToMs } from "../lib/lapScoring";
 import { db } from "@workspace/db";
 import { raceResultsTable, motosTable, ridersTable, eventPublicationTable, registrationsTable, eventsTable, pointsTablesTable, clubsTable, seriesTable, seriesPointsTable } from "@workspace/db";
-import { eq, and, inArray, ne, isNull, isNotNull } from "drizzle-orm";
+import { eq, and, inArray, ne, isNull, isNotNull, sql } from "drizzle-orm";
+import { motoCounts, seriesScope } from "../lib/seriesStandings";
+import { calcPoints, loadSeriesScoring } from "../lib/scoringTables";
 import { logger } from "../lib/logger";
 import { formulaPoints } from "../lib/safeFormula";
 import { notifyFollowersOfResults } from "../lib/riderCareer";
 import { callerOwnsClub } from "../middleware/accessControl";
 import { withMotoLock } from "./timing";
 
-const FALLBACK_POINTS = [25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
 
 /** Slice a lapTimes array to at most lapCount entries. Handles null/undefined gracefully. */
 function capLapTimes(lapTimes: unknown, lapCount: number | null | undefined): unknown[] {
@@ -51,50 +52,6 @@ function parseResultTimeToMs(t: string | null | undefined): number {
  * mainEventOnly — if true, heats score 0; only moto type "main" scores points.
  * autoDnfEnabled/autoDnfThreshold — riders completing < threshold% of leader laps score 0.
  */
-function calcPoints(opts: {
-  position: number;
-  dnf: boolean;
-  dns: boolean;
-  totalStarters: number;
-  scoringMethod: string;
-  pointsScale: number[];
-  scoringFormula: string | null;
-  mainEventOnly: boolean;
-  motoType: string;
-  autoDnfEnabled?: boolean;
-  autoDnfThreshold?: number;
-  lapsCompleted?: number;
-  leaderLapsCompleted?: number;
-}): number {
-  if (opts.dnf || opts.dns) return 0;
-  if (opts.mainEventOnly && opts.motoType !== "main") return 0;
-
-  // Auto DNF: rider completed too few laps vs the leader → treat as DNF for scoring
-  if (
-    opts.autoDnfEnabled &&
-    opts.leaderLapsCompleted != null &&
-    opts.leaderLapsCompleted > 0 &&
-    opts.lapsCompleted != null &&
-    opts.autoDnfThreshold != null
-  ) {
-    const minLaps = Math.floor(opts.leaderLapsCompleted * opts.autoDnfThreshold / 100);
-    if (opts.lapsCompleted < minLaps) return 0;
-  }
-
-  switch (opts.scoringMethod) {
-    case "formula":
-      if (!opts.scoringFormula) return 0;
-      return formulaPoints(opts.scoringFormula, opts.position, opts.totalStarters);
-    case "per_rider":
-      return Math.max(0, opts.totalStarters - opts.position + 1);
-    case "highest_points":
-      return opts.pointsScale[opts.position - 1] ?? 0;
-    case "lowest_positions":
-      return opts.pointsScale[opts.position - 1] ?? opts.position;
-    default:
-      return FALLBACK_POINTS[opts.position - 1] ?? 0;
-  }
-}
 
 /**
  * Recalculate and upsert series_points rows for the given series IDs.
@@ -109,95 +66,49 @@ function calcPoints(opts: {
  *
  * Safe to call repeatedly — replaces existing rows for the series.
  */
-async function recalculateSeriesPoints(seriesIds: number[]): Promise<void> {
+export async function recalculateSeriesPoints(seriesIds: number[]): Promise<void> {
   if (seriesIds.length === 0) return;
 
   const allSeries = await db.select().from(seriesTable).where(inArray(seriesTable.id, seriesIds));
 
   for (const series of allSeries) {
     try {
-      const eventIds = (series.eventIds as number[]) ?? [];
-      if (eventIds.length === 0) continue;
+      // Same events and classes as the standings pages (lib/seriesStandings.ts).
+      const { eventIds, eligibleClasses } = await seriesScope(series);
 
-      // Load scoring config for this series
-      let seriesScoringMethod = "fallback";
-      let seriesPointsScale: number[] = [];
-      let seriesScoringFormula: string | null = null;
-      let seriesMainEventOnly = false;
-      if (series.scoringTableId) {
-        const [tbl] = await db.select().from(pointsTablesTable)
-          .where(eq(pointsTablesTable.id, series.scoringTableId));
-        if (tbl) {
-          seriesScoringMethod = tbl.scoringMethod;
-          seriesPointsScale = (tbl.pointsScale as number[]) ?? [];
-          seriesScoringFormula = tbl.scoringFormula ?? null;
-          seriesMainEventOnly = tbl.mainEventOnly;
-        }
-      }
+      const {
+        scoringMethod: seriesScoringMethod,
+        pointsScale: seriesPointsScale,
+        scoringFormula: seriesScoringFormula,
+        mainEventOnly: seriesMainEventOnly,
+      } = await loadSeriesScoring(series.scoringTableId);
 
-      // Load raceClassSeriesMap for every event in the series so we can
-      // gate each moto result on whether that class is mapped to this series.
-      const eventsData = await db.select({
-        id: eventsTable.id,
-        raceClassSeriesMap: eventsTable.raceClassSeriesMap,
-      }).from(eventsTable).where(inArray(eventsTable.id, eventIds));
-
-      // Map eventId → Set of raceClass strings that award points for this series,
-      // OR null to mean "legacy mode — all classes eligible" (no per-class mapping set).
-      const eligibleClassesByEvent = new Map<number, Set<string> | null>();
-      for (const evt of eventsData) {
-        const map = (evt.raceClassSeriesMap ?? {}) as Record<string, number[]>;
-        const anyMappedToThisSeries = Object.values(map).some(ids =>
-          (ids as number[]).includes(series.id)
-        );
-        if (anyMappedToThisSeries) {
-          // Per-class mode: only classes explicitly mapped to this series earn points
-          const classes = new Set<string>();
-          for (const [cls, ids] of Object.entries(map)) {
-            if ((ids as number[]).includes(series.id)) classes.add(cls);
-          }
-          eligibleClassesByEvent.set(evt.id, classes);
-        } else {
-          // Legacy mode: event is in series.eventIds but no per-class mapping configured —
-          // treat all classes as eligible (preserves existing behavior)
-          eligibleClassesByEvent.set(evt.id, null);
-        }
-      }
-
-      // Collect all completed motos for all events in the series
-      const motos = await db.select({
+      // Finished, non-practice motos whose class counts for this series.
+      const eligibleMotos = eventIds.length === 0 ? [] : (await db.select({
         id: motosTable.id,
         type: motosTable.type,
         raceClass: motosTable.raceClass,
         eventId: motosTable.eventId,
       }).from(motosTable)
-        .where(and(inArray(motosTable.eventId, eventIds), eq(motosTable.status, "completed")));
-
-      if (motos.length === 0) continue;
-
-      // Filter to motos eligible for this series in their event:
-      // - null (legacy mode) → all classes eligible
-      // - Set<string> (per-class mode) → only motos whose raceClass is in the set
-      const eligibleMotos = motos.filter(m => {
-        const classes = eligibleClassesByEvent.get(m.eventId);
-        if (classes === undefined) return false; // event not in series
-        if (classes === null) return true; // legacy mode — all classes
-        return m.raceClass != null && classes.has(m.raceClass);
-      });
-      if (eligibleMotos.length === 0) continue;
+        .where(and(
+          inArray(motosTable.eventId, eventIds),
+          eq(motosTable.status, "completed"),
+          ne(motosTable.type, "practice"),
+        )))
+        .filter(m => motoCounts(eligibleClasses, m));
 
       const eligibleMotoIds = eligibleMotos.map(m => m.id);
       const motoTypeMap = new Map(eligibleMotos.map(m => [m.id, m.type ?? "heat"]));
       const motoEventMap = new Map(eligibleMotos.map(m => [m.id, m.eventId]));
 
-      // Load all race results for eligible motos
-      const results = await db.select({
+      const results = eligibleMotoIds.length === 0 ? [] : await db.select({
         motoId: raceResultsTable.motoId,
         riderId: raceResultsTable.riderId,
         raceClass: raceResultsTable.raceClass,
         position: raceResultsTable.position,
         dnf: raceResultsTable.dnf,
         dns: raceResultsTable.dns,
+        points: raceResultsTable.points,
       }).from(raceResultsTable).where(inArray(raceResultsTable.motoId, eligibleMotoIds));
 
       // Pre-compute totalStarters (non-DNS count) per moto for per_rider/formula scoring
@@ -218,7 +129,10 @@ async function recalculateSeriesPoints(seriesIds: number[]): Promise<void> {
         if (seriesMainEventOnly && motoType !== "main") continue;
 
         const totalStarters = startersByMoto.get(r.motoId) ?? 1;
-        const pts = r.dnf ? 0 : calcPoints({
+        // The points stored on the result (they include club auto-DNF); scored
+        // with the series' table only when none were stored. Same rule as the
+        // standings pages (lib/seriesStandings.ts).
+        const pts = r.dnf ? 0 : r.points ?? calcPoints({
           position: r.position,
           dnf: !!r.dnf,
           dns: false,
@@ -230,35 +144,40 @@ async function recalculateSeriesPoints(seriesIds: number[]): Promise<void> {
           motoType,
         });
 
-        const key = `${r.riderId}::${r.raceClass}`;
+        const raceClass = (r.raceClass ?? "").trim();
+        const key = `${r.riderId}::${raceClass}`;
         if (!aggregate.has(key)) {
-          aggregate.set(key, { riderId: r.riderId, raceClass: r.raceClass ?? "", totalPoints: 0, eventsEntered: new Set() });
+          aggregate.set(key, { riderId: r.riderId, raceClass, totalPoints: 0, eventsEntered: new Set() });
         }
         const entry = aggregate.get(key)!;
         entry.totalPoints += pts;
         if (motoEventId) entry.eventsEntered.add(motoEventId);
       }
 
-      if (aggregate.size === 0) continue;
-
-      // Delete existing rows for this series then re-insert
-      await db.delete(seriesPointsTable).where(eq(seriesPointsTable.seriesId, series.id));
-
-      for (const entry of aggregate.values()) {
-        await db.insert(seriesPointsTable).values({
+      // Replace this series' rows in one transaction. The advisory lock keeps two
+      // recalculations (fired by back-to-back saves) from interleaving and
+      // doubling rows. Runs even when nothing counts, so removed events drop out.
+      await db.transaction(async (tx) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(${SERIES_POINTS_LOCK}, ${series.id})`);
+        await tx.delete(seriesPointsTable).where(eq(seriesPointsTable.seriesId, series.id));
+        const rows = [...aggregate.values()].map(entry => ({
           seriesId: series.id,
           riderId: entry.riderId,
           raceClass: entry.raceClass,
           totalPoints: entry.totalPoints,
           eventsEntered: entry.eventsEntered.size,
           eventResults: [],
-        });
-      }
+        }));
+        if (rows.length > 0) await tx.insert(seriesPointsTable).values(rows);
+      });
     } catch (err) {
       logger.error({ err, seriesId: series.id }, "recalculateSeriesPoints failed for series");
     }
   }
 }
+
+/** Advisory-lock namespace for series_points rebuilds. */
+const SERIES_POINTS_LOCK = 7_320_001;
 
 const router = Router();
 

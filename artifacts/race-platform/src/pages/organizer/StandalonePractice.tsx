@@ -82,6 +82,12 @@ export default function StandalonePractice() {
   const [tracks, setTracks] = useState<{ id: number; name: string }[]>([]);
   const [selectedVenue, setSelectedVenue] = useState("");
   const esRef = useRef<EventSource | null>(null);
+  // The active session seen on the last poll: follow a newly started session,
+  // but let the organizer stay on an ended one they chose to review.
+  const lastActiveIdRef = useRef<number | null>(null);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
+  // Board data arrives over SSE; until the first message, don't claim "no crossings".
+  const [boardLoaded, setBoardLoaded] = useState(false);
 
   const { data: clubs = [] } = useListClubs({ query: { enabled: isSuperAdmin } as any });
 
@@ -95,17 +101,16 @@ export default function StandalonePractice() {
       const data: PracticeSession[] = await res.json();
       setLoadError(null);
       setSessions(data);
+      setSessionsLoaded(true);
       const active = data.find((s: PracticeSession) => s.status === "active");
+      const newlyActive = active && active.id !== lastActiveIdRef.current ? active : null;
+      lastActiveIdRef.current = active?.id ?? null;
       setSelectedId(prev => {
         if (!prev && data.length > 0) {
           return (active ?? data[0]).id;
         }
-        if (active && prev) {
-          const current = data.find((s: PracticeSession) => s.id === prev);
-          if (current && current.status !== "active") {
-            return active.id;
-          }
-        }
+        // Jump to a session only when it has just gone live.
+        if (newlyActive) return newlyActive.id;
         return prev;
       });
     } catch {
@@ -133,6 +138,7 @@ export default function StandalonePractice() {
     esRef.current = null;
     setSseConnected(false);
     setLiveBoard(null);
+    setBoardLoaded(false);
 
     if (!selectedId) return;
 
@@ -145,6 +151,7 @@ export default function StandalonePractice() {
       try {
         const data: LiveBoard = JSON.parse(e.data);
         setLiveBoard(data);
+        setBoardLoaded(true);
         setSseConnected(true);
         setSessions(prev =>
           prev.map(s => s.id === data.session.id ? data.session : s)
@@ -189,7 +196,10 @@ export default function StandalonePractice() {
       }
       const session: PracticeSession = await res.json();
       setSessions(prev => [session, ...prev]);
+      lastActiveIdRef.current = session.id;
       setSelectedId(session.id);
+      // The server ended the club's other live session: refresh the list.
+      void loadSessions();
       setNewName("");
       setShowNewForm(false);
       setMobilePanel("board");
@@ -393,7 +403,10 @@ export default function StandalonePractice() {
                 {loadError}
               </div>
             )}
-            {!loadError && sessions.length === 0 && (
+            {!loadError && !sessionsLoaded && (
+              <div className="p-4 text-sm text-white/60">Loading sessions…</div>
+            )}
+            {!loadError && sessionsLoaded && sessions.length === 0 && (
               <div className="p-6 text-center text-sidebar-foreground/40 text-sm">
                 No sessions yet.
                 <br />
@@ -410,7 +423,8 @@ export default function StandalonePractice() {
               const yesterday = localDateString(new Date(Date.now() - 86400000));
               const groups: Map<string, PracticeSession[]> = new Map();
               for (const s of sessions) {
-                const key = s.createdAt.slice(0, 10);
+                // Group by the organizer's local day, not the UTC date.
+                const key = localDateString(new Date(s.createdAt));
                 if (!groups.has(key)) groups.set(key, []);
                 groups.get(key)!.push(s);
               }
@@ -538,7 +552,12 @@ export default function StandalonePractice() {
 
               {/* Board */}
               <div className="flex-1 overflow-y-auto p-4 md:p-6">
-                {riders.length === 0 && (
+                {riders.length === 0 && !boardLoaded && (
+                  <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+                    {sseConnected ? "Loading laps…" : "Connecting to live timing…"}
+                  </div>
+                )}
+                {riders.length === 0 && boardLoaded && (
                   <div className="flex flex-col items-center justify-center h-full gap-4 text-center">
                     <div className="w-20 h-20 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
                       <Tag size={32} className="text-primary/60" />

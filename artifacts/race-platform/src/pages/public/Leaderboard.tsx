@@ -42,7 +42,7 @@ export default function Leaderboard() {
   );
 
   const seriesId = parseInt(selectedSeriesId);
-  const { data: standings, isLoading: standingsLoading } = useGetSeriesLeaderboard(seriesId, {
+  const { data: standings, isLoading: standingsLoading, isError: standingsError } = useGetSeriesLeaderboard(seriesId, {
     query: { enabled: !!seriesId } as any,
   });
 
@@ -214,6 +214,13 @@ export default function Leaderboard() {
               })}
             </div>
           </>
+        ) : standingsError ? (
+          <Card>
+            <CardContent className="p-12 sm:p-16 text-center">
+              <h3 className="text-2xl font-heading font-bold mb-2">Couldn't load standings</h3>
+              <p className="text-muted-foreground max-w-md mx-auto">Check your connection and try again.</p>
+            </CardContent>
+          </Card>
         ) : (
           <Card>
             <CardContent className="p-12 sm:p-16 text-center">

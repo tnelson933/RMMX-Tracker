@@ -1500,7 +1500,7 @@ router.get("/rider/profiles/:riderId/practice", requireRiderAuth, async (req, re
       const bestLapMs = lapTimes.length > 0 ? Math.min(...lapTimes.map(l => l.lapTimeMs!)) : null;
       return {
         ...s,
-        lapCount: s.laps.length,
+        lapCount: lapTimes.length,
         bestLapMs,
       };
     });

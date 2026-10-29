@@ -26,6 +26,16 @@ function getUserClubId(session: any): number | null {
 }
 
 // GET /series
+/** Event ids without duplicates (a duplicate would count an event twice). */
+function uniqueIds(ids: unknown): number[] {
+  return Array.isArray(ids) ? [...new Set(ids.map(Number).filter(Number.isFinite))] : [];
+}
+
+/** A class's standings are official once all its finished races are finalized (as in the cloud). */
+function classOfficial(motos: any[], raceClass: string): boolean {
+  return motos.filter((m: any) => (m.race_class ?? "") === raceClass).every((m: any) => m.results_finalized_at != null);
+}
+
 router.get("/series", (req, res) => {
   const session = req.session as any;
   if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
@@ -63,7 +73,7 @@ router.post("/series", (req, res) => {
       clubId, String(name), String(season),
       Number(season) || 0,
       JSON.stringify(classes ?? []),
-      JSON.stringify(eventIds ?? []),
+      JSON.stringify(uniqueIds(eventIds)),
       pointsSystem ?? "standard",
       scoringTableId ?? null,
     );
@@ -91,7 +101,7 @@ router.patch("/series/:seriesId", (req, res) => {
     fields.push("year = ?"); values.push(Number(req.body.season) || 0);
   }
   if (req.body.classes !== undefined) { fields.push("classes = ?"); values.push(JSON.stringify(req.body.classes)); }
-  if (req.body.eventIds !== undefined) { fields.push("event_ids = ?"); values.push(JSON.stringify(req.body.eventIds)); }
+  if (req.body.eventIds !== undefined) { fields.push("event_ids = ?"); values.push(JSON.stringify(uniqueIds(req.body.eventIds))); }
   if (req.body.pointsSystem !== undefined) { fields.push("points_system = ?"); values.push(String(req.body.pointsSystem)); }
   if (req.body.scoringTableId !== undefined) { fields.push("scoring_table_id = ?"); values.push(req.body.scoringTableId ?? null); }
 
@@ -128,7 +138,7 @@ router.get("/series/:seriesId/leaderboard", (req, res) => {
   const series = db.prepare("SELECT * FROM series WHERE id = ?").get(id) as any;
   if (!series) return res.status(404).json({ error: "Not found" });
 
-  const eventIds: number[] = (() => { try { return JSON.parse(series.event_ids || "[]"); } catch { return []; } })();
+  const eventIds: number[] = uniqueIds((() => { try { return JSON.parse(series.event_ids || "[]"); } catch { return []; } })());
   if (eventIds.length === 0) return res.json([]);
 
   const ph = eventIds.map(() => "?").join(",");
@@ -137,7 +147,7 @@ router.get("/series/:seriesId/leaderboard", (req, res) => {
   const eventNameMap: Record<number, string> = {};
   events.forEach((e: any) => { eventNameMap[e.id] = e.name; });
 
-  const motos = db.prepare(`SELECT * FROM motos WHERE event_id IN (${ph}) AND status = 'completed'`).all(...eventIds) as any[];
+  const motos = db.prepare(`SELECT * FROM motos WHERE event_id IN (${ph}) AND status = 'completed' AND type != 'practice'`).all(...eventIds) as any[];
   if (motos.length === 0) return res.json([]);
 
   const motoIds = motos.map((m: any) => m.id);
@@ -211,7 +221,7 @@ router.get("/series/:seriesId/leaderboard", (req, res) => {
         });
       }
 
-      classRows.push({ position: 0, riderId, riderName: riderNames[riderId], raceClass, totalScore, eventsEntered, events: eventBreakdowns });
+      classRows.push({ position: 0, riderId, riderName: riderNames[riderId], raceClass, totalScore, eventsEntered, official: classOfficial(motos, raceClass), events: eventBreakdowns } as any);
     }
 
     classRows.sort((a, b) => b.totalScore - a.totalScore);
@@ -238,14 +248,14 @@ router.post("/series/:seriesId/recalculate", (req, res) => {
   const series = db.prepare("SELECT * FROM series WHERE id = ?").get(id) as any;
   if (!series) return res.status(404).json({ error: "Not found" });
 
-  const eventIds: number[] = (() => { try { return JSON.parse(series.event_ids || "[]"); } catch { return []; } })();
+  const eventIds: number[] = uniqueIds((() => { try { return JSON.parse(series.event_ids || "[]"); } catch { return []; } })());
 
   db.prepare("DELETE FROM series_points WHERE series_id = ?").run(id);
 
   if (eventIds.length === 0) return res.json({ ok: true, rows: 0 });
 
   const ph = eventIds.map(() => "?").join(",");
-  const motos = db.prepare(`SELECT * FROM motos WHERE event_id IN (${ph}) AND status = 'completed'`).all(...eventIds) as any[];
+  const motos = db.prepare(`SELECT * FROM motos WHERE event_id IN (${ph}) AND status = 'completed' AND type != 'practice'`).all(...eventIds) as any[];
 
   if (motos.length === 0) return res.json({ ok: true, rows: 0 });
 
@@ -338,7 +348,7 @@ router.get("/public/series/:seriesId", (req, res) => {
   const series = db.prepare("SELECT * FROM series WHERE id = ?").get(id) as any;
   if (!series) return res.status(404).json({ error: "Not found" });
 
-  const eventIds: number[] = (() => { try { return JSON.parse(series.event_ids || "[]"); } catch { return []; } })();
+  const eventIds: number[] = uniqueIds((() => { try { return JSON.parse(series.event_ids || "[]"); } catch { return []; } })());
 
   const events = eventIds.length > 0
     ? (db.prepare(
@@ -369,7 +379,7 @@ router.get("/public/series/:seriesId/standings", (req, res) => {
   const series = db.prepare("SELECT * FROM series WHERE id = ?").get(id) as any;
   if (!series) return res.status(404).json({ error: "Not found" });
 
-  const eventIds: number[] = (() => { try { return JSON.parse(series.event_ids || "[]"); } catch { return []; } })();
+  const eventIds: number[] = uniqueIds((() => { try { return JSON.parse(series.event_ids || "[]"); } catch { return []; } })());
   if (eventIds.length === 0) return res.json([]);
 
   const ph = eventIds.map(() => "?").join(",");
@@ -378,7 +388,7 @@ router.get("/public/series/:seriesId/standings", (req, res) => {
   const eventNameMap: Record<number, string> = {};
   events.forEach((e: any) => { eventNameMap[e.id] = e.name; });
 
-  const motos = db.prepare(`SELECT * FROM motos WHERE event_id IN (${ph}) AND status = 'completed'`).all(...eventIds) as any[];
+  const motos = db.prepare(`SELECT * FROM motos WHERE event_id IN (${ph}) AND status = 'completed' AND type != 'practice'`).all(...eventIds) as any[];
   if (motos.length === 0) return res.json([]);
 
   const motoIds = motos.map((m: any) => m.id);
@@ -443,7 +453,7 @@ router.get("/public/series/:seriesId/standings", (req, res) => {
         eventBreakdowns.push({ eventId, eventName: eventNameMap[eventId] ?? `Event ${eventId}`, eventScore, attended, motos: motoPositions });
       }
 
-      classRows.push({ position: 0, riderId, riderName: riderNames[riderId], raceClass, totalScore, eventsEntered, amaNumber: null, bikeBrand: null, events: eventBreakdowns });
+      classRows.push({ position: 0, riderId, riderName: riderNames[riderId], raceClass, totalScore, eventsEntered, official: classOfficial(motos, raceClass), amaNumber: null, bikeBrand: null, events: eventBreakdowns } as any);
     }
 
     classRows.sort((a, b) => b.totalScore - a.totalScore);

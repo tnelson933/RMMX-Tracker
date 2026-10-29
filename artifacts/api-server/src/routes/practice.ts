@@ -13,7 +13,7 @@ import {
   riderAccountsTable,
   riderMobileTokensTable,
 } from "@workspace/db";
-import { eq, and, desc, asc, ilike, or, inArray } from "drizzle-orm";
+import { eq, and, desc, asc, ilike, or, inArray, ne } from "drizzle-orm";
 import { managedRiderIds } from "../lib/riderAccess";
 import type { Response } from "express";
 import { sendConnectorCommand } from "../lib/connectorRelay";
@@ -105,7 +105,8 @@ function buildLiveBoard(crossings: (typeof practiceCrossingsTable.$inferSelect)[
       riderId: last.riderId,
       riderName: last.riderName,
       bibNumber: last.bibNumber,
-      lapCount: sorted.length,
+      // The first pass only starts the clock: count timed laps.
+      lapCount: withLap.length,
       bestLapMs,
       lastLapMs: last.lapTimeMs,
       lastCrossingTime: last.crossingTime.toISOString(),
@@ -194,6 +195,8 @@ export async function processPracticeCrossing(
       ilike(rfidAssignmentsTable.rfidNumber, tagNumber),
       eq(eventsTable.clubId, session.clubId),
     ))
+    // A tag reused across events belongs to whoever has it now.
+    .orderBy(desc(rfidAssignmentsTable.id))
     .limit(1);
 
   if (assignment?.riderId) {
@@ -393,7 +396,8 @@ router.post("/practice", async (req, res) => {
     name,
     status: "active",
     startedAt: new Date(),
-    debounceMs: debounceMs ? Number(debounceMs) : 10000,
+    debounceMs: Number.isInteger(Number(debounceMs)) && Number(debounceMs) >= 0 && Number(debounceMs) <= 600_000 && debounceMs !== undefined && debounceMs !== null && debounceMs !== ""
+      ? Number(debounceMs) : 10000,
     venueName,
   }).returning();
 
@@ -427,17 +431,39 @@ router.patch("/practice/:id", async (req, res) => {
     if (!venueName) return res.status(400).json({ error: "Track name is required" });
     updates.venueName = venueName;
   }
-  if (req.body.debounceMs !== undefined) updates.debounceMs = Number(req.body.debounceMs);
+  if (req.body.debounceMs !== undefined) {
+    const debounceMs = Number(req.body.debounceMs);
+    if (!Number.isInteger(debounceMs) || debounceMs < 0 || debounceMs > 600_000) {
+      return res.status(400).json({ error: "debounceMs must be a whole number of milliseconds between 0 and 600000" });
+    }
+    updates.debounceMs = debounceMs;
+  }
   if (req.body.status !== undefined) {
     const invalidStatus = checkOneOf(req.body, "status", ["idle", "active", "ended"]);
     if (invalidStatus) return res.status(400).json({ error: invalidStatus });
     updates.status = req.body.status;
-    if (req.body.status === "active" && !existing.startedAt) updates.startedAt = new Date();
+    // Resuming an ended session starts it fresh so it outranks older motos.
+    if (req.body.status === "active" && existing.status !== "active") updates.startedAt = new Date();
     if (req.body.status === "ended") updates.endedAt = new Date();
   }
 
   // Nothing to change: answer with the session as it is instead of an empty UPDATE.
   if (Object.keys(updates).length === 0) return res.json(toJson(existing));
+
+  // One live practice per club: reads go to the newest, so end the others.
+  if (req.body.status === "active" && existing.status !== "active") {
+    const others = await db.update(practiceSessionsTable)
+      .set({ status: "ended", endedAt: new Date() })
+      .where(and(
+        eq(practiceSessionsTable.clubId, existing.clubId),
+        eq(practiceSessionsTable.status, "active"),
+        ne(practiceSessionsTable.id, id),
+      ))
+      .returning({ id: practiceSessionsTable.id });
+    for (const prev of others) {
+      sendConnectorCommand(existing.clubId, { type: "stop_moto", motoId: prev.id, eventId: null });
+    }
+  }
 
   const [session] = await db.update(practiceSessionsTable)
     .set(updates as any)
@@ -515,6 +541,8 @@ router.post("/practice/:id/crossing", async (req, res) => {
   if (!session) return res.status(404).json({ error: "Session not found" });
   const callerClubId = await getClubId(req);
   if (callerClubId !== null && session.clubId !== callerClubId) return res.status(403).json({ error: "Forbidden" });
+  // Same reader check as the club's other ingest routes: no anonymous laps.
+  if (callerClubId === null && !(await authorizeIngest(req, res, session.clubId, "practice_session_crossing"))) return;
   if (session.status !== "active") return res.status(409).json({ error: "Session not active" });
 
   const rawTime: string | undefined =

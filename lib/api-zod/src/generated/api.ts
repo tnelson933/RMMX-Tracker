@@ -984,10 +984,11 @@ export const GetRiderResponse = zod.object({
   "recentResults": zod.array(zod.object({
   "id": zod.number(),
   "eventId": zod.number(),
+  "eventName": zod.string(),
+  "eventDate": zod.string().nullish(),
   "motoId": zod.number(),
-  "motoName": zod.string().optional(),
+  "motoName": zod.string(),
   "riderId": zod.number(),
-  "riderName": zod.string(),
   "raceClass": zod.string().optional(),
   "position": zod.number(),
   "totalTime": zod.string().nullish(),
@@ -995,9 +996,11 @@ export const GetRiderResponse = zod.object({
   "points": zod.number().nullish(),
   "dnf": zod.boolean().optional(),
   "dns": zod.boolean().optional(),
-  "bibNumber": zod.string().nullish()
-})).optional(),
-  "totalEvents": zod.number().optional(),
+  "bibNumber": zod.string().nullish(),
+  "official": zod.boolean().describe('True when the moto\'s results are finalized (or it is a practice moto).')
+})).optional().describe('Completed motos from the caller\'s club events (all clubs for super admins), newest event first.'),
+  "totalEvents": zod.number().optional().describe('Distinct events the rider registered for (caller\'s club only).'),
+  "clubIdNumber": zod.string().nullish().describe('Club ID'),
   "createdAt": zod.string().optional()
 })
 

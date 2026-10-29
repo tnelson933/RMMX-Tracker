@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { getDb } from "../db";
+import { evaluateFormula } from "../lib/safeFormula";
 
 const router = Router();
 
@@ -47,6 +48,28 @@ router.get("/points-tables", (req, res) => {
   return res.json(tables.map(serializeTable));
 });
 
+/** Same checks as the cloud: a known method, whole-number points, a formula that evaluates. */
+function tableInputError(body: any): string | null {
+  const methods = ["highest_points", "lowest_positions", "per_rider", "formula"];
+  if (body.scoringMethod !== undefined && !methods.includes(body.scoringMethod)) {
+    return `scoringMethod must be one of: ${methods.join(", ")}`;
+  }
+  if (body.pointsScale !== undefined) {
+    const scale = body.pointsScale;
+    if (!Array.isArray(scale) || !scale.every((v: unknown) => typeof v === "number" && Number.isInteger(v) && v >= 0)) {
+      return "Points must be whole numbers of 0 or more";
+    }
+  }
+  if (body.scoringFormula) {
+    try {
+      evaluateFormula(String(body.scoringFormula), { position: 1, riders: 10 });
+    } catch (err) {
+      return `Invalid scoring formula: ${(err as Error).message}`;
+    }
+  }
+  return null;
+}
+
 // POST /points-tables
 router.post("/points-tables", (req, res) => {
   const session = req.session as any;
@@ -64,6 +87,8 @@ router.post("/points-tables", (req, res) => {
   if (!name || !scoringMethod || !Array.isArray(pointsScale)) {
     return res.status(400).json({ error: "name, scoringMethod, and pointsScale are required" });
   }
+  const invalid = tableInputError(req.body);
+  if (invalid) return res.status(400).json({ error: invalid });
 
   const result = db
     .prepare(
@@ -94,6 +119,11 @@ router.patch("/points-tables/:tableId", (req, res) => {
 
   const db = getDb();
   const id = Number(req.params.tableId);
+  const existing = db.prepare("SELECT is_system_default FROM points_tables WHERE id = ?").get(id) as any;
+  if (!existing) return res.status(404).json({ error: "Not found" });
+  if (existing.is_system_default === 1) return res.status(403).json({ error: "System default tables cannot be edited" });
+  const invalid = tableInputError(req.body);
+  if (invalid) return res.status(400).json({ error: invalid });
 
   const fields: string[] = [];
   const values: unknown[] = [];

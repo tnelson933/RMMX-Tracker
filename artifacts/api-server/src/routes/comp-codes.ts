@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { compCodesTable, eventsTable, ridersTable, clubsTable } from "@workspace/db";
+import { compCodesTable, eventsTable, ridersTable, clubsTable, registrationsTable } from "@workspace/db";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import crypto from "crypto";
 
@@ -20,6 +20,22 @@ function canManageClub(res: any, clubId: number | null | undefined): boolean {
     return false;
   }
   return true;
+}
+
+/**
+ * True when the rider is visible to this club: added by the club (riders.club_id)
+ * or registered for any of the club's events. Mirrors getClubRiderIds in riders.ts.
+ */
+async function riderBelongsToClub(riderId: number, clubId: number): Promise<boolean> {
+  const [direct] = await db.select({ id: ridersTable.id }).from(ridersTable)
+    .where(and(eq(ridersTable.id, riderId), eq(ridersTable.clubId, clubId)))
+    .limit(1);
+  if (direct) return true;
+  const [reg] = await db.select({ id: registrationsTable.id }).from(registrationsTable)
+    .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
+    .where(and(eq(registrationsTable.riderId, riderId), eq(eventsTable.clubId, clubId)))
+    .limit(1);
+  return !!reg;
 }
 
 function generateCode(): string {
@@ -267,6 +283,10 @@ router.post("/clubs/:clubId/riders/:riderId/discount-code", async (req, res) => 
   const [rider] = await db.select({ id: ridersTable.id, firstName: ridersTable.firstName, lastName: ridersTable.lastName })
     .from(ridersTable).where(eq(ridersTable.id, riderId));
   if (!rider) return res.status(404).json({ error: "Rider not found" });
+  const scope = scopedClubId(res);
+  if (scope !== null && !(await riderBelongsToClub(riderId, scope))) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
 
   // Check if an active (unused) code already exists
   const [existing] = await db.select().from(compCodesTable).where(

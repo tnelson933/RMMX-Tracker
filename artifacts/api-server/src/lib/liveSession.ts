@@ -32,14 +32,18 @@ export function motoIsLive(
   return true;
 }
 
-export async function activePracticeForClub(clubId: number): Promise<Practice | null> {
+export async function activePracticeForClub(clubId: number, now = Date.now()): Promise<Practice | null> {
   const [practice] = await db
     .select()
     .from(practiceSessionsTable)
     .where(and(eq(practiceSessionsTable.clubId, clubId), eq(practiceSessionsTable.status, "active")))
     .orderBy(desc(practiceSessionsTable.id))
     .limit(1);
-  return practice ?? null;
+  if (!practice) return null;
+  // A practice nobody ended (last weekend's) must not hold the club's reads,
+  // e.g. ahead of the enduro fallback. Same window as motos.
+  const started = new Date(practice.startedAt ?? practice.createdAt).getTime();
+  return now - started > MOTO_LIVE_WINDOW_MS ? null : practice;
 }
 
 /** The club's live moto, or null when none is live (see motoIsLive). */

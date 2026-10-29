@@ -106,6 +106,7 @@ export default function SeriesWidget() {
   const [series, setSeries] = useState<SeriesInfo | null>(null);
   const [standings, setStandings] = useState<StandingRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const [view, setView] = useState<View>("standings");
   const [activeClass, setActiveClass] = useState("");
@@ -124,13 +125,15 @@ export default function SeriesWidget() {
     if (!seriesId) return;
     Promise.all([
       fetch(`/api/public/series/${seriesId}`).then(r => (r.ok ? r.json() : null)),
-      fetch(`/api/public/series/${seriesId}/standings`).then(r => (r.ok ? r.json() : [])),
+      fetch(`/api/public/series/${seriesId}/standings`).then(r => (r.ok ? r.json() : null)),
     ]).then(([info, stands]) => {
+      // A failed standings request must not look like an empty series.
+      setLoadFailed(stands === null);
       // A failed series lookup leaves `series` null so the not-found state renders.
       setSeries(info && Array.isArray(info.events) ? info : null);
       setStandings(Array.isArray(stands) ? stands : []);
       setLoading(false);
-    }).catch(() => setLoading(false));
+    }).catch(() => { setLoadFailed(true); setLoading(false); });
   }, [seriesId]);
 
   useEffect(() => {
@@ -252,10 +255,10 @@ export default function SeriesWidget() {
     );
   }
 
-  if (!series) {
+  if (!series || loadFailed) {
     return (
       <div style={{ fontFamily: "system-ui, sans-serif", background: "#ffffff", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ color: "#dc2626", fontSize: 13 }}>Series not found.</div>
+        <div style={{ color: "#dc2626", fontSize: 13 }}>{loadFailed && series ? "Couldn't load standings. Refresh to try again." : "Series not found."}</div>
       </div>
     );
   }

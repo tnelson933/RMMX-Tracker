@@ -49,9 +49,10 @@ router.get("/riders", (req, res) => {
          WHERE lower(first_name || ' ' || last_name) LIKE ?
             OR lower(bib_number) LIKE ?
             OR lower(email) LIKE ?
+            OR lower(phone) LIKE ?
          ORDER BY last_name ASC, first_name ASC`,
       )
-      .all(s, s, s) as any[];
+      .all(s, s, s, s) as any[];
   } else {
     riders = db
       .prepare("SELECT * FROM riders ORDER BY last_name ASC, first_name ASC")
@@ -72,13 +73,16 @@ router.get("/riders/:riderId", (req, res) => {
 
   const recentResults = db
     .prepare(
-      `SELECT rr.*, m.name AS moto_name, e.name AS event_name
+      `SELECT rr.*, m.name AS moto_name, m.type AS moto_type,
+              m.results_finalized_at AS results_finalized_at,
+              m.lap_count AS lap_count, m.time_limit_ms AS time_limit_ms,
+              e.name AS event_name, e.date AS event_date
        FROM race_results rr
-       LEFT JOIN motos m ON rr.moto_id = m.id
-       LEFT JOIN events e ON rr.event_id = e.id
-       WHERE rr.rider_id = ?
-       ORDER BY rr.id DESC
-       LIMIT 20`,
+       JOIN motos m ON rr.moto_id = m.id
+       JOIN events e ON rr.event_id = e.id
+       WHERE rr.rider_id = ? AND m.status = 'completed'
+       ORDER BY e.date DESC, rr.id DESC
+       LIMIT 10`,
     )
     .all(id) as any[];
 
@@ -98,21 +102,28 @@ router.get("/riders/:riderId", (req, res) => {
     ...serializeRider(rider),
     clubIdNumber: latestReg?.club_id_number ?? null,
     totalEvents: totalEventsRow?.cnt ?? 0,
-    recentResults: recentResults.map((r: any) => ({
-      id: r.id,
-      eventId: r.event_id,
-      motoId: r.moto_id,
-      riderId: r.rider_id,
-      raceClass: r.race_class,
-      position: r.position,
-      totalTime: r.total_time ?? null,
-      lapTimes: (() => { try { return JSON.parse(r.lap_times || "[]"); } catch { return []; } })(),
-      points: r.points ?? null,
-      dnf: r.dnf === 1,
-      dns: r.dns === 1,
-      motoName: r.moto_name ?? "",
-      eventName: r.event_name ?? "",
-    })),
+    recentResults: recentResults.map((r: any) => {
+      const lapTimes = (() => { try { return JSON.parse(r.lap_times || "[]"); } catch { return []; } })();
+      const lapCap = r.time_limit_ms ? null : r.lap_count;
+      return {
+        id: r.id,
+        eventId: r.event_id,
+        motoId: r.moto_id,
+        riderId: r.rider_id,
+        raceClass: r.race_class,
+        position: r.position,
+        totalTime: r.total_time ?? null,
+        lapTimes: Array.isArray(lapTimes) && lapCap != null && lapCap > 0 ? lapTimes.slice(0, lapCap) : lapTimes,
+        points: r.points ?? null,
+        dnf: r.dnf === 1,
+        dns: r.dns === 1,
+        bibNumber: r.bib_number ?? null,
+        motoName: r.moto_name ?? "",
+        eventName: r.event_name ?? "",
+        eventDate: r.event_date ?? null,
+        official: r.results_finalized_at != null || r.moto_type === "practice",
+      };
+    }),
   });
 });
 

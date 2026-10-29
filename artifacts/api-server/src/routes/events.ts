@@ -1,4 +1,5 @@
 import { geocodeTrack } from "../lib/geocodeTrack";
+import { scoringTableUsable } from "../lib/scoringTables";
 import { validateEventInput } from "../lib/validateInput";
 import { advanceEventStatuses } from "../lib/eventStatus";
 import { eventToday } from "@workspace/api-zod";
@@ -138,6 +139,7 @@ router.post("/events", async (req, res) => {
   const clubId: number = staffCId ?? Number(req.body.clubId);
   const isDraftCreate = req.body.draft === true;
   if (!clubId || !name) return res.status(400).json({ error: "clubId and name are required" });
+  if (!(await scoringTableUsable(scoringTableId, clubId))) return res.status(400).json({ error: "That scoring table isn't available to this club." });
   if (!isDraftCreate && (!date || !state)) return res.status(400).json({ error: "date and state are required for a full save" });
 
   // For draft saves, default date to today and state to "TBD"
@@ -314,6 +316,10 @@ router.patch("/events/:eventId", async (req, res) => {
   const staffCId = getStaffClubId(res);
   if (staffCId !== null) {
     if (!before || before.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
+  }
+
+  if (req.body.scoringTableId !== undefined && before && !(await scoringTableUsable(req.body.scoringTableId, before.clubId))) {
+    return res.status(400).json({ error: "That scoring table isn't available to this club." });
   }
 
   const patchDate = req.body.date ?? before?.date;

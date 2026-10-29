@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { StateSelect } from "@/components/ui/StateSelect";
 import { useAuth } from "@/contexts/AuthContext";
 import { RM_TRACKR_OPTION_ID, RM_TRACKR_NAME, RM_TRACKR_PRICE } from "@/lib/rmTrackr";
-import { useListEvents, useCreateEvent, useListClubs, useListSeries, useUpdateSeries, useListPointsTables, getListEventsQueryKey, useListDiscountCategories, useGetClubSettings, usePutClubSettings } from "@workspace/api-client-react";
+import { useListEvents, useCreateEvent, useListClubs, useListSeries, useUpdateSeries, getListSeriesQueryKey, useListPointsTables, getListEventsQueryKey, useListDiscountCategories, useGetClubSettings, usePutClubSettings } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -227,7 +227,18 @@ export default function EventsList() {
   const stripeReady = !isSuperAdmin && (stripeStatus?.connected ?? false);
 
   const { data: seriesList } = useListSeries({ query: {} as any });
-  const updateSeriesMutation = useUpdateSeries();
+  const updateSeriesMutation = useUpdateSeries({
+    mutation: {
+      // The page builds each series' event list from this query: refetch it so a
+      // second save never works from stale lists (duplicate or lost events).
+      onSettled: () => queryClient.invalidateQueries({ queryKey: getListSeriesQueryKey() }),
+      onError: (err: any) => toast({
+        title: "Series link not saved",
+        description: err?.response?.data?.error ?? err?.message,
+        variant: "destructive",
+      }),
+    },
+  } as any);
   const clubSeriesList = seriesList?.filter(s => s.clubId === (sessionClubId ?? 0)) ?? [];
 
   const createMutation = useCreateEvent();
@@ -451,7 +462,7 @@ export default function EventsList() {
         const currentIds = (targetSeries.eventIds as number[]) ?? [];
         updateSeriesMutation.mutate({
           seriesId: targetSeries.id,
-          data: { eventIds: [...currentIds, newEvent.id] },
+          data: { eventIds: [...new Set([...currentIds, newEvent.id])] },
         });
       }
     }

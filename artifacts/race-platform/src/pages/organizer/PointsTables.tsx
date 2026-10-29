@@ -61,10 +61,19 @@ function scaleToText(scale: number[]): string {
 }
 
 function parseScale(text: string): number[] {
-  return text
-    .split(/[,\s]+/)
-    .map((v) => Number(v.trim()))
-    .filter((v) => !isNaN(v) && v > 0);
+  // Keep every position, including 0 points, so later positions don't shift.
+  return scaleTokens(text)
+    .map((v) => Number(v))
+    .filter((v) => Number.isInteger(v) && v >= 0);
+}
+
+function scaleTokens(text: string): string[] {
+  return text.split(/[,\s]+/).map((v) => v.trim()).filter(Boolean);
+}
+
+/** Entries that aren't whole numbers of 0 or more (e.g. "22.5", "-3", "abc"). */
+function invalidScaleTokens(text: string): string[] {
+  return scaleTokens(text).filter((v) => !/^\d+$/.test(v));
 }
 
 function getMethodLabel(method: string) {
@@ -194,7 +203,8 @@ const EXAMPLE_RIDERS = ["Jake Miller", "Tyler Cruz", "Marcus Reed", "Devon White
 
 function getPoints(method: ScoringMethod, scale: number[], formula: string, position: number, totalRiders: number): number {
   if (method === "per_rider") return Math.max(0, totalRiders - position + 1);
-  if (method === "lowest_positions") return position;
+  // Same as the server: the table's value for the position, or the position itself.
+  if (method === "lowest_positions") return scale[position - 1] ?? position;
   if (method === "formula") {
     try {
       // eslint-disable-next-line no-new-func
@@ -676,6 +686,11 @@ function TableFormDialog({
     e.preventDefault();
     const pointsScale = needsScale ? parseScale(form.scaleText) : [];
     if (!form.name.trim()) { toast({ title: "Name is required", variant: "destructive" }); return; }
+    const badTokens = needsScale ? invalidScaleTokens(form.scaleText) : [];
+    if (badTokens.length > 0) {
+      toast({ title: "Points must be whole numbers", description: `Fix: ${badTokens.slice(0, 5).join(", ")}`, variant: "destructive" });
+      return;
+    }
     if (needsScale && pointsScale.length === 0) { toast({ title: "Enter at least one points value", variant: "destructive" }); return; }
     if (isFormula && !form.scoringFormula.trim()) { toast({ title: "Enter a scoring formula", variant: "destructive" }); return; }
 
@@ -698,8 +713,10 @@ function TableFormDialog({
       }
       onSaved();
       onClose();
-    } catch {
-      toast({ title: "Something went wrong", variant: "destructive" });
+    } catch (err: any) {
+      // Show the server's reason (e.g. an invalid formula), not a generic error.
+      const message = err?.response?.data?.error ?? err?.data?.error ?? err?.message;
+      toast({ title: "Couldn't save the points table", description: message, variant: "destructive" });
     }
   }
 
@@ -1028,6 +1045,21 @@ function TableDetailSheet({
             </div>
           )}
 
+          {table.scoringMethod === "formula" || table.scoringMethod === "per_rider" ? (
+            // These tables have no fixed list: show the rule instead of an empty table.
+            <div className="rounded-lg border p-4 text-sm space-y-2">
+              <div className="text-xs font-heading font-semibold uppercase tracking-wider text-muted-foreground">How points are scored</div>
+              {table.scoringMethod === "per_rider" ? (
+                <p>Each finisher scores one point for every rider they beat, plus one (last place scores 1).</p>
+              ) : (
+                <>
+                  <p>Points come from this formula (<code>position</code> = finishing place, <code>riders</code> = starters):</p>
+                  <pre className="bg-muted/50 rounded p-2 font-mono text-xs whitespace-pre-wrap break-all">{(table as any).scoringFormula ?? "—"}</pre>
+                </>
+              )}
+            </div>
+          ) : (
+          <>
           <PointsPreview scale={scale} method={table.scoringMethod as "highest_points" | "lowest_positions"} />
 
           <div>
@@ -1069,6 +1101,8 @@ function TableDetailSheet({
               </Table>
             </div>
           </div>
+          </>
+          )}
 
           {!table.isSystemDefault && (
             <>
@@ -1160,7 +1194,7 @@ function TableCard({ table, onClick }: { table: PointsTable; onClick: () => void
           )}
         </div>
         <span className="ml-auto text-[10px] text-muted-foreground font-heading uppercase tracking-wider">
-          {scale.length} positions
+          {table.scoringMethod === "formula" ? "Formula" : table.scoringMethod === "per_rider" ? "1 pt per rider beaten" : `${scale.length} positions`}
         </span>
       </div>
     </button>
@@ -1173,7 +1207,7 @@ export default function PointsTables() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: tables = [], isLoading } = useListPointsTables({ query: {} as any });
+  const { data: tables = [], isLoading, isError } = useListPointsTables({ query: {} as any });
   const deleteMutation = useDeletePointsTable();
 
   const [selectedTable, setSelectedTable] = useState<PointsTable | null>(null);
@@ -1342,7 +1376,9 @@ export default function PointsTables() {
         </div>
       )}
 
-      {isLoading ? (
+      {isError ? (
+        <div className="text-center py-16 text-muted-foreground">Couldn't load points tables. Check your connection and refresh.</div>
+      ) : isLoading ? (
         <div className="text-center py-16 text-muted-foreground">Loading...</div>
       ) : (
         <div className="space-y-8">

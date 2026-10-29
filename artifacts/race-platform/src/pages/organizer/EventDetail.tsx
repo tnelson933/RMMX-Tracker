@@ -3,7 +3,7 @@ import { StateSelect } from "@/components/ui/StateSelect";
 import { useRoute, useLocation } from "wouter";
 import { usePublicOrigin } from "@/lib/publicOrigin";
 import { EmbedWidgetCard } from "@/components/organizer/EmbedWidgetCard";
-import { useGetEvent, useUpdateEvent, useGetRaceDaySummary, useListSeries, useUpdateSeries, useListPointsTables, getGetEventQueryKey, getListEventsQueryKey, useListDiscountCategories, useDeleteEvent, useGetClubSettings, usePutClubSettings } from "@workspace/api-client-react";
+import { useGetEvent, useUpdateEvent, useGetRaceDaySummary, useListSeries, useUpdateSeries, getListSeriesQueryKey, useListPointsTables, getGetEventQueryKey, getListEventsQueryKey, useListDiscountCategories, useDeleteEvent, useGetClubSettings, usePutClubSettings } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { RM_TRACKR_OPTION_ID, RM_TRACKR_NAME, RM_TRACKR_PRICE } from "@/lib/rmTrackr";
@@ -148,7 +148,18 @@ export default function EventDetail() {
   const { data: summary } = useGetRaceDaySummary(eventId, { query: { enabled: !!eventId } as any });
   const { data: seriesList } = useListSeries({ query: {} as any });
   const updateMutation = useUpdateEvent();
-  const updateSeriesMutation = useUpdateSeries();
+  const updateSeriesMutation = useUpdateSeries({
+    mutation: {
+      // The page builds each series' event list from this query: refetch it so a
+      // second save never works from stale lists (duplicate or lost events).
+      onSettled: () => queryClient.invalidateQueries({ queryKey: getListSeriesQueryKey() }),
+      onError: (err: any) => toast({
+        title: "Series link not saved",
+        description: err?.response?.data?.error ?? err?.message,
+        variant: "destructive",
+      }),
+    },
+  } as any);
   const deleteMutation = useDeleteEvent();
   const { data: pointsTables } = useListPointsTables({ query: {} as any });
   const { data: discountCategories = [] } = useListDiscountCategories({ query: {} as any });
@@ -644,7 +655,7 @@ export default function EventDetail() {
           if (newSeriesId) {
             const target = (seriesList ?? []).find(s => s.id === newSeriesId);
             if (target) {
-              const ids = [...((target.eventIds as number[]) ?? []), eventId];
+              const ids = [...new Set([...((target.eventIds as number[]) ?? []), eventId])];
               updateSeriesMutation.mutate({ seriesId: target.id, data: { eventIds: ids } });
             }
           }

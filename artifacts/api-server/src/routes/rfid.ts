@@ -13,6 +13,22 @@ function getStaffClubId(res: any): number | null {
   return typeof v === "number" ? v : null;
 }
 
+/**
+ * True when the rider is visible to this club: added by the club (riders.club_id)
+ * or registered for any of the club's events. Mirrors getClubRiderIds in riders.ts.
+ */
+async function riderBelongsToClub(riderId: number, clubId: number): Promise<boolean> {
+  const [direct] = await db.select({ id: ridersTable.id }).from(ridersTable)
+    .where(and(eq(ridersTable.id, riderId), eq(ridersTable.clubId, clubId)))
+    .limit(1);
+  if (direct) return true;
+  const [reg] = await db.select({ id: registrationsTable.id }).from(registrationsTable)
+    .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
+    .where(and(eq(registrationsTable.riderId, riderId), eq(eventsTable.clubId, clubId)))
+    .limit(1);
+  return !!reg;
+}
+
 router.get("/rfid", async (req, res) => {
   const { eventId, assignmentType } = req.query;
   const isActiveTransponder = assignmentType === "active_transponder";
@@ -128,6 +144,10 @@ router.post("/rfid", async (req, res) => {
   if (staffCId !== null && numEventId) {
     const [evt] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, numEventId));
     if (!evt || evt.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
+  }
+  // No event: the assignment lands on the rider profile, so the rider must belong to the club.
+  if (staffCId !== null && !numEventId && !(await riderBelongsToClub(numRiderId, staffCId))) {
+    return res.status(403).json({ error: "Forbidden" });
   }
 
   if (isActiveTransponder) {

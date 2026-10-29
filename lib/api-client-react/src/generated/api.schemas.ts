@@ -676,13 +676,15 @@ export interface Rider {
   createdAt?: string;
 }
 
-export interface RaceResult {
+export interface RiderRecentResult {
   id: number;
   eventId: number;
+  eventName: string;
+  /** @nullable */
+  eventDate?: string | null;
   motoId: number;
-  motoName?: string;
+  motoName: string;
   riderId: number;
-  riderName: string;
   raceClass?: string;
   position: number;
   /** @nullable */
@@ -694,6 +696,8 @@ export interface RaceResult {
   dns?: boolean;
   /** @nullable */
   bibNumber?: string | null;
+  /** True when the moto's results are finalized (or it is a practice moto). */
+  official: boolean;
 }
 
 export interface RiderDetail {
@@ -734,8 +738,15 @@ export interface RiderDetail {
   skillLevel?: string | null;
   /** Race disciplines the rider competes in (e.g. Motocross, Supercross, Desert) */
   raceTypes?: string[];
-  recentResults?: RaceResult[];
+  /** Completed motos from the caller's club events (all clubs for super admins), newest event first. */
+  recentResults?: RiderRecentResult[];
+  /** Distinct events the rider registered for (caller's club only). */
   totalEvents?: number;
+  /**
+     * Club ID
+     * @nullable
+     */
+  clubIdNumber?: string | null;
   createdAt?: string;
 }
 
@@ -1265,6 +1276,26 @@ export interface GenerateMotoLineupInput {
   /** Gate pick method for this specific moto. random = random gate draw; practice = by practice lap time; prior_round_finish = by prior round finish position; first_registered = earliest registered rider gets first gate pick.
    */
   gatePickMethod?: GenerateMotoLineupInputGatePickMethod;
+}
+
+export interface RaceResult {
+  id: number;
+  eventId: number;
+  motoId: number;
+  motoName?: string;
+  riderId: number;
+  riderName: string;
+  raceClass?: string;
+  position: number;
+  /** @nullable */
+  totalTime?: string | null;
+  lapTimes?: string[];
+  /** @nullable */
+  points?: number | null;
+  dnf?: boolean;
+  dns?: boolean;
+  /** @nullable */
+  bibNumber?: string | null;
 }
 
 export interface RiderResultInput {

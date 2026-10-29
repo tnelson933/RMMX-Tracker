@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { useListSeries, useCreateSeries, useUpdateSeries, useGetSeriesLeaderboard, useListPointsTables, getListSeriesQueryKey } from "@workspace/api-client-react";
+import { useListSeries, useCreateSeries, useUpdateSeries, useGetSeriesLeaderboard, useListPointsTables, getListSeriesQueryKey, getGetSeriesLeaderboardQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,7 +40,7 @@ export default function SeriesManagement() {
   const [editClassInput, setEditClassInput] = useState("");
 
   const { data: seriesList, isLoading } = useListSeries();
-  const { data: leaderboard, isLoading: leaderboardLoading } = useGetSeriesLeaderboard(selectedSeriesId || 0, {
+  const { data: leaderboard, isLoading: leaderboardLoading, isError: leaderboardError } = useGetSeriesLeaderboard(selectedSeriesId || 0, {
     query: { enabled: !!selectedSeriesId } as any
   });
   const { data: pointsTables } = useListPointsTables({ query: {} as any });
@@ -74,6 +74,8 @@ export default function SeriesManagement() {
     }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListSeriesQueryKey() });
+        // Scoring or classes may have changed the standings.
+        queryClient.invalidateQueries({ queryKey: getGetSeriesLeaderboardQueryKey(editingSeriesId) });
         setIsEditOpen(false);
         toast({ title: "Series updated" });
       },
@@ -516,6 +518,13 @@ export default function SeriesManagement() {
                     Standings ranked by highest total points. Riders who miss an event receive 0 points for each moto missed (shown in parentheses).
                   </p>
                 </>
+              ) : leaderboardError ? (
+                <Card>
+                  <CardContent className="p-16 text-center">
+                    <h3 className="text-xl font-heading font-bold mb-2">Couldn't load standings</h3>
+                    <p className="text-muted-foreground">Check your connection and refresh the page.</p>
+                  </CardContent>
+                </Card>
               ) : (
                 <Card>
                   <CardContent className="p-16 text-center">

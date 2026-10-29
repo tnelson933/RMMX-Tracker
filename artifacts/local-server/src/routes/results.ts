@@ -1,21 +1,10 @@
 import { Router } from "express";
-import { createContext, Script } from "vm";
 import { getDb } from "../db";
+import { formulaPoints } from "../lib/safeFormula";
 
 const router = Router();
 
 const FALLBACK_POINTS = [25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
-
-function evalFormula(formula: string, position: number, riders: number): number {
-  try {
-    const sandbox = createContext({ position, riders, Math });
-    const result = new Script(formula).runInContext(sandbox, { timeout: 50 });
-    if (typeof result !== "number" || !isFinite(result)) return 0;
-    return Math.max(0, Math.round(result));
-  } catch {
-    return 0;
-  }
-}
 
 function calcPoints(opts: {
   position: number;
@@ -51,7 +40,7 @@ function calcPoints(opts: {
   switch (opts.scoringMethod) {
     case "formula":
       if (!opts.scoringFormula) return 0;
-      return evalFormula(opts.scoringFormula, opts.position, opts.totalStarters);
+      return formulaPoints(opts.scoringFormula, opts.position, opts.totalStarters);
     case "per_rider":
       return Math.max(0, opts.totalStarters - opts.position + 1);
     case "highest_points":
@@ -127,7 +116,8 @@ router.post("/events/:eventId/results", (req, res) => {
     .prepare("SELECT scoring_table_id, club_id FROM events WHERE id = ?")
     .get(eventId) as any;
 
-  let scoringMethod = "highest_points";
+  // No table: the same default as the cloud (25, 22, 20, ... 1).
+  let scoringMethod = "fallback";
   let pointsScale: number[] = [];
   let scoringFormula: string | null = null;
   let mainEventOnly = false;

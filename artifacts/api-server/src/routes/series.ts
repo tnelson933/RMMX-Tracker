@@ -2,8 +2,16 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { seriesTable, seriesPointsTable, raceResultsTable, ridersTable, eventsTable, motosTable, registrationsTable, pointsTablesTable, clubsTable, eventPublicationTable, usersTable } from "@workspace/db";
 import { eq, inArray, and } from "drizzle-orm";
+import { computeSeriesStandings } from "../lib/seriesStandings";
+import { scoringTableUsable } from "../lib/scoringTables";
+import { recalculateSeriesPoints } from "./results";
 
 const router = Router();
+
+/** Event ids without duplicates (a duplicate would count an event twice). */
+function uniqueIds(ids: unknown): number[] {
+  return Array.isArray(ids) ? [...new Set(ids.map(Number).filter(Number.isFinite))] : [];
+}
 
 function getStaffClubId(res: any): number | null {
   const v = res.locals?.staffClubId;
@@ -33,6 +41,7 @@ router.post("/series", async (req, res) => {
   const { name, clubId: rawClubId, season, classes, pointsSystem, scoringTableId, eventIds } = req.body;
   const clubId = staffCId !== null ? staffCId : rawClubId;
   if (!name || !clubId || !season) return res.status(400).json({ error: "name, clubId, season required" });
+  if (!(await scoringTableUsable(scoringTableId, Number(clubId)))) return res.status(400).json({ error: "That scoring table isn't available to this club." });
   const foreignOnCreate = await foreignEventIds(eventIds, Number(clubId));
   if (foreignOnCreate.length > 0) return res.status(400).json({ error: `Events ${foreignOnCreate.join(", ")} don't belong to this club.` });
   const [series] = await db.insert(seriesTable).values({
@@ -42,7 +51,7 @@ router.post("/series", async (req, res) => {
     classes: classes || [],
     pointsSystem: pointsSystem || "standard",
     scoringTableId: scoringTableId ?? null,
-    eventIds: eventIds || [],
+    eventIds: uniqueIds(eventIds),
   }).returning();
   return res.status(201).json({ ...series, createdAt: series.createdAt.toISOString() });
 });
@@ -61,13 +70,18 @@ router.patch("/series/:seriesId", async (req, res) => {
   const foreignOnUpdate = await foreignEventIds(eventIds, existingSeries.clubId);
   if (foreignOnUpdate.length > 0) return res.status(400).json({ error: `Events ${foreignOnUpdate.join(", ")} don't belong to this club.` });
 
-  // Validate events match scoring format when eventIds is being updated
-  if (eventIds !== undefined && eventIds.length > 0) {
+  if (scoringTableId !== undefined && !(await scoringTableUsable(scoringTableId, existingSeries.clubId))) {
+    return res.status(400).json({ error: "That scoring table isn't available to this club." });
+  }
+
+  // Events must match the series' scoring format, whether the events or the table change.
+  const checkIds = eventIds !== undefined ? uniqueIds(eventIds) : uniqueIds(existingSeries.eventIds);
+  if (checkIds.length > 0 && (eventIds !== undefined || scoringTableId !== undefined)) {
     const tableId = scoringTableId !== undefined ? (scoringTableId ?? null) : existingSeries.scoringTableId;
 
     if (tableId) {
       const events = await db.select({ id: eventsTable.id, scoringTableId: eventsTable.scoringTableId })
-        .from(eventsTable).where(inArray(eventsTable.id, eventIds));
+        .from(eventsTable).where(inArray(eventsTable.id, checkIds));
       const mismatched = events.filter(e => e.scoringTableId !== tableId);
       if (mismatched.length > 0) {
         const mismatchedIds = mismatched.map(e => e.id).join(", ");
@@ -83,10 +97,14 @@ router.patch("/series/:seriesId", async (req, res) => {
   if (season !== undefined) updates.season = season;
   if (classes !== undefined) updates.classes = classes;
   if (scoringTableId !== undefined) updates.scoringTableId = scoringTableId ?? null;
-  if (eventIds !== undefined) updates.eventIds = eventIds;
+  if (eventIds !== undefined) updates.eventIds = uniqueIds(eventIds);
 
   const [updated] = await db.update(seriesTable).set(updates as any).where(eq(seriesTable.id, seriesId)).returning();
   if (!updated) return res.status(404).json({ error: "Not found" });
+  // Events or scoring changed: rebuild the stored series points.
+  if (eventIds !== undefined || scoringTableId !== undefined || classes !== undefined) {
+    await recalculateSeriesPoints([seriesId]);
+  }
   return res.json({ ...updated, createdAt: updated.createdAt.toISOString() });
 });
 
@@ -95,147 +113,10 @@ router.get("/series/:seriesId/leaderboard", async (req, res) => {
   const [series] = await db.select().from(seriesTable).where(eq(seriesTable.id, seriesId));
   if (!series) return res.status(404).json({ error: "Not found" });
 
-  // This route is public (embed widgets), so access control doesn't scope it.
-  // The series' own club (and platform admins) see live standings from every
-  // completed moto; everyone else sees only events whose results are published.
-  const sessionUserId = (req.session as any)?.userId;
-  const [viewer] = sessionUserId
-    ? await db.select({ role: usersTable.role, clubId: usersTable.clubId }).from(usersTable).where(eq(usersTable.id, sessionUserId))
-    : [];
-  const canSeeUnpublished = !!viewer && (viewer.role === "super_admin" || viewer.clubId === series.clubId);
-
-  // Finished motos are public (marked unofficial until finalized).
-  const eventIds = series.eventIds as number[];
-  void canSeeUnpublished;
-  if (eventIds.length === 0) return res.json([]);
-
-  const events = await db.select({ id: eventsTable.id, name: eventsTable.name })
-    .from(eventsTable)
-    .where(inArray(eventsTable.id, eventIds));
-  const eventNameMap: Record<number, string> = {};
-  events.forEach(e => { eventNameMap[e.id] = e.name; });
-
-  const allMotos = await db.select()
-    .from(motosTable)
-    .where(and(inArray(motosTable.eventId, eventIds), eq(motosTable.status, "completed")));
-
-  if (allMotos.length === 0) return res.json([]);
-
-  const motoIds = allMotos.map(m => m.id);
-
-  const allResults = await db.select({
-    motoId: raceResultsTable.motoId,
-    riderId: raceResultsTable.riderId,
-    riderName: ridersTable.firstName,
-    riderLastName: ridersTable.lastName,
-    raceClass: raceResultsTable.raceClass,
-    position: raceResultsTable.position,
-    points: raceResultsTable.points,
-    dnf: raceResultsTable.dnf,
-    dns: raceResultsTable.dns,
-  })
-    .from(raceResultsTable)
-    .leftJoin(ridersTable, eq(raceResultsTable.riderId, ridersTable.id))
-    .where(inArray(raceResultsTable.motoId, motoIds));
-
-  type MotoEntry = { moto: typeof allMotos[0]; results: typeof allResults };
-  const classByEvent: Record<string, Record<number, MotoEntry[]>> = {};
-
-  for (const moto of allMotos) {
-    const cls = moto.raceClass ?? "";
-    if (!classByEvent[cls]) classByEvent[cls] = {};
-    if (!classByEvent[cls][moto.eventId]) classByEvent[cls][moto.eventId] = [];
-    const motoResults = allResults.filter(r => r.motoId === moto.id);
-    classByEvent[cls][moto.eventId].push({ moto, results: motoResults });
-  }
-
-  const standings: Array<{
-    position: number;
-    riderId: number;
-    riderName: string;
-    raceClass: string;
-    totalScore: number;
-    eventsEntered: number;
-    events: Array<{ eventId: number; eventName: string; eventScore: number; attended: boolean; motos: number[] }>;
-  }> = [];
-
-  for (const [raceClass, eventMap] of Object.entries(classByEvent)) {
-    const riderNames: Record<number, string> = {};
-    for (const motoEntries of Object.values(eventMap)) {
-      for (const { results } of motoEntries) {
-        for (const r of results) {
-          riderNames[r.riderId] = `${r.riderName ?? ""} ${r.riderLastName ?? ""}`.trim();
-        }
-      }
-    }
-    const allRiderIds = Object.keys(riderNames).map(Number);
-
-    const classRows: typeof standings = [];
-
-    for (const riderId of allRiderIds) {
-      let totalScore = 0;
-      let eventsEntered = 0;
-      const eventBreakdowns: typeof standings[0]["events"] = [];
-
-      for (const eventId of eventIds) {
-        const motoEntries = eventMap[eventId];
-        if (!motoEntries || motoEntries.length === 0) continue;
-
-        const sortedMotos = [...motoEntries].sort((a, b) => (a.moto.motoNumber ?? 0) - (b.moto.motoNumber ?? 0));
-
-        let eventScore = 0;
-        const motoPositions: number[] = [];
-        let attended = false;
-
-        for (const { results } of sortedMotos) {
-          const result = results.find(r => r.riderId === riderId);
-          if (result) {
-            attended = true;
-            const pts = (result.dnf || result.dns) ? 0 : (result.points ?? 0);
-            eventScore += pts;
-            motoPositions.push(pts);
-          } else {
-            motoPositions.push(0);
-          }
-        }
-
-        if (attended) eventsEntered++;
-        totalScore += eventScore;
-        eventBreakdowns.push({
-          eventId,
-          eventName: eventNameMap[eventId] ?? `Event ${eventId}`,
-          eventScore,
-          attended,
-          motos: motoPositions,
-        });
-      }
-
-      classRows.push({
-        position: 0,
-        riderId,
-        riderName: riderNames[riderId],
-        raceClass,
-        totalScore,
-        eventsEntered,
-        events: eventBreakdowns,
-      });
-    }
-
-    classRows.sort((a, b) => b.totalScore - a.totalScore);
-    classRows.forEach((row, idx) => {
-      if (idx > 0 && row.totalScore === classRows[idx - 1].totalScore) {
-        row.position = classRows[idx - 1].position;
-      } else {
-        row.position = idx + 1;
-      }
-    });
-
-    standings.push(...classRows);
-  }
-
-  // Official only when every finished moto counted has been finalized.
-  const official = allMotos.every(m => m.resultsFinalizedAt != null || m.type === "practice");
-  return res.json(standings.map((row: Record<string, unknown>) => ({ ...row, official })));
+  // Public (embed widgets): finished races count, each class flagged official
+  // once all its races are finalized. Same rules as the stored series points.
+  const { standings } = await computeSeriesStandings(series);
+  return res.json(standings);
 });
 
 router.post("/series/:seriesId/recalculate", async (req, res) => {
@@ -245,6 +126,7 @@ router.post("/series/:seriesId/recalculate", async (req, res) => {
     const [series] = await db.select({ clubId: seriesTable.clubId }).from(seriesTable).where(eq(seriesTable.id, seriesId));
     if (!series || series.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
   }
+  await recalculateSeriesPoints([seriesId]);
   return res.json({ ok: true });
 });
 
@@ -301,7 +183,8 @@ router.get("/public/series/:seriesId", async (req, res) => {
       }).from(eventsTable).where(inArray(eventsTable.id, eventIds))
     : [];
 
-  const eventMap = new Map(eventsData.map(e => [e.id, e]));
+  // Draft events aren't announced yet: keep them off the public page.
+  const eventMap = new Map(eventsData.filter(e => e.status !== "draft").map(e => [e.id, e]));
   const sortedEvents = eventIds.map(id => eventMap.get(id)).filter(Boolean);
 
   return res.json({
@@ -320,99 +203,8 @@ router.get("/public/series/:seriesId/standings", async (req, res) => {
   const [series] = await db.select().from(seriesTable).where(eq(seriesTable.id, seriesId));
   if (!series) return res.status(404).json({ error: "Not found" });
 
-  const allEventIds = series.eventIds as number[];
-  if (allEventIds.length === 0) return res.json([]);
-
-  // Finished motos count (official or not); see the official flag on each row.
-  const eventIds = allEventIds;
-
-  const events = await db.select({ id: eventsTable.id, name: eventsTable.name })
-    .from(eventsTable).where(inArray(eventsTable.id, eventIds));
-  const eventNameMap: Record<number, string> = {};
-  events.forEach(e => { eventNameMap[e.id] = e.name; });
-
-  const allMotos = await db.select().from(motosTable)
-    .where(and(inArray(motosTable.eventId, eventIds), eq(motosTable.status, "completed")));
-
-  if (allMotos.length === 0) return res.json([]);
-
-  const motoIds = allMotos.map(m => m.id);
-  const allResults = await db.select({
-    motoId: raceResultsTable.motoId,
-    riderId: raceResultsTable.riderId,
-    riderName: ridersTable.firstName,
-    riderLastName: ridersTable.lastName,
-    raceClass: raceResultsTable.raceClass,
-    position: raceResultsTable.position,
-    points: raceResultsTable.points,
-    dnf: raceResultsTable.dnf,
-    dns: raceResultsTable.dns,
-  }).from(raceResultsTable)
-    .leftJoin(ridersTable, eq(raceResultsTable.riderId, ridersTable.id))
-    .where(inArray(raceResultsTable.motoId, motoIds));
-
-  type MotoEntry = { moto: typeof allMotos[0]; results: typeof allResults };
-  const classByEvent: Record<string, Record<number, MotoEntry[]>> = {};
-
-  for (const moto of allMotos) {
-    const cls = moto.raceClass ?? "";
-    if (!classByEvent[cls]) classByEvent[cls] = {};
-    if (!classByEvent[cls][moto.eventId]) classByEvent[cls][moto.eventId] = [];
-    classByEvent[cls][moto.eventId].push({ moto, results: allResults.filter(r => r.motoId === moto.id) });
-  }
-
-  const standings: Array<{
-    position: number; riderId: number; riderName: string; raceClass: string;
-    totalScore: number; eventsEntered: number; amaNumber: string | null; bikeBrand: string | null;
-    events: Array<{ eventId: number; eventName: string; eventScore: number; attended: boolean; motos: number[]; finishPositions: (number | null)[] }>;
-  }> = [];
-
-  for (const [raceClass, eventMap] of Object.entries(classByEvent)) {
-    const riderNames: Record<number, string> = {};
-    for (const motoEntries of Object.values(eventMap)) {
-      for (const { results } of motoEntries) {
-        for (const r of results) {
-          riderNames[r.riderId] = `${r.riderName ?? ""} ${r.riderLastName ?? ""}`.trim();
-        }
-      }
-    }
-    const allRiderIds = Object.keys(riderNames).map(Number);
-    const classRows: typeof standings = [];
-
-    for (const riderId of allRiderIds) {
-      let totalScore = 0; let eventsEntered = 0;
-      const eventBreakdowns: typeof standings[0]["events"] = [];
-      for (const eventId of eventIds) {
-        const motoEntries = eventMap[eventId];
-        if (!motoEntries?.length) continue;
-        const sortedMotos = [...motoEntries].sort((a, b) => (a.moto.motoNumber ?? 0) - (b.moto.motoNumber ?? 0));
-        let eventScore = 0; const motoPositions: number[] = []; const finishPositions: (number | null)[] = []; let attended = false;
-        for (const { results } of sortedMotos) {
-          const result = results.find(r => r.riderId === riderId);
-          if (result) {
-            attended = true;
-            const pts = (result.dnf || result.dns) ? 0 : (result.points ?? 0);
-            eventScore += pts;
-            motoPositions.push(pts);
-            finishPositions.push(result.dnf || result.dns ? null : (result.position ?? null));
-          } else {
-            motoPositions.push(0);
-            finishPositions.push(null);
-          }
-        }
-        if (attended) eventsEntered++;
-        totalScore += eventScore;
-        eventBreakdowns.push({ eventId, eventName: eventNameMap[eventId] ?? `Event ${eventId}`, eventScore, attended, motos: motoPositions, finishPositions });
-      }
-      classRows.push({ position: 0, riderId, riderName: riderNames[riderId], raceClass, totalScore, eventsEntered, amaNumber: null, bikeBrand: null, events: eventBreakdowns });
-    }
-
-    classRows.sort((a, b) => b.totalScore - a.totalScore);
-    classRows.forEach((row, idx) => {
-      row.position = (idx > 0 && row.totalScore === classRows[idx - 1].totalScore) ? classRows[idx - 1].position : idx + 1;
-    });
-    standings.push(...classRows);
-  }
+  const { standings: rows, eventIds } = await computeSeriesStandings(series);
+  const standings = rows.map(row => ({ ...row, amaNumber: null as string | null, bikeBrand: null as string | null }));
 
   const allRiderIds = [...new Set(standings.map(s => s.riderId))];
   if (allRiderIds.length > 0) {
@@ -438,9 +230,7 @@ router.get("/public/series/:seriesId/standings", async (req, res) => {
     }
   }
 
-  // Official only when every finished moto counted has been finalized.
-  const official = allMotos.every(m => m.resultsFinalizedAt != null || m.type === "practice");
-  return res.json(standings.map((row: Record<string, unknown>) => ({ ...row, official })));
+  return res.json(standings);
 });
 
 export default router;

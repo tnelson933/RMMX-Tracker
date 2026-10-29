@@ -5,7 +5,7 @@
  * RM Roost API
  * OpenAPI spec version: 0.1.0
  */
-import type { RaceResult } from './raceResult';
+import type { RiderRecentResult } from './riderRecentResult';
 
 export interface RiderDetail {
   id: number;
@@ -45,7 +45,14 @@ export interface RiderDetail {
   skillLevel?: string | null;
   /** Race disciplines the rider competes in (e.g. Motocross, Supercross, Desert) */
   raceTypes?: string[];
-  recentResults?: RaceResult[];
+  /** Completed motos from the caller's club events (all clubs for super admins), newest event first. */
+  recentResults?: RiderRecentResult[];
+  /** Distinct events the rider registered for (caller's club only). */
   totalEvents?: number;
+  /**
+     * Club ID
+     * @nullable
+     */
+  clubIdNumber?: string | null;
   createdAt?: string;
 }

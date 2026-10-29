@@ -180,6 +180,7 @@ export * from './riderInput';
 export * from './riderMaintenanceHistoryEntry';
 export * from './riderNotificationPrefResult';
 export * from './riderOrganization';
+export * from './riderRecentResult';
 export * from './riderResultInput';
 export * from './riderSeriesEntry';
 export * from './riderUpdate';
