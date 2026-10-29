@@ -13,7 +13,7 @@ import {
 import { eq, and, ne, inArray, isNull } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { requireRiderAuth } from "./rider-portal";
-import { eventTimingTags, eventsTimingTags } from "../lib/eventTimingTags";
+import { eventTimingTags, eventsTimingTags, splitRegistrationTag } from "../lib/eventTimingTags";
 import { hasStickerBesidesTransponder, QUICK_CHECKIN_REASON_TEXT, quickCheckinIneligibleReason, quickCheckinRequirements } from "../lib/quickCheckinRequirements";
 import { managedRiderWhere } from "../lib/riderAccess";
 
@@ -199,7 +199,9 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
     const checkedIn = checkedInSet.has(`${r.eventId}:${r.riderId}:${r.raceClass ?? "Unknown"}`);
 
     const requirements = quickCheckinRequirements(r.quickCheckinRequirements);
-    const hasRfid = hasStickerBesidesTransponder(stickersByKey.get(key), r.myLapsTransponderNumber);
+    // An old sticker number in the transponder field is a sticker (lib/eventTimingTags).
+    const regTag = splitRegistrationTag(r.myLapsTransponderNumber);
+    const hasRfid = hasStickerBesidesTransponder(stickersByKey.get(key), regTag.transponder) || !!regTag.sticker;
     // requireWaiver = simple acknowledgment stored on the registration row (waiver_acknowledged_at)
     // requireLiabilityWaiver = full PDF e-signature stored in liability_waiver_signatures
     const waiverSigned = r.requireLiabilityWaiver ? waiverByRider.has(key) : !!r.waiverAcknowledgedAt;
@@ -209,7 +211,7 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
       tags: tagsByEvent.get(r.eventId) ?? { transponder: true, rfid: true, fromReaders: false },
       hasRfid,
       // A registration-level or rider-level number (including legacy stored values).
-      hasTransponder: !!r.myLapsTransponderNumber || !!transponderByRiderId.get(r.riderId),
+      hasTransponder: !!regTag.transponder || !!transponderByRiderId.get(r.riderId),
       waiverRequired: !!(r.requireWaiver || r.requireLiabilityWaiver),
       waiverSigned,
       needsPickup: needsGatePickup(r, hasRfid),
@@ -412,14 +414,16 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
       .limit(1);
     waiverSigned = !!sig;
   }
+  const regTag = splitRegistrationTag(reg.myLapsTransponderNumber);
+  const hasSticker = hasStickerBesidesTransponder(stickers.map(x => x.rfidNumber), regTag.transponder) || !!regTag.sticker;
   const reason = quickCheckinIneligibleReason(requirements, {
     registrationConfirmed: reg.status === "confirmed",
     tags: await eventTimingTags(eventId),
-    hasRfid: hasStickerBesidesTransponder(stickers.map(x => x.rfidNumber), reg.myLapsTransponderNumber),
-    hasTransponder: !!reg.myLapsTransponderNumber || !!riderRow?.transponderId,
+    hasRfid: hasSticker,
+    hasTransponder: !!regTag.transponder || !!riderRow?.transponderId,
     waiverRequired: !!(event.requireWaiver || event.requireLiabilityWaiver),
     waiverSigned,
-    needsPickup: needsGatePickup(reg, hasStickerBesidesTransponder(stickers.map(x => x.rfidNumber), reg.myLapsTransponderNumber)),
+    needsPickup: needsGatePickup(reg, hasSticker),
   });
   if (reason) return res.status(400).json({ error: QUICK_CHECKIN_REASON_TEXT[reason], reason });
 

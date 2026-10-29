@@ -26,7 +26,7 @@ import { useToast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import { isInvalidAssignedActiveTransponderIdentifier } from "@/lib/activeTransponder";
-import { eventTimingTags } from "@/components/organizer/timingTags";
+import { eventTimingTags, splitRegistrationTag } from "@/components/organizer/timingTags";
 
 // RFID tags are alphanumeric + dashes, 1–32 characters.
 // Spaces, special chars, or extreme lengths are invalid.
@@ -456,8 +456,10 @@ export default function Registrations() {
 
   // Float registrations with invalid transponder/RFID numbers to the top.
   const sortedRegs = [...filteredRegs].sort((a, b) => {
-    const invalid = (r: any) =>
-      isInvalidAssignedActiveTransponderIdentifier(r.myLapsTransponderNumber) || isInvalidRfid(r.rfidNumber);
+    const invalid = (r: any) => {
+      const regTag = splitRegistrationTag(r.myLapsTransponderNumber);
+      return isInvalidAssignedActiveTransponderIdentifier(regTag.transponder) || isInvalidRfid(r.rfidNumber ?? regTag.sticker);
+    };
     const aInvalid = invalid(a);
     const bInvalid = invalid(b);
     if (aInvalid && !bInvalid) return -1;
@@ -1778,12 +1780,14 @@ export default function Registrations() {
                   const isDuplicate = effectiveBib ? (bibRiders.get(effectiveBib)?.size ?? 0) > 1 : false;
                   const isSuggested = !reg.bibNumber && !!suggested;
                   const isEditing = editingBibId === reg.id;
-                  const transponderVal = (reg as any).myLapsTransponderNumber as string | null;
+                  // An old RFID sticker number in the transponder field is a sticker.
+                  const regTag = splitRegistrationTag((reg as any).myLapsTransponderNumber);
+                  const transponderVal = regTag.transponder;
                   const transponderIsRental = !!(reg as any).transponderRental;
                   const hasInvalidTransponder = isInvalidAssignedActiveTransponderIdentifier(transponderVal);
                   // Older registrations also stored the transponder as a sticker: don't show it twice.
                   const rawRfid = (reg as any).rfidNumber as string | null;
-                  const rfidVal = rawRfid && rawRfid.trim().toLowerCase() !== transponderVal?.trim().toLowerCase() ? rawRfid : null;
+                  const rfidVal = (rawRfid && rawRfid.trim().toLowerCase() !== transponderVal?.trim().toLowerCase() ? rawRfid : null) ?? regTag.sticker;
                   const hasInvalidRfid = isInvalidRfid(rfidVal);
                   // Show each kind of tag the event uses, or any the rider has anyway.
                   const showTransponder = tags.transponder || !!transponderVal || transponderIsRental;

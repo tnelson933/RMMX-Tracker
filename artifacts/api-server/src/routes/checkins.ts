@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { checkinsTable, ridersTable, rfidAssignmentsTable, registrationsTable, eventsTable, motosTable, liabilityWaiverSignaturesTable } from "@workspace/db";
 import { eq, and, ne, asc, isNull } from "drizzle-orm";
 import { fulfillRmTrackr } from "../lib/rmTrackr";
+import { splitRegistrationTag } from "../lib/eventTimingTags";
 
 const router = Router();
 
@@ -82,10 +83,12 @@ router.get("/events/:eventId/checkins", async (req, res) => {
     const c = checkinByRider.get(r.riderId);
     const riderEmail = r.email?.toLowerCase() ?? null;
     const timingNumber = c?.rfidNumber ?? r.myLapsTransponderNumber ?? null;
-    const transponderNumber = r.myLapsTransponderNumber?.trim() || null;
+    // An old sticker number copied into the transponder field counts as the sticker.
+    const regTag = splitRegistrationTag(r.myLapsTransponderNumber);
+    const transponderNumber = regTag.transponder;
     // Older registrations also stored the transponder as a sticker row: skip that.
     const sticker = stickerByRider.get(r.riderId) ?? null;
-    const rfidTag = sticker && sticker.trim().toLowerCase() !== transponderNumber?.toLowerCase() ? sticker : null;
+    const rfidTag = (sticker && sticker.trim().toLowerCase() !== transponderNumber?.toLowerCase() ? sticker : null) ?? regTag.sticker;
     return {
       id: c?.id ?? null,
       eventId,

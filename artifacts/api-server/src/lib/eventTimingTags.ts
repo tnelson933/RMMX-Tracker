@@ -1,5 +1,6 @@
 import { db, eventsTable, eventReaderAssignmentsTable, readersTable, trackCoursePointsTable } from "@workspace/db";
 import { eq, inArray } from "drizzle-orm";
+import { isValidActiveTransponderIdentifier } from "./riderTimingIdentity";
 
 /**
  * Which kinds of timing tag an event's riders need. Events don't pick a timing
@@ -75,6 +76,18 @@ export async function eventsTimingTags(eventIds: number[]): Promise<Map<number, 
     ]));
   }
   return out;
+}
+
+/**
+ * A registration's transponder field, split by what it really holds. Before an
+ * event could use both kinds of reader, assigning an RFID sticker also copied
+ * its number there, so a value that isn't a valid RM TrackR ID (1–9 hex
+ * characters) is an RFID sticker, not a bad transponder number.
+ */
+export function splitRegistrationTag(value: string | null | undefined): { transponder: string | null; sticker: string | null } {
+  const v = value?.trim() || null;
+  if (!v) return { transponder: null, sticker: null };
+  return isValidActiveTransponderIdentifier(v) ? { transponder: v, sticker: null } : { transponder: null, sticker: v };
 }
 
 /** "RM TrackR", "RFID" or "RM TrackR + RFID", for labels. */

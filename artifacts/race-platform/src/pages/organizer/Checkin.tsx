@@ -16,7 +16,7 @@ import { CacheStatusBadge } from "@/components/CacheStatusBadge";
 import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
 import { isInvalidAssignedActiveTransponderIdentifier } from "@/lib/activeTransponder";
 import { RM_TRACKR_NAME, RM_TRACKR_PRICE } from "@/lib/rmTrackr";
-import { eventTimingTags, type TimingTags } from "@/components/organizer/timingTags";
+import { eventTimingTags, splitRegistrationTag, type TimingTags } from "@/components/organizer/timingTags";
 
 // RFID tags: alphanumeric + dashes, 1–32 characters.
 function isInvalidRfid(val: string | null | undefined): boolean {
@@ -34,14 +34,16 @@ type TagKind = "transponder" | "rfid";
  * may have both. Older servers (the desktop app) only send the last-set tag.
  */
 function riderTags(c: any, tags: TimingTags): { transponder: string | null; rfid: string | null } {
-  const transponder = (c.transponderNumber !== undefined ? c.transponderNumber : c.myLapsTransponderNumber)?.trim() || null;
+  // An old RFID sticker number in the transponder field is a sticker.
+  const regTag = splitRegistrationTag(c.transponderNumber !== undefined ? c.transponderNumber : c.myLapsTransponderNumber);
+  const transponder = regTag.transponder;
   let rfid: string | null;
   if (c.rfidTag !== undefined) rfid = c.rfidTag?.trim() || null;
   else {
     const last = c.rfidNumber?.trim() || null;
     rfid = last && last.toLowerCase() !== transponder?.toLowerCase() && tags.rfid ? last : null;
   }
-  return { transponder, rfid };
+  return { transponder, rfid: rfid ?? regTag.sticker };
 }
 
 /** Has the rider a tag for each kind of reader timing the event (any one when none are set up)? */

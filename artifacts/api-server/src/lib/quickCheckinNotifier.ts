@@ -15,7 +15,7 @@ import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { sendPushNotifications, type PushMessage } from "./push";
 import { accountIdsForRiders } from "./riderAccess";
-import { eventTimingTags } from "./eventTimingTags";
+import { eventTimingTags, splitRegistrationTag } from "./eventTimingTags";
 import { hasStickerBesidesTransponder, quickCheckinIneligibleReason, quickCheckinRequirements } from "./quickCheckinRequirements";
 
 // Race-day morning push for quick check-in.
@@ -152,12 +152,14 @@ async function notifyForEvent(event: EventRow): Promise<void> {
   const eligibleRiderIds = new Set<number>();
   for (const r of regs) {
     if (checkedInSet.has(`${r.riderId}:${r.raceClass ?? "Unknown"}`)) continue;
-    const hasRfid = hasStickerBesidesTransponder(stickersByRider.get(r.riderId), r.myLapsTransponderNumber);
+    // An old sticker number in the transponder field is a sticker (lib/eventTimingTags).
+    const regTag = splitRegistrationTag(r.myLapsTransponderNumber);
+    const hasRfid = hasStickerBesidesTransponder(stickersByRider.get(r.riderId), regTag.transponder) || !!regTag.sticker;
     const reason = quickCheckinIneligibleReason(requirements, {
       registrationConfirmed: r.status === "confirmed",
       tags,
       hasRfid,
-      hasTransponder: !!r.myLapsTransponderNumber || !!r.riderTransponder,
+      hasTransponder: !!regTag.transponder || !!r.riderTransponder,
       waiverRequired: !!(event.requireWaiver || event.requireLiabilityWaiver),
       waiverSigned: event.requireLiabilityWaiver ? waiverRiderIds.has(r.riderId) : !!r.waiverAcknowledgedAt,
       needsPickup: (!!r.transponderRental && !r.myLapsTransponderNumber?.trim())

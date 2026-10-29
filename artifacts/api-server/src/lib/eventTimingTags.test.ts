@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { hasRequiredTags, timingTagsFromReaders, timingTagsLabel } from "./eventTimingTags";
+import { hasRequiredTags, splitRegistrationTag, timingTagsFromReaders, timingTagsLabel } from "./eventTimingTags";
 
 test("the event's own readers decide which tags riders need", () => {
   assert.deepEqual(timingTagsFromReaders([["active_transponder", "rfid"], ["rfid"], []]), { transponder: true, rfid: true, fromReaders: true });
@@ -32,4 +32,11 @@ test("labels", () => {
   assert.equal(timingTagsLabel({ transponder: true, rfid: true, fromReaders: true }), "RM TrackR + RFID");
   assert.equal(timingTagsLabel({ transponder: true, rfid: false, fromReaders: true }), "RM TrackR");
   assert.equal(timingTagsLabel({ transponder: false, rfid: true, fromReaders: true }), "RFID");
+});
+
+test("an old RFID sticker number in the transponder field is a sticker, not a bad transponder", () => {
+  assert.deepEqual(splitRegistrationTag("E28011700000020A1B2C3D4E"), { transponder: null, sticker: "E28011700000020A1B2C3D4E" });
+  assert.deepEqual(splitRegistrationTag("1a2b3c"), { transponder: "1a2b3c", sticker: null });
+  assert.deepEqual(splitRegistrationTag("  "), { transponder: null, sticker: null });
+  assert.deepEqual(splitRegistrationTag(null), { transponder: null, sticker: null });
 });

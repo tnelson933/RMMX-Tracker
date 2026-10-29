@@ -1,3 +1,5 @@
+import { isValidActiveTransponderIdentifier } from "@workspace/api-zod";
+
 /**
  * Which kinds of tag an event's readers use (api-server lib/eventTimingTags).
  * Events don't pick a timing technology: RM TrackR loops and RFID readers can
@@ -25,4 +27,16 @@ export function eventTimingTags(event: unknown): TimingTags {
 export function timingTagsLabel(tags: TimingTags): string {
   if (tags.transponder && tags.rfid) return "RM TrackR + RFID";
   return tags.transponder ? "RM TrackR" : "RFID";
+}
+
+/**
+ * A registration's transponder field, split by what it really holds. Before an
+ * event could use both kinds of reader, assigning an RFID sticker also copied
+ * its number there, so a value that isn't a valid RM TrackR ID (1–9 hex
+ * characters) is an RFID sticker, not a bad transponder number.
+ */
+export function splitRegistrationTag(value: string | null | undefined): { transponder: string | null; sticker: string | null } {
+  const v = value?.trim() || null;
+  if (!v) return { transponder: null, sticker: null };
+  return isValidActiveTransponderIdentifier(v) ? { transponder: v, sticker: null } : { transponder: null, sticker: v };
 }
