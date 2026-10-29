@@ -192,18 +192,23 @@ function OfflineHardwareSetup({ tech, api }: { tech: Tech; api: DesktopApi }) {
   return (
     <div className="border rounded-lg divide-y overflow-hidden bg-background/40">
       <Step n={1} title="Put the reader and this computer on one network">
-        <div className="grid grid-cols-2 gap-2">
-          <Button size="sm" variant={layout === "router" ? "default" : "outline"} className="gap-1.5" onClick={() => setLayout("router")}>
-            <Router size={14} /> Router or switch
-          </Button>
-          <Button size="sm" variant={layout === "direct" ? "default" : "outline"} className="gap-1.5" onClick={() => setLayout("direct")}>
-            <Cable size={14} /> Direct cable
-          </Button>
-        </div>
-        {layout === "router" ? (
+        {/* RFID readers only get an address from a router; a direct cable is
+            offered for the RM TrackR only, with fixed IPs set on both ends. */}
+        {tech !== "rfid" && (
+          <div className="grid grid-cols-2 gap-2">
+            <Button size="sm" variant={layout === "router" ? "default" : "outline"} className="gap-1.5" onClick={() => setLayout("router")}>
+              <Router size={14} /> Router or switch
+            </Button>
+            <Button size="sm" variant={layout === "direct" ? "default" : "outline"} className="gap-1.5" onClick={() => setLayout("direct")}>
+              <Cable size={14} /> Direct cable (fixed IPs)
+            </Button>
+          </div>
+        )}
+        {layout === "router" || tech === "rfid" ? (
           <ul className="text-sm text-muted-foreground list-disc pl-5 space-y-1">
             <li><strong className="text-foreground">Recommended.</strong> Any home or travel router works without internet: it still gives every device an address.</li>
             <li>Plug the reader into a LAN port and connect this computer by cable or the router's Wi-Fi.</li>
+            <li>A cable straight from this computer to the reader won't work on automatic settings: the reader only gets an address from a router.</li>
             {tech === "rfid" ? (
               <li>Impinj R700 and Zebra readers need Power over Ethernet: use a PoE switch or a PoE injector between the router and the reader.</li>
             ) : (
@@ -211,15 +216,9 @@ function OfflineHardwareSetup({ tech, api }: { tech: Tech; api: DesktopApi }) {
             )}
             <li>Wait about a minute after power-up, then scan below.</li>
           </ul>
-        ) : tech === "rfid" ? (
-          <ul className="text-sm text-muted-foreground list-disc pl-5 space-y-1">
-            <li>Cable the reader (through its PoE injector) straight to this computer's Ethernet port.</li>
-            <li>Leave both on automatic addressing. With no router, each picks a 169.254.x.x address after about a minute.</li>
-            <li>Connect by hostname instead of scanning: Impinj readers are <code className="font-mono text-xs">impinj-xx-xx-xx.local</code> (the last 6 characters of the MAC on the label), Zebra readers are the model plus the last 6 MAC characters, e.g. <code className="font-mono text-xs">FX9600A1B2C3.local</code>.</li>
-            <li>If a Zebra reader doesn't answer by hostname, use a router: Zebra doesn't guarantee a direct-cable connection.</li>
-          </ul>
         ) : (
           <ul className="text-sm text-muted-foreground list-disc pl-5 space-y-1">
+            <li>Only with fixed IPs on both ends: on automatic settings the RM TrackR gets no address without a router. If you can, use a router instead.</li>
             <li>Cable the RM TrackR's Ethernet port straight to this computer.</li>
             <li>On the RM TrackR, open <strong className="text-foreground">Config → Network</strong>, choose TCP mode, and set a fixed IP: <code className="font-mono text-xs">192.168.1.200</code>, mask <code className="font-mono text-xs">255.255.255.0</code>.</li>
             <li>Give this computer's Ethernet adapter a fixed IP on the same network: <code className="font-mono text-xs">192.168.1.10</code>, mask <code className="font-mono text-xs">255.255.255.0</code>, no gateway.
@@ -258,7 +257,7 @@ function OfflineHardwareSetup({ tech, api }: { tech: Tech; api: DesktopApi }) {
           </Button>
         </div>
         {linkLocal && !scanning && (
-          <p className="text-xs text-muted-foreground">169.254 networks are too large to scan. Enter the reader's hostname or IP below instead.</p>
+          <p className="text-xs text-amber-700 dark:text-amber-400">This computer has a 169.254 address, so it isn't on a router. Connect it and the reader to a router (or use the RM TrackR fixed-IP setup above), then scan.</p>
         )}
         {scan && (
           <div className="space-y-1.5">

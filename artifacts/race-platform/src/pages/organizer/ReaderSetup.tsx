@@ -1026,7 +1026,7 @@ export default function ReaderSetup() {
           <div className="flex gap-2"><MiniStep n={2} /><p>{isDesktop
             ? <>On the RM Roost website, open <strong>Reader Setup</strong> and click <strong>Get a pairing code</strong>, then type the 6-digit code into RM Connect. No password is needed on the laptop.</>
             : <>Click <strong>Get a pairing code</strong> below and type the 6-digit code into RM Connect. No password is needed on the laptop.</>}</p></div>
-          <div className="flex gap-2"><MiniStep n={3} /><p>Power on your readers and connect the laptop to the same network (a router, or a cable straight to the reader). Click <strong>Find readers</strong>. RM Connect lists every reader it finds; name each one after where it sits (for example "Finish line" or "Section 3 start") and click <strong>Add</strong>. Click <strong>Test</strong> and pass a tag or transponder to check it.</p></div>
+          <div className="flex gap-2"><MiniStep n={3} /><p>Power on your readers and connect them and the laptop to the same router or network switch (any home or travel router works; no internet needed). A cable straight from the laptop to a reader won't work: readers only get an address from a router. Click <strong>Find readers</strong>. RM Connect lists every reader it finds; name each one after where it sits (for example "Finish line" or "Section 3 start") and click <strong>Add</strong>. Click <strong>Test</strong> and pass a tag or transponder to check it.</p></div>
         </div>
         <p className="text-xs text-muted-foreground">
           One laptop can run several readers. Leave RM Connect running on race day: readers start and stop with each moto, and reconnect on their own if the network drops.

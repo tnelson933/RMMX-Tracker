@@ -39,8 +39,10 @@ interface Adapter {
 
 /**
  * Addresses worth checking even when they are outside every adapter's /24:
- * an Impinj reader cabled straight to a laptop answers on 169.254.1.1, and our
- * direct-cable instructions give the RM TrackR 192.168.1.200.
+ * a reader's own fallback address (Impinj answers on 169.254.1.1 when it got no
+ * address from a router) and the fixed IP our setup steps suggest for an RM
+ * TrackR (192.168.1.200). Readers are meant to be on a router; these only help
+ * find one that was set up differently.
  */
 const KNOWN_DEFAULT_ADDRESSES = ["169.254.1.1", "192.168.1.200"];
 
@@ -140,7 +142,7 @@ async function runPool<T>(items: T[], concurrency: number, worker: (item: T) => 
 
 /**
  * Sweeps every private and link-local adapter's subnet, plus the known
- * direct-cable defaults, for timing hardware. `skipAddresses` holds devices
+ * fallback addresses, for timing hardware. `skipAddresses` holds devices
  * this app is already connected to: a reader accepts only one client, so even
  * a probe could disturb a live session.
  */
@@ -153,7 +155,7 @@ export async function scanLocalNetwork(skipAddresses: string[] = []): Promise<Sc
     }
   }
   for (const host of KNOWN_DEFAULT_ADDRESSES) {
-    if (!skip.has(host) && !targets.has(host)) targets.set(host, "direct cable");
+    if (!skip.has(host) && !targets.has(host)) targets.set(host, "default address");
   }
 
   const found: Array<{ address: string; port: number; adapter: string }> = [];
