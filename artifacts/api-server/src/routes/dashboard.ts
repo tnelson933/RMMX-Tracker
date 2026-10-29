@@ -106,7 +106,8 @@ router.get("/dashboard/club/:clubId", async (req, res) => {
       paidCount: sql<number>`COUNT(*) FILTER (WHERE ${registrationsTable.status} <> 'void' AND ${registrationsTable.paymentStatus} = 'paid')`,
       unpaidCount: sql<number>`COUNT(*) FILTER (WHERE ${registrationsTable.status} <> 'void' AND ${registrationsTable.paymentStatus} = 'unpaid')`,
       missingStandardWaivers: sql<number>`COUNT(*) FILTER (WHERE ${registrationsTable.status} <> 'void' AND ${registrationsTable.waiverAcknowledgedAt} IS NULL)`,
-      missingTransponders: sql<number>`COUNT(*) FILTER (WHERE ${registrationsTable.status} <> 'void' AND NULLIF(TRIM(${registrationsTable.myLapsTransponderNumber}), '') IS NULL)`,
+      // Riders renting or buying one get it at check-in, so they aren't missing one.
+      missingTransponders: sql<number>`COUNT(*) FILTER (WHERE ${registrationsTable.status} <> 'void' AND NULLIF(TRIM(${registrationsTable.myLapsTransponderNumber}), '') IS NULL AND NOT ${registrationsTable.transponderRental} AND NOT ${registrationsTable.rmTrackrPurchased})`,
     }).from(registrationsTable).where(eq(registrationsTable.eventId, nextEvent.id));
 
     const [liabilitySummary] = await db.select({

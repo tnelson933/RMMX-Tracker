@@ -63,6 +63,20 @@ test("does not accept a rental that the event does not offer", () => {
   );
 });
 
+test("buying an RM TrackR at registration satisfies the requirement", () => {
+  assert.equal(
+    isRegistrationTransponderRequirementSatisfied(
+      {
+        timingTechnology: "active_transponder",
+        requireTransponder: true,
+        transponderRentalEnabled: false,
+      },
+      { transponderNumber: "", rentTransponder: false, buyTransponder: true },
+    ),
+    true,
+  );
+});
+
 test("does not require active transponders for passive RFID events", () => {
   assert.equal(
     isRegistrationTransponderRequirementSatisfied(

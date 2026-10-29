@@ -7,6 +7,8 @@ export interface RegistrationTransponderRequirement {
 export interface RegistrationTransponderSelection {
   transponderNumber: string | null | undefined;
   rentTransponder: boolean | null | undefined;
+  /** Buying an RM TrackR the event offers (already checked against its purchase options). */
+  buyTransponder?: boolean | null;
 }
 
 export function isRegistrationTransponderRequirementSatisfied(
@@ -22,5 +24,6 @@ export function isRegistrationTransponderRequirementSatisfied(
     selection.rentTransponder && event.transponderRentalEnabled,
   );
 
-  return hasPersonalTransponder || hasAvailableRental;
+  // A rider renting or buying one gets it from the organizer at check-in.
+  return hasPersonalTransponder || hasAvailableRental || Boolean(selection.buyTransponder);
 }

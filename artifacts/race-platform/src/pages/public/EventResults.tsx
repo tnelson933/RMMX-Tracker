@@ -24,6 +24,24 @@ import {
 } from "@/components/ui/dialog";
 import { LiveRaceViews, useLiveRaceStream } from "./LiveLeaderboard";
 import { SectorTimes, type SectorEntry } from "@/components/SectorTimes";
+import { EnduroOverallTable, useEnduroOverall, type EnduroOverallData } from "@/components/organizer/OverallStandings";
+
+/** Enduro event overall for one class: each test's time, penalties and total. */
+function EnduroOverallSection({ data, raceClass }: { data: EnduroOverallData | undefined; raceClass: string }) {
+  if (!data?.classes.some((c) => c.raceClass === raceClass)) return null;
+  return (
+    <div className="space-y-4 mb-12">
+      <div className="flex items-center gap-3 flex-wrap">
+        <h3 className="text-xl font-heading font-bold uppercase px-2 py-1 bg-muted inline-block rounded">Overall</h3>
+        <OfficialResultsBadge official={!!data.official} />
+        <span className="text-xs text-muted-foreground">Total time of all finished tests + time-check penalties · lowest wins</span>
+      </div>
+      <div className="overflow-x-auto border rounded-md">
+        <EnduroOverallTable data={data} raceClass={raceClass} />
+      </div>
+    </div>
+  );
+}
 
 // ─── Lap time formatter ───────────────────────────────────────────────────────
 function formatLapTime(ms: number): string {
@@ -415,6 +433,8 @@ export default function EventResults() {
     } as any,
   });
 
+  const { data: enduroOverall } = useEnduroOverall(eventId, isEnduroEvent, liveMode ? 15_000 : false);
+
   const { data: penaltySummaryRaw } = useGetEnduroPenaltySummary(eventId, {
     query: { enabled: isEnduroEvent && !!eventId } as any,
   });
@@ -667,6 +687,7 @@ export default function EventResults() {
                       </h2>
                     </div>
 
+                    {isEnduroEvent && <EnduroOverallSection data={enduroOverall} raceClass={activeClass} />}
                     {classResults.length === 0 ? (
                       activeClassMoto ? (
                         <div className="text-center py-16 bg-red-50/40 dark:bg-red-950/20 rounded-lg border border-red-300/40 border-dashed">
@@ -810,6 +831,7 @@ export default function EventResults() {
                           <Trophy className="text-primary" /> {cls} Results
                         </h2>
                       </div>
+                      {isEnduroEvent && <EnduroOverallSection data={enduroOverall} raceClass={cls} />}
                       {clsResults.length === 0 ? (
                         <div className="text-center py-16 bg-muted/30 rounded-lg border border-dashed">
                           <Flag className="mx-auto text-muted-foreground opacity-30 mb-4" size={48} />

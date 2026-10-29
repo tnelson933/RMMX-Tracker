@@ -84,10 +84,10 @@ Platform admins also see a separate section with Users, Clubs, and Notifications
 Main fields:
 - **Race Style** — Motocross/Supercross, Enduro, or Cross Country/Desert
 - Name, Date, End Date, Track Name (pre-filled from the Admin Track Library), City, State
-- **Timing Technology** — **RFID Stickers** or **Active Timing Reader**
+- **Timing Technology** — **RFID Stickers** or **RM TrackR** (active timing). New events start on RM TrackR.
 - **Scoring Format** (points scoring table), **AMA Event ID**
 - **Collect Payments** and **Entry Fee ($)**; optional **Add early sign-up incentive period** (Early Bird Fee and the date it ends)
-- **RFID Sticker Fee**; **Offer transponder rentals to riders** with a Rental Fee (active timing events; with online payments off, riders pay the rental at the gate and check-in shows it as due); **Require transponder number?** (active timing events without payments)
+- **RFID Sticker Fee**; **Offer transponder rentals to riders** with a Rental Fee (active timing events; with online payments off, riders pay the rental at the gate and check-in shows it as due); **Require transponder number?** (RM TrackR events, with or without payments). Renting or buying a transponder at registration also satisfies it. When it's on, the form recommends offering rentals and the RM TrackR Transponder sale, with **Offer rentals** and **Sell the RM TrackR Transponder** buttons; without either, riders who don't own a transponder can't register
 - Rider requirements: **Require AMA #**, **Require club ID #**, **Do not allow duplicate race numbers**, **Require rider acknowledgement form**, **Require liability waiver e-signature**
 - **Registration Window** Opens / Closes
 - **Brand Contingencies** offered at this event, and **Series** links
@@ -228,6 +228,10 @@ To time a rider: type their rider number into the **bib-# input at the bottom of
 
 Crossings at time-check readers are recorded as checkpoint arrivals automatically (place readers on the event's **Course Map** tab).
 
+**Scoring:** each test ranks riders within their own class (from their check-in): more completed runs first, then the lowest total time of those runs. The **event overall** per class adds every finished test's total plus time-check penalties; it shows on the Report tab ("Enduro Overall", with each test, Penalty, Total, Gap and Pts) and as an **Overall** section on the public results, labelled Unofficial until the tests are finalized. Riders who missed runs show as incomplete and place after those who completed them. Points (the event's scoring table) are awarded once per event from the class overall, and series standings count them per class.
+
+**Open runs:** a rider whose finish was never read shows "On course since 10:42" on the test card in Race Day Management (red after 30 minutes). **Void start** removes that open start so the rider can start again; or finish them by entering their bib. A reader finish more than 30 minutes after the start is not recorded (it's almost always a missed finish). A finished test refuses new crossings until it's reopened.
+
 ### Live Leaderboard
 Each in-progress or completed moto card shows a **Live Order** panel that updates instantly as crossings arrive: position, rider, laps completed, gap to leader.
 
@@ -288,6 +292,7 @@ The header of the organizer portal shows an active timing chip: "Active Timing R
 
 ### Transponder rentals and RM TrackR Transponder sales
 - Transponder rental: if enabled in the event settings, riders can rent a transponder at registration; a rental fee is added to their total
+- On the registration form's RM TrackR Transponder section, a rider either enters their own number or, under "or, no transponder?", ticks **Rent one for this event** or **Buy your own RM TrackR Transponder** (one or the other). Either one makes the number optional, even when the event requires one; the organizer hands the transponder out at check-in.
 - RM TrackR Transponder sales: riders can buy their own RM TrackR Transponder for a standard $40.
   - In the event's Purchase Options, click **Add RM TrackR Transponder ($40)**. Its name and price are fixed.
   - Riders who buy one at registration show an amber **RM TrackR Transponder Purchased — Assign** flag on the Check-In tab. Assigning the transponder number marks it fulfilled and clears the flag.
@@ -314,6 +319,7 @@ Cards show **Waiver Signed** or **No Waiver**. If the event requires the e-signe
 - **+ Sell RM TrackR** for active timing riders without a transponder (online only).
 - Each offers **Collect Cash** or **Pay with Card** — staff type the card on their own device (Stripe checkout), or the rider scans a QR code to pay on their phone. The window closes by itself once payment goes through.
 - Riders who bought an RM TrackR Transponder online show an amber **RM TrackR Transponder Purchased — Assign** flag until the transponder number is assigned.
+- Riders who rented or bought a transponder at registration also get an amber notice on their card: "Rented a transponder" (**Record rental unit**) or "Bought an RM TrackR Transponder" (**Assign transponder**). Recording a rental stores that unit's number on the registration, and the card then shows **Rental #NUMBER**, so staff know which unit should come back. The Transponder Rentals tab and Admin → Rentals list which rider has which unit.
 
 ### Checking in without internet
 In the RM Roost desktop app, check-in works offline and syncs to the cloud when the laptop is back online (the badge shows **Not Synced** until then). On the website, check-in needs an internet connection.

@@ -1,7 +1,7 @@
 import { Router, type Response } from "express";
 import { db } from "@workspace/db";
-import { eventReaderAssignmentsTable, eventsTable, readersTable, usersTable } from "@workspace/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eventReaderAssignmentsTable, eventsTable, readersTable, usersTable, motosTable, enduroTimeChecksTable } from "@workspace/db/schema";
+import { eq, and, inArray } from "drizzle-orm";
 import { copyTrackCourseToEvent } from "../lib/trackCourse";
 
 const router = Router();
@@ -66,6 +66,21 @@ router.put("/events/:eventId/reader-assignments", async (req, res) => {
     sequence: Number.isInteger(a.sequence) ? a.sequence : null,
     label: typeof a.label === "string" && a.label.trim() ? a.label.trim().slice(0, 60) : null,
   }));
+
+  // Test gates and time checks must be this event's own: otherwise a reader
+  // could be aimed at another club's test and inject crossings into it.
+  const motoIds = [...new Set(incoming.map(a => a.motoId).filter((v): v is number => v != null))];
+  if (motoIds.length > 0) {
+    const own = await db.select({ id: motosTable.id }).from(motosTable)
+      .where(and(eq(motosTable.eventId, eventId), inArray(motosTable.id, motoIds)));
+    if (own.length !== motoIds.length) return res.status(400).json({ error: "One or more tests don't belong to this event" });
+  }
+  const checkIds = [...new Set(incoming.map(a => a.timeCheckId).filter((v): v is number => v != null))];
+  if (checkIds.length > 0) {
+    const own = await db.select({ id: enduroTimeChecksTable.id }).from(enduroTimeChecksTable)
+      .where(and(eq(enduroTimeChecksTable.eventId, eventId), inArray(enduroTimeChecksTable.id, checkIds)));
+    if (own.length !== checkIds.length) return res.status(400).json({ error: "One or more time checks don't belong to this event" });
+  }
 
   // Course map rules: one finish line for the event, splits are event-wide,
   // and a reader can't be two course points at once.

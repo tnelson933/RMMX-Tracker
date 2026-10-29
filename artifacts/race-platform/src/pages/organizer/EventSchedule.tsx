@@ -2836,9 +2836,11 @@ export default function EventSchedule() {
             {sortedMotos.length === 0 && (
               <div className="text-center py-16 text-muted-foreground border border-dashed border-border rounded-lg">
                 <Flag size={40} className="mx-auto mb-3 opacity-30" />
-                <p className="font-medium">No motos yet</p>
+                <p className="font-medium">{isEnduro ? "No tests yet" : "No motos yet"}</p>
                 <p className="text-sm mt-1">
-                  Use <strong>Generate Lineups</strong> to auto-create motos from checked-in riders, or add one manually.
+                  {isEnduro
+                    ? <>Use <strong>Generate Tests</strong> to create the special tests (every checked-in rider runs each one), or add one with <strong>Add Test</strong>.</>
+                    : <>Use <strong>Generate Lineups</strong> to auto-create motos from checked-in riders, or add one manually.</>}
                 </p>
                 <Button
                   variant="outline"
@@ -2846,7 +2848,7 @@ export default function EventSchedule() {
                   className="mt-4"
                   onClick={() => setIsGenerateOpen(true)}
                 >
-                  <Settings size={14} className="mr-1.5" /> Generate Lineups
+                  <Settings size={14} className="mr-1.5" /> {isEnduro ? "Generate Tests" : "Generate Lineups"}
                 </Button>
               </div>
             )}
@@ -3364,8 +3366,8 @@ export default function EventSchedule() {
             <div className="space-y-5 py-2 overflow-y-auto flex-1 min-h-0 pr-1">
               {/* Number of tests */}
               <div className="space-y-2">
-                <Label>Number of Tests</Label>
-                <Input
+                <Label htmlFor="gen-test-count">Number of Tests</Label>
+                <Input id="gen-test-count"
                   type="number"
                   min={1}
                   max={50}
@@ -3381,9 +3383,9 @@ export default function EventSchedule() {
 
               {/* Default name prefix */}
               <div className="space-y-2">
-                <Label>Default Name Prefix</Label>
+                <Label htmlFor="gen-test-prefix">Default Name Prefix</Label>
                 <div className="flex gap-2">
-                  <Input
+                  <Input id="gen-test-prefix"
                     value={genTestPrefix}
                     onChange={e => setGenTestPrefix(e.target.value)}
                     placeholder="Test"
@@ -3414,7 +3416,7 @@ export default function EventSchedule() {
                     {genTestNames.map((name, i) => (
                       <div key={i} className="flex items-center gap-2">
                         <span className="text-xs text-muted-foreground w-6 shrink-0 text-right">{i + 1}.</span>
-                        <Input
+                        <Input aria-label={`Name of test ${i + 1}`}
                           value={name}
                           onChange={e => {
                             const v = e.target.value;
@@ -3434,8 +3436,8 @@ export default function EventSchedule() {
 
               {/* Laps per test */}
               <div className="space-y-2">
-                <Label>Laps per Test</Label>
-                <Input
+                <Label htmlFor="gen-test-laps">Laps per Test</Label>
+                <Input id="gen-test-laps"
                   type="number"
                   min={1}
                   value={genTestLaps}

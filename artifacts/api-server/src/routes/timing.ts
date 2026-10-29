@@ -14,7 +14,9 @@ import {
   practiceSessionsTable,
   registrationsTable,
 } from "@workspace/db";
-import { fetchEnduoPenaltyMap } from "./enduro-scoring";
+import { ENDURO_ALL_CLASSES, rerankEnduroTest, resolveEnduroRiderClass } from "./enduro-scoring";
+import { ENDURO_MAX_RUN_MS, pairEnduroRuns } from "../lib/enduroOverall";
+import { logger } from "../lib/logger";
 import { eq, and, asc, desc, isNotNull, isNull, or, gt, lt, sql, inArray, ilike, ne } from "drizzle-orm";
 import type { Request, Response } from "express";
 import { authorizeIngest, clubIdForEvent, clubIdForMoto } from "../lib/ingestAuth";
@@ -546,8 +548,9 @@ export async function buildLeaderboard(motoId: number) {
   // Repair the distinctive failure mode produced by a reader clock running in
   // the future. lapNumber plus insertion id is the logical order; absolute
   // crossing_time cannot be trusted in this case. Delayed (past) uploads are
-  // deliberately left untouched.
-  if (moto.startedAt) {
+  // deliberately left untouched. Enduro tests pair start/finish reads by
+  // insertion order instead, so this lap-based repair doesn't apply to them.
+  if (moto.startedAt && moto.type !== "enduro_test") {
     const crossings = await db
       .select()
       .from(lapCrossingsTable)
@@ -927,6 +930,71 @@ export async function resolveCrossingRider(rfidNumber: string, eventId: number, 
   return direct?.id ?? null;
 }
 
+/**
+ * An enduro crossing that can't be recorded (rider finished every run, test
+ * finished, wrong gate, run too long, unknown tag). Ingest answers these with
+ * 200 ok:false so readers don't retry them.
+ */
+export class EnduroCrossingRejected extends Error {}
+
+/**
+ * Rebuild one rider's runs on an enduro test from their remaining crossings
+ * (start/finish pairs in insertion order): run number and elapsed time on each
+ * crossing, and their race result — lapTimes = completed runs, totalTime = sum,
+ * raceClass = the rider's class at the event (tests are created for "All
+ * Classes"). Removes the result when no crossing is left. Must run inside the
+ * moto's lock; re-rank the test afterwards.
+ */
+export async function rescoreEnduroRider(moto: typeof motosTable.$inferSelect, riderId: number): Promise<void> {
+  const crossings = await db
+    .select()
+    .from(lapCrossingsTable)
+    .where(and(eq(lapCrossingsTable.motoId, moto.id), eq(lapCrossingsTable.riderId, riderId)))
+    .orderBy(asc(lapCrossingsTable.id));
+  const { runs, numbered } = pairEnduroRuns(crossings);
+  for (const n of numbered) {
+    if (n.crossing.lapNumber !== n.runNumber || n.crossing.lapTimeMs !== n.elapsedMs) {
+      await db.update(lapCrossingsTable)
+        .set({ lapNumber: n.runNumber, lapTimeMs: n.elapsedMs })
+        .where(eq(lapCrossingsTable.id, n.crossing.id));
+    }
+  }
+  const [existing] = await db
+    .select()
+    .from(raceResultsTable)
+    .where(and(eq(raceResultsTable.motoId, moto.id), eq(raceResultsTable.riderId, riderId)));
+  if (crossings.length === 0) {
+    if (existing) await db.delete(raceResultsTable).where(eq(raceResultsTable.id, existing.id));
+    return;
+  }
+  const passTimes = runs.map((r) => r.elapsedMs);
+  const totalTime = passTimes.length ? formatLapTime(passTimes.reduce((sum, t) => sum + t, 0)) : null;
+  const raceClass = await resolveEnduroRiderClass(moto.eventId, riderId, existing?.raceClass ?? moto.raceClass ?? ENDURO_ALL_CLASSES);
+  if (existing) {
+    await db.update(raceResultsTable)
+      .set({ lapTimes: passTimes, totalTime, raceClass })
+      .where(eq(raceResultsTable.id, existing.id));
+  } else {
+    const checkins = await db
+      .select()
+      .from(checkinsTable)
+      .where(and(eq(checkinsTable.eventId, moto.eventId), eq(checkinsTable.riderId, riderId)));
+    const checkin = checkins.find((c) => c.raceClass === raceClass) ?? checkins[0];
+    await db.insert(raceResultsTable).values({
+      eventId: moto.eventId,
+      motoId: moto.id,
+      riderId,
+      raceClass,
+      position: 999,
+      lapTimes: passTimes,
+      totalTime,
+      bibNumber: checkin?.bibNumber ?? null,
+      dnf: false,
+      dns: false,
+    });
+  }
+}
+
 // ── Core crossing processor (runs inside per-moto lock) ───────────────────────
 async function _processCrossing(opts: {
   rfidNumber: string;
@@ -937,9 +1005,11 @@ async function _processCrossing(opts: {
   bypassDebounce?: boolean;
   overrideRiderId?: number | null;
   readerReceivedAt?: string;
+  /** Enduro gate role of a dedicated reader; checked inside the moto lock. */
+  enduroRole?: "start" | "finish";
 }) {
   const ingestStartedAt = new Date().toISOString();
-  const { rfidNumber, motoId, readerId, antennaId, bypassDebounce, overrideRiderId, readerReceivedAt } = opts;
+  const { rfidNumber, motoId, readerId, antennaId, bypassDebounce, overrideRiderId, readerReceivedAt, enduroRole } = opts;
   // Last line of defence for internal callers that bypass an HTTP ingest route.
   const crossingTime = canonicalizeCrossingTimestamp(opts.crossingTime, new Date(), {
     source: "processCrossing",
@@ -963,7 +1033,10 @@ async function _processCrossing(opts: {
     moto.status = "in_progress";
     moto.startedAt = startedAt;
   }
-  if (moto.status !== "in_progress") throw new Error("Moto is not in progress");
+  if (moto.status !== "in_progress") {
+    if (moto.type === "enduro_test") throw new EnduroCrossingRejected(`${moto.name} is finished — reopen it to record more runs`);
+    throw new Error("Moto is not in progress");
+  }
   if (!moto.startedAt) throw new Error("Moto has no start time");
 
   // 1b. Burst-debounce threshold — fixed short window to reject duplicate hardware reads.
@@ -984,7 +1057,7 @@ async function _processCrossing(opts: {
   // fails to read. The same input field therefore toggles start → stop.
   if (moto.type === "enduro_test") {
     if (!riderId) {
-      throw new Error("Unrecognized tag — assign it to a rider or use manual bib entry");
+      throw new EnduroCrossingRejected("Unrecognized tag — assign it to a rider or use manual bib entry");
     }
     // Order by id (insertion order), NOT crossingTime: the start→finish toggle is
     // a logical sequence. Reader/server clock skew on mixed RFID-start /
@@ -1017,19 +1090,38 @@ async function _processCrossing(opts: {
     const lapsPerTest = Math.max(1, moto.lapCount ?? 1);
     const maxCrossings = lapsPerTest * 2;
     if (riderCrossings.length >= maxCrossings) {
-      throw new Error(`Rider already completed all ${lapsPerTest} run${lapsPerTest > 1 ? "s" : ""} of this test`);
+      throw new EnduroCrossingRejected(`Rider already completed all ${lapsPerTest} run${lapsPerTest > 1 ? "s" : ""} of this test`);
     }
 
     // Even prior-count → this crossing STARTS the next run; odd → it FINISHES the
     // run currently in progress. passNumber is which run (1-based) this belongs to.
     const isFinish = riderCrossings.length % 2 === 1;
+    // Dedicated gate readers are checked here, inside the lock, so two reads
+    // arriving together can't both pass a parity check made outside it.
+    if (enduroRole === "start" && isFinish) {
+      throw new EnduroCrossingRejected("Rider already has an open start — waiting for finish crossing");
+    }
+    if (enduroRole === "finish" && !isFinish) {
+      throw new EnduroCrossingRejected("No open start for this rider on this test");
+    }
     const passNumber = Math.floor(riderCrossings.length / 2) + 1;
     const lapNumber = passNumber;
     // Clamp to 0 so reader/server clock skew between a mixed RFID-start /
     // manual-finish (or vice-versa) can never produce a negative elapsed time.
-    const elapsedMs = isFinish
-      ? Math.max(0, crossingTime.getTime() - new Date(riderCrossings[riderCrossings.length - 1].crossingTime).getTime())
+    const openStart = isFinish ? riderCrossings[riderCrossings.length - 1] : null;
+    const elapsedMs = openStart
+      ? Math.max(0, crossingTime.getTime() - new Date(openStart.crossingTime).getTime())
       : 0;
+    // A hardware read finishing a run that has been open longer than the
+    // maximum is almost certainly a missed finish, not a real run: don't record
+    // it. The start stays open so the organizer can void it (Race Day
+    // Management) or finish it by manual bib entry, which has no maximum.
+    if (openStart && !bypassDebounce && elapsedMs > ENDURO_MAX_RUN_MS) {
+      logger.warn({ motoId, riderId, startCrossingId: openStart.id, elapsedMs, readerId }, "enduro finish read rejected: run longer than maximum");
+      throw new EnduroCrossingRejected(
+        `Run open for ${Math.round(elapsedMs / 60_000)} min (max ${ENDURO_MAX_RUN_MS / 60_000}) — not recorded as a finish. Void the start in Race Day Management or finish it by bib entry.`,
+      );
+    }
 
     const [crossing] = await db
       .insert(lapCrossingsTable)
@@ -1037,79 +1129,10 @@ async function _processCrossing(opts: {
       .returning();
     broadcastCrossingAccepted({ motoId, crossingId: crossing.id, lapNumber, lapTimeMs: elapsedMs, crossingTime, readerId, readerReceivedAt, ingestStartedAt });
 
-    // Upsert race_result: running riders carry lapTimes [] (totalTime null → "—"),
-    // finished riders carry a single elapsed entry used by the leaderboard.
-    const enduroCheckins = await db
-      .select()
-      .from(checkinsTable)
-      .where(and(eq(checkinsTable.eventId, moto.eventId), eq(checkinsTable.riderId, riderId)));
-    const enduroCheckin = enduroCheckins.find((c) => c.raceClass === moto.raceClass) ?? enduroCheckins[0];
-    const existingResult = await db
-      .select()
-      .from(raceResultsTable)
-      .where(and(eq(raceResultsTable.motoId, motoId), eq(raceResultsTable.riderId, riderId)));
-
-    // Recompute every completed pass time from all crossings by pairing them
-    // START→FINISH in insertion order (riderCrossings is id-ordered and the new
-    // crossing has the highest id, so this stays in logical toggle order — no
-    // crossingTime sort, which could mis-pair under clock skew). A trailing
-    // unpaired START (rider mid-run) contributes no completed time yet.
-    const allEnduroCrossings = [...riderCrossings, crossing];
-    const passTimes: number[] = [];
-    for (let i = 0; i + 1 < allEnduroCrossings.length; i += 2) {
-      const startMs = new Date(allEnduroCrossings[i].crossingTime).getTime();
-      const finishMs = new Date(allEnduroCrossings[i + 1].crossingTime).getTime();
-      passTimes.push(Math.max(0, finishMs - startMs));
-    }
-    const enduroTotalMs = passTimes.reduce((s, t) => s + t, 0);
-    const enduroTotalTime = passTimes.length ? formatLapTime(enduroTotalMs) : null;
-
-    if (existingResult[0]) {
-      await db
-        .update(raceResultsTable)
-        .set({ lapTimes: passTimes, totalTime: enduroTotalTime })
-        .where(eq(raceResultsTable.id, existingResult[0].id));
-    } else {
-      await db.insert(raceResultsTable).values({
-        eventId: moto.eventId,
-        motoId,
-        riderId,
-        raceClass: moto.raceClass,
-        position: 999,
-        lapTimes: passTimes,
-        totalTime: enduroTotalTime,
-        bibNumber: enduroCheckin?.bibNumber ?? null,
-        dnf: false,
-        dns: false,
-      });
-    }
-
-    // Recalculate positions: riders ranked by fastest single pass time asc,
-    // with time-check penalty seconds added. DQ riders sort last.
-    // Riders with no completed pass sort to the bottom.
-    const [enduroResults, penaltyMap] = await Promise.all([
-      db.select().from(raceResultsTable).where(eq(raceResultsTable.motoId, motoId)),
-      fetchEnduoPenaltyMap(moto.eventId),
-    ]);
-    const enduroSorted = enduroResults
-      .map((r) => {
-        const laps = Array.isArray(r.lapTimes) ? (r.lapTimes as number[]) : [];
-        const eligibleLaps = laps.filter(lap => lap > 0);
-        const bestMs = eligibleLaps.length > 0 ? Math.min(...eligibleLaps) : null;
-        const pen = penaltyMap.get(r.riderId) ?? { penaltySeconds: 0, disqualified: false };
-        return { id: r.id, bestMs, pen };
-      })
-      .sort((a, b) => {
-        // DQ riders always last
-        if (a.pen.disqualified !== b.pen.disqualified) return a.pen.disqualified ? 1 : -1;
-        // Riders with no completed pass sort before DQ but after others
-        if (a.bestMs == null && b.bestMs == null) return 0;
-        if (a.bestMs == null) return 1;
-        if (b.bestMs == null) return -1;
-        // Sort by best pass time + penalty seconds converted to ms
-        return (a.bestMs + a.pen.penaltySeconds * 1_000) - (b.bestMs + b.pen.penaltySeconds * 1_000);
-      });
-    await updateRaceResultPositions(enduroSorted);
+    // Rebuild the rider's runs and result (in their own class), then re-rank
+    // the test within each class by total time of completed runs.
+    await rescoreEnduroRider(moto, riderId);
+    await rerankEnduroTest(motoId);
 
     const enduroSnapshot = await buildLeaderboard(motoId);
     if (enduroSnapshot) {
@@ -1296,6 +1319,8 @@ async function getActiveMotoForClub(clubId: number) {
     .innerJoin(eventsTable, eq(motosTable.eventId, eventsTable.id))
     .where(and(
       eq(eventsTable.clubId, clubId),
+      // Only an event that's racing today: never a draft or future event's test.
+      eq(eventsTable.status, "race_day"),
       eq(motosTable.status, "scheduled"),
       eq(motosTable.type, "enduro_test"),
     ))
@@ -1733,7 +1758,7 @@ router.post("/timing/manual-crossing", async (req, res) => {
       elapsed: (result as any).elapsedMs != null ? formatLapTime((result as any).elapsedMs) : null,
     });
   } catch (err: any) {
-    const status = typeof err.status === "number" ? err.status : 500;
+    const status = typeof err.status === "number" ? err.status : err instanceof EnduroCrossingRejected ? 409 : 500;
     return res.status(status).json({ error: err.message ?? "Internal server error" });
   }
 });
@@ -1978,91 +2003,14 @@ router.delete("/timing/crossings/:crossingId", async (req, res) => {
       }
     });
   } else {
-    const newLapTimes: number[] = [];
-    await db.transaction(async (tx) => {
-      // Delete the crossing
-      await tx.delete(lapCrossingsTable).where(eq(lapCrossingsTable.id, crossingId));
-
-      // Reload remaining crossings for this rfid+moto in time order
-      const remaining = await tx
-        .select()
-        .from(lapCrossingsTable)
-        .where(and(eq(lapCrossingsTable.motoId, motoId), eq(lapCrossingsTable.rfidNumber, rfidNumber)))
-        .orderBy(asc(lapCrossingsTable.crossingTime));
-
-      // Split reads are filed under the lap in progress; refile them for the new
-      // numbering (lap = finish passes before the split + 1).
-      const splits = await tx.select({ id: splitCrossingsTable.id, splitSequence: splitCrossingsTable.splitSequence, crossingTime: splitCrossingsTable.crossingTime })
-        .from(splitCrossingsTable)
-        .where(and(eq(splitCrossingsTable.motoId, motoId), eq(splitCrossingsTable.rfidNumber, rfidNumber)))
-        .orderBy(asc(splitCrossingsTable.crossingTime), asc(splitCrossingsTable.id));
-      const kept = new Map<string, { id: number; lapNumber: number }>();
-      for (const split of splits) {
-        const lapNumber = remaining.filter(c => new Date(c.crossingTime).getTime() < new Date(split.crossingTime).getTime()).length + 1;
-        const key = `${split.splitSequence}:${lapNumber}`;
-        // Two laps merged into one: keep the first pass of each split.
-        if (kept.has(key)) await tx.delete(splitCrossingsTable).where(eq(splitCrossingsTable.id, split.id));
-        else kept.set(key, { id: split.id, lapNumber });
-      }
-      // Park on unique temporary lap numbers first so moves can't collide.
-      for (const { id } of kept.values()) await tx.update(splitCrossingsTable).set({ lapNumber: -id }).where(eq(splitCrossingsTable.id, id));
-      for (const { id, lapNumber } of kept.values()) await tx.update(splitCrossingsTable).set({ lapNumber }).where(eq(splitCrossingsTable.id, id));
-
-      // Renumber crossings and recalculate lap times
-      for (let i = 0; i < remaining.length; i++) {
-        const c = remaining[i];
-        const prevTime = i === 0 ? moto.startedAt! : remaining[i - 1].crossingTime;
-        const lapTimeMs = new Date(c.crossingTime).getTime() - new Date(prevTime).getTime();
-        const lapNumber = i + 1;
-        await tx
-          .update(lapCrossingsTable)
-          .set({ lapNumber, lapTimeMs })
-          .where(eq(lapCrossingsTable.id, c.id));
-        newLapTimes.push(lapTimeMs);
-      }
-
-      // Update race_results for this rider
-      if (riderId) {
-        const existingResults = await tx
-          .select()
-          .from(raceResultsTable)
-          .where(and(eq(raceResultsTable.motoId, motoId), eq(raceResultsTable.riderId, riderId)));
-
-        if (existingResults[0]) {
-          if (newLapTimes.length === 0) {
-            // No laps left — remove the result row entirely
-            await tx.delete(raceResultsTable).where(eq(raceResultsTable.id, existingResults[0].id));
-          } else {
-            const totalMs = newLapTimes.reduce((s, t) => s + t, 0);
-            await tx
-              .update(raceResultsTable)
-              .set({ lapTimes: newLapTimes, totalTime: formatLapTime(totalMs) })
-              .where(eq(raceResultsTable.id, existingResults[0].id));
-          }
-        }
-
-        // Recalculate positions for all riders in moto
-        const allResults = await tx
-          .select()
-          .from(raceResultsTable)
-          .where(eq(raceResultsTable.motoId, motoId));
-
-        const sorted = allResults
-          .map((r) => {
-            const laps = Array.isArray(r.lapTimes) ? (r.lapTimes as number[]) : [];
-            return { id: r.id, laps: laps.length, totalMs: laps.reduce((s, t) => s + t, 0) };
-          })
-          .sort((a, b) => b.laps - a.laps || a.totalMs - b.totalMs);
-
-        for (let i = 0; i < sorted.length; i++) {
-          await tx
-            .update(raceResultsTable)
-            .set({ position: i + 1 })
-            .where(eq(raceResultsTable.id, sorted[i].id));
-        }
-      }
+    // Enduro: rebuild the rider's runs as start/finish pairs (by rider, not tag,
+    // so RFID and manual reads stay one sequence) inside the moto's lock, then
+    // re-rank the test per class.
+    await withMotoLock(motoId, async () => {
+      await db.delete(lapCrossingsTable).where(eq(lapCrossingsTable.id, crossingId));
+      if (riderId) await rescoreEnduroRider(moto, riderId);
+      await rerankEnduroTest(motoId);
     });
-
   }
 
   // Broadcast updated leaderboard (outside transaction — read-only)
@@ -2071,6 +2019,90 @@ router.delete("/timing/crossings/:crossingId", async (req, res) => {
   if (snapshot) sseBroadcast(motoId, { ...snapshot, correction: true });
 
   return res.json({ ok: true });
+});
+
+// GET /motos/:motoId/open-runs — enduro riders currently on course (a start
+// read with no finish yet). Organizer only (default-deny), club-checked.
+router.get("/motos/:motoId/open-runs", async (req, res) => {
+  const motoId = Number(req.params.motoId);
+  if (!Number.isInteger(motoId) || motoId <= 0) return res.status(400).json({ error: "Invalid motoId" });
+  if (!await checkMotoClubAccess(motoId, getStaffClubId(res))) return res.status(403).json({ error: "Forbidden" });
+  const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, motoId));
+  if (!moto) return res.status(404).json({ error: "Moto not found" });
+  if (moto.type !== "enduro_test") return res.json([]);
+  const rows = await db
+    .select({
+      id: lapCrossingsTable.id,
+      riderId: lapCrossingsTable.riderId,
+      crossingTime: lapCrossingsTable.crossingTime,
+      firstName: ridersTable.firstName,
+      lastName: ridersTable.lastName,
+    })
+    .from(lapCrossingsTable)
+    .leftJoin(ridersTable, eq(lapCrossingsTable.riderId, ridersTable.id))
+    .where(and(eq(lapCrossingsTable.motoId, motoId), isNotNull(lapCrossingsTable.riderId)))
+    .orderBy(asc(lapCrossingsTable.id));
+  const byRider = new Map<number, typeof rows>();
+  for (const r of rows) {
+    const list = byRider.get(r.riderId!) ?? [];
+    list.push(r);
+    byRider.set(r.riderId!, list);
+  }
+  const results = await db
+    .select({ riderId: raceResultsTable.riderId, bibNumber: raceResultsTable.bibNumber })
+    .from(raceResultsTable)
+    .where(eq(raceResultsTable.motoId, motoId));
+  const bibs = new Map(results.map((r) => [r.riderId, r.bibNumber]));
+  const now = Date.now();
+  const open = [...byRider.entries()]
+    .map(([riderId, list]) => ({ riderId, list, run: pairEnduroRuns(list) }))
+    .filter((x) => x.run.open != null)
+    .map(({ riderId, list, run }) => ({
+      riderId,
+      riderName: [list[0].firstName, list[0].lastName].filter(Boolean).join(" ") || `Rider #${riderId}`,
+      bibNumber: bibs.get(riderId) ?? null,
+      runNumber: run.runs.length + 1,
+      startCrossingId: run.open!.id,
+      startedAt: new Date(run.open!.crossingTime).toISOString(),
+      overMax: now - new Date(run.open!.crossingTime).getTime() > ENDURO_MAX_RUN_MS,
+    }))
+    .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+  return res.json(open);
+});
+
+// POST /motos/:motoId/riders/:riderId/close-run — void a rider's open start on
+// an enduro test (missed finish read), so their next read starts a fresh run.
+// Organizer only (default-deny), club-checked; runs inside the moto lock.
+router.post("/motos/:motoId/riders/:riderId/close-run", async (req, res) => {
+  const motoId = Number(req.params.motoId);
+  const riderId = Number(req.params.riderId);
+  if (!Number.isInteger(motoId) || motoId <= 0 || !Number.isInteger(riderId) || riderId <= 0) {
+    return res.status(400).json({ error: "Invalid motoId or riderId" });
+  }
+  if (!await checkMotoClubAccess(motoId, getStaffClubId(res))) return res.status(403).json({ error: "Forbidden" });
+  const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, motoId));
+  if (!moto) return res.status(404).json({ error: "Moto not found" });
+  if (moto.type !== "enduro_test") return res.status(400).json({ error: "Only enduro tests have open runs" });
+
+  const voided = await withMotoLock(motoId, async () => {
+    const crossings = await db
+      .select()
+      .from(lapCrossingsTable)
+      .where(and(eq(lapCrossingsTable.motoId, motoId), eq(lapCrossingsTable.riderId, riderId)))
+      .orderBy(asc(lapCrossingsTable.id));
+    const { open } = pairEnduroRuns(crossings);
+    if (!open) return null;
+    await db.delete(lapCrossingsTable).where(eq(lapCrossingsTable.id, open.id));
+    await rescoreEnduroRider(moto, riderId);
+    await rerankEnduroTest(motoId);
+    return open;
+  });
+  if (!voided) return res.status(409).json({ error: "This rider has no open run on this test" });
+  logger.info({ motoId, riderId, crossingId: voided.id, startedAt: voided.crossingTime }, "enduro open start voided by organizer");
+
+  const snapshot = await buildLeaderboard(motoId);
+  if (snapshot) sseBroadcast(motoId, { ...snapshot, correction: true });
+  return res.json({ ok: true, voidedCrossingId: voided.id, startedAt: new Date(voided.crossingTime).toISOString() });
 });
 
 // GET /timing/leaderboard/:motoId — snapshot (polling fallback)

@@ -8,12 +8,44 @@ import {
   enduroTimeChecksTable,
   enduroCheckpointArrivalsTable,
   registrationsTable,
+  checkinsTable,
   motosTable,
   raceResultsTable,
   type TimeCheckTarget,
   type EnduroPenaltyConfig,
 } from "@workspace/db";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, ne } from "drizzle-orm";
+import { rankEnduroTest } from "../lib/enduroOverall";
+
+/** Placeholder class enduro tests are created with (tests are event-wide). */
+export const ENDURO_ALL_CLASSES = "All Classes";
+
+/**
+ * Each rider's class at an enduro event: a checked-in entry first, then any
+ * check-in row, then a non-void registration (earliest row of each wins). A
+ * rider entered in several classes is scored in one of them.
+ */
+export async function loadEnduroRiderClasses(eventId: number): Promise<Map<number, string>> {
+  const [checkins, regs] = await Promise.all([
+    db.select({ riderId: checkinsTable.riderId, raceClass: checkinsTable.raceClass, checkedIn: checkinsTable.checkedIn })
+      .from(checkinsTable).where(eq(checkinsTable.eventId, eventId)).orderBy(asc(checkinsTable.id)),
+    db.select({ riderId: registrationsTable.riderId, raceClass: registrationsTable.raceClass })
+      .from(registrationsTable)
+      .where(and(eq(registrationsTable.eventId, eventId), ne(registrationsTable.status, "void")))
+      .orderBy(asc(registrationsTable.id)),
+  ]);
+  const out = new Map<number, string>();
+  const usable = (cls: string | null | undefined) => !!cls && cls.trim() !== "" && cls.trim() !== ENDURO_ALL_CLASSES;
+  for (const c of checkins) if (c.checkedIn && usable(c.raceClass) && !out.has(c.riderId)) out.set(c.riderId, c.raceClass.trim());
+  for (const c of checkins) if (usable(c.raceClass) && !out.has(c.riderId)) out.set(c.riderId, c.raceClass.trim());
+  for (const r of regs) if (usable(r.raceClass) && !out.has(r.riderId)) out.set(r.riderId, r.raceClass.trim());
+  return out;
+}
+
+/** One rider's enduro class, falling back to `fallback` (e.g. the stored result class). */
+export async function resolveEnduroRiderClass(eventId: number, riderId: number, fallback: string): Promise<string> {
+  return (await loadEnduroRiderClasses(eventId)).get(riderId) ?? fallback;
+}
 
 function parseTimeMinutes(s: string | null | undefined): number | null {
   if (!s) return null;
@@ -87,22 +119,17 @@ export async function fetchEnduoPenaltyMap(
     .orderBy(asc(enduroTimeChecksTable.checkNumber));
   if (checks.length === 0) return new Map();
 
-  const arrivals = await db
-    .select({
-      riderId: enduroCheckpointArrivalsTable.riderId,
-      timeCheckId: enduroCheckpointArrivalsTable.timeCheckId,
-      arrivalTime: enduroCheckpointArrivalsTable.arrivalTime,
-      raceClass: registrationsTable.raceClass,
-    })
-    .from(enduroCheckpointArrivalsTable)
-    .leftJoin(
-      registrationsTable,
-      and(
-        eq(registrationsTable.riderId, enduroCheckpointArrivalsTable.riderId),
-        eq(registrationsTable.eventId, eventId),
-      ),
-    )
-    .where(eq(enduroCheckpointArrivalsTable.eventId, eventId));
+  const [arrivals, riderClasses] = await Promise.all([
+    db
+      .select({
+        riderId: enduroCheckpointArrivalsTable.riderId,
+        timeCheckId: enduroCheckpointArrivalsTable.timeCheckId,
+        arrivalTime: enduroCheckpointArrivalsTable.arrivalTime,
+      })
+      .from(enduroCheckpointArrivalsTable)
+      .where(eq(enduroCheckpointArrivalsTable.eventId, eventId)),
+    loadEnduroRiderClasses(eventId),
+  ]);
 
   const arrByRider = new Map<number, typeof arrivals>();
   for (const a of arrivals) {
@@ -112,7 +139,7 @@ export async function fetchEnduoPenaltyMap(
 
   const result = new Map<number, { penaltySeconds: number; disqualified: boolean }>();
   for (const [riderId, riderArrivals] of arrByRider) {
-    const raceClass = riderArrivals[0]?.raceClass ?? null;
+    const raceClass = riderClasses.get(riderId) ?? null;
     let totalPenaltySeconds = 0;
     let disqualified = false;
     for (const check of checks) {
@@ -131,48 +158,48 @@ export async function fetchEnduoPenaltyMap(
 }
 
 /**
- * Recompute penalty-adjusted positions for all enduro_test motos in an event.
- * Call this after any checkpoint arrival is created, updated, or deleted so that
- * leaderboard positions immediately reflect time-check penalties and DQ status.
- *
- * Position sort: non-DQ riders sorted by (bestPassMs + penaltySeconds*1000) asc,
- * riders with no completed passes above DQ riders, DQ riders last.
+ * Re-rank one enduro test: positions within each rider class by completed
+ * runs, then total time of those runs (lib/enduroOverall.ts). Time-check
+ * penalties belong to the event overall, not to a single test; a time-check
+ * DQ still ranks last. Call inside the test's moto lock.
+ */
+export async function rerankEnduroTest(
+  motoId: number,
+  penaltyMap?: Map<number, { penaltySeconds: number; disqualified: boolean }>,
+): Promise<void> {
+  const results = await db.select().from(raceResultsTable).where(eq(raceResultsTable.motoId, motoId));
+  if (results.length === 0) return;
+  const penalties = penaltyMap ?? await fetchEnduoPenaltyMap(results[0].eventId);
+  const positions = rankEnduroTest(results.map((r) => ({
+    id: r.id,
+    raceClass: r.raceClass,
+    runTimesMs: Array.isArray(r.lapTimes) ? (r.lapTimes as number[]) : [],
+    dnf: r.dnf,
+    dns: r.dns,
+    disqualified: penalties.get(r.riderId)?.disqualified ?? false,
+  })));
+  for (const r of results) {
+    const position = positions.get(r.id);
+    if (position != null && position !== r.position) {
+      await db.update(raceResultsTable).set({ position }).where(eq(raceResultsTable.id, r.id));
+    }
+  }
+}
+
+/**
+ * Re-rank every enduro test in an event. Call after a checkpoint arrival is
+ * created, updated, or deleted so time-check DQs show immediately. Each test
+ * is re-ranked inside its moto lock.
  */
 export async function recomputeEnduroPositionsForEvent(eventId: number): Promise<void> {
   const penaltyMap = await fetchEnduoPenaltyMap(eventId);
-
   const motos = await db
     .select({ id: motosTable.id })
     .from(motosTable)
     .where(and(eq(motosTable.eventId, eventId), eq(motosTable.type, "enduro_test")));
-
+  // Lazy import: timing.ts imports this module.
+  const { withMotoLock } = await import("./timing");
   for (const moto of motos) {
-    const results = await db
-      .select()
-      .from(raceResultsTable)
-      .where(eq(raceResultsTable.motoId, moto.id));
-
-    const sorted = results
-      .map((r) => {
-        const laps = Array.isArray(r.lapTimes) ? (r.lapTimes as number[]) : [];
-        const eligibleLaps = laps.filter(lap => lap > 0);
-        const bestMs = eligibleLaps.length > 0 ? Math.min(...eligibleLaps) : null;
-        const pen = penaltyMap.get(r.riderId) ?? { penaltySeconds: 0, disqualified: false };
-        return { id: r.id, bestMs, pen };
-      })
-      .sort((a, b) => {
-        if (a.pen.disqualified !== b.pen.disqualified) return a.pen.disqualified ? 1 : -1;
-        if (a.bestMs == null && b.bestMs == null) return 0;
-        if (a.bestMs == null) return 1;
-        if (b.bestMs == null) return -1;
-        return (a.bestMs + a.pen.penaltySeconds * 1_000) - (b.bestMs + b.pen.penaltySeconds * 1_000);
-      });
-
-    for (let i = 0; i < sorted.length; i++) {
-      await db
-        .update(raceResultsTable)
-        .set({ position: i + 1 })
-        .where(eq(raceResultsTable.id, sorted[i].id));
-    }
+    await withMotoLock(moto.id, () => rerankEnduroTest(moto.id, penaltyMap));
   }
 }

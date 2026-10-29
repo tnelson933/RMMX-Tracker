@@ -1,10 +1,11 @@
 import { Router } from "express";
-import { eventLowerIsBetter } from "../lib/eventOverall";
+import { computeEnduroEventOverall, eventLowerIsBetter } from "../lib/eventOverall";
+import { ENDURO_ALL_CLASSES, loadEnduroRiderClasses, rerankEnduroTest } from "./enduro-scoring";
 import { syncEventPublication } from "../lib/resultsVisibility";
 import { lapTimeToMs } from "../lib/lapScoring";
 import { db } from "@workspace/db";
 import { raceResultsTable, motosTable, ridersTable, eventPublicationTable, registrationsTable, eventsTable, pointsTablesTable, clubsTable, seriesTable, seriesPointsTable } from "@workspace/db";
-import { eq, and, inArray, ne, isNull, isNotNull, sql } from "drizzle-orm";
+import { eq, and, inArray, ne, isNull, isNotNull, sql, desc } from "drizzle-orm";
 import { motoCounts, seriesScope } from "../lib/seriesStandings";
 import { calcPoints, loadSeriesScoring } from "../lib/scoringTables";
 import { isLowerBetter, olympicPenalty } from "../lib/overallOrder";
@@ -97,13 +98,15 @@ export async function recalculateSeriesPoints(seriesIds: number[]): Promise<void
           eq(motosTable.status, "completed"),
           ne(motosTable.type, "practice"),
         )))
-        .filter(m => motoCounts(eligibleClasses, m));
+        // Enduro tests are created for "All Classes"; their results carry the
+        // rider's class and are filtered per result below.
+        .filter(m => m.type === "enduro_test" ? eligibleClasses.has(m.eventId) : motoCounts(eligibleClasses, m));
 
       const eligibleMotoIds = eligibleMotos.map(m => m.id);
       const motoTypeMap = new Map(eligibleMotos.map(m => [m.id, m.type ?? "heat"]));
       const motoEventMap = new Map(eligibleMotos.map(m => [m.id, m.eventId]));
 
-      const results = eligibleMotoIds.length === 0 ? [] : await db.select({
+      const results = (eligibleMotoIds.length === 0 ? [] : await db.select({
         motoId: raceResultsTable.motoId,
         riderId: raceResultsTable.riderId,
         raceClass: raceResultsTable.raceClass,
@@ -111,7 +114,9 @@ export async function recalculateSeriesPoints(seriesIds: number[]): Promise<void
         dnf: raceResultsTable.dnf,
         dns: raceResultsTable.dns,
         points: raceResultsTable.points,
-      }).from(raceResultsTable).where(inArray(raceResultsTable.motoId, eligibleMotoIds));
+      }).from(raceResultsTable).where(inArray(raceResultsTable.motoId, eligibleMotoIds)))
+        .filter(r => motoTypeMap.get(r.motoId) !== "enduro_test"
+          || motoCounts(eligibleClasses, { eventId: motoEventMap.get(r.motoId) ?? 0, raceClass: r.raceClass }));
 
       // Pre-compute totalStarters (non-DNS count) per moto for per_rider/formula scoring
       const startersByMoto = new Map<number, number>();
@@ -131,7 +136,9 @@ export async function recalculateSeriesPoints(seriesIds: number[]): Promise<void
       for (const r of results) {
         const motoType = motoTypeMap.get(r.motoId) ?? "heat";
         const motoEventId = motoEventMap.get(r.motoId) ?? 0;
-        if (seriesMainEventOnly && motoType !== "main") continue;
+        // Enduro: one award per event (stored on one test result; see
+        // scoreEnduroEventPoints), so main-event-only doesn't apply.
+        if (seriesMainEventOnly && motoType !== "main" && motoType !== "enduro_test") continue;
         if (r.dns && !lowerIsBetter) continue; // DNS earns 0 points; skip entirely
 
         const totalStarters = startersByMoto.get(r.motoId) ?? 1;
@@ -166,6 +173,7 @@ export async function recalculateSeriesPoints(seriesIds: number[]): Promise<void
       if (lowerIsBetter) {
         for (const entry of aggregate.values()) {
           for (const m of eligibleMotos) {
+            if (m.type === "enduro_test") continue; // scored once per event, not per test
             if ((m.raceClass ?? "").trim() !== entry.raceClass) continue;
             if (seriesMainEventOnly && (m.type ?? "heat") !== "main") continue;
             if (results.some(r => r.motoId === m.id && r.riderId === entry.riderId)) continue;
@@ -379,6 +387,7 @@ function awardSeriesPoints(eventId: number, raceClass: string, motoId: number): 
 export async function scoreMotoPoints(motoId: number): Promise<void> {
   const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, motoId));
   if (!moto || moto.type === "practice") return;
+  if (moto.type === "enduro_test") return scoreEnduroEventPoints(moto.eventId);
   const rows = await db.select().from(raceResultsTable).where(eq(raceResultsTable.motoId, motoId));
   if (rows.length === 0) return;
   const settings = await loadScoringSettings(moto.eventId);
@@ -403,6 +412,60 @@ export async function scoreMotoPoints(motoId: number): Promise<void> {
   awardSeriesPoints(moto.eventId, moto.raceClass, motoId);
 }
 
+/**
+ * Enduro points: one award per rider per event, from their class's event
+ * overall position (sum of finished tests + time-check penalties), scored
+ * with the event's points table the same way a moto finish is. The award is
+ * stored on the rider's result in their latest finished test that they
+ * finished (not DNF/DNS); their other finished-test results store 0, so
+ * series totals and the overall count it once. Riders with no completed run
+ * or a time-check DQ score 0. Re-run whenever a test finishes or is edited.
+ */
+export async function scoreEnduroEventPoints(eventId: number): Promise<void> {
+  const overall = await computeEnduroEventOverall(eventId);
+  if (overall.enduroTests.length === 0) return;
+  const settings = await loadScoringSettings(eventId);
+  const testIds = overall.enduroTests.map(t => t.motoId);
+  const rows = await db.select({
+    id: raceResultsTable.id,
+    motoId: raceResultsTable.motoId,
+    riderId: raceResultsTable.riderId,
+    points: raceResultsTable.points,
+    dnf: raceResultsTable.dnf,
+    dns: raceResultsTable.dns,
+    motoNumber: motosTable.motoNumber,
+  }).from(raceResultsTable)
+    .innerJoin(motosTable, eq(motosTable.id, raceResultsTable.motoId))
+    .where(inArray(raceResultsTable.motoId, testIds))
+    .orderBy(desc(motosTable.motoNumber), desc(motosTable.id));
+
+  for (const cls of overall.classes) {
+    const scored = cls.riders.filter(r => r.enduro && r.enduro.status !== "dq" && r.enduro.status !== "no_time");
+    for (const rider of cls.riders) {
+      const ranked = rider.enduro != null && rider.enduro.status !== "dq" && rider.enduro.status !== "no_time";
+      const award = ranked ? calcPoints({
+        position: rider.position,
+        dnf: false,
+        dns: false,
+        totalStarters: scored.length,
+        classSize: cls.riders.length,
+        scoringMethod: settings.scoringMethod,
+        pointsScale: settings.pointsScale,
+        scoringFormula: settings.scoringFormula,
+        mainEventOnly: false,
+        motoType: "main",
+      }) : 0;
+      const mine = rows.filter(r => r.riderId === rider.riderId); // latest test first
+      const carrier = mine.find(r => !r.dnf && !r.dns) ?? mine[0];
+      for (const r of mine) {
+        const points = r === carrier ? award : 0;
+        if (r.points !== points) await db.update(raceResultsTable).set({ points }).where(eq(raceResultsTable.id, r.id));
+      }
+    }
+  }
+  for (const cls of overall.classes) awardSeriesPoints(eventId, cls.raceClass, testIds[0]);
+}
+
 router.post("/events/:eventId/results", async (req, res) => {
   const eventId = Number(req.params.eventId);
   if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
@@ -414,6 +477,14 @@ router.post("/events/:eventId/results", async (req, res) => {
   if (!moto || moto.eventId !== eventId) return res.status(404).json({ error: "Moto not found" });
   const raceClass = moto.raceClass;
   const motoType: string = (moto as any).type ?? "heat";
+  const isEnduroTest = motoType === "enduro_test";
+  // Enduro tests are "All Classes"; each result is scored in the rider's class.
+  const enduroClasses = isEnduroTest ? await loadEnduroRiderClasses(eventId) : null;
+  const classFor = (r: any): string => {
+    if (!enduroClasses) return raceClass;
+    const sent = typeof r.raceClass === "string" ? r.raceClass.trim() : "";
+    return enduroClasses.get(Number(r.riderId)) ?? (sent && sent !== ENDURO_ALL_CLASSES ? sent : raceClass);
+  };
 
   const { scoringMethod, pointsScale, scoringFormula, mainEventOnly, autoDnfEnabled, autoDnfThreshold } = await loadScoringSettings(eventId);
 
@@ -461,7 +532,7 @@ router.post("/events/:eventId/results", async (req, res) => {
         .map(lapTimeToMs)
         .filter((ms): ms is number => ms != null);
       const [result] = await tx.insert(raceResultsTable).values({
-        eventId, motoId, riderId: r.riderId, raceClass,
+        eventId, motoId, riderId: r.riderId, raceClass: classFor(r),
         position:  r.position,
         totalTime: r.totalTime || null,
         lapTimes:  cappedLaps,
@@ -477,7 +548,19 @@ router.post("/events/:eventId/results", async (req, res) => {
     await tx.update(motosTable).set({ status: "completed" }).where(eq(motosTable.id, motoId));
   }));
 
-  awardSeriesPoints(eventId, raceClass, motoId);
+  if (isEnduroTest) {
+    // Positions come from run times within each class; points from the event overall.
+    await withMotoLock(Number(motoId), () => rerankEnduroTest(Number(motoId)));
+    await scoreEnduroEventPoints(eventId);
+    const fresh = await db.select().from(raceResultsTable).where(eq(raceResultsTable.motoId, Number(motoId)));
+    const byId = new Map(fresh.map(r => [r.id, r]));
+    for (let i = 0; i < inserted.length; i++) {
+      const latest = byId.get(inserted[i].id as number);
+      if (latest) inserted[i] = latest as unknown as Record<string, unknown>;
+    }
+  } else {
+    awardSeriesPoints(eventId, raceClass, motoId);
+  }
 
   return res.status(201).json(inserted.map(r => ({
     id: r.id,
@@ -526,7 +609,7 @@ router.patch("/events/:eventId/results/:resultId/laps", async (req, res) => {
     .where(and(eq(raceResultsTable.id, resultId), eq(raceResultsTable.eventId, eventId)));
   if (!existingResult) { res.status(404).json({ error: "Result not found" }); return; }
 
-  const [lapMoto] = await db.select({ lapCount: motosTable.lapCount })
+  const [lapMoto] = await db.select({ lapCount: motosTable.lapCount, type: motosTable.type, status: motosTable.status })
     .from(motosTable).where(eq(motosTable.id, existingResult.motoId));
 
   const cappedLapTimes = capLapTimes(lapTimes as number[], lapMoto?.lapCount) as number[];
@@ -540,6 +623,11 @@ router.patch("/events/:eventId/results/:resultId/laps", async (req, res) => {
     .returning();
 
   if (!updated) { res.status(404).json({ error: "Result not found" }); return; }
+
+  if (lapMoto?.type === "enduro_test") {
+    await withMotoLock(existingResult.motoId, () => rerankEnduroTest(existingResult.motoId));
+    if (lapMoto.status === "completed") await scoreEnduroEventPoints(eventId);
+  }
 
   res.json({ id: updated.id, lapTimes: updated.lapTimes, totalTime: updated.totalTime });
 });

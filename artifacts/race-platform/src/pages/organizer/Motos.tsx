@@ -391,6 +391,73 @@ function LiveLeaderboard({ motoId, isElapsedTimeSport, isEnduro, lapCount, penal
   );
 }
 
+type EnduroOpenRun = { riderId: number; riderName: string; bibNumber: string | null; runNumber: number; startedAt: string; overMax: boolean };
+
+/** Enduro riders on course (start read, no finish yet) with a Void start button for missed finish reads. */
+function EnduroOpenRuns({ motoId }: { motoId: number }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [confirmRider, setConfirmRider] = useState<number | null>(null);
+  const [busy, setBusy] = useState<number | null>(null);
+  const queryKey = ["enduro-open-runs", motoId];
+  const { data: openRuns } = useQuery<EnduroOpenRun[]>({
+    queryKey,
+    queryFn: async () => {
+      const res = await fetch(`/api/motos/${motoId}/open-runs`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load open runs");
+      return res.json();
+    },
+    refetchInterval: 10_000,
+  });
+  if (!openRuns || openRuns.length === 0) return null;
+
+  const voidStart = async (run: EnduroOpenRun) => {
+    setBusy(run.riderId);
+    try {
+      const res = await fetch(`/api/motos/${motoId}/riders/${run.riderId}/close-run`, { method: "POST", credentials: "include" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast({ title: "Could not void start", description: data.error ?? "Unknown error", variant: "destructive" });
+      } else {
+        toast({ title: `Start voided — ${run.riderName}`, description: "Their next read starts a fresh run." });
+      }
+    } finally {
+      setBusy(null);
+      setConfirmRider(null);
+      queryClient.invalidateQueries({ queryKey });
+    }
+  };
+
+  return (
+    <div className="border-t px-3 py-2 space-y-1">
+      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">On course ({openRuns.length})</div>
+      {openRuns.map((run) => (
+        <div key={run.riderId} className="flex items-center gap-2 text-xs">
+          <span className="font-mono w-10 text-muted-foreground">{run.bibNumber ? `#${run.bibNumber}` : ""}</span>
+          <span className="font-bold truncate">{run.riderName}</span>
+          <span className={run.overMax ? "text-destructive font-bold" : "text-muted-foreground"}>
+            Run {run.runNumber} · on course since {format(new Date(run.startedAt), "h:mm a")}
+          </span>
+          <div className="ml-auto flex gap-1">
+            {confirmRider === run.riderId ? (
+              <>
+                <Button size="sm" variant="destructive" className="h-6 px-2 text-[11px]" disabled={busy === run.riderId} onClick={() => voidStart(run)}>
+                  Yes, void
+                </Button>
+                <Button size="sm" variant="ghost" className="h-6 px-2 text-[11px]" onClick={() => setConfirmRider(null)}>Cancel</Button>
+              </>
+            ) : (
+              <Button size="sm" variant="outline" className="h-6 px-2 text-[11px]" onClick={() => setConfirmRider(run.riderId)}>
+                Void start
+              </Button>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function LiveCrossingsFeed({ motoId, minLapTimeMs, isEnduro }: { motoId: number; minLapTimeMs?: number | null; isEnduro?: boolean }) {
   const [crossings, setCrossings] = useState<RawCrossing[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2161,19 +2228,19 @@ export default function Motos() {
       return;
     }
     setBibInputs(prev => ({ ...prev, [motoId]: "" }));
-    // Enduro tests have no Start button — riders start individually. Activate the
-    // test on the first rider entry so the crossing engine accepts the time.
+    // Enduro tests have no Start button — riders start individually. The server
+    // activates a scheduled test on its first crossing (inside the moto lock), and
+    // refuses a finished one, so a bib entry never re-opens a completed test.
     const motoObj = (motos ?? []).find(m => m.id === motoId);
-    if (motoObj && motoObj.type === "enduro_test" && motoObj.status !== "in_progress") {
-      try {
-        await updateMoto(motoId, { status: "in_progress" } as any);
-        await queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
-      } catch {
-        toast({ title: "Failed to start test", variant: "destructive" });
-        return;
-      }
+    if (motoObj && motoObj.type === "enduro_test" && motoObj.status === "completed") {
+      toast({ title: `${motoObj.name} is finished`, description: "Reopen the test to record more runs.", variant: "destructive" });
+      return;
     }
-    handleManualLap(entry.riderId, motoId);
+    await handleManualLap(entry.riderId, motoId);
+    if (motoObj && motoObj.type === "enduro_test") {
+      queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+      queryClient.invalidateQueries({ queryKey: ["enduro-open-runs", motoId] });
+    }
   };
 
   return (
@@ -3557,10 +3624,13 @@ export default function Motos() {
                             <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-muted/30 border-b text-muted-foreground">{moto.name}</div>
                           )}
                           {isActive ? (
+                            <>
                             <div className="grid grid-cols-2 divide-x">
                               <LiveLeaderboard motoId={moto.id} isElapsedTimeSport={isElapsedTimeSport} isEnduro={moto.type === "enduro_test"} lapCount={(moto as any).lapCount ?? null} penaltyMap={isEnduro ? penaltyMap : undefined} onMotoCompleted={() => { queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) }); }} />
                               <LiveCrossingsFeed motoId={moto.id} minLapTimeMs={minLapMs ?? null} isEnduro={moto.type === "enduro_test"} />
                             </div>
+                            {moto.type === "enduro_test" && <EnduroOpenRuns motoId={moto.id} />}
+                            </>
                           ) : (
                             <LiveLeaderboard motoId={moto.id} isElapsedTimeSport={isElapsedTimeSport} isEnduro={moto.type === "enduro_test"} lapCount={(moto as any).lapCount ?? null} penaltyMap={isEnduro ? penaltyMap : undefined} />
                           )}
@@ -3996,10 +4066,13 @@ export default function Motos() {
                             <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest bg-muted/30 border-b text-muted-foreground">{moto.name}</div>
                           )}
                           {isActive ? (
+                            <>
                             <div className="grid grid-cols-2 divide-x">
                               <LiveLeaderboard motoId={moto.id} isElapsedTimeSport={isElapsedTimeSport} isEnduro={moto.type === "enduro_test"} lapCount={(moto as any).lapCount ?? null} penaltyMap={isEnduro ? penaltyMap : undefined} onMotoCompleted={() => { queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) }); }} />
                               <LiveCrossingsFeed motoId={moto.id} minLapTimeMs={minLapMs ?? null} isEnduro={moto.type === "enduro_test"} />
                             </div>
+                            {moto.type === "enduro_test" && <EnduroOpenRuns motoId={moto.id} />}
+                            </>
                           ) : (
                             <LiveLeaderboard motoId={moto.id} isElapsedTimeSport={isElapsedTimeSport} isEnduro={moto.type === "enduro_test"} lapCount={(moto as any).lapCount ?? null} penaltyMap={isEnduro ? penaltyMap : undefined} />
                           )}

@@ -21,6 +21,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@/lib/zodResolver";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
+import { TransponderRequirementTip } from "@/components/organizer/TransponderRequirementTip";
 
 const TIME_OPTIONS: string[] = [];
 for (let h = 0; h < 24; h++) {
@@ -88,7 +89,7 @@ const createEventSchema = z.object({
   state: z.string().min(1, "State is required"),
   location: z.string().optional(),
   trackName: z.string().optional(),
-  timingTechnology: z.enum(["rfid", "active_transponder"]).default("rfid"),
+  timingTechnology: z.enum(["rfid", "active_transponder"]).default("active_transponder"),
   requireTransponder: z.boolean().default(false),
   raceClasses: z.array(z.object({
     name: z.string().min(1, "Class name is required"),
@@ -335,7 +336,7 @@ export default function EventsList() {
       state: "",
       location: "",
       trackName: "",
-      timingTechnology: "rfid",
+      timingTechnology: "active_transponder",
       raceClasses: [],
       clubId: sessionClubId ?? undefined,
       registrationOpen: "",
@@ -439,8 +440,7 @@ export default function EventsList() {
       noDuplicateBibs: data.noDuplicateBibs,
       requireWaiver: data.requireWaiver,
       requireLiabilityWaiver: data.requireLiabilityWaiver,
-      // The control is only shown for active timing without Collect Payments.
-      requireTransponder: activeTiming && !paid ? !!data.requireTransponder : false,
+      requireTransponder: activeTiming ? !!data.requireTransponder : false,
       quickCheckinEnabled: data.quickCheckinEnabled,
       scoringTableId: data.scoringTableId ?? null,
       entryFee: paid && data.entryFee ? Number(data.entryFee) : undefined,
@@ -934,8 +934,8 @@ export default function EventsList() {
                   )}
                 />
 
-                {/* Require transponder — Active Timing Reader without Stripe */}
-                {watchTimingTechnology === "active_transponder" && !watchPaymentEnabled && (
+                {/* Require transponder — RM TrackR timing. Riders can rent or buy one instead. */}
+                {watchTimingTechnology === "active_transponder" && (
                   <FormField
                     control={form.control}
                     name="requireTransponder"
@@ -943,7 +943,7 @@ export default function EventsList() {
                       <FormItem>
                         <FormLabel>Require transponder number?</FormLabel>
                         <p className="text-xs text-muted-foreground -mt-1 mb-2">
-                          Must riders provide their active transponder number to register?
+                          Must riders give a transponder number to register? Renting or buying one at registration also counts.
                         </p>
                         <div className="grid grid-cols-2 gap-2">
                           {[
@@ -965,9 +965,12 @@ export default function EventsList() {
                           ))}
                         </div>
                         {field.value && (
-                          <p className="text-xs font-medium text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mt-2">
-                            Riders cannot register for event without transponder number.
-                          </p>
+                          <TransponderRequirementTip
+                            rentalsOffered={!!watchTransponderRentalEnabled}
+                            trackrOffered={form.watch("purchaseOptions").some(o => o.optionId === RM_TRACKR_OPTION_ID)}
+                            onOfferRentals={() => form.setValue("transponderRentalEnabled", true, { shouldDirty: true })}
+                            onOfferTrackr={() => appendPurchaseOption({ optionId: RM_TRACKR_OPTION_ID, name: RM_TRACKR_NAME, amount: String(RM_TRACKR_PRICE) })}
+                          />
                         )}
                         <FormMessage />
                       </FormItem>
@@ -1227,7 +1230,9 @@ export default function EventsList() {
                           </SelectContent>
                         </Select>
                         <p className="text-xs text-muted-foreground">
-                          Supercross formats generate Heats + Main Event. AMA/Olympic generate Motos.
+                          {form.watch("raceStyle") === "enduro"
+                            ? "Enduro: riders are ranked by total test time (plus time-check penalties). A scoring table here only sets series points by each class's overall finish."
+                            : "Supercross formats generate Heats + Main Event. AMA/Olympic generate Motos."}
                         </p>
                       </FormItem>
                     )}

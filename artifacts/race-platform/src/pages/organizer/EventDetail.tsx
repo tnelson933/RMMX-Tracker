@@ -23,6 +23,7 @@ import { Calendar, MapPin, Flag, Save, Users, CheckCircle, Link2, Copy, Check, D
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format, parseISO } from "date-fns";
 import { formatEventDatesFull } from "@/lib/eventDates";
+import { TransponderRequirementTip } from "@/components/organizer/TransponderRequirementTip";
 
 const TIME_OPTIONS: string[] = [];
 for (let h = 0; h < 24; h++) {
@@ -1005,8 +1006,8 @@ export default function EventDetail() {
                       )}
                     />
 
-                    {/* Require transponder for active timing without Stripe */}
-                    {watchTimingTechnology === "active_transponder" && !watchPaymentEnabled && (
+                    {/* Require transponder — RM TrackR timing. Riders can rent or buy one instead. */}
+                    {watchTimingTechnology === "active_transponder" && (
                       <FormField
                         control={form.control}
                         name="requireTransponder"
@@ -1014,7 +1015,7 @@ export default function EventDetail() {
                           <FormItem>
                             <FormLabel>Require transponder number?</FormLabel>
                             <p className="text-xs text-muted-foreground -mt-1 mb-2">
-                              Must riders provide their active transponder number to register?
+                              Must riders give a transponder number to register? Renting or buying one at registration also counts.
                             </p>
                             <div className="grid grid-cols-2 gap-2">
                               {[
@@ -1036,9 +1037,12 @@ export default function EventDetail() {
                               ))}
                             </div>
                             {field.value && (
-                              <p className="text-xs font-medium text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mt-2">
-                                Riders cannot register for event without transponder number.
-                              </p>
+                              <TransponderRequirementTip
+                                rentalsOffered={!!watchTransponderRentalEnabled}
+                                trackrOffered={form.watch("purchaseOptions").some(o => o.optionId === RM_TRACKR_OPTION_ID)}
+                                onOfferRentals={() => form.setValue("transponderRentalEnabled", true, { shouldDirty: true })}
+                                onOfferTrackr={() => appendPurchaseOption({ optionId: RM_TRACKR_OPTION_ID, name: RM_TRACKR_NAME, amount: String(RM_TRACKR_PRICE) })}
+                              />
                             )}
                             <FormMessage />
                           </FormItem>
@@ -1465,7 +1469,9 @@ export default function EventDetail() {
                               </SelectContent>
                             </Select>
                             <p className="text-xs text-muted-foreground">
-                              Supercross formats generate Heats + Main Event. AMA/Olympic generate Motos.
+                              {form.watch("raceStyle") === "enduro"
+                            ? "Enduro: riders are ranked by total test time (plus time-check penalties). A scoring table here only sets series points by each class's overall finish."
+                            : "Supercross formats generate Heats + Main Event. AMA/Olympic generate Motos."}
                             </p>
                           </FormItem>
                         )}

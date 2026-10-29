@@ -31,7 +31,7 @@ import {
   registrationsTable,
 } from "@workspace/db/schema";
 import { eq, and, count, ilike, or, desc } from "drizzle-orm";
-import { processCrossing, handleFacilityCrossing, handlePing, buildLeaderboard, sseBroadcast, withMotoLock, motoForRider, RiderMotoFinishedError } from "./timing";
+import { processCrossing, handleFacilityCrossing, handlePing, buildLeaderboard, sseBroadcast, withMotoLock, motoForRider, RiderMotoFinishedError, EnduroCrossingRejected } from "./timing";
 import { recordSplitCrossing, splitForReader } from "../lib/sectors";
 import { broadcastPracticeBoard, processPracticeCrossing } from "./practice";
 import { practiceSplitFor, recordPracticeSplit } from "../lib/practiceSplits";
@@ -42,6 +42,16 @@ import { findReaderByToken } from "../lib/ingestAuth";
 import { activePracticeForClub, liveMotoForClub } from "../lib/liveSession";
 
 const router = Router();
+
+/**
+ * Answer an enduro gate crossing that failed. Expected rejections (rider
+ * finished every run, test finished, wrong gate, run too long) are 200 with
+ * ok:false so the reader doesn't retry them; anything else is a 500.
+ */
+function enduroCrossingError(res: express.Response, err: any) {
+  if (err instanceof EnduroCrossingRejected) return res.json({ ok: false, message: err.message });
+  return res.status(500).json({ ok: false, message: err?.message ?? "Processing error" });
+}
 
 /**
  * Resolve a tag number to a riderId for the given event.
@@ -516,10 +526,11 @@ router.post("/timing/readers/:token/crossing", express.text({ type: "text/*" }),
         antennaId: incomingAntenna ?? undefined,
         readerReceivedAt: body.readerReceivedAt ?? originalReceipt?.toISOString(),
       });
+      if (result.debounced) return res.json({ ok: true, message: "Duplicate read ignored" });
       const action = (result as any)?.enduroAction ?? (isEven ? "started" : "finished");
       return res.json({ ok: true, message: `Rider ${action} on moto ${sameGateMotoId}` });
     } catch (err: any) {
-      return res.status(500).json({ ok: false, message: err?.message ?? "Processing error" });
+      return enduroCrossingError(res, err);
     }
   }
 
@@ -592,11 +603,14 @@ router.post("/timing/readers/:token/crossing", express.text({ type: "text/*" }),
       readerId: `reader:${reader.id}`,
       antennaId: incomingAntenna ?? undefined,
       readerReceivedAt: body.readerReceivedAt ?? originalReceipt?.toISOString(),
+      // Re-checked inside the moto lock (the parity check above is a fast path).
+      enduroRole: assignment.role === "start" || assignment.role === "finish" ? assignment.role : undefined,
     });
+    if (result.debounced) return res.json({ ok: true, message: "Duplicate read ignored" });
     const action = (result as any)?.enduroAction ?? (isEven ? "started" : "finished");
     return res.json({ ok: true, message: `Rider ${action} on moto ${assignment.motoId}` });
   } catch (err: any) {
-    return res.status(500).json({ ok: false, message: err?.message ?? "Processing error" });
+    return enduroCrossingError(res, err);
   }
 });
 

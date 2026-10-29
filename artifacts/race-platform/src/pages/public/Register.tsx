@@ -535,6 +535,21 @@ export default function Register() {
   const watchedRentTransponder = form.watch("rentTransponder");
   const watchedPurchaseRfidSticker = form.watch("purchaseRfidSticker");
   const watchedSelectedClasses = form.watch("selectedClasses");
+  // RM TrackR events: a rider without a transponder can rent or buy one instead.
+  const trackrOption = (event?.purchaseOptions ?? []).find(o => o.id === RM_TRACKR_OPTION_ID) ?? null;
+  const offersRental = !!event?.transponderRentalEnabled;
+  const addOnOptions = (event?.purchaseOptions ?? []).filter(o => !(o.id === RM_TRACKR_OPTION_ID && event?.timingTechnology === "active_transponder"));
+  const buyingTrackr = (watchedPurchaseOptions ?? []).includes(RM_TRACKR_OPTION_ID);
+  const gettingTransponder = !!watchedRentTransponder || buyingTrackr;
+  const chooseTransponder = (choice: "rent" | "buy" | null) => {
+    const others = (form.getValues("selectedPurchaseOptions") ?? []).filter(id => id !== RM_TRACKR_OPTION_ID);
+    form.setValue("rentTransponder", choice === "rent");
+    form.setValue("selectedPurchaseOptions", choice === "buy" ? [...others, RM_TRACKR_OPTION_ID] : others);
+    if (choice) {
+      form.setValue("myLapsTransponderNumber", "");
+      form.clearErrors("myLapsTransponderNumber");
+    }
+  };
   const numSelectedClasses = (watchedSelectedClasses ?? []).length;
   const selectedPurchasesTotal = (event?.purchaseOptions ?? [])
     .filter(o => (watchedPurchaseOptions ?? []).includes(o.id))
@@ -753,6 +768,14 @@ export default function Register() {
     }
     if (event?.requireClubId && !data.clubIdNumber?.trim()) {
       form.setError("clubIdNumber", { message: "Club ID # is required for this event" });
+      return;
+    }
+    if (event?.timingTechnology === "active_transponder" && event.requireTransponder
+      && !data.myLapsTransponderNumber?.trim() && !data.rentTransponder && !data.selectedPurchaseOptions.includes(RM_TRACKR_OPTION_ID)) {
+      const canGetOne = !!event.transponderRentalEnabled || (event.purchaseOptions ?? []).some(o => o.id === RM_TRACKR_OPTION_ID);
+      form.setError("myLapsTransponderNumber", {
+        message: canGetOne ? "Enter your transponder number, or choose to rent or buy one below." : "A transponder number is required for this event.",
+      });
       return;
     }
     if (event?.requireWaiver && !waiverAccepted) {
@@ -1377,16 +1400,22 @@ export default function Register() {
                         name="myLapsTransponderNumber"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>RM TrackR Transponder Number</FormLabel>
+                            <FormLabel>
+                              RM TrackR Transponder Number{" "}
+                              <span className="text-muted-foreground font-normal">
+                                {event.requireTransponder && !gettingTransponder ? "(required)" : "(optional)"}
+                              </span>
+                            </FormLabel>
                             <FormControl>
                               <Input
                                 {...field}
-                                placeholder="e.g. 123456789"
-                                disabled={form.watch("rentTransponder")}
+                                placeholder={gettingTransponder ? "Assigned at check-in" : "e.g. 123456789"}
+                                disabled={gettingTransponder}
                                 onChange={e => {
                                   field.onChange(e);
                                   if (e.target.value.trim()) {
                                     form.setValue("rentTransponder", false);
+                                    form.setValue("selectedPurchaseOptions", (form.getValues("selectedPurchaseOptions") ?? []).filter(id => id !== RM_TRACKR_OPTION_ID));
                                   }
                                 }}
                               />
@@ -1397,45 +1426,57 @@ export default function Register() {
                         )}
                       />
 
-                      {/* Rental option — only when the event offers it */}
-                      {event.transponderRentalEnabled && event.transponderRentalFee != null && (
+                      {/* No transponder? Rent or buy one — only what the event offers */}
+                      {(offersRental || trackrOption) && (
                         <>
                           <div className="flex items-center gap-3 text-xs text-muted-foreground">
                             <div className="h-px flex-1 bg-border" />
-                            <span className="uppercase tracking-widest font-semibold">or</span>
+                            <span className="uppercase tracking-widest font-semibold">or, no transponder?</span>
                             <div className="h-px flex-1 bg-border" />
                           </div>
-                          <FormField
-                            control={form.control}
-                            name="rentTransponder"
-                            render={({ field }) => (
-                              <FormItem>
-                                <div className="flex items-start gap-3 rounded-lg border bg-background px-4 py-3.5">
-                                  <FormControl>
-                                    <Checkbox
-                                      id="rent-transponder"
-                                      checked={field.value}
-                                      disabled={!!form.watch("myLapsTransponderNumber")?.trim()}
-                                      onCheckedChange={val => {
-                                        field.onChange(val);
-                                        if (val) form.setValue("myLapsTransponderNumber", "");
-                                      }}
-                                      className="mt-0.5"
-                                    />
-                                  </FormControl>
-                                  <div className="space-y-0.5 leading-none">
-                                    <label htmlFor="rent-transponder" className="text-sm font-semibold cursor-pointer">
-                                      Rent an active transponder — <span className="text-primary">${Number(event.transponderRentalFee).toFixed(2)}</span>
-                                    </label>
-                                    <p className="text-xs text-muted-foreground">
-                                      Don't have your own? Add a rental — the transponder will be ready for you at the gate.
-                                      {!event.paymentEnabled && " You pay the rental fee at the gate."}
-                                    </p>
-                                  </div>
-                                </div>
-                              </FormItem>
-                            )}
-                          />
+                          {offersRental && (
+                            <div className="flex items-start gap-3 rounded-lg border bg-background px-4 py-3.5">
+                              <Checkbox
+                                id="rent-transponder"
+                                checked={!!watchedRentTransponder}
+                                onCheckedChange={val => chooseTransponder(val === true ? "rent" : null)}
+                                className="mt-0.5"
+                              />
+                              <div className="space-y-0.5 leading-none">
+                                <label htmlFor="rent-transponder" className="text-sm font-semibold cursor-pointer">
+                                  Rent one for this event{event.transponderRentalFee != null && <> — <span className="text-primary">${Number(event.transponderRentalFee).toFixed(2)}</span></>}
+                                </label>
+                                <p className="text-xs text-muted-foreground">
+                                  Pick it up at check-in and return it after the event.
+                                  {!event.paymentEnabled && event.transponderRentalFee != null && " You pay the rental fee at the gate."}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                          {trackrOption && (
+                            <div className="flex items-start gap-3 rounded-lg border bg-background px-4 py-3.5">
+                              <Checkbox
+                                id="buy-transponder"
+                                checked={buyingTrackr}
+                                onCheckedChange={val => chooseTransponder(val === true ? "buy" : null)}
+                                className="mt-0.5"
+                              />
+                              <div className="space-y-0.5 leading-none">
+                                <label htmlFor="buy-transponder" className="text-sm font-semibold cursor-pointer">
+                                  Buy your own {trackrOption.name} — <span className="text-primary">${Number(trackrOption.amount).toFixed(2)}</span>
+                                </label>
+                                <p className="text-xs text-muted-foreground">
+                                  Yours to keep for every race. Pick it up at check-in.
+                                  {!event.paymentEnabled && " You pay for it at the gate."}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+                          {gettingTransponder && (
+                            <p className="text-xs font-medium text-green-800 bg-green-50 border border-green-200 rounded-md px-3 py-2">
+                              You don't need a transponder number now. The organizer hands you your transponder at check-in and records its number.
+                            </p>
+                          )}
                         </>
                       )}
                     </CardContent>
@@ -1478,11 +1519,11 @@ export default function Register() {
                 )}
 
                 {/* Purchase Options */}
-                {(event.purchaseOptions ?? []).length > 0 && (
+                {addOnOptions.length > 0 && (
                   <Card>
                     <SectionHeader>Add-ons</SectionHeader>
                     <CardContent className="p-6 space-y-3">
-                      {(event.purchaseOptions ?? []).map(opt => (
+                      {addOnOptions.map(opt => (
                         <FormField
                           key={opt.id}
                           control={form.control}

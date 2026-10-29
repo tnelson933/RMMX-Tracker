@@ -86,14 +86,16 @@ export async function computeSeriesStandings(series: Series): Promise<{ standing
     .from(eventsTable).where(inArray(eventsTable.id, eventIds));
   const eventNameMap = new Map(events.map(e => [e.id, e.name]));
 
-  const allMotos = (await db.select().from(motosTable)
+  const finishedMotos = (await db.select().from(motosTable)
     .where(and(
       inArray(motosTable.eventId, eventIds),
       eq(motosTable.status, "completed"),
       ne(motosTable.type, "practice"),
     )))
-    .filter(m => motoCounts(eligibleClasses, m));
-  if (allMotos.length === 0) return { standings: [], eventIds };
+    // Enduro tests are created for "All Classes"; their results carry the
+    // rider's class and are split by it below.
+    .filter(m => m.type === "enduro_test" ? eligibleClasses.has(m.eventId) : motoCounts(eligibleClasses, m));
+  if (finishedMotos.length === 0) return { standings: [], eventIds };
 
   const allResults = await db.select({
     motoId: raceResultsTable.motoId,
@@ -104,36 +106,61 @@ export async function computeSeriesStandings(series: Series): Promise<{ standing
     points: raceResultsTable.points,
     dnf: raceResultsTable.dnf,
     dns: raceResultsTable.dns,
+    raceClass: raceResultsTable.raceClass,
   }).from(raceResultsTable)
     .leftJoin(ridersTable, eq(raceResultsTable.riderId, ridersTable.id))
-    .where(inArray(raceResultsTable.motoId, allMotos.map(m => m.id)));
+    .where(inArray(raceResultsTable.motoId, finishedMotos.map(m => m.id)));
+
+  // A race is keyed by moto, or by moto and class for an enduro test, which
+  // counts as one race per class that rode it.
+  const raceKey = (motoId: number, enduroClass?: string | null) =>
+    enduroClass != null ? `${motoId}:${enduroClass.trim()}` : String(motoId);
+  const enduroMotoIds = new Set(finishedMotos.filter(m => m.type === "enduro_test").map(m => m.id));
+  const keyOfResult = (r: { motoId: number; raceClass: string | null }) =>
+    raceKey(r.motoId, enduroMotoIds.has(r.motoId) ? (r.raceClass ?? "") : null);
+  const enduroClasses = new Map<number, Set<string>>();
+  for (const r of allResults) {
+    if (!enduroMotoIds.has(r.motoId)) continue;
+    const cls = (r.raceClass ?? "").trim();
+    if (!enduroClasses.has(r.motoId)) enduroClasses.set(r.motoId, new Set());
+    enduroClasses.get(r.motoId)!.add(cls);
+  }
+  const allMotos = finishedMotos.flatMap(m => m.type === "enduro_test"
+    ? [...(enduroClasses.get(m.id) ?? [])]
+        .filter(cls => motoCounts(eligibleClasses, { eventId: m.eventId, raceClass: cls }))
+        .map(cls => ({ ...m, raceClass: cls, key: raceKey(m.id, cls) }))
+    : [{ ...m, key: raceKey(m.id) }]);
+  if (allMotos.length === 0) return { standings: [], eventIds };
   // Points: the stored value (it includes club auto-DNF), or scored with the
   // series' table when none was stored. Same rule as the stored series totals.
   const scoring = await loadSeriesScoring(series.scoringTableId);
-  const motoById = new Map(allMotos.map(m => [m.id, m]));
-  const starters = new Map<number, number>();
-  for (const r of allResults) if (!r.dns) starters.set(r.motoId, (starters.get(r.motoId) ?? 0) + 1);
+  const motoById = new Map(finishedMotos.map(m => [m.id, m]));
+  const starters = new Map<string, number>();
+  for (const r of allResults) if (!r.dns) starters.set(keyOfResult(r), (starters.get(keyOfResult(r)) ?? 0) + 1);
   // Olympic tables: lowest total wins and DNF/DNS/missed motos score penalties.
   const lowerIsBetter = isLowerBetter(scoring.scoringMethod);
-  const classSizeOf = (motoId: number) => resultsByMoto.get(motoId)?.length ?? 0;
+  const classSizeOf = (key: string) => resultsByMoto.get(key)?.length ?? 0;
   const pointsFor = (r: (typeof allResults)[number]): number => {
-    if (lowerIsBetter && (r.dnf || r.dns)) return olympicPenalty(r.dns ? "dns" : "dnf", classSizeOf(r.motoId));
+    // Enduro: one award per event, stored on one test result (0 on the others).
+    if (enduroMotoIds.has(r.motoId)) return r.points ?? 0;
+    if (lowerIsBetter && (r.dnf || r.dns)) return olympicPenalty(r.dns ? "dns" : "dnf", classSizeOf(keyOfResult(r)));
     if (r.dnf || r.dns) return 0;
     if (r.points != null) return r.points;
     return calcPoints({
       position: r.position,
       dnf: false,
       dns: false,
-      totalStarters: starters.get(r.motoId) ?? 1,
+      totalStarters: starters.get(keyOfResult(r)) ?? 1,
       ...scoring,
       motoType: motoById.get(r.motoId)?.type ?? "heat",
     });
   };
 
-  const resultsByMoto = new Map<number, typeof allResults>();
+  const resultsByMoto = new Map<string, typeof allResults>();
   for (const r of allResults) {
-    if (!resultsByMoto.has(r.motoId)) resultsByMoto.set(r.motoId, []);
-    resultsByMoto.get(r.motoId)!.push(r);
+    const key = keyOfResult(r);
+    if (!resultsByMoto.has(key)) resultsByMoto.set(key, []);
+    resultsByMoto.get(key)!.push(r);
   }
 
   // class → event → motos (in moto order)
@@ -152,7 +179,7 @@ export async function computeSeriesStandings(series: Series): Promise<{ standing
     const official = classMotos.every(m => m.resultsFinalizedAt != null);
     const riderNames = new Map<number, string>();
     for (const m of classMotos) {
-      for (const r of resultsByMoto.get(m.id) ?? []) {
+      for (const r of resultsByMoto.get(m.key) ?? []) {
         riderNames.set(r.riderId, `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim());
       }
     }
@@ -171,7 +198,7 @@ export async function computeSeriesStandings(series: Series): Promise<{ standing
         const motoPoints: number[] = [];
         const finishPositions: (number | null)[] = [];
         for (const m of sorted) {
-          const r = (resultsByMoto.get(m.id) ?? []).find(x => x.riderId === riderId);
+          const r = (resultsByMoto.get(m.key) ?? []).find(x => x.riderId === riderId);
           if (r) {
             attended = true;
             const pts = pointsFor(r);
@@ -179,8 +206,9 @@ export async function computeSeriesStandings(series: Series): Promise<{ standing
             motoPoints.push(pts);
             finishPositions.push(r.dnf || r.dns ? null : (r.position ?? null));
           } else {
-            // A missed moto: nothing on a points table, a DNS on an Olympic one.
-            const pts = lowerIsBetter ? olympicPenalty("dns", classSizeOf(m.id)) : 0;
+            // A missed moto: nothing on a points table, a DNS on an Olympic one
+            // (not for enduro tests, which are scored once per event).
+            const pts = lowerIsBetter && m.type !== "enduro_test" ? olympicPenalty("dns", classSizeOf(m.key)) : 0;
             eventScore += pts;
             motoPoints.push(pts);
             finishPositions.push(null);

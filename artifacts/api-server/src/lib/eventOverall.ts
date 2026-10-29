@@ -2,6 +2,8 @@ import { db } from "@workspace/db";
 import { eventsTable, motosTable, pointsTablesTable, raceResultsTable, ridersTable } from "@workspace/db";
 import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import { compareOverall, isLowerBetter, olympicPenalty, overallPositions, type OverallRow } from "./overallOrder";
+import { computeEnduroOverall, type EnduroOverallRow } from "./enduroOverall";
+import { fetchEnduoPenaltyMap, loadEnduroRiderClasses } from "../routes/enduro-scoring";
 
 /** Whether the event's scoring table is Olympic (lowest total wins). */
 export async function eventLowerIsBetter(eventId: number): Promise<boolean> {
@@ -20,6 +22,16 @@ export interface EventOverallRider {
   totalPoints: number;
   motosRaced: number;
   bestPosition: number | null;
+  /** Enduro events only: each test's time, penalties and the overall total. */
+  enduro?: Omit<EnduroOverallRow, "position" | "riderId" | "raceClass">;
+}
+
+export interface EnduroOverallTestInfo {
+  motoId: number;
+  name: string;
+  motoNumber: number;
+  requiredRuns: number;
+  official: boolean;
 }
 
 /**
@@ -31,8 +43,15 @@ export async function computeEventOverall(eventId: number): Promise<{
   classes: Array<{ raceClass: string; riders: EventOverallRider[] }>;
   hasPoints: boolean;
   lowerIsBetter: boolean;
+  /** "enduro": classes are ranked by total time (tests + time-check penalties). */
+  format?: "enduro";
+  enduroTests?: EnduroOverallTestInfo[];
+  /** Enduro: every counted test's results are finalized. */
+  official?: boolean;
 }> {
   const lowerIsBetter = await eventLowerIsBetter(eventId);
+  const [evt] = await db.select({ raceStyle: eventsTable.raceStyle }).from(eventsTable).where(eq(eventsTable.id, eventId));
+  if (evt?.raceStyle === "enduro") return { ...(await computeEnduroEventOverall(eventId)), lowerIsBetter };
   const motos = await db.select().from(motosTable)
     .where(and(eq(motosTable.eventId, eventId), eq(motosTable.status, "completed"), ne(motosTable.type, "practice")))
     .orderBy(asc(motosTable.motoNumber), asc(motosTable.id));
@@ -111,4 +130,95 @@ export async function computeEventOverall(eventId: number): Promise<{
     out.push({ raceClass, riders: entries.map((e, i) => ({ ...e.rider, position: positions[i] })) });
   }
   return { classes: out, hasPoints, lowerIsBetter };
+}
+
+/**
+ * Enduro event overall per class from finished tests: sum of every test's
+ * completed runs plus time-check penalties, lowest first (lib/enduroOverall.ts).
+ * Riders are placed in their registered/checked-in class (tests themselves are
+ * created for "All Classes"). totalPoints is the event points stored on the
+ * rider's results (one award per event; see scoreEnduroEventPoints).
+ */
+export async function computeEnduroEventOverall(eventId: number): Promise<{
+  classes: Array<{ raceClass: string; riders: EventOverallRider[] }>;
+  hasPoints: boolean;
+  format: "enduro";
+  enduroTests: EnduroOverallTestInfo[];
+  official: boolean;
+}> {
+  const tests = await db.select().from(motosTable)
+    .where(and(eq(motosTable.eventId, eventId), eq(motosTable.status, "completed"), eq(motosTable.type, "enduro_test")))
+    .orderBy(asc(motosTable.motoNumber), asc(motosTable.id));
+  const enduroTests: EnduroOverallTestInfo[] = tests.map((t) => ({
+    motoId: t.id,
+    name: t.name,
+    motoNumber: t.motoNumber ?? 0,
+    requiredRuns: Math.max(1, t.lapCount ?? 1),
+    official: t.resultsFinalizedAt != null,
+  }));
+  if (tests.length === 0) return { classes: [], hasPoints: false, format: "enduro", enduroTests, official: false };
+
+  const [rows, riderClasses, penalties] = await Promise.all([
+    db.select({
+      motoId: raceResultsTable.motoId,
+      riderId: raceResultsTable.riderId,
+      raceClass: raceResultsTable.raceClass,
+      position: raceResultsTable.position,
+      points: raceResultsTable.points,
+      lapTimes: raceResultsTable.lapTimes,
+      dnf: raceResultsTable.dnf,
+      dns: raceResultsTable.dns,
+      bibNumber: raceResultsTable.bibNumber,
+      firstName: ridersTable.firstName,
+      lastName: ridersTable.lastName,
+    }).from(raceResultsTable)
+      .leftJoin(ridersTable, eq(raceResultsTable.riderId, ridersTable.id))
+      .where(inArray(raceResultsTable.motoId, tests.map((t) => t.id))),
+    loadEnduroRiderClasses(eventId),
+    fetchEnduoPenaltyMap(eventId),
+  ]);
+
+  const riderIds = [...new Set(rows.map((r) => r.riderId))];
+  const overall = computeEnduroOverall(
+    enduroTests,
+    rows.map((r) => ({
+      motoId: r.motoId,
+      riderId: r.riderId,
+      runTimesMs: Array.isArray(r.lapTimes) ? (r.lapTimes as number[]) : [],
+      dnf: r.dnf,
+      dns: r.dns,
+    })),
+    riderIds.map((riderId) => ({
+      riderId,
+      raceClass: riderClasses.get(riderId) ?? rows.find((r) => r.riderId === riderId)!.raceClass,
+      penaltySeconds: penalties.get(riderId)?.penaltySeconds ?? 0,
+      disqualified: penalties.get(riderId)?.disqualified ?? false,
+    })),
+  );
+
+  const classes = overall.map(({ raceClass, riders }) => ({
+    raceClass,
+    riders: riders.map((row): EventOverallRider => {
+      const mine = rows.filter((r) => r.riderId === row.riderId);
+      const finishes = mine.filter((r) => !r.dnf && !r.dns && (r.lapTimes as unknown[] | null)?.length).map((r) => r.position);
+      const { position, riderId, raceClass: _cls, ...enduro } = row;
+      return {
+        position,
+        riderId,
+        riderName: [mine[0]?.firstName, mine[0]?.lastName].filter(Boolean).join(" ") || `Rider #${riderId}`,
+        bibNumber: mine.find((r) => r.bibNumber)?.bibNumber ?? null,
+        totalPoints: mine.reduce((sum, r) => sum + (r.points ?? 0), 0),
+        motosRaced: row.tests.filter((t) => t.runs > 0).length,
+        bestPosition: finishes.length ? Math.min(...finishes) : null,
+        enduro,
+      };
+    }),
+  }));
+  return {
+    classes,
+    hasPoints: rows.some((r) => (r.points ?? 0) > 0),
+    format: "enduro",
+    enduroTests,
+    official: enduroTests.every((t) => t.official),
+  };
 }

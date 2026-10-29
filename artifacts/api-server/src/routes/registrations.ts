@@ -409,10 +409,14 @@ router.post("/events/:eventId/registrations", async (req, res) => {
   }
   if (!isRegistrationTransponderRequirementSatisfied(
     eventData,
-    { transponderNumber: normalizedTransponderNumber, rentTransponder },
+    {
+      transponderNumber: normalizedTransponderNumber,
+      rentTransponder,
+      buyTransponder: includesRmTrackr(resolvePurchaseOptions(selectedPurchaseOptions, eventData?.purchaseOptions)),
+    },
   )) {
     return res.status(400).json({
-      error: "Enter the rider's active transponder number, or select an available rental.",
+      error: "Enter the rider's active transponder number, or select a rental or an RM TrackR purchase.",
     });
   }
 
@@ -1243,10 +1247,14 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   }
   if (!isRegistrationTransponderRequirementSatisfied(
     events[0],
-    { transponderNumber: normalizedTransponderNumber, rentTransponder },
+    {
+      transponderNumber: normalizedTransponderNumber,
+      rentTransponder,
+      buyTransponder: includesRmTrackr(resolvePurchaseOptions(selectedPurchaseOptions, events[0].purchaseOptions)),
+    },
   )) {
     return res.status(400).json({
-      error: "Enter your active transponder number, or select an available rental.",
+      error: "Enter your transponder number, or choose to rent or buy one.",
     });
   }
   if (events[0].requireAma && !amaNumber) {

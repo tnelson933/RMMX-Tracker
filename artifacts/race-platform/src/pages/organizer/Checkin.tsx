@@ -838,6 +838,13 @@ export default function Checkin() {
               const isTagInvalid = isActiveTransponder
                 ? isInvalidAssignedActiveTransponderIdentifier(tagVal)
                 : isInvalidRfid(tagVal);
+              // Rented or bought a transponder at registration: staff hand one out here.
+              // A rental's unit number is stored on the registration when it's assigned.
+              const rentalNumber = (checkin as any).transponderRental
+                ? ((checkin as any).myLapsTransponderNumber as string | null)?.trim() || null
+                : null;
+              const needsRental = !!(checkin as any).transponderRental && !rentalNumber;
+              const needsTrackr = !!(checkin as any).rmTrackrPurchased && !(checkin as any).rmTrackrFulfilledAt;
               return (
               <Card key={checkin.riderId} className={`overflow-hidden transition-all ${checkin.checkedIn ? 'border-secondary bg-secondary/5' : pendingRiderIds.has(checkin.riderId) ? 'border-amber-500 bg-amber-500/5' : 'hover:border-primary/50'}`}>
                 <CardContent className="p-0 flex h-full">
@@ -955,40 +962,54 @@ export default function Checkin() {
                           )
                         )}
                         {/* Transponder rental status */}
-                        {transponderRentalEnabled && transponderRentalFee != null && (
-                          (checkin as any).transponderRental ? (
-                            <button
-                              onClick={() => setRentalAssignInputId(rentalAssignInputId === checkin.registrationId ? null : checkin.registrationId!)}
-                              className="flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-xs font-semibold hover:bg-emerald-100 transition-colors"
-                              title="Click to assign transponder number"
-                            >
-                              <CheckCircle2 size={12} /> Transponder Rental
-                              {/* Pay-at-gate events: the rental fee is collected here with the entry. */}
-                              {!(event as any)?.paymentEnabled && (checkin as any).paymentStatus !== "paid" && (
-                                <span className="ml-1 text-amber-800 font-bold">· ${Number(transponderRentalFee).toFixed(2)} due</span>
-                              )}
-                            </button>
-                          ) : (
+                        {(checkin as any).transponderRental ? (
+                          <button
+                            onClick={() => setRentalAssignInputId(rentalAssignInputId === checkin.registrationId ? null : checkin.registrationId!)}
+                            className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold transition-colors border ${
+                              rentalNumber
+                                ? "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100"
+                                : "text-amber-800 bg-amber-100 border-amber-300 hover:bg-amber-200"
+                            }`}
+                            title={rentalNumber ? "Rental unit given to this rider. Click to change it." : "Rider rented a transponder. Click to record the unit you hand them."}
+                          >
+                            <Tag size={12} />
+                            {rentalNumber
+                              ? <>Rental <span className="font-mono">#{rentalNumber.toUpperCase()}</span>{(checkin as any).transponderReturned ? " · returned" : ""}</>
+                              : "Rented — Assign Unit"}
+                            {/* Pay-at-gate events: the rental fee is collected here with the entry. */}
+                            {!(event as any)?.paymentEnabled && transponderRentalFee != null && (checkin as any).paymentStatus !== "paid" && (
+                              <span className="ml-1 text-amber-800 font-bold">· ${Number(transponderRentalFee).toFixed(2)} due</span>
+                            )}
+                          </button>
+                        ) : transponderRentalEnabled && transponderRentalFee != null && !(checkin as any).rmTrackrPurchased && (
                             <button
                               onClick={() => setRentalTarget({ registrationId: checkin.registrationId!, riderName: checkin.riderName })}
                               className="flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded hover:bg-red-100 transition-colors"
                             >
                               + Add Transponder Rental
                             </button>
-                          )
                         )}
                         {/* RM TrackR: purchased and awaiting a transponder, or sell one here */}
                         {(checkin as any).rmTrackrPurchased ? (
-                          !(checkin as any).rmTrackrFulfilledAt && (
+                          (checkin as any).rmTrackrFulfilledAt ? (
+                            <span className="flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-xs font-semibold">
+                              <CheckCircle2 size={12} /> {RM_TRACKR_NAME} handed out
+                              {(checkin as any).rmTrackrTransponder && <span className="font-mono">#{String((checkin as any).rmTrackrTransponder).toUpperCase()}</span>}
+                            </span>
+                          ) : (
                             <button
                               onClick={() => setRfidInputOpenId(checkin.riderId)}
                               className="flex items-center gap-1 text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded text-xs font-semibold hover:bg-amber-200 transition-colors"
                               title={`Rider bought an ${RM_TRACKR_NAME}. Hand it over and assign its number to mark it fulfilled.`}
                             >
                               <Tag size={12} /> {RM_TRACKR_NAME} Purchased — Assign
+                              {/* Pay-at-gate events: the transponder is paid for here. */}
+                              {!(event as any)?.paymentEnabled && (checkin as any).paymentStatus !== "paid" && (
+                                <span className="ml-1 font-bold">· ${RM_TRACKR_PRICE.toFixed(2)} due</span>
+                              )}
                             </button>
                           )
-                        ) : isActiveTransponder && !isOffline && !checkin.rfidLinked && checkin.registrationId != null && (
+                        ) : isActiveTransponder && !isOffline && !checkin.rfidLinked && !(checkin as any).transponderRental && checkin.registrationId != null && (
                           <button
                             onClick={() => setTrackrTarget({ registrationId: checkin.registrationId!, riderName: checkin.riderName })}
                             className="flex items-center gap-1 text-xs font-semibold text-primary bg-primary/5 border border-primary/30 px-2 py-0.5 rounded hover:bg-primary/10 transition-colors"
@@ -1030,7 +1051,7 @@ export default function Checkin() {
                             <Tag size={14} />
                             <span className="font-mono">{tagVal}</span>
                           </button>
-                        ) : (
+                        ) : !needsRental && !needsTrackr && (
                           <button
                             onClick={() => setRfidInputOpenId(rfidInputOpenId === checkin.riderId ? null : checkin.riderId)}
                             className="flex items-center gap-1 text-amber-600 hover:text-amber-700 transition-colors underline-offset-2 hover:underline"
@@ -1040,6 +1061,30 @@ export default function Checkin() {
                           </button>
                         )}
                       </div>
+
+                      {/* Notice: the rider rented or bought a transponder at registration and needs one handed out */}
+                      {needsRental && (
+                        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                          <AlertCircle size={14} className="shrink-0" />
+                          <span className="flex-1 min-w-[12rem]"><strong>Rented a transponder.</strong> Hand them a rental unit and record its number so you know which one comes back.</span>
+                          {rentalAssignInputId !== checkin.registrationId && (
+                            <Button size="sm" className="h-7 text-xs bg-amber-600 hover:bg-amber-700" onClick={() => setRentalAssignInputId(checkin.registrationId!)}>
+                              Record rental unit
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                      {needsTrackr && (
+                        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                          <AlertCircle size={14} className="shrink-0" />
+                          <span className="flex-1 min-w-[12rem]"><strong>Bought an {RM_TRACKR_NAME}.</strong> Hand them a new one and assign its number.</span>
+                          {rfidInputOpenId !== checkin.riderId && (
+                            <Button size="sm" className="h-7 text-xs bg-amber-600 hover:bg-amber-700" onClick={() => setRfidInputOpenId(checkin.riderId)}>
+                              Assign transponder
+                            </Button>
+                          )}
+                        </div>
+                      )}
 
                       {/* Inline RFID assignment — available whether or not one is already linked */}
                       {rfidInputOpenId === checkin.riderId && (

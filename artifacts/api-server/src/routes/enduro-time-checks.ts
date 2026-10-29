@@ -16,6 +16,7 @@ import {
 import { eq, asc, and, inArray } from "drizzle-orm";
 import { computeEnduroPenalty, recomputeEnduroPositionsForEvent } from "./enduro-scoring";
 import { callerOwnsClub } from "../middleware/accessControl";
+import { eventTimeZone } from "@workspace/api-zod";
 
 const router = Router();
 
@@ -121,34 +122,57 @@ router.put("/events/:eventId/time-checks", async (req, res) => {
   }));
 
   const penaltyConfig = sanitizePenaltyConfig(body.penaltyConfig);
+  // Class start times are wall-clock times at the track: without a chosen
+  // timezone they'd be read in the server's zone (UTC when hosted).
+  if (penaltyConfig && !penaltyConfig.timezone) {
+    const [ev] = await db.select({ state: eventsTable.state, trackLat: eventsTable.trackLat, trackLng: eventsTable.trackLng })
+      .from(eventsTable).where(eq(eventsTable.id, eventId));
+    if (ev) penaltyConfig.timezone = eventTimeZone(ev);
+  }
 
-  // Full replace: wipe existing then re-insert so removed checks are dropped.
-  const saved = await db.transaction(async (tx) => {
-    // Fetch existing time check IDs so we can clear any FK references before
-    // deleting — event_reader_assignments.time_check_id has a FK to this table.
-    const existing = await tx
-      .select({ id: enduroTimeChecksTable.id })
-      .from(enduroTimeChecksTable)
-      .where(eq(enduroTimeChecksTable.eventId, eventId));
-    if (existing.length > 0) {
-      const ids = existing.map((r) => r.id);
-      // Null out the time_check_id on any reader assignments referencing these
-      // rows so the subsequent DELETE doesn't hit a FK constraint violation.
-      await tx
-        .update(eventReaderAssignmentsTable)
-        .set({ timeCheckId: null })
-        .where(inArray(eventReaderAssignmentsTable.timeCheckId, ids));
+  // Update checks in place (matched by check number) so their ids stay the
+  // same: recorded arrivals and placed time-check readers keep pointing at
+  // them. A check that has arrivals can't be removed.
+  const existing = await db.select({ id: enduroTimeChecksTable.id, checkNumber: enduroTimeChecksTable.checkNumber })
+    .from(enduroTimeChecksTable).where(eq(enduroTimeChecksTable.eventId, eventId));
+  const keep = new Set(incoming.map(tc => tc.checkNumber));
+  const removing = existing.filter(e => !keep.has(e.checkNumber));
+  if (removing.length > 0) {
+    const [withArrivals] = await db.select({ timeCheckId: enduroCheckpointArrivalsTable.timeCheckId })
+      .from(enduroCheckpointArrivalsTable)
+      .where(inArray(enduroCheckpointArrivalsTable.timeCheckId, removing.map(r => r.id)))
+      .limit(1);
+    if (withArrivals) {
+      const check = removing.find(r => r.id === withArrivals.timeCheckId);
+      return res.status(409).json({
+        error: `Time check ${check?.checkNumber ?? ""} already has rider arrivals, so it can't be removed. Keep it, or clear its arrivals first.`,
+      });
     }
-    await tx.delete(enduroTimeChecksTable).where(eq(enduroTimeChecksTable.eventId, eventId));
-    if (incoming.length > 0) {
-      await tx.insert(enduroTimeChecksTable).values(incoming);
+  }
+
+  const saved = await db.transaction(async (tx) => {
+    for (const tc of incoming) {
+      const match = existing.find(e => e.checkNumber === tc.checkNumber);
+      if (match) {
+        await tx.update(enduroTimeChecksTable)
+          .set({ name: tc.name, targets: tc.targets })
+          .where(eq(enduroTimeChecksTable.id, match.id));
+      } else {
+        await tx.insert(enduroTimeChecksTable).values(tc);
+      }
+    }
+    if (removing.length > 0) {
+      const ids = removing.map(r => r.id);
+      // Readers placed on a removed check are taken off it.
+      await tx.delete(eventReaderAssignmentsTable)
+        .where(and(eq(eventReaderAssignmentsTable.eventId, eventId), inArray(eventReaderAssignmentsTable.timeCheckId, ids)));
+      await tx.delete(enduroTimeChecksTable).where(inArray(enduroTimeChecksTable.id, ids));
     }
     // Save penalty config to the event (null clears it)
     await tx
       .update(eventsTable)
       .set({ enduroPenaltyConfig: penaltyConfig as any })
       .where(eq(eventsTable.id, eventId));
-    if (incoming.length === 0) return [];
     return tx
       .select()
       .from(enduroTimeChecksTable)
