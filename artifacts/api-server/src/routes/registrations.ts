@@ -14,6 +14,7 @@ import { isRegistrationTransponderRequirementSatisfied } from "../lib/registrati
 import { resolvePurchaseOptions } from "../lib/purchaseOptions";
 import { includesRmTrackr, markRmTrackrPurchased, fulfillRmTrackr } from "../lib/rmTrackr";
 import { eventTimingTags } from "../lib/eventTimingTags";
+import { ORGANIZER_NO_STRIPE, organizerCardError, riderCardError } from "../lib/stripeErrors";
 import { RM_TRACKR_NAME, RM_TRACKR_PRICE } from "@workspace/db";
 import { canManageRider } from "../lib/riderAccess";
 import { riderMobileTokensTable } from "@workspace/db";
@@ -668,7 +669,7 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
     if (!event?.entryFee) return res.status(400).json({ error: "This event has no entry fee configured" });
 
     const [club] = await db.select().from(clubsTable).where(eq(clubsTable.id, event.clubId));
-    if (!club?.stripeAccountId) return res.status(400).json({ error: "Club has no Stripe account configured. Use cash payment instead." });
+    if (!club?.stripeAccountId) return res.status(400).json({ error: ORGANIZER_NO_STRIPE });
 
     const stripe = await getUncachableStripeClient();
     const appUrl = getAppUrl();
@@ -750,7 +751,7 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
     return res.json({ checkoutUrl: session.url, sessionId: session.id, entryFee, rentalFee, purchaseOptionsTotal });
   } catch (err: any) {
     req.log?.error({ err: err?.message }, "[charge] Error");
-    return res.status(500).json({ error: "Couldn't start the card payment. Please try again or take cash." });
+    return res.status(500).json({ error: organizerCardError(err) });
   }
 });
 
@@ -784,7 +785,7 @@ router.post("/events/:eventId/registrations/:regId/add-transponder-rental", asyn
     try {
       const [club] = await db.select().from(clubsTable).where(eq(clubsTable.id, event.clubId));
       if (!club?.stripeAccountId) {
-        return res.status(400).json({ error: "Club has no Stripe account configured. Use cash payment instead." });
+        return res.status(400).json({ error: ORGANIZER_NO_STRIPE });
       }
 
       const stripe = await getUncachableStripeClient();
@@ -813,7 +814,7 @@ router.post("/events/:eventId/registrations/:regId/add-transponder-rental", asyn
       return res.json({ checkoutUrl: session.url, sessionId: session.id, rentalFee });
     } catch (err: any) {
       req.log?.error({ err: err?.message }, "[add-transponder-rental] Error");
-      return res.status(500).json({ error: err?.message ?? "Failed to create checkout session" });
+      return res.status(500).json({ error: organizerCardError(err) });
     }
   }
 
@@ -850,7 +851,7 @@ router.post("/events/:eventId/registrations/:regId/add-rfid-sticker", async (req
     try {
       const [club] = await db.select().from(clubsTable).where(eq(clubsTable.id, event.clubId));
       if (!club?.stripeAccountId) {
-        return res.status(400).json({ error: "Club has no Stripe account configured. Use cash payment instead." });
+        return res.status(400).json({ error: ORGANIZER_NO_STRIPE });
       }
 
       const stripe = await getUncachableStripeClient();
@@ -879,7 +880,7 @@ router.post("/events/:eventId/registrations/:regId/add-rfid-sticker", async (req
       return res.json({ checkoutUrl: session.url, sessionId: session.id, stickerFee });
     } catch (err: any) {
       req.log?.error({ err: err?.message }, "[add-rfid-sticker] Error");
-      return res.status(500).json({ error: err?.message ?? "Failed to create checkout session" });
+      return res.status(500).json({ error: organizerCardError(err) });
     }
   }
 
@@ -915,7 +916,7 @@ router.post("/events/:eventId/registrations/:regId/add-rm-trackr", async (req, r
     try {
       const [club] = await db.select().from(clubsTable).where(eq(clubsTable.id, event.clubId));
       if (!club?.stripeAccountId) {
-        return res.status(400).json({ error: "Club has no Stripe account configured. Use cash payment instead." });
+        return res.status(400).json({ error: ORGANIZER_NO_STRIPE });
       }
 
       const stripe = await getUncachableStripeClient();
@@ -944,7 +945,7 @@ router.post("/events/:eventId/registrations/:regId/add-rm-trackr", async (req, r
       return res.json({ checkoutUrl: session.url, sessionId: session.id, price });
     } catch (err: any) {
       req.log?.error({ err: err?.message }, "[add-rm-trackr] Error");
-      return res.status(500).json({ error: err?.message ?? "Failed to create checkout session" });
+      return res.status(500).json({ error: organizerCardError(err) });
     }
   }
 
@@ -1785,14 +1786,11 @@ router.post("/public/events/:eventId/register", async (req, res) => {
         .where(inArray(liabilityWaiverSignaturesTable.registrationId, rolledBackIds));
       await db.delete(registrationsTable).where(inArray(registrationsTable.id, rolledBackIds));
       await releaseCompCodeUse();
-      const isConnectError = err?.message?.toLowerCase().includes("no such destination") || err?.message?.toLowerCase().includes("no such account");
       if (err?.code === "NO_CHECKOUT") {
         return res.status(503).json({ error: "This event can't take online payments right now, so registration couldn't be completed. Please contact the event organizer." });
       }
       return res.status(500).json({
-        error: isConnectError
-          ? "This club's Stripe payment account is not set up correctly. The organizer needs to reconnect their Stripe account in Settings → Payments."
-          : "Payment system unavailable. Please try again or contact the event organizer.",
+        error: riderCardError(err, "Card payments aren't working right now. Please try again in a few minutes, or contact the event organizer."),
       });
     }
   }

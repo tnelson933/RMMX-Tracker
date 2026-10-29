@@ -156,7 +156,13 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   const clientError = typeof pgCode === "string" && CLIENT_ERROR_PG_CODES.has(pgCode);
   const status = clientError ? 400 : typeof err?.status === "number" && err.status < 500 ? err.status : 500;
   if (status >= 500) (req as any).log?.error({ err }, "Unhandled API error");
-  res.status(status).json({ error: status === 500 ? "Something went wrong. Please try again." : clientError ? "Invalid request." : err?.message ?? "Request failed." });
+  res.status(status).json({
+    error: status === 500
+      ? "Something went wrong on our end. Please try again in a minute. If it keeps happening, ask the AI Assistant for help."
+      : clientError
+        ? "Some of the information sent wasn't valid. Check what you entered and try again."
+        : err?.message ?? "That didn't work. Please try again.",
+  });
 });
 
 export default app;

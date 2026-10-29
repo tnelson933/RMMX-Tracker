@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { clubsTable, usersTable, registrationsTable, eventsTable } from "@workspace/db";
 import { and, eq, gt, isNotNull, isNull, ne } from "drizzle-orm";
 import { getUncachableStripeClient } from "../stripeClient";
+import { isStripeAccountUnreachable } from "../lib/stripeErrors";
 
 const router = Router();
 
@@ -67,6 +68,9 @@ router.get("/stripe/connect/status", async (req, res) => {
 
   let accountEmail: string | null = null;
   let onboardingComplete = club.stripeOnboardingComplete ?? false;
+  // The saved account exists in the club row but RM Roost's Stripe can't use it
+  // (other mode or keys, or deleted): card payments fail until it's reconnected.
+  let needsReconnect = false;
 
   if (club.stripeAccountId) {
     try {
@@ -76,14 +80,16 @@ router.get("/stripe/connect/status", async (req, res) => {
 
       // Keep the stored state in step with Stripe, in both directions.
       onboardingComplete = await syncOnboardingState(auth.clubId, account, onboardingComplete);
-    } catch {
-      // non-fatal — email will just be null, onboardingComplete stays as-is
+    } catch (err) {
+      // Other failures are non-fatal: email stays null, onboardingComplete as-is.
+      if (isStripeAccountUnreachable(err)) needsReconnect = true;
     }
   }
 
   return res.json({
-    connected: !!club.stripeAccountId,
-    onboardingComplete,
+    connected: !!club.stripeAccountId && !needsReconnect,
+    onboardingComplete: needsReconnect ? false : onboardingComplete,
+    needsReconnect,
     accountId: club.stripeAccountId ?? null,
     email: accountEmail,
   });
@@ -124,6 +130,20 @@ router.post("/stripe/connect/start", async (req, res) => {
     if (!club) return res.status(404).json({ error: "Club not found" });
 
     let accountId = club.stripeAccountId;
+    // A saved account RM Roost's Stripe can't use (connected in the other mode or
+    // under other keys, or deleted) is replaced by a new one.
+    if (accountId) {
+      try {
+        await stripe.accounts.retrieve(accountId);
+      } catch (err) {
+        if (!isStripeAccountUnreachable(err)) throw err;
+        req.log?.warn({ clubId: auth.clubId }, "[stripe-connect] saved account unreachable; connecting a new one");
+        await db.update(clubsTable)
+          .set({ stripeAccountId: null, stripeOnboardingComplete: false })
+          .where(and(eq(clubsTable.id, auth.clubId), eq(clubsTable.stripeAccountId, accountId)));
+        accountId = null;
+      }
+    }
 
     const emailOverride = typeof req.body?.email === "string" && req.body.email.trim()
       ? req.body.email.trim()
@@ -140,7 +160,7 @@ router.post("/stripe/connect/start", async (req, res) => {
           card_payments: { requested: true },
           transfers: { requested: true },
         },
-      }, { idempotencyKey: `club-${auth.clubId}-connect-account` });
+      }, { idempotencyKey: `club-${auth.clubId}-connect-account-${club.stripeAccountId ?? "first"}` });
       const [stored] = await db
         .update(clubsTable)
         .set({ stripeAccountId: account.id, stripeOnboardingComplete: false })

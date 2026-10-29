@@ -18,6 +18,7 @@ import { canManageRider } from "../lib/riderAccess";
 import { resolvePurchaseOptions } from "../lib/purchaseOptions";
 import { getUncachableStripeClient } from "../stripeClient";
 import { confirmRegistrationSession } from "./registrations";
+import { riderCardError } from "../lib/stripeErrors";
 
 // Lets a rider fix what keeps them from Quick Check-In without staff:
 // pay an unfinished registration, sign the waiver, or add the transponder or
@@ -157,7 +158,7 @@ router.post("/rider/registrations/:regId/checkout", requireRiderAuth, async (req
     return res.json({ checkoutUrl: session.url, total: lineItems.reduce((s, li) => s + li.amount, 0) });
   } catch (err: any) {
     req.log?.error({ err: err?.message }, "[rider checkout] Stripe error");
-    return res.status(502).json({ error: "Couldn't start the payment. Please try again, or pay at the gate." });
+    return res.status(502).json({ error: riderCardError(err, "Couldn't start the payment. Please try again, or pay at the gate.") });
   }
 });
 

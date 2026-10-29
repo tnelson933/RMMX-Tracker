@@ -59,7 +59,7 @@ function useStripeConnectStatus() {
         const body = await res.json().catch(() => null);
         throw new Error(body?.error || `Failed to fetch Stripe Connect status (HTTP ${res.status})`);
       }
-      return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean; accountId: string | null; email?: string | null; source?: string }>;
+      return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean; needsReconnect?: boolean; accountId: string | null; email?: string | null; source?: string }>;
     },
     // Stripe onboarding opens in another tab (or, in RM Roost, the system
     // browser), so re-check whenever the organizer comes back to this window.
@@ -240,6 +240,16 @@ export default function StripeConnect() {
           <AlertCircle className="h-4 w-4 text-amber-600" />
           <AlertDescription className="text-amber-700">
             Stripe still needs a few details before your club can take payments and receive payouts.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {status?.needsReconnect && (
+        <Alert className="border-destructive/30 bg-destructive/5">
+          <AlertCircle className="h-4 w-4 text-destructive" />
+          <AlertDescription className="text-destructive">
+            Card payments aren't working: your club's saved Stripe account can't be reached (it was connected in test mode or under an
+            older setup, or removed in Stripe). Connect Stripe again below to take card payments.
           </AlertDescription>
         </Alert>
       )}
