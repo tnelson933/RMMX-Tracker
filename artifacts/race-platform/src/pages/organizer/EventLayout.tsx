@@ -86,7 +86,8 @@ export default function EventLayout() {
         </div>
         
         {/* Horizontal Sub-nav */}
-        <div className="flex gap-1 overflow-x-auto mt-6">
+        {/* Compact so every tab fits; wraps rather than scrolling on narrow screens. */}
+        <div className="flex flex-wrap gap-x-0.5 gap-y-1 mt-5">
           <NavLink href={`${basePath}`} exact icon={<Settings size={16} />}>Overview</NavLink>
           <NavLink href={`${basePath}/registrations`} icon={<Users size={16} />}>Registrations</NavLink>
           <NavLink href={`${basePath}/checkin`} icon={<CheckCircle size={16} />}>Check-In</NavLink>
@@ -134,7 +135,7 @@ function NavLink({ href, children, icon, exact = false, badge }: { href: string,
   return (
     <Link
       href={href}
-      className={`relative flex items-center gap-2 px-4 py-2.5 rounded-t font-heading uppercase text-sm font-bold tracking-wider transition-colors whitespace-nowrap border-b-2 ${
+      className={`relative flex items-center gap-1.5 px-2 py-2 rounded-t font-heading uppercase text-xs font-bold tracking-wide transition-colors whitespace-nowrap border-b-2 [&>svg]:w-3.5 [&>svg]:h-3.5 ${
         active
           ? "bg-background text-foreground border-primary"
           : "text-sidebar-foreground/60 hover:text-white hover:bg-white/10 border-transparent"
