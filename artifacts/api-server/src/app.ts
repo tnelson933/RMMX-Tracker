@@ -159,9 +159,12 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   res.status(status).json({
     error: status === 500
       ? "Something went wrong on our end. Please try again in a minute. If it keeps happening, ask the AI Assistant for help."
-      : clientError
-        ? "Some of the information sent wasn't valid. Check what you entered and try again."
-        : err?.message ?? "That didn't work. Please try again.",
+      : status === 413
+        ? "That's too much to send at once. Use a smaller file or fewer items, then try again."
+        // body-parser messages ("Unexpected token … in JSON") are technical, so they never pass through.
+        : clientError || typeof err?.type === "string"
+          ? "Some of the information sent wasn't valid. Check what you entered and try again."
+          : err?.message ?? "That didn't work. Please try again.",
   });
 });
 

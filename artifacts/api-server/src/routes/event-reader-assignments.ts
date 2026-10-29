@@ -8,20 +8,20 @@ const router = Router();
 
 async function authEvent(req: any, res: Response, eventId: number): Promise<boolean> {
   const userId = (req.session as any)?.userId;
-  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return false; }
+  if (!userId) { res.status(401).json({ error: "You're signed out. Sign in again, then try once more." }); return false; }
   const [ev] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
-  if (!ev) { res.status(404).json({ error: "Event not found" }); return false; }
+  if (!ev) { res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." }); return false; }
   const [user] = await db.select({ clubId: usersTable.clubId }).from(usersTable).where(eq(usersTable.id, userId));
   const staffClubId = res.locals.staffClubId;
   const restrictClub = typeof staffClubId === "number" ? staffClubId : user?.clubId ?? null;
-  if (restrictClub !== null && restrictClub !== ev.clubId) { res.status(403).json({ error: "Forbidden" }); return false; }
+  if (restrictClub !== null && restrictClub !== ev.clubId) { res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." }); return false; }
   return true;
 }
 
 // GET /events/:eventId/reader-assignments
 router.get("/events/:eventId/reader-assignments", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  if (!eventId) return res.status(400).json({ error: "Invalid eventId" });
+  if (!eventId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   if (!(await authEvent(req, res, eventId))) return;
 
   const rows = await db
@@ -35,12 +35,12 @@ router.get("/events/:eventId/reader-assignments", async (req, res) => {
 // PUT /events/:eventId/reader-assignments — replace all assignments for this event
 router.put("/events/:eventId/reader-assignments", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  if (!eventId) return res.status(400).json({ error: "Invalid eventId" });
+  if (!eventId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   if (!(await authEvent(req, res, eventId))) return;
 
   const body = req.body as { assignments?: unknown };
   if (!Array.isArray(body?.assignments)) {
-    return res.status(400).json({ error: "assignments array is required" });
+    return res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
   }
 
   // Verify all referenced readers belong to the event's club
@@ -53,7 +53,7 @@ router.put("/events/:eventId/reader-assignments", async (req, res) => {
       .where(and(eq(readersTable.clubId, ev!.clubId)));
     const ownedIds = new Set(ownedReaders.map((r) => r.id));
     const unowned = readerIds.filter((id) => !ownedIds.has(id));
-    if (unowned.length > 0) return res.status(403).json({ error: "One or more readers do not belong to this club" });
+    if (unowned.length > 0) return res.status(403).json({ error: "Some of these readers aren't on your club. Refresh Reader Setup and try again." });
   }
 
   const incoming = body.assignments.map((a: any) => ({
@@ -124,7 +124,7 @@ router.put("/events/:eventId/reader-assignments", async (req, res) => {
 // POST /events/:eventId/course/reset — follow the track's course again (copies it now).
 router.post("/events/:eventId/course/reset", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  if (!eventId) return res.status(400).json({ error: "Invalid eventId" });
+  if (!eventId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   if (!(await authEvent(req, res, eventId))) return;
   const [ev] = await db.select({ trackId: eventsTable.trackId }).from(eventsTable).where(eq(eventsTable.id, eventId));
   if (!ev?.trackId) return res.status(400).json({ error: "This event isn't linked to a Track Library track" });

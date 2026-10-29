@@ -75,7 +75,7 @@ async function requireLaptop(req: Request, res: Response) {
 
 router.post("/readers/pairing-codes", async (req, res) => {
   const caller = await callerClub(req);
-  if (!caller) return res.status(401).json({ error: "Unauthorized" });
+  if (!caller) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   // Any unused laptop code for this club is replaced, so only the newest one
   // works. Hand scanner codes (readerId set) are separate and stay valid.
   await db.update(connectorPairingCodesTable).set({ usedAt: new Date() })
@@ -97,7 +97,7 @@ router.post("/readers/pairing-codes", async (req, res) => {
 
 router.get("/readers/laptops", async (req, res) => {
   const caller = await callerClub(req);
-  if (!caller) return res.status(401).json({ error: "Unauthorized" });
+  if (!caller) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const rows = await db
     .select({ id: connectorLaptopsTable.id, name: connectorLaptopsTable.name, createdAt: connectorLaptopsTable.createdAt, lastSeenAt: connectorLaptopsTable.lastSeenAt })
     .from(connectorLaptopsTable)
@@ -108,11 +108,11 @@ router.get("/readers/laptops", async (req, res) => {
 
 router.delete("/readers/laptops/:id", async (req, res) => {
   const caller = await callerClub(req);
-  if (!caller) return res.status(401).json({ error: "Unauthorized" });
+  if (!caller) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const id = Number(req.params.id);
   const [laptop] = await db.select({ clubId: connectorLaptopsTable.clubId }).from(connectorLaptopsTable).where(eq(connectorLaptopsTable.id, id));
-  if (!laptop) return res.status(404).json({ error: "Laptop not found" });
-  if (laptop.clubId !== caller.clubId) return res.status(403).json({ error: "Forbidden" });
+  if (!laptop) return res.status(404).json({ error: "This laptop couldn't be found. It may have been deleted. Refresh Reader Setup." });
+  if (laptop.clubId !== caller.clubId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   await db.update(connectorLaptopsTable).set({ revokedAt: new Date() }).where(eq(connectorLaptopsTable.id, id));
   logger.info({ clubId: caller.clubId, laptopId: id, by: caller.userId }, "RM Connect laptop removed");
   return res.json({ ok: true });
@@ -186,7 +186,7 @@ router.post("/connector/laptop/readers", async (req, res) => {
   const laptop = await requireLaptop(req, res);
   if (!laptop) return;
   const name = typeof req.body?.name === "string" ? req.body.name.trim().slice(0, 60) : "";
-  if (!name) return res.status(400).json({ error: "Give the reader a name" });
+  if (!name) return res.status(400).json({ error: "Give the reader a name, like Finish Line." });
   const hardwareAddress = typeof req.body?.hardwareAddress === "string" ? req.body.hardwareAddress.trim() || null : null;
   const [reader] = await db.insert(readersTable)
     .values({ clubId: laptop.clubId, name, type: normalizeReaderType(req.body?.type), token: randomUUID(), hardwareAddress })
@@ -199,12 +199,12 @@ router.patch("/connector/laptop/readers/:id", async (req, res) => {
   if (!laptop) return;
   const id = Number(req.params.id);
   const [existing] = await db.select({ clubId: readersTable.clubId }).from(readersTable).where(eq(readersTable.id, id));
-  if (!existing) return res.status(404).json({ error: "Reader not found" });
-  if (existing.clubId !== laptop.clubId) return res.status(403).json({ error: "Forbidden" });
+  if (!existing) return res.status(404).json({ error: "This reader couldn't be found. It may have been deleted. Refresh Reader Setup." });
+  if (existing.clubId !== laptop.clubId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   const update: Record<string, unknown> = {};
   if (typeof req.body?.name === "string" && req.body.name.trim()) update.name = req.body.name.trim().slice(0, 60);
   if (typeof req.body?.hardwareAddress === "string") update.hardwareAddress = req.body.hardwareAddress.trim() || null;
-  if (Object.keys(update).length === 0) return res.status(400).json({ error: "Nothing to change" });
+  if (Object.keys(update).length === 0) return res.status(400).json({ error: "Nothing was changed. Edit a field, then save." });
   const [reader] = await db.update(readersTable).set(update).where(eq(readersTable.id, id)).returning();
   return res.json(publicReader(reader));
 });

@@ -27,19 +27,19 @@ const router = Router();
 async function authEvent(req: any, res: Response, eventId: number): Promise<boolean> {
   const userId = (req.session as any)?.userId;
   if (!userId) {
-    res.status(401).json({ error: "Unauthorized" });
+    res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
     return false;
   }
   const [ev] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
   if (!ev) {
-    res.status(404).json({ error: "Event not found" });
+    res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
     return false;
   }
   const [user] = await db.select({ clubId: usersTable.clubId }).from(usersTable).where(eq(usersTable.id, userId));
   const staffClubId = res.locals.staffClubId;
   const restrictClub = typeof staffClubId === "number" ? staffClubId : user?.clubId ?? null;
   if (restrictClub !== null && restrictClub !== ev.clubId) {
-    res.status(403).json({ error: "Forbidden" });
+    res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
     return false;
   }
   return true;
@@ -91,7 +91,7 @@ function sanitizePenaltyConfig(raw: unknown): EnduroPenaltyConfig | null {
 // GET /events/:eventId/time-checks — list time checks ordered by checkNumber
 router.get("/events/:eventId/time-checks", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  if (!eventId) return res.status(400).json({ error: "Invalid eventId" });
+  if (!eventId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   if (!(await authEvent(req, res, eventId))) return;
 
   const rows = await db
@@ -106,12 +106,12 @@ router.get("/events/:eventId/time-checks", async (req, res) => {
 // PUT /events/:eventId/time-checks — replace ALL time checks for the event + save penalty config
 router.put("/events/:eventId/time-checks", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  if (!eventId) return res.status(400).json({ error: "Invalid eventId" });
+  if (!eventId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   if (!(await authEvent(req, res, eventId))) return;
 
   const body = req.body as { timeChecks?: unknown; penaltyConfig?: unknown };
   if (!Array.isArray(body?.timeChecks)) {
-    return res.status(400).json({ error: "timeChecks array is required" });
+    return res.status(400).json({ error: "Add at least one time check." });
   }
 
   const incoming = body.timeChecks.map((tc: any, i: number) => ({
@@ -190,7 +190,7 @@ router.put("/events/:eventId/time-checks", async (req, res) => {
 router.get("/events/:eventId/time-checks/:checkId/arrivals", async (req, res) => {
   const eventId = Number(req.params.eventId);
   const checkId = Number(req.params.checkId);
-  if (!eventId || !checkId) return res.status(400).json({ error: "Invalid params" });
+  if (!eventId || !checkId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   if (!(await authEvent(req, res, eventId))) return;
 
   const arrivals = await db
@@ -226,20 +226,20 @@ router.get("/events/:eventId/time-checks/:checkId/arrivals", async (req, res) =>
 router.post("/events/:eventId/time-checks/:checkId/arrivals", async (req, res) => {
   const eventId = Number(req.params.eventId);
   const checkId = Number(req.params.checkId);
-  if (!eventId || !checkId) return res.status(400).json({ error: "Invalid params" });
+  if (!eventId || !checkId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   if (!(await authEvent(req, res, eventId))) return;
 
   const { riderId, arrivalTime } = req.body as { riderId?: unknown; arrivalTime?: unknown };
-  if (!riderId || !arrivalTime) return res.status(400).json({ error: "riderId and arrivalTime are required" });
+  if (!riderId || !arrivalTime) return res.status(400).json({ error: "Pick a rider and enter an arrival time." });
 
   const parsedArrival = new Date(arrivalTime as string);
-  if (isNaN(parsedArrival.getTime())) return res.status(400).json({ error: "Invalid arrivalTime" });
+  if (isNaN(parsedArrival.getTime())) return res.status(400).json({ error: "Enter a valid arrival time." });
 
   const [check] = await db
     .select({ id: enduroTimeChecksTable.id })
     .from(enduroTimeChecksTable)
     .where(and(eq(enduroTimeChecksTable.id, checkId), eq(enduroTimeChecksTable.eventId, eventId)));
-  if (!check) return res.status(404).json({ error: "Time check not found" });
+  if (!check) return res.status(404).json({ error: "This time check couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   const [arrival] = await db
     .insert(enduroCheckpointArrivalsTable)
@@ -267,7 +267,7 @@ router.delete("/events/:eventId/time-checks/:checkId/arrivals/:riderId", async (
   const eventId = Number(req.params.eventId);
   const checkId = Number(req.params.checkId);
   const riderId = Number(req.params.riderId);
-  if (!eventId || !checkId || !riderId) return res.status(400).json({ error: "Invalid params" });
+  if (!eventId || !checkId || !riderId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   if (!(await authEvent(req, res, eventId))) return;
 
   const deleted = await db
@@ -281,7 +281,7 @@ router.delete("/events/:eventId/time-checks/:checkId/arrivals/:riderId", async (
     )
     .returning();
 
-  if (deleted.length === 0) return res.status(404).json({ error: "Arrival not found" });
+  if (deleted.length === 0) return res.status(404).json({ error: "This arrival couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   // Recompute enduro standings so DQ/penalty status is removed immediately.
   recomputeEnduroPositionsForEvent(eventId).catch(() => {});
@@ -293,17 +293,17 @@ router.delete("/events/:eventId/time-checks/:checkId/arrivals/:riderId", async (
 // Accessible to authenticated event organizers OR when event results are published.
 router.get("/events/:eventId/penalty-summary", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  if (!eventId) return res.status(400).json({ error: "Invalid eventId" });
+  if (!eventId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   // The owning club (or a super admin) always sees it; everyone else — anonymous,
   // riders, other clubs' organizers/staff — only once results are published.
   const [owner] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
-  if (!owner) return res.status(404).json({ error: "Event not found" });
+  if (!owner) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
   if (!callerOwnsClub(res, owner.clubId)) {
     // Public once a test has finished (marked unofficial until finalized).
     const [finished] = await db.select({ id: motosTable.id }).from(motosTable)
       .where(and(eq(motosTable.eventId, eventId), eq(motosTable.status, "completed"))).limit(1);
-    if (!finished) return res.status(403).json({ error: "No results yet" });
+    if (!finished) return res.status(403).json({ error: "There are no results for this yet. Check back after the race." });
   }
 
   const [event] = await db

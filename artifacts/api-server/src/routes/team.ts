@@ -37,12 +37,12 @@ function getAppUrl(): string {
 async function requireOrganizerSession(req: any, res: any): Promise<{ userId: number; clubId: number } | null> {
   const sessionUserId = (req.session as any).userId;
   if (!sessionUserId) {
-    res.status(401).json({ error: "Not authenticated" });
+    res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
     return null;
   }
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, sessionUserId));
   if (!user || user.role !== "club_organizer" || !user.clubId) {
-    res.status(403).json({ error: "Forbidden" });
+    res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
     return null;
   }
   return { userId: user.id, clubId: user.clubId };
@@ -79,7 +79,7 @@ router.post("/organizer/team", async (req, res) => {
 
   const { name, email, permissions } = req.body;
   if (!name || !email) {
-    return res.status(400).json({ error: "name and email are required" });
+    return res.status(400).json({ error: "Enter a name and an email address." });
   }
 
   const trimmedEmail = String(email).toLowerCase().trim();
@@ -142,7 +142,7 @@ router.patch("/organizer/team/:userId", async (req, res) => {
     .where(and(eq(usersTable.id, userId), eq(usersTable.clubId, auth.clubId), eq(usersTable.role, "staff")));
 
   if (!member) {
-    return res.status(404).json({ error: "Team member not found" });
+    return res.status(404).json({ error: "This team member couldn't be found. It may have been deleted. Refresh the Team page." });
   }
 
   const { name, email, permissions, resendInvite } = req.body;
@@ -153,7 +153,7 @@ router.patch("/organizer/team/:userId", async (req, res) => {
     const trimmedEmail = String(email).toLowerCase().trim();
     if (trimmedEmail !== member.email) {
       const [dup] = await db.select().from(usersTable).where(eq(usersTable.email, trimmedEmail));
-      if (dup) return res.status(409).json({ error: "Email already in use" });
+      if (dup) return res.status(409).json({ error: "That email address already has an account. Use a different email, or sign in with it." });
       updates.email = trimmedEmail;
     }
   }
@@ -199,7 +199,7 @@ router.delete("/organizer/team/:userId", async (req, res) => {
   const userId = Number(req.params.userId);
 
   if (userId === auth.userId) {
-    return res.status(400).json({ error: "Cannot remove your own account" });
+    return res.status(400).json({ error: "You can't remove your own account. Ask another owner to do it." });
   }
 
   const [member] = await db
@@ -208,7 +208,7 @@ router.delete("/organizer/team/:userId", async (req, res) => {
     .where(and(eq(usersTable.id, userId), eq(usersTable.clubId, auth.clubId), eq(usersTable.role, "staff")));
 
   if (!member) {
-    return res.status(404).json({ error: "Team member not found" });
+    return res.status(404).json({ error: "This team member couldn't be found. It may have been deleted. Refresh the Team page." });
   }
 
   await db.delete(usersTable).where(eq(usersTable.id, userId));

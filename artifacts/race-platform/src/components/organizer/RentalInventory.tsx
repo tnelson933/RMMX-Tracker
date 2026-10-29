@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Radio, Plus, Trash2, Loader2, AlertTriangle, Archive, Search } from "lucide-react";
+import { responseErrorMessage } from "@/lib/friendlyErrors";
 
 export interface RentalUnit {
   id: number;
@@ -26,7 +27,7 @@ export function useRentalUnits(enabled = true) {
     enabled,
     queryFn: async () => {
       const res = await fetch("/api/rental-transponders", { credentials: "include" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(responseErrorMessage(res.status));
       return res.json();
     },
   });
@@ -65,7 +66,7 @@ export function RentalInventory() {
         body: JSON.stringify({ numbers }),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      if (!res.ok) throw new Error(responseErrorMessage(res.status, body));
       const parts = [`${body.added} added`];
       if (body.alreadyListed) parts.push(`${body.alreadyListed} already listed`);
       if (body.invalid?.length) parts.push(`not valid: ${body.invalid.slice(0, 5).join(", ")}`);
@@ -87,7 +88,7 @@ export function RentalInventory() {
         body: JSON.stringify(patch),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      if (!res.ok) throw new Error(responseErrorMessage(res.status, body));
       await refresh();
     } catch (err: any) {
       toast({ title: "Couldn't update the unit", description: String(err?.message ?? err), variant: "destructive" });
@@ -103,7 +104,7 @@ export function RentalInventory() {
       const res = await fetch(`/api/rental-transponders/${unit.id}`, { method: "DELETE", credentials: "include" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? `HTTP ${res.status}`);
+        throw new Error(responseErrorMessage(res.status, body));
       }
       await refresh();
     } catch (err: any) {

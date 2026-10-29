@@ -7,6 +7,7 @@ import {
   getGetRaceDaySummaryQueryKey,
   getListRegistrationsQueryKey,
 } from "@workspace/api-client-react";
+import { responseErrorMessage } from "@/lib/friendlyErrors";
 
 export function useSyncQueue(eventId: number) {
   const queryClient = useQueryClient();
@@ -65,9 +66,9 @@ export function useSyncQueue(eventId: number) {
           } else {
             await offlineDb.pendingMutations.update(mutation.id!, {
               attempts: mutation.attempts + 1,
-              lastError: `HTTP ${res.status}`,
+              lastError: responseErrorMessage(res.status),
             });
-            errors.push(`HTTP ${res.status}`);
+            errors.push(responseErrorMessage(res.status));
           }
         } catch (e) {
           const msg = e instanceof Error ? e.message : "Network error";

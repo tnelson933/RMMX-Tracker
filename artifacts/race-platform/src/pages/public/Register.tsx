@@ -23,6 +23,7 @@ import { format, parseISO } from "date-fns";
 import { formatEventDatesFull } from "@/lib/eventDates";
 
 import { PdfSignedViewer } from "@/components/PdfSignedViewer";
+import { responseErrorMessage } from "@/lib/friendlyErrors";
 
 // ─── PDF Scroll Viewer ───────────────────────────────────────────────────────
 // Renders each PDF page as a canvas inside a scrollable div so scroll-to-bottom
@@ -54,7 +55,7 @@ function PdfScrollViewer({ url, onScrolledToBottom }: { url: string; onScrolledT
         // Pre-fetch as ArrayBuffer so pdfjs never has to issue its own XHR
         // (avoids range-request issues behind the Replit proxy).
         const resp = await fetch(url, { credentials: "include" });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        if (!resp.ok) throw new Error(responseErrorMessage(resp.status));
         const data = await resp.arrayBuffer();
         if (cancelled) return;
         const doc = await pdfjsLib.getDocument({ data }).promise;
@@ -599,7 +600,7 @@ export default function Register() {
       fetch(`/api/public/events/${eventId}/check-bib?bib=${encodeURIComponent(bib)}`, { signal: controller.signal })
         .then(r => {
           // A failed check (rate limit, server error) must not read as "available".
-          if (!r.ok) throw new Error(`Bib check failed (HTTP ${r.status})`);
+          if (!r.ok) throw new Error(`Couldn\'t check that bib number. ${responseErrorMessage(r.status)}`);
           return r.json();
         })
         .then(data => setBibCheckState(data?.taken ? "taken" : "available"))

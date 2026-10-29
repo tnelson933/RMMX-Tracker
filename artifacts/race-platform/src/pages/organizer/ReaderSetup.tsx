@@ -20,6 +20,7 @@ import {
 import { ConnectionModeChooser } from "@/components/organizer/OfflineHardwareSetup";
 import { ConnectLaptop } from "@/components/organizer/ConnectLaptop";
 import { HandScanners } from "@/components/organizer/HandScanners";
+import { errorText } from "@/lib/friendlyErrors";
 
 const BASE_URL = window.location.origin;
 const PING_ENDPOINT_BASE = `${BASE_URL}/api/timing/ping`;
@@ -603,8 +604,8 @@ export default function ReaderSetup() {
       queryClient.invalidateQueries({ queryKey: getListReadersQueryKey() });
       setEditingId(null);
       toast({ title: "Reader updated" });
-    } catch {
-      toast({ title: "Failed to update reader", variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Couldn't update reader", description: errorText(err), variant: "destructive" });
     }
   }
 
@@ -619,8 +620,8 @@ export default function ReaderSetup() {
       setNewReaderAddress("");
       setShowAddReader(false);
       toast({ title: "Reader registered" });
-    } catch {
-      toast({ title: "Failed to register reader", variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Couldn't register reader", description: errorText(err), variant: "destructive" });
     }
   }
 
@@ -628,8 +629,8 @@ export default function ReaderSetup() {
     try {
       await deleteReaderMutation.mutateAsync({ readerId });
       queryClient.invalidateQueries({ queryKey: getListReadersQueryKey() });
-    } catch {
-      toast({ title: "Failed to remove reader", variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Couldn't remove reader", description: errorText(err), variant: "destructive" });
     }
   }
 
@@ -644,8 +645,8 @@ export default function ReaderSetup() {
       await rotateReaderMutation.mutateAsync({ readerId: reader.id });
       queryClient.invalidateQueries({ queryKey: getListReadersQueryKey() });
       toast({ title: "New reader URL issued", description: "Update the reader and RM Connect with the new URL." });
-    } catch {
-      toast({ title: "Failed to issue a new URL", variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Couldn't issue a new URL", description: errorText(err), variant: "destructive" });
     }
   }
 
@@ -675,7 +676,7 @@ export default function ReaderSetup() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setRfResult({ ok: false, message: data.error ?? "Failed to apply" });
+        setRfResult({ ok: false, message: data.error ?? "Couldn't apply" });
       } else {
         const sent: number = data.sent ?? 0;
         setRfResult({

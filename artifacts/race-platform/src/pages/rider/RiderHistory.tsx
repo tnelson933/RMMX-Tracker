@@ -48,6 +48,7 @@ import {
   type EventPracticeLeaderboardEntry,
   type PracticeLeaderboardEntry,
 } from "@/lib/rider-api";
+import { responseErrorMessage } from "@/lib/friendlyErrors";
 
 function positionBadge(pos: number) {
   if (pos === 1) return "bg-yellow-400/20 text-yellow-600 border-yellow-400/40";
@@ -394,7 +395,7 @@ function GarageCard({ riderId }: { riderId: number }) {
       setShowAdd(false);
       setAddForm({ manufacturer: "", model: "", year: "" });
     } catch {
-      setAddError("Failed to add bike. Please try again.");
+      setAddError("Couldn't add bike. Please try again.");
     } finally {
       setAddSaving(false);
     }
@@ -412,7 +413,7 @@ function GarageCard({ riderId }: { riderId: number }) {
       queryClient.invalidateQueries({ queryKey: ["rider-bikes", riderId] });
       queryClient.invalidateQueries({ queryKey: ["rider-profiles"] });
     } catch (err) {
-      setBikeError(err instanceof Error && err.message ? err.message : "Failed to remove bike. Please try again.");
+      setBikeError(err instanceof Error && err.message ? err.message : "Couldn't remove bike. Please try again.");
     } finally {
       setPendingBikeId(null);
     }
@@ -427,7 +428,7 @@ function GarageCard({ riderId }: { riderId: number }) {
       queryClient.invalidateQueries({ queryKey: ["rider-bikes", riderId] });
       queryClient.invalidateQueries({ queryKey: ["rider-profiles"] });
     } catch (err) {
-      setBikeError(err instanceof Error && err.message ? err.message : "Failed to set default bike. Please try again.");
+      setBikeError(err instanceof Error && err.message ? err.message : "Couldn't set default bike. Please try again.");
     } finally {
       setPendingBikeId(null);
     }
@@ -1424,7 +1425,7 @@ function NearMeTab({ riderEmail }: { riderEmail?: string | null }) {
     queryKey: ["public-upcoming-nearbytab"],
     queryFn: async () => {
       const r = await fetch("/api/public/upcoming");
-      if (!r.ok) throw new Error(`Failed to load upcoming events (HTTP ${r.status})`);
+      if (!r.ok) throw new Error(responseErrorMessage(r.status));
       const data = await r.json();
       return Array.isArray(data) ? data : [];
     },
@@ -2388,7 +2389,7 @@ export default function RiderHistory() {
       queryClient.invalidateQueries({ queryKey: ["rider-schedule", riderId] });
       setCancelModal(null);
     } catch (e) {
-      setCancelError((e as Error).message || "Failed to cancel registration");
+      setCancelError((e as Error).message || "Couldn't cancel registration");
     } finally {
       setCancelLoading(false);
     }

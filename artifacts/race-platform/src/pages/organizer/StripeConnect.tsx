@@ -21,6 +21,7 @@ import {
 import { CreditCard, CheckCircle2, AlertCircle, ExternalLink, Loader2, ArrowRight, Unlink, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { responseErrorMessage } from "@/lib/friendlyErrors";
 
 function LinkifiedStripeError({ message }: { message: string }) {
   const parts = message.split(/(https?:\/\/[^\s]+)/g);
@@ -57,7 +58,7 @@ function useStripeConnectStatus() {
       const res = await fetch("/api/stripe/connect/status", { credentials: "include" });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        throw new Error(body?.error || `Failed to fetch Stripe Connect status (HTTP ${res.status})`);
+        throw new Error(responseErrorMessage(res.status, body));
       }
       return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean; needsReconnect?: boolean; accountId: string | null; email?: string | null; source?: string }>;
     },
@@ -124,7 +125,7 @@ export default function StripeConnect() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error ?? "Failed to start Stripe Connect");
+        throw new Error(err.error ?? "Couldn't start Stripe Connect");
       }
       return res.json() as Promise<{ url: string }>;
     },
@@ -163,7 +164,7 @@ export default function StripeConnect() {
       const res = await fetch("/api/stripe/connect/dashboard-link", { credentials: "include" });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        throw new Error(body?.error ?? "Failed to open dashboard");
+        throw new Error(body?.error ?? "Couldn't open dashboard");
       }
       return res.json() as Promise<{ url: string }>;
     },
@@ -194,7 +195,7 @@ export default function StripeConnect() {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        throw new Error(body?.error ?? "Failed to disconnect");
+        throw new Error(body?.error ?? "Couldn't disconnect");
       }
       return res.json();
     },

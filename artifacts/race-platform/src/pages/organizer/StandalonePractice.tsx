@@ -23,6 +23,7 @@ import {
   LayoutList,
   Activity,
 } from "lucide-react";
+import { responseErrorMessage, errorText } from "@/lib/friendlyErrors";
 
 function formatMs(ms: number | null | undefined): string {
   if (!ms || ms <= 0) return "—";
@@ -197,7 +198,7 @@ export default function StandalonePractice() {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        throw new Error(body?.error || `Request failed (HTTP ${res.status})`);
+        throw new Error(responseErrorMessage(res.status, body));
       }
       const session: PracticeSession = await res.json();
       setSessions(prev => [session, ...prev]);
@@ -211,7 +212,7 @@ export default function StandalonePractice() {
       toast({ title: "Practice session created" });
     } catch (err) {
       toast({
-        title: "Failed to create session",
+        title: "Couldn't create session",
         description: err instanceof Error && err.message ? err.message : undefined,
         variant: "destructive",
       });
@@ -238,8 +239,8 @@ export default function StandalonePractice() {
     try {
       await patchSession(id, { status: "active" });
       toast({ title: "Practice session started" });
-    } catch {
-      toast({ title: "Failed to start session", variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Couldn't start session", description: errorText(err), variant: "destructive" });
     }
   }
 
@@ -247,8 +248,8 @@ export default function StandalonePractice() {
     try {
       await patchSession(id, { status: "ended" });
       toast({ title: "Practice session ended" });
-    } catch {
-      toast({ title: "Failed to end session", variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Couldn't end session", description: errorText(err), variant: "destructive" });
     }
   }
 
@@ -262,8 +263,8 @@ export default function StandalonePractice() {
         setSelectedId(remaining[0]?.id ?? null);
       }
       toast({ title: "Session deleted" });
-    } catch {
-      toast({ title: "Failed to delete session", variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Couldn't delete session", description: errorText(err), variant: "destructive" });
     }
   }
 

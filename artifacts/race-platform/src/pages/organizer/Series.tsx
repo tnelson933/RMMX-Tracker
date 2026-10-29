@@ -80,7 +80,7 @@ export default function SeriesManagement() {
         toast({ title: "Series updated" });
       },
       onError: (err) => {
-        toast({ title: "Failed to update", description: err.message, variant: "destructive" });
+        toast({ title: "Couldn't update", description: err.message, variant: "destructive" });
       },
     });
   };
@@ -124,7 +124,7 @@ export default function SeriesManagement() {
         toast({ title: "Series created successfully" });
       },
       onError: (err) => {
-        toast({ title: "Failed to create series", description: err.message, variant: "destructive" });
+        toast({ title: "Couldn't create series", description: err.message, variant: "destructive" });
       }
     });
   };

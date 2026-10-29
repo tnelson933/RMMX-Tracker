@@ -24,6 +24,7 @@ import { useToast } from "@/hooks/use-toast";
 import { TransponderRequirementTip } from "@/components/organizer/TransponderRequirementTip";
 import { eventTimingTags, timingTagsLabel } from "@/components/organizer/timingTags";
 import { DEFAULT_QUICK_CHECKIN_REQUIREMENTS, QuickCheckinRequirementsDialog, quickCheckinRequirementsSummary, toQuickCheckinRequirements } from "@/components/organizer/QuickCheckinRequirements";
+import { responseErrorMessage } from "@/lib/friendlyErrors";
 
 const TIME_OPTIONS: string[] = [];
 for (let h = 0; h < 24; h++) {
@@ -466,7 +467,7 @@ export default function EventsList() {
     try {
       newEvent = await createMutation.mutateAsync({ data: buildCreatePayload(data, clubId, draft) } as any);
     } catch (err: any) {
-      toast({ title: draft ? "Failed to save draft" : "Failed to create event", description: err.message, variant: "destructive" });
+      toast({ title: draft ? "Couldn't save draft" : "Couldn't create event", description: err.message, variant: "destructive" });
       return;
     }
 
@@ -509,7 +510,7 @@ export default function EventsList() {
             zip: manualTrackZip.trim() || undefined,
           }),
         });
-        if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${r.status}`);
+        if (!r.ok) throw new Error(responseErrorMessage(r.status, await r.json().catch(() => ({}))));
         const track = await r.json();
         setTrackLibrary(prev => [...prev, track].sort((a, b) => a.name.localeCompare(b.name)));
       } else if (selectedLibraryTrackId) {
@@ -524,7 +525,7 @@ export default function EventsList() {
             zip: manualTrackZip.trim() || null,
           }),
         });
-        if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${r.status}`);
+        if (!r.ok) throw new Error(responseErrorMessage(r.status, await r.json().catch(() => ({}))));
         const track = await r.json();
         setTrackLibrary(prev => prev.map(t => t.id === selectedLibraryTrackId ? track : t));
       }

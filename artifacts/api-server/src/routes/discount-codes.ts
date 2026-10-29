@@ -79,10 +79,10 @@ function parseExpiresAt(raw: unknown): Date | null | undefined {
 
 router.get("/discount-codes", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const clubId = await getClubId(userId);
-  if (!clubId) return res.status(403).json({ error: "No club associated with account" });
+  if (!clubId) return res.status(403).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
 
   const filterRiderId = req.query.riderId ? Number(req.query.riderId) : null;
 
@@ -136,22 +136,22 @@ router.get("/discount-codes", async (req, res) => {
 
 router.post("/discount-codes", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const clubId = await getClubId(userId);
-  if (!clubId) return res.status(403).json({ error: "No club associated with account" });
+  if (!clubId) return res.status(403).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
 
   const { code: customCode, discountType = "fixed", amount, maxUses, expiresAt, categoryIds, riderId } = req.body;
 
   if (discountType !== "fixed" && discountType !== "percentage") {
-    return res.status(400).json({ error: "discountType must be fixed or percentage" });
+    return res.status(400).json({ error: "Choose a dollar amount or a percentage discount." });
   }
   const amountNum = Number(amount);
   if (amount == null || amount === "" || !Number.isFinite(amountNum) || amountNum <= 0) {
-    return res.status(400).json({ error: "Amount required and must be greater than 0" });
+    return res.status(400).json({ error: "Enter an amount greater than $0." });
   }
   if (discountType === "percentage" && amountNum > 100) {
-    return res.status(400).json({ error: "Percentage discount cannot exceed 100%" });
+    return res.status(400).json({ error: "A percentage discount can't be more than 100%." });
   }
 
   const riderIdParsed = await parseRiderId(riderId, clubId);
@@ -159,18 +159,18 @@ router.post("/discount-codes", async (req, res) => {
   const riderIdNum = riderIdParsed;
 
   const maxUsesNum = maxUses === undefined ? 1 : parseMaxUses(maxUses);
-  if (maxUsesNum === undefined) return res.status(400).json({ error: "maxUses must be a whole number of 1 or more (or -1 for unlimited)" });
+  if (maxUsesNum === undefined) return res.status(400).json({ error: "Enter how many times the code can be used (1 or more), or choose Unlimited." });
 
   const categoryIdsParsed = await parseCategoryIds(categoryIds, clubId);
   if (typeof categoryIdsParsed === "string") return res.status(400).json({ error: categoryIdsParsed });
 
   const expiresAtDate = parseExpiresAt(expiresAt);
-  if (expiresAtDate === undefined) return res.status(400).json({ error: "Invalid expiry date" });
+  if (expiresAtDate === undefined) return res.status(400).json({ error: "Enter a valid expiry date." });
 
   let codeStr: string;
   if (customCode) {
     codeStr = String(customCode).trim().toUpperCase();
-    if (!codeStr) return res.status(400).json({ error: "Code string cannot be empty" });
+    if (!codeStr) return res.status(400).json({ error: "Enter a code." });
   } else {
     let generated = false;
     let attempts = 0;
@@ -223,7 +223,7 @@ router.post("/discount-codes", async (req, res) => {
     });
   } catch (err: any) {
     if (err?.code === "23505") {
-      return res.status(409).json({ error: "A code with that string already exists" });
+      return res.status(409).json({ error: "That code is already in use. Pick a different code." });
     }
     throw err;
   }
@@ -231,25 +231,25 @@ router.post("/discount-codes", async (req, res) => {
 
 router.patch("/discount-codes/:codeId", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const clubId = await getClubId(userId);
-  if (!clubId) return res.status(403).json({ error: "No club associated with account" });
+  if (!clubId) return res.status(403).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
 
   const codeId = Number(req.params.codeId);
-  if (!Number.isInteger(codeId) || codeId <= 0) return res.status(404).json({ error: "Discount code not found" });
+  if (!Number.isInteger(codeId) || codeId <= 0) return res.status(404).json({ error: "This discount code couldn't be found. It may have been deleted. Refresh the page and try again." });
   const [current] = await db.select().from(compCodesTable)
     .where(and(eq(compCodesTable.id, codeId), eq(compCodesTable.clubId, clubId)));
-  if (!current) return res.status(404).json({ error: "Discount code not found" });
+  if (!current) return res.status(404).json({ error: "This discount code couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   const updates: Record<string, unknown> = {};
   if (req.body.isActive !== undefined) {
-    if (typeof req.body.isActive !== "boolean") return res.status(400).json({ error: "isActive must be true or false" });
+    if (typeof req.body.isActive !== "boolean") return res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
     updates.isActive = req.body.isActive;
   }
   if (req.body.discountType !== undefined) {
     if (req.body.discountType !== "fixed" && req.body.discountType !== "percentage") {
-      return res.status(400).json({ error: "discountType must be fixed or percentage" });
+      return res.status(400).json({ error: "Choose a dollar amount or a percentage discount." });
     }
     updates.discountType = req.body.discountType;
   }
@@ -257,17 +257,17 @@ router.patch("/discount-codes/:codeId", async (req, res) => {
   if (req.body.amount !== undefined) {
     amt = Number(req.body.amount);
     if (req.body.amount === null || req.body.amount === "" || !Number.isFinite(amt) || amt <= 0) {
-      return res.status(400).json({ error: "Amount must be greater than 0" });
+      return res.status(400).json({ error: "Enter an amount greater than $0." });
     }
     updates.amount = amt.toFixed(2);
   }
   // Check the percentage cap against the type the code will have after this change,
   // whether the request changes the type, the amount, or both.
   const effectiveType = (updates.discountType as string | undefined) ?? current.discountType;
-  if (effectiveType === "percentage" && amt > 100) return res.status(400).json({ error: "Percentage cannot exceed 100%" });
+  if (effectiveType === "percentage" && amt > 100) return res.status(400).json({ error: "A percentage discount can't be more than 100%." });
   if (req.body.maxUses !== undefined) {
     const parsed = parseMaxUses(req.body.maxUses);
-    if (parsed === undefined) return res.status(400).json({ error: "maxUses must be a whole number of 1 or more (or -1 for unlimited)" });
+    if (parsed === undefined) return res.status(400).json({ error: "Enter how many times the code can be used (1 or more), or choose Unlimited." });
     updates.maxUses = parsed;
   }
   if ("riderId" in req.body) {
@@ -277,7 +277,7 @@ router.patch("/discount-codes/:codeId", async (req, res) => {
   }
   if (req.body.expiresAt !== undefined) {
     const parsed = parseExpiresAt(req.body.expiresAt);
-    if (parsed === undefined) return res.status(400).json({ error: "Invalid expiry date" });
+    if (parsed === undefined) return res.status(400).json({ error: "Enter a valid expiry date." });
     updates.expiresAt = parsed;
   }
   if (req.body.categoryIds !== undefined) {
@@ -285,14 +285,14 @@ router.patch("/discount-codes/:codeId", async (req, res) => {
     if (typeof parsed === "string") return res.status(400).json({ error: parsed });
     updates.categoryIds = parsed;
   }
-  if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Nothing to update" });
+  if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Nothing was changed. Edit a field, then save." });
 
   const [row] = await db.update(compCodesTable)
     .set(updates as any)
     .where(and(eq(compCodesTable.id, codeId), eq(compCodesTable.clubId, clubId)))
     .returning();
 
-  if (!row) return res.status(404).json({ error: "Discount code not found" });
+  if (!row) return res.status(404).json({ error: "This discount code couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   let riderName: string | null = null;
   if (row.riderId) {
@@ -322,10 +322,10 @@ router.patch("/discount-codes/:codeId", async (req, res) => {
 
 router.get("/discount-codes/:codeId/usage", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const clubId = await getClubId(userId);
-  if (!clubId) return res.status(403).json({ error: "No club associated with account" });
+  if (!clubId) return res.status(403).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
 
   const codeId = Number(req.params.codeId);
 
@@ -333,7 +333,7 @@ router.get("/discount-codes/:codeId/usage", async (req, res) => {
     .from(compCodesTable)
     .where(and(eq(compCodesTable.id, codeId), eq(compCodesTable.clubId, clubId)));
 
-  if (!codeRow) return res.status(404).json({ error: "Discount code not found" });
+  if (!codeRow) return res.status(404).json({ error: "This discount code couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   const rows = await db
     .select({
@@ -369,17 +369,17 @@ router.get("/discount-codes/:codeId/usage", async (req, res) => {
 
 router.delete("/discount-codes/:codeId", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const clubId = await getClubId(userId);
-  if (!clubId) return res.status(403).json({ error: "No club associated with account" });
+  if (!clubId) return res.status(403).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
 
   const codeId = Number(req.params.codeId);
   const [deleted] = await db.delete(compCodesTable)
     .where(and(eq(compCodesTable.id, codeId), eq(compCodesTable.clubId, clubId)))
     .returning();
 
-  if (!deleted) return res.status(404).json({ error: "Discount code not found" });
+  if (!deleted) return res.status(404).json({ error: "This discount code couldn't be found. It may have been deleted. Refresh the page and try again." });
   return res.json({ ok: true });
 });
 

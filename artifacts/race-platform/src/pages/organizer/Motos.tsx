@@ -41,6 +41,7 @@ import {
   registerAcceptedCrossing,
   shouldPlayAcceptedCrossing,
 } from "@/lib/liveTimingAudio";
+import { responseErrorMessage, errorText } from "@/lib/friendlyErrors";
 
 type RawCrossing = {
   id: number;
@@ -405,7 +406,7 @@ function EnduroOpenRuns({ motoId }: { motoId: number }) {
     queryKey,
     queryFn: async () => {
       const res = await fetch(`/api/motos/${motoId}/open-runs`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to load open runs");
+      if (!res.ok) throw new Error("Couldn't load open runs");
       return res.json();
     },
     refetchInterval: 10_000,
@@ -418,7 +419,7 @@ function EnduroOpenRuns({ motoId }: { motoId: number }) {
       const res = await fetch(`/api/motos/${motoId}/riders/${run.riderId}/close-run`, { method: "POST", credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast({ title: "Could not void start", description: data.error ?? "Unknown error", variant: "destructive" });
+        toast({ title: "Could not void start", description: data.error ?? "Try again in a moment.", variant: "destructive" });
       } else {
         toast({ title: `Start voided — ${run.riderName}`, description: "Their next read starts a fresh run." });
       }
@@ -503,14 +504,14 @@ function LiveCrossingsFeed({ motoId, minLapTimeMs, isEnduro }: { motoId: number;
       const res = await fetch(`/api/timing/crossings/${crossingId}`, { method: "DELETE" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        toast({ title: "Failed to delete crossing", description: body.error ?? "Unknown error", variant: "destructive" });
+        toast({ title: "Couldn't delete crossing", description: body.error ?? "Try again in a moment.", variant: "destructive" });
         return;
       }
       toast({ title: "Crossing deleted", description: "Lap times recalculated." });
       await fetchCrossings();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Could not reach server";
-      toast({ title: "Failed to delete crossing", description: msg, variant: "destructive" });
+      toast({ title: "Couldn't delete crossing", description: msg, variant: "destructive" });
     } finally {
       setDeletingId(null);
     }
@@ -935,7 +936,7 @@ function LapTimesDialog({ target, onClose }: { target: LapEditTarget; onClose: (
     setLoading(true);
     fetch(`/api/events/${target.eventId}/results`)
       .then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        if (!r.ok) throw new Error(responseErrorMessage(r.status));
         return r.json();
       })
       .then((results: any[]) => {
@@ -952,7 +953,7 @@ function LapTimesDialog({ target, onClose }: { target: LapEditTarget; onClose: (
           setLaps([]);
         }
       })
-      .catch(() => toast({ title: "Failed to load lap times", variant: "destructive" }))
+      .catch((err) => toast({ title: "Couldn't load lap times", description: errorText(err), variant: "destructive" }))
       .finally(() => setLoading(false));
   }, [target.eventId, target.motoId, target.riderId]);
 
@@ -976,7 +977,7 @@ function LapTimesDialog({ target, onClose }: { target: LapEditTarget; onClose: (
           onClose();
         },
         onError: (err: any) => {
-          toast({ title: "Failed to save", description: err?.message ?? "Unknown error", variant: "destructive" });
+          toast({ title: "Couldn't save", description: err?.message ?? "Try again in a moment.", variant: "destructive" });
         },
       }
     );
@@ -1444,7 +1445,7 @@ export default function Motos() {
           toast({ title: `+ ${newName} added — drag it into position` });
         },
         onError: (err) => {
-          toast({ title: "Failed to create", description: err.message, variant: "destructive" });
+          toast({ title: "Couldn't create", description: err.message, variant: "destructive" });
         },
       }
     );
@@ -1505,9 +1506,9 @@ export default function Motos() {
         setLocalOrderIds(null);
       });
       toast({ title: "✅ Order updated" });
-    } catch {
+    } catch (err) {
       setLocalOrderIds(null);
-      toast({ title: "Failed to reorder", variant: "destructive" });
+      toast({ title: "Couldn't reorder", description: errorText(err), variant: "destructive" });
     }
   };
 
@@ -1537,9 +1538,9 @@ export default function Motos() {
           setLineupDrafts(p => { const n = { ...p }; delete n[targetMotoId]; return n; });
           toast({ title: `✅ ${(checkin as any).riderName ?? "Rider"} added to ${targetMoto.name}` });
         },
-        onError: () => {
+        onError: (err) => {
           setLineupDrafts(p => { const n = { ...p }; delete n[targetMotoId]; return n; });
-          toast({ title: "Failed to add rider", variant: "destructive" });
+          toast({ title: "Couldn't add rider", description: errorText(err), variant: "destructive" });
         },
       }
     );
@@ -1604,8 +1605,8 @@ export default function Motos() {
       }).then(() => {
         queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) as any });
         toast({ title: `🗑 ${c?.riderName ?? "Rider"} removed from check-in` });
-      }).catch(() => {
-        toast({ title: "Failed to remove rider", variant: "destructive" });
+      }).catch((err) => {
+        toast({ title: "Couldn't remove rider", description: errorText(err), variant: "destructive" });
       });
       return;
     }
@@ -1675,9 +1676,9 @@ export default function Motos() {
             setLineupDrafts(p => { const n = { ...p }; delete n[sourceMotoId]; return n; });
             toast({ title: `✅ Gate pick order updated` });
           },
-          onError: () => {
+          onError: (err) => {
             setLineupDrafts(p => { const n = { ...p }; delete n[sourceMotoId]; return n; });
-            toast({ title: "Failed to reorder", variant: "destructive" });
+            toast({ title: "Couldn't reorder", description: errorText(err), variant: "destructive" });
           },
         }
       );
@@ -1779,7 +1780,7 @@ export default function Motos() {
             toast({ title: `${sessions.length} practice session${sessions.length !== 1 ? "s" : ""} created` });
           },
           onError: (err) => {
-            toast({ title: "Failed to create sessions", description: err.message, variant: "destructive" });
+            toast({ title: "Couldn't create sessions", description: err.message, variant: "destructive" });
           },
         }
       );
@@ -1830,7 +1831,7 @@ export default function Motos() {
           toast({ title: isEnduro ? "Test created" : "Moto created" });
         },
         onError: (err) => {
-          toast({ title: "Failed to create moto", description: err.message, variant: "destructive" });
+          toast({ title: "Couldn't create moto", description: err.message, variant: "destructive" });
         },
       }
     );
@@ -1871,7 +1872,7 @@ export default function Motos() {
           }
         },
         onError: (err) => {
-          toast({ title: "Failed to generate", description: err.message, variant: "destructive" });
+          toast({ title: "Couldn't generate", description: err.message, variant: "destructive" });
         },
       }
     );
@@ -1888,7 +1889,7 @@ export default function Motos() {
           toast({ title: "Lineup regenerated", description: perMotoDialog.motoName });
         },
         onError: (err: any) => {
-          toast({ title: "Failed to regenerate", description: err.message, variant: "destructive" });
+          toast({ title: "Couldn't regenerate", description: err.message, variant: "destructive" });
         },
       }
     );
@@ -1902,7 +1903,7 @@ export default function Motos() {
         toast({ title: "Moto deleted" });
       },
       onError: (err) => {
-        toast({ title: "Failed to delete", description: err.message, variant: "destructive" });
+        toast({ title: "Couldn't delete", description: err.message, variant: "destructive" });
       },
     });
   };
@@ -1956,7 +1957,7 @@ export default function Motos() {
       toast({ title: partnerIds.length > 0 ? `🏁 Staggered start — ${groupMembers.length} motos now live` : `🏁 Moto started — ${timingLabel} timing active` });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Could not start moto";
-      toast({ title: "Failed to start moto", description: msg, variant: "destructive" });
+      toast({ title: "Couldn't start moto", description: msg, variant: "destructive" });
     }
   });
 
@@ -2029,7 +2030,7 @@ export default function Motos() {
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Could not finish moto";
-      toast({ title: "Failed to finish moto", description: msg, variant: "destructive" });
+      toast({ title: "Couldn't finish moto", description: msg, variant: "destructive" });
     }
   });
 
@@ -2100,8 +2101,8 @@ export default function Motos() {
       ]);
       await queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
       toast({ title: partnerIds.length > 0 ? `🔄 Group restarted — ${groupMembers.length} motos` : `🔄 Moto restarted: ${motoName}` });
-    } catch {
-      toast({ title: "Failed to restart moto", variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Couldn't restart moto", description: errorText(err), variant: "destructive" });
     }
   };
 
@@ -2117,8 +2118,8 @@ export default function Motos() {
       await queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
       await queryClient.refetchQueries({ queryKey: getListMotosQueryKey(eventId) });
       toast({ title: "⏸ Moto paused" });
-    } catch {
-      toast({ title: "Failed to pause moto", variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Couldn't pause moto", description: errorText(err), variant: "destructive" });
     }
   });
 
@@ -2129,8 +2130,8 @@ export default function Motos() {
       await queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
       await queryClient.refetchQueries({ queryKey: getListMotosQueryKey(eventId) });
       toast({ title: "▶ Moto resumed" });
-    } catch {
-      toast({ title: "Failed to resume moto", variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Couldn't resume moto", description: errorText(err), variant: "destructive" });
     }
   });
 
@@ -2153,8 +2154,8 @@ export default function Motos() {
           toast({ title: `Moto ended: ${existingMoto.name}` });
           doStartMoto(pendingMotoId);
         },
-        onError: () => {
-          toast({ title: "Failed to end current moto", variant: "destructive" });
+        onError: (err) => {
+          toast({ title: "Couldn't end current moto", description: errorText(err), variant: "destructive" });
         },
       }
     );
@@ -2194,7 +2195,7 @@ export default function Motos() {
       const data = await res.json();
       if (!res.ok) {
         discardManualOptimisticPing(motoId);
-        toast({ title: "Failed to record lap", description: data.error ?? "Unknown error", variant: "destructive" });
+        toast({ title: "Couldn't record lap", description: data.error ?? "Try again in a moment.", variant: "destructive" });
       } else if (data.enduroAction === "started") {
         toast({ title: `🟢 Pass ${data.lapNumber} started`, description: "Clock running — enter the same # again to finish." });
       } else if (data.enduroAction === "finished") {
@@ -2208,7 +2209,7 @@ export default function Motos() {
     } catch (err: unknown) {
       discardManualOptimisticPing(motoId);
       const msg = err instanceof Error ? err.message : "Could not reach server";
-      toast({ title: "Failed to record lap", description: msg, variant: "destructive" });
+      toast({ title: "Couldn't record lap", description: msg, variant: "destructive" });
     } finally {
       setTimeout(() => {
         setManualLapCooldown(prev => {
@@ -4445,7 +4446,7 @@ export default function Motos() {
                 toast({ title: "Stagger order updated" });
               },
               onError: (err: any) => {
-                toast({ title: "Failed to update order", description: err.message, variant: "destructive" });
+                toast({ title: "Couldn't update order", description: err.message, variant: "destructive" });
               },
             }
           );

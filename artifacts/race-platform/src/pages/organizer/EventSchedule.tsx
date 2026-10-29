@@ -47,6 +47,7 @@ import {
   Users, Search, Settings, ChevronLeft, ChevronRight, Pencil, Timer, Check, X, ChevronDown, Trash2, Link2, Unlink2,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { errorText } from "@/lib/friendlyErrors";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -1676,7 +1677,7 @@ export default function EventSchedule() {
           toast({ title: `✅ Riders advanced to ${raceClass} Main Event` });
         },
         onError: (err) => {
-          toast({ title: "Failed to advance riders", description: err.message, variant: "destructive" });
+          toast({ title: "Couldn't advance riders", description: err.message, variant: "destructive" });
         },
       }
     );
@@ -1777,7 +1778,7 @@ export default function EventSchedule() {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) as any });
           toast({ title: "Rider removed" });
         },
-        onError: () => toast({ title: "Failed to remove rider", variant: "destructive" }),
+        onError: (err) => toast({ title: "Couldn't remove rider", description: errorText(err), variant: "destructive" }),
       }
     );
   }, [rawMotos, updateMutation, queryClient, eventId, toast]);
@@ -1823,7 +1824,7 @@ export default function EventSchedule() {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) as any });
           toast({ title: `Rider moved to ${targetMoto.name}` });
         },
-        onError: () => toast({ title: "Failed to move rider", variant: "destructive" }),
+        onError: (err) => toast({ title: "Couldn't move rider", description: errorText(err), variant: "destructive" }),
       }
     );
   }, [rawMotos, updateMutation, queryClient, eventId, toast]);
@@ -1966,8 +1967,8 @@ export default function EventSchedule() {
             queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) as any });
             toast({ title: `${checkin.riderName ?? "Rider"} added to ${targetMoto.name}` });
           },
-          onError: () => {
-            toast({ title: "Failed to add rider", variant: "destructive" });
+          onError: (err) => {
+            toast({ title: "Couldn't add rider", description: errorText(err), variant: "destructive" });
           },
         }
       );
@@ -2022,9 +2023,9 @@ export default function EventSchedule() {
             setLocalOrder(null);
           });
         },
-        onError: () => {
+        onError: (err) => {
           setLocalOrder(null);
-          toast({ title: "Failed to save order", variant: "destructive" });
+          toast({ title: "Couldn't save order", description: errorText(err), variant: "destructive" });
         },
       }
     );
@@ -2051,8 +2052,8 @@ export default function EventSchedule() {
           setEditingNameId(null);
           toast({ title: "Name updated" });
         },
-        onError: () => {
-          toast({ title: "Failed to save name", variant: "destructive" });
+        onError: (err) => {
+          toast({ title: "Couldn't save name", description: errorText(err), variant: "destructive" });
           setEditingNameId(null);
         },
       }
@@ -2146,7 +2147,7 @@ export default function EventSchedule() {
           }
         },
         onError: (err) => {
-          toast({ title: "Failed to generate", description: (err as Error).message, variant: "destructive" });
+          toast({ title: "Couldn't generate", description: (err as Error).message, variant: "destructive" });
         },
       }
     );
@@ -2233,7 +2234,7 @@ export default function EventSchedule() {
     } catch (err) {
       queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
       toast({
-        title: created > 0 ? `Created ${created} of ${count} tests` : "Failed to generate tests",
+        title: created > 0 ? `Created ${created} of ${count} tests` : "Couldn't generate tests",
         description: (err as Error).message,
         variant: "destructive",
       });
@@ -2297,7 +2298,7 @@ export default function EventSchedule() {
         },
         onError: (error) => {
           toast({
-            title: isEnduro ? "Failed to add test" : "Failed to add moto",
+            title: isEnduro ? "Couldn't add test" : "Couldn't add moto",
             description: (error as Error).message,
             variant: "destructive",
           });
@@ -2356,7 +2357,7 @@ export default function EventSchedule() {
         .then(async (r) => {
           if (!r.ok) {
             const err = await r.json().catch(() => ({}));
-            throw new Error((err as any).error ?? "Failed to generate practice sessions");
+            throw new Error((err as any).error ?? "Couldn't generate practice sessions");
           }
           return r.json() as Promise<unknown[]>;
         })
@@ -2397,8 +2398,8 @@ export default function EventSchedule() {
           setShowPracticeDialog(false);
           toast({ title: "Practice added" });
         },
-        onError: () => {
-          toast({ title: "Failed to add practice", variant: "destructive" });
+        onError: (err) => {
+          toast({ title: "Couldn't add practice", description: errorText(err), variant: "destructive" });
         },
       }
     );
@@ -3253,7 +3254,7 @@ export default function EventSchedule() {
                           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) as any });
                           toast({ title: `🔗 Stagger group linked — ${orderedIds.length} motos` });
                         },
-                        onError: () => toast({ title: "Failed to link stagger", variant: "destructive" }),
+                        onError: (err) => toast({ title: "Couldn't link stagger", description: errorText(err), variant: "destructive" }),
                       }
                     );
                     setStaggerPendingGroup(null);
@@ -3305,7 +3306,7 @@ export default function EventSchedule() {
                       }
                       toast({ title: "Moto deleted" });
                     },
-                    onError: () => toast({ title: "Failed to delete moto", variant: "destructive" }),
+                    onError: (err) => toast({ title: "Couldn't delete moto", description: errorText(err), variant: "destructive" }),
                   }
                 );
               }}
@@ -3339,7 +3340,7 @@ export default function EventSchedule() {
                       queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
                       toast({ title: "All motos deleted" });
                     },
-                    onError: () => toast({ title: "Failed to delete motos", variant: "destructive" }),
+                    onError: (err) => toast({ title: "Couldn't delete motos", description: errorText(err), variant: "destructive" }),
                   }
                 );
               }}

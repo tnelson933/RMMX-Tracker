@@ -234,15 +234,15 @@ export function requireRiderAuth(req: any, res: any, next: any) {
       .from(riderMobileTokensTable)
       .where(eq(riderMobileTokensTable.token, token))
       .then(([row]) => {
-        if (!row) return res.status(401).json({ error: "Not authenticated" });
+        if (!row) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
         (req.session as any).riderAccountId = row.riderAccountId;
         next();
       })
-      .catch(() => res.status(500).json({ error: "Server error" }));
+      .catch(() => res.status(500).json({ error: "Something went wrong on our end. Please try again in a minute." }));
     return;
   }
 
-  return res.status(401).json({ error: "Not authenticated" });
+  return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 }
 
 /** The mobile Bearer token presented on this request, if any. */
@@ -263,10 +263,10 @@ async function revokeMobileTokens(riderAccountId: number, keepToken: string | nu
 router.post("/rider/auth/register", async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
-    return res.status(400).json({ error: "Email and password required" });
+    return res.status(400).json({ error: "Enter both your email address and your password." });
   }
   if (String(password).length < 8) {
-    return res.status(400).json({ error: "Password must be at least 8 characters" });
+    return res.status(400).json({ error: "Use a password with at least 8 characters." });
   }
   if (!isEmail(email)) {
     return res.status(400).json({ error: "Enter a valid email address, like name@example.com" });
@@ -347,7 +347,7 @@ function getRiderAppUrl(): string {
 // POST /rider/auth/forgot-password
 router.post("/rider/auth/forgot-password", async (req, res) => {
   const { email } = req.body;
-  if (!email) return res.status(400).json({ error: "Email required" });
+  if (!email) return res.status(400).json({ error: "Enter an email address." });
   const normalized = String(email).toLowerCase().trim();
 
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.email, normalized));
@@ -390,8 +390,8 @@ router.post("/rider/auth/forgot-password", async (req, res) => {
 // POST /rider/auth/reset-password
 router.post("/rider/auth/reset-password", async (req, res) => {
   const { token, password } = req.body;
-  if (!token || !password) return res.status(400).json({ error: "Token and password are required" });
-  if (String(password).length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
+  if (!token || !password) return res.status(400).json({ error: "This reset link is incomplete. Open the link from your email again." });
+  if (String(password).length < 8) return res.status(400).json({ error: "Use a password with at least 8 characters." });
 
   const record = riderResetTokens.get(String(token));
   if (!record || record.expiresAt < new Date()) {
@@ -411,15 +411,15 @@ router.post("/rider/auth/reset-password", async (req, res) => {
 // POST /rider/auth/change-password
 router.post("/rider/auth/change-password", requireRiderAuth, async (req, res) => {
   const { currentPassword, newPassword } = req.body;
-  if (!currentPassword || !newPassword) return res.status(400).json({ error: "Current and new password required" });
-  if (String(newPassword).length < 8) return res.status(400).json({ error: "New password must be at least 8 characters" });
+  if (!currentPassword || !newPassword) return res.status(400).json({ error: "Enter your current password and a new password." });
+  if (String(newPassword).length < 8) return res.status(400).json({ error: "Use a new password with at least 8 characters." });
 
   const riderAccountId = (req.session as any).riderAccountId;
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const valid = await bcrypt.compare(String(currentPassword), account.passwordHash);
-  if (!valid) return res.status(401).json({ error: "Current password is incorrect" });
+  if (!valid) return res.status(401).json({ error: "Your current password isn't right. Check that Caps Lock is off and try again." });
 
   const hash = await bcrypt.hash(String(newPassword), 12);
   await db.update(riderAccountsTable).set({ passwordHash: hash }).where(eq(riderAccountsTable.id, riderAccountId));
@@ -440,7 +440,7 @@ router.post("/rider/auth/logout", async (req, res) => {
       await db.delete(riderMobileTokensTable).where(eq(riderMobileTokensTable.token, token));
     } catch (err) {
       req.log?.error({ err }, "Failed to revoke mobile token on logout");
-      return res.status(500).json({ error: "Could not sign out. Please try again." });
+      return res.status(500).json({ error: "Couldn't sign you out. Try again, or close the browser to end your session." });
     }
   }
   if ((req.session as any).userId) {
@@ -456,10 +456,10 @@ router.post("/rider/auth/logout", async (req, res) => {
 // GET /rider/auth/me
 router.get("/rider/auth/me", async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
-  if (!riderAccountId) return res.status(401).json({ error: "Not authenticated" });
+  if (!riderAccountId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   return res.json({ id: account.id, email: account.email, createdAt: account.createdAt.toISOString() });
 });
@@ -468,7 +468,7 @@ router.get("/rider/auth/me", async (req, res) => {
 router.get("/rider/auth/mobile-me", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   return res.json({ id: account.id, email: account.email, createdAt: account.createdAt.toISOString() });
 });
 
@@ -501,7 +501,7 @@ router.delete("/rider/push-token", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const { token } = (req.body ?? {}) as { token?: string };
   if (!token || typeof token !== "string") {
-    return res.status(400).json({ error: "token required" });
+    return res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
   }
   const removed = await db
     .delete(riderPushTokensTable)
@@ -517,7 +517,7 @@ router.delete("/rider/push-token", requireRiderAuth, async (req, res) => {
 router.get("/rider/my-event-ids", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const familyRiders = await db
     .select({ id: ridersTable.id })
@@ -543,10 +543,10 @@ router.get("/rider/my-event-ids", requireRiderAuth, async (req, res) => {
 router.get("/rider/events/:eventId/my-registrations", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const eventId = parseInt(req.params.eventId ?? "", 10);
-  if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
+  if (isNaN(eventId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const familyRiders = await db
     .select({ id: ridersTable.id, firstName: ridersTable.firstName, lastName: ridersTable.lastName })
@@ -589,13 +589,13 @@ router.patch("/rider/events/:eventId/my-registrations/:regId", requireRiderAuth,
   const riderAccountId = (req.session as any).riderAccountId;
   const eventId = parseInt(req.params.eventId ?? "", 10);
   const regId = parseInt(req.params.regId ?? "", 10);
-  if (isNaN(eventId) || isNaN(regId)) return res.status(400).json({ error: "Invalid ID" });
+  if (isNaN(eventId) || isNaN(regId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const { raceClass } = req.body;
-  if (!raceClass || typeof raceClass !== "string") return res.status(400).json({ error: "raceClass required" });
+  if (!raceClass || typeof raceClass !== "string") return res.status(400).json({ error: "Choose a class." });
 
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const familyRiders = await db
     .select({ id: ridersTable.id })
@@ -606,17 +606,17 @@ router.patch("/rider/events/:eventId/my-registrations/:regId", requireRiderAuth,
   const [reg] = await db.select().from(registrationsTable)
     .where(and(eq(registrationsTable.id, regId), eq(registrationsTable.eventId, eventId)));
 
-  if (!reg) return res.status(404).json({ error: "Registration not found" });
+  if (!reg) return res.status(404).json({ error: "This registration couldn't be found. It may have been cancelled. Refresh the page and try again." });
   if (reg.riderId == null || !familyRiderIds.includes(reg.riderId)) {
-    return res.status(403).json({ error: "Not your registration" });
+    return res.status(403).json({ error: "This registration isn't on your account. Sign in with the account that registered." });
   }
-  if (reg.status === "void") return res.status(400).json({ error: "Registration is void" });
+  if (reg.status === "void") return res.status(400).json({ error: "This registration was voided. Contact the event organizer if you think that's a mistake." });
 
   const [event] = await db.select({ status: eventsTable.status, raceClasses: eventsTable.raceClasses, date: eventsTable.date })
     .from(eventsTable).where(eq(eventsTable.id, eventId));
-  if (!event) return res.status(404).json({ error: "Event not found" });
+  if (!event) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
   if (event.status !== "registration_open" || eventDateReached(event)) {
-    return res.status(409).json({ error: "Class changes are only allowed while registration is open" });
+    return res.status(409).json({ error: "Classes can only be changed while registration is open. Contact the event organizer for help." });
   }
 
   const availableClasses = (event.raceClasses as string[] | null) ?? [];
@@ -672,17 +672,17 @@ router.patch("/rider/events/:eventId/my-registrations/:regId", requireRiderAuth,
 router.post("/rider/events/:eventId/registrations/cancel", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const eventId = parseInt(req.params.eventId ?? "", 10);
-  if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
+  if (isNaN(eventId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const { registrationIds } = req.body as { registrationIds?: unknown };
   if (!Array.isArray(registrationIds) || registrationIds.length === 0) {
-    return res.status(400).json({ error: "registrationIds (non-empty array) is required" });
+    return res.status(400).json({ error: "Pick at least one registration." });
   }
   const ids = (registrationIds as unknown[]).map(Number).filter(n => !isNaN(n));
-  if (ids.length === 0) return res.status(400).json({ error: "registrationIds must be integers" });
+  if (ids.length === 0) return res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
 
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const familyRiders = await db
     .select({ id: ridersTable.id })
@@ -701,21 +701,21 @@ router.post("/rider/events/:eventId/registrations/cancel", requireRiderAuth, asy
 
   for (const reg of regs) {
     if (reg.riderId == null || !familyRiderIds.includes(reg.riderId)) {
-      return res.status(403).json({ error: "Not your registration" });
+      return res.status(403).json({ error: "This registration isn't on your account. Sign in with the account that registered." });
     }
     if (reg.status === "void") {
-      return res.status(400).json({ error: "Registration is already cancelled" });
+      return res.status(400).json({ error: "This registration is already cancelled. Refresh the page to see it." });
     }
   }
   if (regs.length !== ids.length) {
-    return res.status(404).json({ error: "One or more registrations not found" });
+    return res.status(404).json({ error: "Some of these registrations no longer exist. Refresh the page and try again." });
   }
 
   // After registration closes (lineups built, race day, results), a rider
   // can't cancel online any more: they talk to the organizer.
   const [cancelEvent] = await db.select({ status: eventsTable.status, date: eventsTable.date })
     .from(eventsTable).where(eq(eventsTable.id, eventId));
-  if (!cancelEvent) return res.status(404).json({ error: "Event not found" });
+  if (!cancelEvent) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
   if (cancelEvent.status !== "registration_open" || eventDateReached(cancelEvent)) {
     return res.status(409).json({ error: "Registration has closed, so entries can't be cancelled online. Contact the event organizer." });
   }
@@ -761,7 +761,7 @@ router.post("/rider/events/:eventId/registrations/cancel", requireRiderAuth, asy
 router.get("/rider/profiles", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const riders = await db.select().from(ridersTable)
     .where(await managedRiderWhere(account));
@@ -829,16 +829,16 @@ router.get("/rider/profiles", requireRiderAuth, async (req, res) => {
 router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const riderId = parseInt(req.params.riderId, 10);
-  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+  if (isNaN(riderId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   // Verify this rider belongs to the account's email
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
-  if (!rider) return res.status(404).json({ error: "Rider not found" });
+  if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
   if (!(await canManageRider(account, rider))) {
-    return res.status(403).json({ error: "Access denied" });
+    return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   }
 
   const eventIdFilter = req.query.eventId ? parseInt(req.query.eventId as string, 10) : null;
@@ -1031,15 +1031,15 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
 router.get("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const riderId = parseInt(req.params.riderId, 10);
-  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+  if (isNaN(riderId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
-  if (!rider) return res.status(404).json({ error: "Rider not found" });
+  if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
   if (!(await canManageRider(account, rider))) {
-    return res.status(403).json({ error: "Access denied" });
+    return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   }
 
   return res.json({
@@ -1071,15 +1071,15 @@ router.get("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
 router.patch("/rider/profiles/:riderId/rfid", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const riderId = parseInt(req.params.riderId, 10);
-  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+  if (isNaN(riderId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
-  if (!rider) return res.status(404).json({ error: "Rider not found" });
+  if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
   if (!(await canManageRider(account, rider))) {
-    return res.status(403).json({ error: "Access denied" });
+    return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   }
 
   const { rfidNumber } = req.body;
@@ -1098,15 +1098,15 @@ router.patch("/rider/profiles/:riderId/rfid", requireRiderAuth, async (req, res)
 router.patch("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const riderId = parseInt(req.params.riderId, 10);
-  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+  if (isNaN(riderId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
-  if (!rider) return res.status(404).json({ error: "Rider not found" });
+  if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
   if (!(await canManageRider(account, rider))) {
-    return res.status(403).json({ error: "Access denied" });
+    return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   }
 
   const invalidDob = checkBirthDate(req.body?.dateOfBirth);
@@ -1147,11 +1147,11 @@ router.patch("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
   }
 
   if (("firstName" in patch && !patch.firstName) || ("lastName" in patch && !patch.lastName)) {
-    return res.status(400).json({ error: "First and last name are required" });
+    return res.status(400).json({ error: "Enter the rider's first and last name." });
   }
 
   if (Object.keys(patch).length === 0) {
-    return res.status(400).json({ error: "No valid fields provided" });
+    return res.status(400).json({ error: "Nothing was changed. Edit a field, then save." });
   }
 
   const [updated] = await db
@@ -1182,9 +1182,9 @@ async function verifyRiderOwnership(riderAccountId: number, riderId: number): Pr
 router.get("/rider/profiles/:riderId/bikes", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const riderId = parseInt(req.params.riderId, 10);
-  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+  if (isNaN(riderId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   const ownership = await verifyRiderOwnership(riderAccountId, riderId);
-  if (!ownership) return res.status(403).json({ error: "Access denied" });
+  if (!ownership) return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   const bikes = await db.select().from(riderBikesTable)
     .where(eq(riderBikesTable.riderId, riderId))
     .orderBy(asc(riderBikesTable.createdAt));
@@ -1195,9 +1195,9 @@ router.get("/rider/profiles/:riderId/bikes", requireRiderAuth, async (req, res) 
 router.post("/rider/profiles/:riderId/bikes", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const riderId = parseInt(req.params.riderId, 10);
-  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+  if (isNaN(riderId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   const ownership = await verifyRiderOwnership(riderAccountId, riderId);
-  if (!ownership) return res.status(403).json({ error: "Access denied" });
+  if (!ownership) return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   const { bikeManufacturer, bikeModel, bikeYear } = req.body;
   const existing = await db.select({ id: riderBikesTable.id }).from(riderBikesTable).where(eq(riderBikesTable.riderId, riderId));
   const isFirst = existing.length === 0;
@@ -1216,18 +1216,18 @@ router.patch("/rider/profiles/:riderId/bikes/:bikeId", requireRiderAuth, async (
   const riderAccountId = (req.session as any).riderAccountId;
   const riderId = parseInt(req.params.riderId, 10);
   const bikeId = parseInt(req.params.bikeId, 10);
-  if (isNaN(riderId) || isNaN(bikeId)) return res.status(400).json({ error: "Invalid ID" });
+  if (isNaN(riderId) || isNaN(bikeId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   const ownership = await verifyRiderOwnership(riderAccountId, riderId);
-  if (!ownership) return res.status(403).json({ error: "Access denied" });
+  if (!ownership) return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   const patch: Record<string, string | null> = {};
   if ("bikeManufacturer" in req.body) patch.bikeManufacturer = typeof req.body.bikeManufacturer === "string" ? req.body.bikeManufacturer.trim() || null : null;
   if ("bikeModel" in req.body) patch.bikeModel = typeof req.body.bikeModel === "string" ? req.body.bikeModel.trim() || null : null;
   if ("bikeYear" in req.body) patch.bikeYear = typeof req.body.bikeYear === "string" ? req.body.bikeYear.trim() || null : null;
-  if (Object.keys(patch).length === 0) return res.status(400).json({ error: "No fields to update" });
+  if (Object.keys(patch).length === 0) return res.status(400).json({ error: "Nothing was changed. Edit a field, then save." });
   const [updated] = await db.update(riderBikesTable).set(patch)
     .where(and(eq(riderBikesTable.id, bikeId), eq(riderBikesTable.riderId, riderId)))
     .returning();
-  if (!updated) return res.status(404).json({ error: "Bike not found" });
+  if (!updated) return res.status(404).json({ error: "This bike couldn't be found. It may have been deleted. Refresh the page and try again." });
   return res.json(updated);
 });
 
@@ -1236,13 +1236,13 @@ router.delete("/rider/profiles/:riderId/bikes/:bikeId", requireRiderAuth, async 
   const riderAccountId = (req.session as any).riderAccountId;
   const riderId = parseInt(req.params.riderId, 10);
   const bikeId = parseInt(req.params.bikeId, 10);
-  if (isNaN(riderId) || isNaN(bikeId)) return res.status(400).json({ error: "Invalid ID" });
+  if (isNaN(riderId) || isNaN(bikeId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   const ownership = await verifyRiderOwnership(riderAccountId, riderId);
-  if (!ownership) return res.status(403).json({ error: "Access denied" });
+  if (!ownership) return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   const [deleted] = await db.delete(riderBikesTable)
     .where(and(eq(riderBikesTable.id, bikeId), eq(riderBikesTable.riderId, riderId)))
     .returning();
-  if (!deleted) return res.status(404).json({ error: "Bike not found" });
+  if (!deleted) return res.status(404).json({ error: "This bike couldn't be found. It may have been deleted. Refresh the page and try again." });
   if (deleted.isDefault) {
     const [next] = await db.select().from(riderBikesTable)
       .where(eq(riderBikesTable.riderId, riderId))
@@ -1261,9 +1261,9 @@ router.delete("/rider/profiles/:riderId/bikes/:bikeId", requireRiderAuth, async 
 router.delete("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const riderId = parseInt(req.params.riderId, 10);
-  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+  if (isNaN(riderId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   const ownership = await verifyRiderOwnership(riderAccountId, riderId);
-  if (!ownership) return res.status(403).json({ error: "Access denied" });
+  if (!ownership) return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
 
   // Only the owner may detach or delete the profile. A manager (second parent, coach)
   // removing it just stops managing it: drop their own manager row and nothing else.
@@ -1332,10 +1332,10 @@ router.patch("/rider/profiles/:riderId/maintenance-suggestions", requireRiderAut
   const riderAccountId = (req.session as any).riderAccountId;
   const riderId = Number(req.params.riderId);
   const { enabled } = req.body as { enabled?: boolean };
-  if (typeof enabled !== "boolean") return res.status(400).json({ error: "enabled (boolean) is required" });
+  if (typeof enabled !== "boolean") return res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
 
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const [rider] = await db
     .select({ id: ridersTable.id, email: ridersTable.email })
@@ -1343,7 +1343,7 @@ router.patch("/rider/profiles/:riderId/maintenance-suggestions", requireRiderAut
     .where(eq(ridersTable.id, riderId));
 
   if (!rider || !(await canManageRider(account, rider))) {
-    return res.status(403).json({ error: "Forbidden" });
+    return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   }
 
   await db.update(ridersTable).set({ aiMaintenanceSuggestions: enabled }).where(eq(ridersTable.id, riderId));
@@ -1355,14 +1355,14 @@ router.post("/rider/profiles/:riderId/bikes/:bikeId/set-default", requireRiderAu
   const riderAccountId = (req.session as any).riderAccountId;
   const riderId = parseInt(req.params.riderId, 10);
   const bikeId = parseInt(req.params.bikeId, 10);
-  if (isNaN(riderId) || isNaN(bikeId)) return res.status(400).json({ error: "Invalid ID" });
+  if (isNaN(riderId) || isNaN(bikeId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   const ownership = await verifyRiderOwnership(riderAccountId, riderId);
-  if (!ownership) return res.status(403).json({ error: "Access denied" });
+  if (!ownership) return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   await db.update(riderBikesTable).set({ isDefault: false }).where(eq(riderBikesTable.riderId, riderId));
   const [updated] = await db.update(riderBikesTable).set({ isDefault: true })
     .where(and(eq(riderBikesTable.id, bikeId), eq(riderBikesTable.riderId, riderId)))
     .returning();
-  if (!updated) return res.status(404).json({ error: "Bike not found" });
+  if (!updated) return res.status(404).json({ error: "This bike couldn't be found. It may have been deleted. Refresh the page and try again." });
   return res.json(updated);
 });
 
@@ -1370,7 +1370,7 @@ router.post("/rider/profiles/:riderId/bikes/:bikeId/set-default", requireRiderAu
 router.post("/rider/profiles", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const { firstName, lastName, phone, dateOfBirth, bibNumber, amaNumber,
     bikeManufacturer, sponsors, streetAddress, city, homeState, zip, myLapsTransponderNumber } = req.body;
@@ -1378,7 +1378,7 @@ router.post("/rider/profiles", requireRiderAuth, async (req, res) => {
   if (invalidNewDob) return res.status(400).json({ error: invalidNewDob });
 
   if (!firstName?.trim() || !lastName?.trim()) {
-    return res.status(400).json({ error: "First and last name are required" });
+    return res.status(400).json({ error: "Enter the rider's first and last name." });
   }
 
   const [rider] = await db.insert(ridersTable).values({
@@ -1405,15 +1405,15 @@ router.post("/rider/profiles", requireRiderAuth, async (req, res) => {
 router.get("/rider/profiles/:riderId/practice", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const riderId = parseInt(req.params.riderId, 10);
-  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+  if (isNaN(riderId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
-  if (!rider) return res.status(404).json({ error: "Rider not found" });
+  if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
   if (!(await canManageRider(account, rider))) {
-    return res.status(403).json({ error: "Access denied" });
+    return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   }
 
   const [registrationAssignments, rfidAssignments] = await Promise.all([
@@ -1575,15 +1575,15 @@ router.get("/rider/profiles/:riderId/practice", requireRiderAuth, async (req, re
 router.get("/rider/profiles/:riderId/event-practice", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const riderId = parseInt(req.params.riderId, 10);
-  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+  if (isNaN(riderId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
-  if (!rider) return res.status(404).json({ error: "Rider not found" });
+  if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
   if (!(await canManageRider(account, rider))) {
-    return res.status(403).json({ error: "Access denied" });
+    return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   }
 
   const registrations = await db
@@ -1771,15 +1771,15 @@ router.get("/rider/profiles/:riderId/event-practice", requireRiderAuth, async (r
 router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const riderId = parseInt(req.params.riderId, 10);
-  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+  if (isNaN(riderId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
-  if (!rider) return res.status(404).json({ error: "Rider not found" });
+  if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
   if (!(await canManageRider(account, rider))) {
-    return res.status(403).json({ error: "Access denied" });
+    return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   }
 
   // Find ALL riders whose email matches this account (family members included)
@@ -2083,13 +2083,13 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
 router.get("/rider/motos/:motoId/detail", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const motoId = parseInt(req.params.motoId, 10);
-  if (isNaN(motoId)) return res.status(400).json({ error: "Invalid moto ID" });
+  if (isNaN(motoId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, motoId));
-  if (!moto) return res.status(404).json({ error: "Moto not found" });
+  if (!moto) return res.status(404).json({ error: "This moto couldn't be found. Motos may have been regenerated. Refresh the Motos page." });
 
   const familyRiders = await db
     .select({ id: ridersTable.id })
@@ -2106,10 +2106,10 @@ router.get("/rider/motos/:motoId/detail", requireRiderAuth, async (req, res) => 
       eq(registrationsTable.status, "confirmed"),
     ))
     .limit(1);
-  if (reg.length === 0) return res.status(403).json({ error: "Access denied" });
+  if (reg.length === 0) return res.status(403).json({ error: "Live timing for this race is only open to riders entered in it." });
 
   const snapshot = await buildLeaderboard(motoId);
-  if (!snapshot) return res.status(404).json({ error: "Moto not found" });
+  if (!snapshot) return res.status(404).json({ error: "This moto couldn't be found. Motos may have been regenerated. Refresh the Motos page." });
 
   const leaderboard = snapshot.leaderboard.map(e => ({
     ...e,
@@ -2139,7 +2139,7 @@ router.get("/rider/memory", requireRiderAuth, async (req, res) => {
     .select({ rockyMemory: riderAccountsTable.rockyMemory })
     .from(riderAccountsTable)
     .where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   return res.json({ memory: account.rockyMemory ?? "" });
 });
 
@@ -2148,7 +2148,7 @@ router.patch("/rider/memory", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const { memory } = req.body;
   if (typeof memory !== "string") {
-    return res.status(400).json({ error: "memory must be a string" });
+    return res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
   }
   await db
     .update(riderAccountsTable)
@@ -2161,7 +2161,7 @@ router.patch("/rider/memory", requireRiderAuth, async (req, res) => {
 router.get("/rider/rm-cash-balance", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const [account] = await db.select({ rmCashBalance: riderAccountsTable.rmCashBalance }).from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   return res.json({ balance: parseFloat(account.rmCashBalance ?? "0"), currency: "USD" });
 });
 
@@ -2255,9 +2255,9 @@ router.post("/rider/training-plan", requireRiderAuth, async (req, res) => {
     workoutType?: string;
   };
 
-  if (!goal?.trim()) return res.status(400).json({ error: "goal is required" });
+  if (!goal?.trim()) return res.status(400).json({ error: "Enter a goal for your training plan." });
   if (!durationMinutes || durationMinutes < 15 || durationMinutes > 180) {
-    return res.status(400).json({ error: "durationMinutes must be between 15 and 180" });
+    return res.status(400).json({ error: "Choose a session length between 15 and 180 minutes." });
   }
 
   const type = workoutType === "bike" ? "bike" : workoutType === "mix" ? "mix" : "gym";
@@ -2344,7 +2344,7 @@ Total session time: ${durationMinutes} minutes.`;
     return res.json(plan);
   } catch (err) {
     req.log.error({ err }, "Training plan generation failed");
-    return res.status(500).json({ error: "Failed to generate training plan. Please try again." });
+    return res.status(500).json({ error: "Couldn't create the training plan. Try again in a moment." });
   }
 });
 
@@ -2354,7 +2354,7 @@ router.post("/rider/mechanic-chat", requireRiderAuth, async (req, res) => {
   const { messages, riderContext, riderMemory } = req.body;
 
   if (!Array.isArray(messages) || messages.length === 0) {
-    return res.status(400).json({ error: "messages array is required" });
+    return res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
   }
 
   const bikeStr = [riderContext?.bikeYear, riderContext?.bikeMake, riderContext?.bikeModel]
@@ -2540,17 +2540,17 @@ You MUST respond with a valid JSON object and nothing else — no markdown fence
     return res.json({ reply, suggestedFollowUps, maintenanceUpdates, loggedItems });
   } catch (err) {
     req.log.error({ err }, "Mechanic chat failed");
-    return res.status(500).json({ error: "Chat failed. Please try again." });
+    return res.status(500).json({ error: "The AI helper didn't respond. Try again in a moment." });
   }
 });
 
 // GET /rider/maintenance-check — proactive check: return Rocky message if items are due/overdue
 router.get("/rider/maintenance-check", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
-  if (!riderAccountId) return res.status(401).json({ error: "Not authenticated" });
+  if (!riderAccountId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const riders = await db
     .select({ id: ridersTable.id, firstName: ridersTable.firstName })
@@ -2608,7 +2608,7 @@ router.get("/rider/maintenance-check", requireRiderAuth, async (req, res) => {
 router.get("/rider/series", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   // Find all rider profiles linked to this account's email
   const riders = await db
@@ -2704,7 +2704,7 @@ router.post("/rider/mechanic-memory-update", requireRiderAuth, async (req, res) 
   const { lastUserMessage, lastAssistantReply, riderContext } = req.body;
 
   if (!lastUserMessage || !lastAssistantReply) {
-    return res.status(400).json({ error: "lastUserMessage and lastAssistantReply are required" });
+    return res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
   }
 
   const bikeStr = [riderContext?.bikeYear, riderContext?.bikeMake, riderContext?.bikeModel]
@@ -2732,7 +2732,7 @@ router.post("/rider/mechanic-memory-update", requireRiderAuth, async (req, res) 
     return res.json({ memoryEntry });
   } catch (err) {
     req.log.error({ err }, "Memory update failed");
-    return res.status(500).json({ error: "Memory update failed" });
+    return res.status(500).json({ error: "Couldn't save that. Try again in a moment." });
   }
 });
 
@@ -2741,17 +2741,17 @@ router.post("/rider/mechanic-memory-update", requireRiderAuth, async (req, res) 
 // GET /rider/maintenance/:riderId — list all maintenance items for a rider
 router.get("/rider/maintenance/:riderId", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
-  if (!riderAccountId) return res.status(401).json({ error: "Not authenticated" });
+  if (!riderAccountId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const riderId = parseInt(req.params.riderId, 10);
-  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+  if (isNaN(riderId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
   if (!rider || !(await canManageRider(account, rider))) {
-    return res.status(403).json({ error: "Access denied" });
+    return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   }
 
   const items = await db
@@ -2766,17 +2766,17 @@ router.get("/rider/maintenance/:riderId", requireRiderAuth, async (req, res) => 
 // PUT /rider/maintenance/:riderId/:itemKey — upsert a maintenance item
 router.put("/rider/maintenance/:riderId/:itemKey", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
-  if (!riderAccountId) return res.status(401).json({ error: "Not authenticated" });
+  if (!riderAccountId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const riderId = parseInt(req.params.riderId, 10);
-  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+  if (isNaN(riderId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
   if (!rider || !(await canManageRider(account, rider))) {
-    return res.status(403).json({ error: "Access denied" });
+    return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   }
 
   const { itemName, intervalDesc, intervalDays, lastServicedAt, notes, serviceNotes, sortOrder } = req.body;
@@ -2821,17 +2821,17 @@ router.put("/rider/maintenance/:riderId/:itemKey", requireRiderAuth, async (req,
 // DELETE /rider/maintenance/:riderId/:itemKey — remove a maintenance item
 router.delete("/rider/maintenance/:riderId/:itemKey", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
-  if (!riderAccountId) return res.status(401).json({ error: "Not authenticated" });
+  if (!riderAccountId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const riderId = parseInt(req.params.riderId, 10);
-  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+  if (isNaN(riderId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
   if (!rider || !(await canManageRider(account, rider))) {
-    return res.status(403).json({ error: "Access denied" });
+    return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   }
 
   await db
@@ -2849,17 +2849,17 @@ router.delete("/rider/maintenance/:riderId/:itemKey", requireRiderAuth, async (r
 // GET /rider/maintenance/:riderId/history — list all history records for a rider
 router.get("/rider/maintenance/:riderId/history", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
-  if (!riderAccountId) return res.status(401).json({ error: "Not authenticated" });
+  if (!riderAccountId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const riderId = parseInt(req.params.riderId, 10);
-  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+  if (isNaN(riderId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
   if (!rider || !(await canManageRider(account, rider))) {
-    return res.status(403).json({ error: "Access denied" });
+    return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   }
 
   const history = await db
@@ -2874,31 +2874,31 @@ router.get("/rider/maintenance/:riderId/history", requireRiderAuth, async (req, 
 // PATCH /rider/maintenance/:riderId/history/:historyId — edit notes or serviced date of a history entry
 router.patch("/rider/maintenance/:riderId/history/:historyId", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
-  if (!riderAccountId) return res.status(401).json({ error: "Not authenticated" });
+  if (!riderAccountId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const riderId = parseInt(req.params.riderId, 10);
   const historyId = parseInt(req.params.historyId, 10);
-  if (isNaN(riderId) || isNaN(historyId)) return res.status(400).json({ error: "Invalid ID" });
+  if (isNaN(riderId) || isNaN(historyId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
   if (!rider || !(await canManageRider(account, rider))) {
-    return res.status(403).json({ error: "Access denied" });
+    return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   }
 
   const [entry] = await db.select().from(riderMaintenanceHistoryTable).where(
     and(eq(riderMaintenanceHistoryTable.id, historyId), eq(riderMaintenanceHistoryTable.riderId, riderId))
   );
-  if (!entry) return res.status(404).json({ error: "Entry not found" });
+  if (!entry) return res.status(404).json({ error: "This entry couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   const updates: { notes?: string | null; servicedAt?: string } = {};
   if (typeof req.body.notes !== "undefined") updates.notes = req.body.notes ?? null;
   if (typeof req.body.servicedAt === "string" && req.body.servicedAt.trim()) {
     updates.servicedAt = req.body.servicedAt.trim();
   }
-  if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Nothing to update" });
+  if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Nothing was changed. Edit a field, then save." });
 
   const [updated] = await db
     .update(riderMaintenanceHistoryTable)
@@ -2912,24 +2912,24 @@ router.patch("/rider/maintenance/:riderId/history/:historyId", requireRiderAuth,
 // DELETE /rider/maintenance/:riderId/history/:historyId — delete a history entry
 router.delete("/rider/maintenance/:riderId/history/:historyId", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
-  if (!riderAccountId) return res.status(401).json({ error: "Not authenticated" });
+  if (!riderAccountId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const riderId = parseInt(req.params.riderId, 10);
   const historyId = parseInt(req.params.historyId, 10);
-  if (isNaN(riderId) || isNaN(historyId)) return res.status(400).json({ error: "Invalid ID" });
+  if (isNaN(riderId) || isNaN(historyId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
   if (!rider || !(await canManageRider(account, rider))) {
-    return res.status(403).json({ error: "Access denied" });
+    return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   }
 
   const [entry] = await db.select().from(riderMaintenanceHistoryTable).where(
     and(eq(riderMaintenanceHistoryTable.id, historyId), eq(riderMaintenanceHistoryTable.riderId, riderId))
   );
-  if (!entry) return res.status(404).json({ error: "Entry not found" });
+  if (!entry) return res.status(404).json({ error: "This entry couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   await db.delete(riderMaintenanceHistoryTable).where(eq(riderMaintenanceHistoryTable.id, historyId));
 
@@ -2939,17 +2939,17 @@ router.delete("/rider/maintenance/:riderId/history/:historyId", requireRiderAuth
 // POST /rider/maintenance/:riderId/ai-generate — AI-generate a maintenance schedule for the rider's bike
 router.post("/rider/maintenance/:riderId/ai-generate", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
-  if (!riderAccountId) return res.status(401).json({ error: "Not authenticated" });
+  if (!riderAccountId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const riderId = parseInt(req.params.riderId, 10);
-  if (isNaN(riderId)) return res.status(400).json({ error: "Invalid rider ID" });
+  if (isNaN(riderId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, riderId));
   if (!rider || !(await canManageRider(account, rider))) {
-    return res.status(403).json({ error: "Access denied" });
+    return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   }
 
   const bikeStr = [rider.bikeYear, rider.bikeManufacturer, rider.bikeModel].filter(Boolean).join(" ");
@@ -3033,7 +3033,7 @@ Include 10–15 items tailored to this specific make and model. Common categorie
     return res.json(saved.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)));
   } catch (err) {
     req.log.error({ err }, "Maintenance AI generate failed");
-    return res.status(500).json({ error: "Failed to generate maintenance schedule" });
+    return res.status(500).json({ error: "Couldn't create the maintenance schedule. Try again in a moment." });
   }
 });
 
@@ -3048,7 +3048,7 @@ router.get("/rider/my-organizations", requireRiderAuth, async (req, res) => {
     .from(riderAccountsTable)
     .where(eq(riderAccountsTable.id, riderAccountId));
 
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   // Owned (email match) and managed profiles
   const linkedRiders = await db
@@ -3109,11 +3109,11 @@ router.get("/rider/my-organizations", requireRiderAuth, async (req, res) => {
 router.patch("/rider/my-organizations/:clubId/notifications", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId as number;
   const clubId = parseInt(req.params.clubId, 10);
-  if (isNaN(clubId)) return res.status(400).json({ error: "Invalid clubId" });
+  if (isNaN(clubId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const { enabled } = req.body as { enabled?: boolean };
   if (typeof enabled !== "boolean") {
-    return res.status(400).json({ error: "enabled (boolean) is required" });
+    return res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
   }
 
   const [row] = await db

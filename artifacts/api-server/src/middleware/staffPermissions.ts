@@ -139,7 +139,7 @@ export function applyStaffRules(
 
   // Safety: a staff account without a clubId would bypass all club-scoping checks.
   if (user.clubId == null) {
-    return res.status(403).json({ error: "Forbidden: staff account has no club assignment" });
+    return res.status(403).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
   }
 
   // Route handlers read res.locals.staffClubId as the club this caller is limited to.
@@ -150,12 +150,12 @@ export function applyStaffRules(
     if (!rule.pattern.test(path)) continue;
     if (rule.methods && !rule.methods.includes(method as HttpMethod)) continue;
 
-    if (rule.permissions === null) return res.status(403).json({ error: "Forbidden" });
+    if (rule.permissions === null) return res.status(403).json({ error: "Your staff role doesn't include this. Ask your club's organizer to add it on the Staff page." });
     if (rule.permissions.length === 0) return next();
-    if (!rule.permissions.some((p) => staffPerms.includes(p))) return res.status(403).json({ error: "Forbidden" });
+    if (!rule.permissions.some((p) => staffPerms.includes(p))) return res.status(403).json({ error: "Your staff role doesn't include this. Ask your club's organizer to add it on the Staff page." });
     return next();
   }
 
   // Default-deny: no rule matched → staff cannot access this route
-  return res.status(403).json({ error: "Forbidden" });
+  return res.status(403).json({ error: "Your staff role doesn't include this. Ask your club's organizer to add it on the Staff page." });
 }

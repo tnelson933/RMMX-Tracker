@@ -178,7 +178,7 @@ export default function StaffPage() {
             }
           },
           onError: (err: any) => {
-            toast({ title: "Error", description: err?.data?.error ?? err?.message ?? "Failed to create staff member", variant: "destructive" });
+            toast({ title: "Error", description: err?.data?.error ?? err?.message ?? "Couldn't create staff member", variant: "destructive" });
           },
         }
       );
@@ -197,7 +197,7 @@ export default function StaffPage() {
             }
           },
           onError: (err: any) => {
-            toast({ title: "Error", description: err?.data?.error ?? err?.message ?? "Failed to update staff member", variant: "destructive" });
+            toast({ title: "Error", description: err?.data?.error ?? err?.message ?? "Couldn't update staff member", variant: "destructive" });
           },
         }
       );
@@ -214,7 +214,7 @@ export default function StaffPage() {
           toast({ title: "Staff member removed" });
         },
         onError: (err: any) => {
-          toast({ title: "Error", description: err?.data?.error ?? err?.message ?? "Failed to remove staff member", variant: "destructive" });
+          toast({ title: "Error", description: err?.data?.error ?? err?.message ?? "Couldn't remove staff member", variant: "destructive" });
         },
       }
     );
@@ -339,7 +339,7 @@ export default function StaffPage() {
                               }
                             },
                             onError: (err: any) => {
-                              toast({ title: "Error", description: err?.data?.error ?? err?.message ?? "Failed to resend invite", variant: "destructive" });
+                              toast({ title: "Error", description: err?.data?.error ?? err?.message ?? "Couldn't resend invite", variant: "destructive" });
                             },
                           }
                         );

@@ -86,7 +86,7 @@ export function DesktopSyncModal() {
       setMsg({ text: "Cloud sync disconnected.", kind: "success" });
       setTimeout(() => setOpen(false), 1200);
     } catch {
-      setMsg({ text: "Failed to disconnect.", kind: "error" });
+      setMsg({ text: "Couldn't disconnect.", kind: "error" });
     }
   };
 

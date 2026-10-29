@@ -16,9 +16,9 @@ function getAppUrl(): string {
 
 async function requireAdmin(req: any, res: any, next: any) {
   const userId = (req.session as any)?.userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
-  if (!user || user.role !== "super_admin") return res.status(403).json({ error: "Forbidden: super_admin only" });
+  if (!user || user.role !== "super_admin") return res.status(403).json({ error: "Only RM Roost admins can do this." });
   next();
 }
 
@@ -69,11 +69,11 @@ router.get("/clubs", async (req, res) => {
 // Creating clubs (and their organizer invites) is a platform-admin action.
 router.post("/clubs", requireAdmin, async (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const { name, state, contactEmail, contactPhone, logoUrl, website, description, organizerName, organizerEmail } = req.body;
-  if (!name || !state) return res.status(400).json({ error: "name and state required" });
-  if (!organizerName || !organizerEmail) return res.status(400).json({ error: "organizerName and organizerEmail are required" });
+  if (!name || !state) return res.status(400).json({ error: "Enter a name and choose a state." });
+  if (!organizerName || !organizerEmail) return res.status(400).json({ error: "Enter the organizer's name and email address." });
 
   const [club] = await db
     .insert(clubsTable)
@@ -159,9 +159,9 @@ router.post("/clubs", requireAdmin, async (req, res) => {
 router.get("/clubs/:clubId", async (req, res) => {
   const id = Number(req.params.clubId);
   const staffCId: number | null = typeof (res as any).locals?.staffClubId === "number" ? (res as any).locals.staffClubId : null;
-  if (staffCId !== null && staffCId !== id) return res.status(403).json({ error: "Forbidden" });
+  if (staffCId !== null && staffCId !== id) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   const clubs = await db.select().from(clubsTable).where(eq(clubsTable.id, id));
-  if (!clubs[0]) return res.status(404).json({ error: "Not found" });
+  if (!clubs[0]) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   const c = clubs[0];
   return res.json({ ...c, createdAt: c.createdAt.toISOString() });
 });
@@ -169,7 +169,7 @@ router.get("/clubs/:clubId", async (req, res) => {
 router.delete("/clubs/:clubId", requireAdmin, async (req, res) => {
   const id = Number(req.params.clubId);
   const [club] = await db.select().from(clubsTable).where(eq(clubsTable.id, id));
-  if (!club) return res.status(404).json({ error: "Not found" });
+  if (!club) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   // Block deletion if the club has any events — too much cascading data
   const events = await db.select({ id: eventsTable.id }).from(eventsTable).where(eq(eventsTable.clubId, id));
@@ -202,8 +202,8 @@ router.delete("/clubs/:clubId", requireAdmin, async (req, res) => {
 router.patch("/clubs/:clubId", async (req, res) => {
   const id = Number(req.params.clubId);
   const staffCId: number | null = typeof (res as any).locals?.staffClubId === "number" ? (res as any).locals.staffClubId : null;
-  if (staffCId !== null && staffCId !== id) return res.status(403).json({ error: "Forbidden" });
-  if (!req.session || !(req.session as any).userId) return res.status(401).json({ error: "Unauthorized" });
+  if (staffCId !== null && staffCId !== id) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
+  if (!req.session || !(req.session as any).userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const { name, state, contactEmail, contactPhone, logoUrl, website, description, autoDnfEnabled, autoDnfThreshold, active, organizerName, organizerEmail } = req.body;
   const updates: Record<string, unknown> = {};
@@ -223,7 +223,7 @@ router.patch("/clubs/:clubId", async (req, res) => {
   if (active !== undefined && sessionUser?.role === "super_admin") updates.active = !!active;
 
   const [updated] = await db.update(clubsTable).set(updates as any).where(eq(clubsTable.id, id)).returning();
-  if (!updated) return res.status(404).json({ error: "Not found" });
+  if (!updated) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   // Add organizer if none exists yet and fields were provided
   let organizer: { id: number; name: string; email: string; hasPassword: boolean } | null = null;

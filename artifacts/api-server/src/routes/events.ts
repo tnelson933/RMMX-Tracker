@@ -146,9 +146,9 @@ router.post("/events", async (req, res) => {
   const staffCId = getStaffClubId(res);
   const clubId: number = staffCId ?? Number(req.body.clubId);
   const isDraftCreate = req.body.draft === true;
-  if (!clubId || !name) return res.status(400).json({ error: "clubId and name are required" });
+  if (!clubId || !name) return res.status(400).json({ error: "Enter an event name." });
   if (!(await scoringTableUsable(scoringTableId, clubId))) return res.status(400).json({ error: "That scoring table isn't available to this club." });
-  if (!isDraftCreate && (!date || !state)) return res.status(400).json({ error: "date and state are required for a full save" });
+  if (!isDraftCreate && (!date || !state)) return res.status(400).json({ error: "Enter the event date and choose a state." });
 
   // For draft saves, default date to today and state to "TBD"
   const now0 = new Date();
@@ -157,7 +157,7 @@ router.post("/events", async (req, res) => {
   const cleanDate = isDraftCreate ? (date ? String(date).substring(0, 10) : todayFallback) : String(date).substring(0, 10);
   const cleanState = normalizeState(isDraftCreate ? (state || "TBD") : state);
   const cleanEndDate = endDate ? String(endDate).substring(0, 10) : undefined;
-  if (cleanEndDate && cleanEndDate < cleanDate) return res.status(400).json({ error: "endDate must be on or after date" });
+  if (cleanEndDate && cleanEndDate < cleanDate) return res.status(400).json({ error: "The end date must be on or after the start date." });
 
   // Determine the correct initial status based on the registration window
   const initialStatus = isDraftCreate ? "draft" : (() => {
@@ -289,9 +289,9 @@ router.get("/events/:eventId", async (req, res) => {
     .leftJoin(eventPublicationTable, eq(eventPublicationTable.eventId, eventsTable.id))
     .where(eq(eventsTable.id, id));
 
-  if (!events[0]) return res.status(404).json({ error: "Not found" });
+  if (!events[0]) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   const staffCId = getStaffClubId(res);
-  if (staffCId !== null && events[0].clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
+  if (staffCId !== null && events[0].clubId !== staffCId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   const advanced = await advanceStatuses(events);
   const e = events[0];
 
@@ -337,7 +337,7 @@ router.patch("/events/:eventId", async (req, res) => {
   const previousStatus = before?.status;
   const staffCId = getStaffClubId(res);
   if (staffCId !== null) {
-    if (!before || before.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
+    if (!before || before.clubId !== staffCId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
 
   if (req.body.scoringTableId !== undefined && before && !(await scoringTableUsable(req.body.scoringTableId, before.clubId))) {
@@ -346,7 +346,7 @@ router.patch("/events/:eventId", async (req, res) => {
 
   const patchDate = req.body.date ?? before?.date;
   if (req.body.endDate && patchDate && req.body.endDate < patchDate) {
-    return res.status(400).json({ error: "endDate must be on or after date" });
+    return res.status(400).json({ error: "The end date must be on or after the start date." });
   }
 
   const updates: Record<string, unknown> = {};
@@ -408,7 +408,7 @@ router.patch("/events/:eventId", async (req, res) => {
   }
 
   const [event] = await db.update(eventsTable).set(updates as any).where(eq(eventsTable.id, id)).returning();
-  if (!event) return res.status(404).json({ error: "Not found" });
+  if (!event) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   // A new track brings its course map (unless this event's course is custom).
   if (trackChanged && event.trackId) await copyTrackCourseToEvent(event.id);
 
@@ -517,7 +517,7 @@ router.delete("/events/:eventId", async (req, res) => {
   const staffCId = getStaffClubId(res);
   if (staffCId !== null) {
     const [ev] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, id));
-    if (!ev || ev.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
+    if (!ev || ev.clubId !== staffCId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
   // Signed liability waivers are legal records and must be kept, so an event that
   // has any can't be deleted (they reference it). Say so instead of failing on the FK.
@@ -552,14 +552,14 @@ router.delete("/events/:eventId", async (req, res) => {
 // ── Completed events with unpublished results (>24h after race day) ────────────
 router.get("/clubs/:clubId/unpublished-completed-events", async (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const clubId = Number(req.params.clubId);
 
   // Staff can only query their own club's unpublished events
   const staffCId = getStaffClubId(res);
   if (staffCId !== null && clubId !== staffCId) {
-    return res.status(403).json({ error: "Forbidden" });
+    return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
 
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);

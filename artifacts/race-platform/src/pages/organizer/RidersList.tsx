@@ -253,7 +253,7 @@ export default function RidersList() {
           toast({ title: "Rider added successfully" });
         },
         onError: (err) => {
-          toast({ title: "Failed to add rider", description: err.message, variant: "destructive" });
+          toast({ title: "Couldn't add rider", description: err.message, variant: "destructive" });
         },
       }
     );

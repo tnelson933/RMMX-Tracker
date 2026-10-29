@@ -17,7 +17,7 @@ async function getClubId(req: any): Promise<number | null> {
 // GET /tracks — list all tracks for the organizer's club
 router.get("/tracks", async (req, res) => {
   const clubId = await getClubId(req);
-  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  if (!clubId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const tracks = await db
     .select()
@@ -40,10 +40,10 @@ router.get("/tracks", async (req, res) => {
 // POST /tracks — create a track in the library
 router.post("/tracks", async (req, res) => {
   const clubId = await getClubId(req);
-  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  if (!clubId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const { name, address, city, state, zip } = req.body as { name?: string; address?: string; city?: string; state?: string; zip?: string };
-  if (!name?.trim()) return res.status(400).json({ error: "name is required" });
+  if (!name?.trim()) return res.status(400).json({ error: "Enter a name." });
 
   const [track] = await db
     .insert(tracksTable)
@@ -63,10 +63,10 @@ router.post("/tracks", async (req, res) => {
 // PATCH /tracks/:id — update address/city/state/zip for an existing library track
 router.patch("/tracks/:id", async (req, res) => {
   const clubId = await getClubId(req);
-  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  if (!clubId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const id = Number(req.params.id);
-  if (!id) return res.status(400).json({ error: "Invalid id" });
+  if (!id) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const { address, city, state, zip } = req.body as { address?: string | null; city?: string | null; state?: string | null; zip?: string | null };
   const updates: Record<string, unknown> = {};
@@ -83,7 +83,7 @@ router.patch("/tracks/:id", async (req, res) => {
     .where(and(eq(tracksTable.id, id), eq(tracksTable.clubId, clubId)))
     .returning();
 
-  if (!track) return res.status(404).json({ error: "Not found" });
+  if (!track) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   return res.json(track);
 });
 
@@ -92,10 +92,10 @@ router.patch("/tracks/:id", async (req, res) => {
 // were customized or have already raced.
 router.put("/tracks/:id/course", async (req, res) => {
   const clubId = await getClubId(req);
-  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  if (!clubId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const id = Number(req.params.id);
   const [track] = await db.select().from(tracksTable).where(and(eq(tracksTable.id, id), eq(tracksTable.clubId, clubId)));
-  if (!track) return res.status(404).json({ error: "Not found" });
+  if (!track) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   const checked = await normaliseCourse((req.body as any)?.points, clubId);
   if (!checked.ok) return res.status(400).json({ error: checked.error });
@@ -113,17 +113,17 @@ router.put("/tracks/:id/course", async (req, res) => {
 // DELETE /tracks/:id — remove a track
 router.delete("/tracks/:id", async (req, res) => {
   const clubId = await getClubId(req);
-  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  if (!clubId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const id = Number(req.params.id);
-  if (!id) return res.status(400).json({ error: "Invalid id" });
+  if (!id) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const [deleted] = await db
     .delete(tracksTable)
     .where(and(eq(tracksTable.id, id), eq(tracksTable.clubId, clubId)))
     .returning();
 
-  if (!deleted) return res.status(404).json({ error: "Not found" });
+  if (!deleted) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   return res.json({ ok: true });
 });
 

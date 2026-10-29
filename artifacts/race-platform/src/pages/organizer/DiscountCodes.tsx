@@ -60,6 +60,7 @@ import {
   X,
   ChevronDown,
 } from "lucide-react";
+import { errorText } from "@/lib/friendlyErrors";
 
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -103,7 +104,7 @@ function DiscountCodeCategories() {
         setNewName("");
         toast({ title: "Category created" });
       },
-      onError: () => toast({ title: "Failed to create category", variant: "destructive" }),
+      onError: (err) => toast({ title: "Couldn't create category", description: errorText(err), variant: "destructive" }),
     });
   };
 
@@ -116,7 +117,7 @@ function DiscountCodeCategories() {
         setEditingId(null);
         toast({ title: "Category updated" });
       },
-      onError: () => toast({ title: "Failed to update category", variant: "destructive" }),
+      onError: (err) => toast({ title: "Couldn't update category", description: errorText(err), variant: "destructive" }),
     });
   };
 
@@ -127,7 +128,7 @@ function DiscountCodeCategories() {
         setDeleteConfirmId(null);
         toast({ title: "Category deleted" });
       },
-      onError: () => toast({ title: "Failed to delete category", variant: "destructive" }),
+      onError: (err) => toast({ title: "Couldn't delete category", description: errorText(err), variant: "destructive" }),
     });
   };
 
@@ -339,7 +340,7 @@ function DiscountCodesTable() {
         toast({ title: "Discount code created" });
       },
       onError: (err: any) => {
-        const msg = err?.response?.data?.error ?? "Failed to create code";
+        const msg = err?.response?.data?.error ?? "Couldn't create code";
         toast({ title: msg, variant: "destructive" });
       },
     });
@@ -400,7 +401,7 @@ function DiscountCodesTable() {
         setForm(DEFAULT_FORM);
         toast({ title: "Discount code updated" });
       },
-      onError: () => toast({ title: "Failed to update code", variant: "destructive" }),
+      onError: (err) => toast({ title: "Couldn't update code", description: errorText(err), variant: "destructive" }),
     });
   };
 
@@ -410,7 +411,7 @@ function DiscountCodesTable() {
         qc.invalidateQueries({ queryKey: getListDiscountCodesQueryKey() });
         toast({ title: code.isActive ? "Code deactivated" : "Code activated" });
       },
-      onError: () => toast({ title: "Failed to update code", variant: "destructive" }),
+      onError: (err) => toast({ title: "Couldn't update code", description: errorText(err), variant: "destructive" }),
     });
   };
 
@@ -421,7 +422,7 @@ function DiscountCodesTable() {
         setDeleteConfirmId(null);
         toast({ title: "Code deleted" });
       },
-      onError: () => toast({ title: "Failed to delete code", variant: "destructive" }),
+      onError: (err) => toast({ title: "Couldn't delete code", description: errorText(err), variant: "destructive" }),
     });
   };
 

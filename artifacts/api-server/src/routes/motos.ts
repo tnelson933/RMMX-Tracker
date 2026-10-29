@@ -21,22 +21,22 @@ export function normalizeMotoTiming(lapCount: unknown, timeLimitMs: unknown, plu
   const normalizedLapCount = lapCount == null ? null : Number(lapCount);
   const normalizedTimeLimitMs = timeLimitMs == null ? null : Number(timeLimitMs);
   if (normalizedLapCount !== null && (!Number.isInteger(normalizedLapCount) || normalizedLapCount <= 0)) {
-    return { error: "lapCount must be a positive integer" };
+    return { error: "Enter the number of laps (1 or more)." };
   }
   if (normalizedTimeLimitMs !== null && (!Number.isInteger(normalizedTimeLimitMs) || normalizedTimeLimitMs <= 0)) {
-    return { error: "timeLimitMs must be a positive integer" };
+    return { error: "Enter a time limit greater than 0." };
   }
   if (normalizedLapCount !== null && normalizedTimeLimitMs !== null) {
-    return { error: "lapCount and timeLimitMs are mutually exclusive" };
+    return { error: "Choose a lap count or a time limit, not both." };
   }
   if (plusLaps != null && normalizedTimeLimitMs === null) {
-    return { error: "plusLaps is only valid when timeLimitMs is set" };
+    return { error: "Extra laps only apply to timed races. Set a time limit first, or remove the extra laps." };
   }
   const normalizedPlusLaps = normalizedTimeLimitMs !== null
     ? (plusLaps == null ? 1 : Number(plusLaps))
     : null;
   if (normalizedPlusLaps !== null && (!Number.isInteger(normalizedPlusLaps) || normalizedPlusLaps < 0)) {
-    return { error: "plusLaps must be a nonnegative integer for a timed race" };
+    return { error: "Enter extra laps as a whole number (0 or more)." };
   }
   return { lapCount: normalizedLapCount, timeLimitMs: normalizedTimeLimitMs, plusLaps: normalizedPlusLaps };
 }
@@ -142,8 +142,8 @@ async function rejectOtherClubEvent(res: Response, eventId: number): Promise<boo
   const scopedClubId = getStaffClubId(res);
   if (scopedClubId === null) return false;
   const eventClubId = await getEventClubId(eventId);
-  if (eventClubId === null) { res.status(404).json({ error: "Event not found" }); return true; }
-  if (eventClubId !== scopedClubId) { res.status(403).json({ error: "Forbidden" }); return true; }
+  if (eventClubId === null) { res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." }); return true; }
+  if (eventClubId !== scopedClubId) { res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." }); return true; }
   return false;
 }
 
@@ -260,7 +260,7 @@ router.get("/events/:eventId/motos", async (req, res) => {
   const staffCId = getStaffClubId(res);
   if (staffCId !== null) {
     const evClubId = await getEventClubId(eventId);
-    if (evClubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
+    if (evClubId !== staffCId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
 
   const motos = await db.select().from(motosTable).where(eq(motosTable.eventId, eventId)).orderBy(motosTable.motoNumber);
@@ -302,14 +302,14 @@ router.post("/events/:eventId/motos", async (req, res) => {
   const staffCIdPost = getStaffClubId(res);
   if (staffCIdPost !== null) {
     const evClubId = await getEventClubId(eventId);
-    if (evClubId !== staffCIdPost) return res.status(403).json({ error: "Forbidden" });
+    if (evClubId !== staffCIdPost) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
 
   const { name, type, raceClass, raceClasses, motoNumber, scheduledTime, lineup, lapCount, timeLimitMs, plusLaps, practiceMode, countdownSeconds, enduroHasRfidStart } = req.body;
 
   // raceClasses (multi-class practice): raceClass can be derived from first entry
   const resolvedRaceClass = raceClass || (Array.isArray(raceClasses) && raceClasses.length > 0 ? raceClasses[0] : null);
-  if (!name || !type || !resolvedRaceClass || motoNumber === undefined) return res.status(400).json({ error: "name, type, raceClass (or raceClasses), motoNumber required" });
+  if (!name || !type || !resolvedRaceClass || motoNumber === undefined) return res.status(400).json({ error: "Enter a moto name, type, class and moto number." });
   const timing = normalizeMotoTiming(lapCount, timeLimitMs, plusLaps);
   if ("error" in timing) return res.status(400).json({ error: timing.error });
 
@@ -336,8 +336,8 @@ router.patch("/motos/:motoId", async (req, res) => {
   const staffCIdPatch = getStaffClubId(res);
   if (staffCIdPatch !== null) {
     const motoClubId = await getMotoClubId(id);
-    if (motoClubId === null) return res.status(404).json({ error: "Not found" });
-    if (motoClubId !== staffCIdPatch) return res.status(403).json({ error: "Forbidden" });
+    if (motoClubId === null) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
+    if (motoClubId !== staffCIdPatch) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
 
   const updates: Record<string, unknown> = {};
@@ -345,20 +345,20 @@ router.patch("/motos/:motoId", async (req, res) => {
     .select({ lapCount: motosTable.lapCount, timeLimitMs: motosTable.timeLimitMs, plusLaps: motosTable.plusLaps, status: motosTable.status, timeExpiredAt: motosTable.timeExpiredAt })
     .from(motosTable)
     .where(eq(motosTable.id, id));
-  if (!existingFormat) return res.status(404).json({ error: "Not found" });
+  if (!existingFormat) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   // Completing an already completed moto (a second tab, a double tap, a timer)
   // changes nothing: no new finish time, no second round of notifications.
   const alreadyCompleted = req.body.status === "completed" && existingFormat.status === "completed";
   const requestedLapCount = req.body.lapCount === undefined ? undefined : (req.body.lapCount === null ? null : Number(req.body.lapCount));
   const requestedTimeLimitMs = req.body.timeLimitMs === undefined ? undefined : (req.body.timeLimitMs === null ? null : Number(req.body.timeLimitMs));
   if (requestedLapCount !== undefined && requestedLapCount !== null && (!Number.isInteger(requestedLapCount) || requestedLapCount <= 0)) {
-    return res.status(400).json({ error: "lapCount must be a positive integer" });
+    return res.status(400).json({ error: "Enter the number of laps (1 or more)." });
   }
   if (requestedTimeLimitMs !== undefined && requestedTimeLimitMs !== null && (!Number.isInteger(requestedTimeLimitMs) || requestedTimeLimitMs <= 0)) {
-    return res.status(400).json({ error: "timeLimitMs must be a positive integer" });
+    return res.status(400).json({ error: "Enter a time limit greater than 0." });
   }
   if (requestedLapCount != null && requestedTimeLimitMs != null) {
-    return res.status(400).json({ error: "lapCount and timeLimitMs are mutually exclusive" });
+    return res.status(400).json({ error: "Choose a lap count or a time limit, not both." });
   }
   let resultingLapCount = requestedLapCount === undefined ? existingFormat.lapCount : requestedLapCount;
   let resultingTimeLimitMs = requestedTimeLimitMs === undefined ? existingFormat.timeLimitMs : requestedTimeLimitMs;
@@ -369,10 +369,10 @@ router.patch("/motos/:motoId", async (req, res) => {
     ? (requestedPlusLaps === undefined ? (requestedTimeLimitMs != null ? 1 : existingFormat.plusLaps ?? 1) : requestedPlusLaps ?? 1)
     : null;
   if (resultingPlusLaps !== null && (!Number.isInteger(resultingPlusLaps) || resultingPlusLaps < 0)) {
-    return res.status(400).json({ error: "plusLaps must be a nonnegative integer for a timed race" });
+    return res.status(400).json({ error: "Enter extra laps as a whole number (0 or more)." });
   }
   if (requestedPlusLaps != null && resultingTimeLimitMs === null) {
-    return res.status(400).json({ error: "plusLaps is only valid when timeLimitMs is set" });
+    return res.status(400).json({ error: "Extra laps only apply to timed races. Set a time limit first, or remove the extra laps." });
   }
   if (req.body.lapCount !== undefined || req.body.timeLimitMs !== undefined || req.body.plusLaps !== undefined) {
     updates.lapCount = resultingLapCount;
@@ -381,7 +381,7 @@ router.patch("/motos/:motoId", async (req, res) => {
   }
   if (req.body.status !== undefined) {
     if (!MOTO_STATUSES.has(req.body.status)) {
-      return res.status(400).json({ error: `status must be one of: ${[...MOTO_STATUSES].join(", ")}` });
+      return res.status(400).json({ error: "That moto status isn't valid. Refresh the Motos page and try again." });
     }
     updates.status = req.body.status;
     if (req.body.status === "in_progress") {
@@ -410,7 +410,7 @@ router.patch("/motos/:motoId", async (req, res) => {
   if (req.body.name !== undefined) updates.name = String(req.body.name);
 
   const [moto] = await db.update(motosTable).set(updates as any).where(eq(motosTable.id, id)).returning();
-  if (!moto) return res.status(404).json({ error: "Not found" });
+  if (!moto) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   if (shouldPublishAnnouncerSnapshotForMotoPatch(req.body)) {
     buildLeaderboard(id).then(snapshot => {
@@ -471,8 +471,8 @@ for (const action of ["finalize", "unfinalize"] as const) {
   router.post(`/motos/:motoId/${action}`, async (req, res) => {
     const id = Number(req.params.motoId);
     const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, id));
-    if (!moto) return res.status(404).json({ error: "Not found" });
-    if (!callerOwnsClub(res, await getEventClubId(moto.eventId))) return res.status(403).json({ error: "Forbidden" });
+    if (!moto) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
+    if (!callerOwnsClub(res, await getEventClubId(moto.eventId))) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
     if (action === "finalize" && moto.status !== "completed") {
       return res.status(409).json({ error: "Finish the race before finalizing its results." });
     }
@@ -496,13 +496,13 @@ for (const action of ["finalize", "unfinalize"] as const) {
 router.post("/motos/:motoId/restart", async (req, res) => {
   const id = Number(req.params.motoId);
   const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, id));
-  if (!moto) return res.status(404).json({ error: "Not found" });
+  if (!moto) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   // Staff club scoping
   const staffCIdRestart = getStaffClubId(res);
   if (staffCIdRestart !== null) {
     const evClubId = await getEventClubId(moto.eventId);
-    if (evClubId !== staffCIdRestart) return res.status(403).json({ error: "Forbidden" });
+    if (evClubId !== staffCIdRestart) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
   // Under the moto's lock: a read still being processed can't land after the
   // wipe and become "lap 1" of the restarted race.
@@ -537,14 +537,14 @@ router.post("/motos/:motoId/restart", async (req, res) => {
 router.post("/motos/:motoId/pause", async (req, res) => {
   const id = Number(req.params.motoId);
   const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, id));
-  if (!moto) return res.status(404).json({ error: "Not found" });
+  if (!moto) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   const staffCIdPause = getStaffClubId(res);
   if (staffCIdPause !== null) {
     const evClubId = await getEventClubId(moto.eventId);
-    if (evClubId !== staffCIdPause) return res.status(403).json({ error: "Forbidden" });
+    if (evClubId !== staffCIdPause) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
-  if (moto.status !== "in_progress") return res.status(400).json({ error: "Moto is not in progress" });
-  if (moto.pausedAt) return res.status(400).json({ error: "Moto is already paused" });
+  if (moto.status !== "in_progress") return res.status(400).json({ error: "This moto isn't running. Start it on the Motos page first." });
+  if (moto.pausedAt) return res.status(400).json({ error: "This moto is already paused." });
   const [updated] = await db
     .update(motosTable)
     .set({ pausedAt: new Date() })
@@ -567,14 +567,14 @@ router.post("/motos/:motoId/pause", async (req, res) => {
 router.post("/motos/:motoId/resume", async (req, res) => {
   const id = Number(req.params.motoId);
   const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, id));
-  if (!moto) return res.status(404).json({ error: "Not found" });
+  if (!moto) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   const staffCIdResume = getStaffClubId(res);
   if (staffCIdResume !== null) {
     const evClubId = await getEventClubId(moto.eventId);
-    if (evClubId !== staffCIdResume) return res.status(403).json({ error: "Forbidden" });
+    if (evClubId !== staffCIdResume) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
-  if (moto.status !== "in_progress") return res.status(400).json({ error: "Moto is not in progress" });
-  if (!moto.pausedAt) return res.status(400).json({ error: "Moto is not paused" });
+  if (moto.status !== "in_progress") return res.status(400).json({ error: "This moto isn't running. Start it on the Motos page first." });
+  if (!moto.pausedAt) return res.status(400).json({ error: "This moto isn't paused." });
   const additionalMs = Date.now() - moto.pausedAt.getTime();
   const [updated] = await db
     .update(motosTable)
@@ -601,12 +601,12 @@ router.delete("/motos/:motoId", async (req, res) => {
   const staffCIdDel = getStaffClubId(res);
   if (staffCIdDel !== null) {
     const motoClubId = await getMotoClubId(id);
-    if (motoClubId === null) return res.status(404).json({ error: "Not found" });
-    if (motoClubId !== staffCIdDel) return res.status(403).json({ error: "Forbidden" });
+    if (motoClubId === null) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
+    if (motoClubId !== staffCIdDel) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
 
   const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, id));
-  if (!moto) return res.status(404).json({ error: "Not found" });
+  if (!moto) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   // Delete FK-dependent rows before deleting the moto
   await db.delete(splitCrossingsTable).where(eq(splitCrossingsTable.motoId, id));
@@ -623,23 +623,23 @@ router.post("/events/:eventId/stagger", async (req, res) => {
   const eventId = Number(req.params.eventId);
   const { orderedMotoIds } = req.body;
   if (!Array.isArray(orderedMotoIds) || orderedMotoIds.length < 2) {
-    return res.status(400).json({ error: "orderedMotoIds must be an array of at least 2 moto IDs" });
+    return res.status(400).json({ error: "Pick at least 2 motos to reorder." });
   }
   const ids = orderedMotoIds.map(Number);
   const unique = new Set(ids);
-  if (unique.size !== ids.length) return res.status(400).json({ error: "orderedMotoIds must not contain duplicates" });
+  if (unique.size !== ids.length) return res.status(400).json({ error: "The same moto is listed twice. Refresh the page and try again." });
 
   // Verify event exists and user's club owns it
   const [event] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
-  if (!event) return res.status(404).json({ error: "Event not found" });
+  if (!event) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
   const staffClubId = getStaffClubId(res);
-  if (staffClubId !== null && event.clubId !== staffClubId) return res.status(403).json({ error: "Forbidden" });
+  if (staffClubId !== null && event.clubId !== staffClubId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
 
   // Verify all provided moto IDs actually belong to this event
   const ownedMotos = await db.select({ id: motosTable.id }).from(motosTable)
     .where(and(inArray(motosTable.id, ids), eq(motosTable.eventId, eventId)));
   if (ownedMotos.length !== ids.length) {
-    return res.status(400).json({ error: "One or more motos do not belong to this event" });
+    return res.status(400).json({ error: "Some of these motos are from another event. Refresh the Motos page and try again." });
   }
 
   // Clear any existing group memberships for motos in this list
@@ -679,7 +679,7 @@ router.post("/events/:eventId/stagger", async (req, res) => {
 router.delete("/motos/:motoId/stagger", async (req, res) => {
   const id = Number(req.params.motoId);
   const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, id));
-  if (!moto) return res.status(404).json({ error: "Not found" });
+  if (!moto) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   if (await rejectOtherClubEvent(res, moto.eventId)) return;
   if (!moto.staggeredGroupId) return res.json({ ok: true });
 
@@ -1373,11 +1373,11 @@ router.post("/events/:eventId/generate-practice-sessions", async (req, res) => {
     : raceClass ? [raceClass] : [];
 
   if (targetClasses.length === 0 || !maxRidersPerSession) {
-    return res.status(400).json({ error: "raceClasses (or raceClass) and maxRidersPerSession required" });
+    return res.status(400).json({ error: "Choose a class and enter the most riders per session." });
   }
 
   const max = Number(maxRidersPerSession);
-  if (isNaN(max) || max < 1) return res.status(400).json({ error: "maxRidersPerSession must be a positive integer" });
+  if (isNaN(max) || max < 1) return res.status(400).json({ error: "Enter the most riders per session (1 or more)." });
 
   const isAllClasses = targetClasses.includes("All Classes");
 
@@ -1397,7 +1397,7 @@ router.post("/events/:eventId/generate-practice-sessions", async (req, res) => {
     ));
 
   if (checkins.length === 0) {
-    return res.status(400).json({ error: "No checked-in riders found for the selected class(es)" });
+    return res.status(400).json({ error: "No riders are checked in for these classes yet. Check riders in first, then generate motos." });
   }
 
   const existingMotos = await db.select({ motoNumber: motosTable.motoNumber })
@@ -1464,13 +1464,13 @@ router.post("/events/:eventId/motos/reorder", async (req, res) => {
   if (await rejectOtherClubEvent(res, eventId)) return;
   const { motoIds } = req.body as { motoIds: number[] };
   if (!Array.isArray(motoIds) || motoIds.length === 0) {
-    return res.status(400).json({ error: "motoIds array is required" });
+    return res.status(400).json({ error: "Pick at least one moto." });
   }
 
   // Reject duplicate IDs
   const unique = new Set(motoIds);
   if (unique.size !== motoIds.length) {
-    return res.status(400).json({ error: "motoIds must not contain duplicates" });
+    return res.status(400).json({ error: "The same moto is listed twice. Refresh the page and try again." });
   }
 
   // Validate all IDs belong to this event
@@ -1481,7 +1481,7 @@ router.post("/events/:eventId/motos/reorder", async (req, res) => {
   const existingIds = new Set(existing.map(m => m.id));
   const invalid = motoIds.filter(id => !existingIds.has(id));
   if (invalid.length > 0) {
-    return res.status(400).json({ error: `Moto IDs not found in event: ${invalid.join(", ")}` });
+    return res.status(400).json({ error: "Some of these motos are no longer in this event. Refresh the Motos page and try again." });
   }
 
   // Fetch current stagger group membership so we can keep staggered_order in sync
@@ -1553,9 +1553,9 @@ router.post("/events/:eventId/motos/:motoId/generate-lineup", async (req, res) =
   const [moto] = await db.select().from(motosTable).where(
     and(eq(motosTable.id, motoId), eq(motosTable.eventId, eventId))
   );
-  if (!moto) return res.status(404).json({ error: "Moto not found" });
-  if (moto.status === "completed") return res.status(409).json({ error: "Moto is completed — lineup is locked" });
-  if (!moto.raceClass) return res.status(400).json({ error: "Moto has no race class" });
+  if (!moto) return res.status(404).json({ error: "This moto couldn't be found. Motos may have been regenerated. Refresh the Motos page." });
+  if (moto.status === "completed") return res.status(409).json({ error: "This moto is finished, so its lineup can't change." });
+  if (!moto.raceClass) return res.status(400).json({ error: "This moto has no class set. Edit the moto and choose a class." });
   const [event] = await db
     .select({ raceStyle: eventsTable.raceStyle })
     .from(eventsTable)
@@ -1586,7 +1586,7 @@ router.post("/events/:eventId/motos/:motoId/generate-lineup", async (req, res) =
     ));
 
   if (checkins.length === 0) {
-    return res.status(400).json({ error: `No checked-in riders found for ${raceClass}` });
+    return res.status(400).json({ error: `No riders are checked in for ${raceClass} yet. Check riders in first, then generate motos.` });
   }
 
   // Load registration order if needed
@@ -1744,7 +1744,7 @@ router.post("/events/:eventId/advance-to-main", async (req, res) => {
   const eventId = Number(req.params.eventId);
   if (await rejectOtherClubEvent(res, eventId)) return;
   const { raceClass, topPerHeat = 5 } = req.body;
-  if (!raceClass) return res.status(400).json({ error: "raceClass is required" });
+  if (!raceClass) return res.status(400).json({ error: "Choose a class." });
 
   const heatMotos = await db.select().from(motosTable)
     .where(and(
@@ -1753,7 +1753,7 @@ router.post("/events/:eventId/advance-to-main", async (req, res) => {
       eq(motosTable.type, "heat"),
     ));
 
-  if (heatMotos.length === 0) return res.status(404).json({ error: "No heat motos found for this class" });
+  if (heatMotos.length === 0) return res.status(404).json({ error: "This class has no heat motos yet. Generate motos on the Motos page first." });
 
   const [mainMoto] = await db.select().from(motosTable)
     .where(and(

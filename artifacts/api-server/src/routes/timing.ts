@@ -1035,9 +1035,9 @@ async function _processCrossing(opts: {
   }
   if (moto.status !== "in_progress") {
     if (moto.type === "enduro_test") throw new EnduroCrossingRejected(`${moto.name} is finished — reopen it to record more runs`);
-    throw new Error("Moto is not in progress");
+    throw new Error("This moto isn't running. Start it on the Motos page first.");
   }
-  if (!moto.startedAt) throw new Error("Moto has no start time");
+  if (!moto.startedAt) throw new Error("This moto hasn't been started. Start it on the Motos page first.");
 
   // 1b. Burst-debounce threshold — fixed short window to reject duplicate hardware reads.
   //     minLapMs is a scoring/flagging field only; it must NOT gate crossing acceptance.
@@ -1057,7 +1057,7 @@ async function _processCrossing(opts: {
   // fails to read. The same input field therefore toggles start → stop.
   if (moto.type === "enduro_test") {
     if (!riderId) {
-      throw new EnduroCrossingRejected("Unrecognized tag — assign it to a rider or use manual bib entry");
+      throw new EnduroCrossingRejected("This tag isn't assigned to a rider. Assign it on Check-In, or enter the rider's bib number by hand.");
     }
     // Order by id (insertion order), NOT crossingTime: the start→finish toggle is
     // a logical sequence. Reader/server clock skew on mixed RFID-start /
@@ -1175,7 +1175,7 @@ async function _processCrossing(opts: {
     if (duplicate) return { debounced: true, crossing: null, lapNumber: null, lapTimeMs: null };
   }
   if (crossingTime.getTime() < new Date(moto.startedAt).getTime()) {
-    throw new Error("Crossing time precedes the moto start");
+    throw new Error("That time is before the moto started. Check the time and try again.");
   }
 
   // 5. Store the crossing, then rebuild this rider's laps in time order.
@@ -1353,7 +1353,7 @@ async function getActivePracticeSessionForClub(clubId: number) {
 router.post("/timing/active/crossing", async (req, res) => {
   const clubId = Number(req.query.clubId);
   if (!clubId || isNaN(clubId)) {
-    return res.status(400).json({ error: "clubId query param is required" });
+    return res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
   }
   if (!(await authorizeIngest(req, res, clubId, "active_crossing"))) return;
   return handleFacilityCrossing(req, res, clubId);
@@ -1540,7 +1540,7 @@ export async function handleFacilityCrossing(req: Request, res: Response, clubId
 router.post("/timing/ping", async (req, res) => {
   const clubId = Number(req.query.clubId);
   if (!clubId || isNaN(clubId)) {
-    return res.status(400).json({ error: "clubId query param is required" });
+    return res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
   }
   if (!(await authorizeIngest(req, res, clubId, "ping"))) return;
   return handlePing(req, res, clubId);
@@ -1706,19 +1706,19 @@ router.post("/timing/zebra-crossing", async (req, res) => {
 router.post("/timing/manual-crossing", async (req, res) => {
   try {
     const session = req.session as any;
-    if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
     const { riderId, motoId } = req.body;
-    if (!riderId || !motoId) return res.status(400).json({ error: "riderId and motoId are required" });
+    if (!riderId || !motoId) return res.status(400).json({ error: "Pick a rider and a moto." });
 
     const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, Number(motoId)));
-    if (!moto) return res.status(404).json({ error: `Moto ${motoId} not found` });
+    if (!moto) return res.status(404).json({ error: "This moto couldn't be found. Motos may have been regenerated. Refresh the Motos page." });
 
     const [sessionUser] = await db
       .select({ clubId: usersTable.clubId, role: usersTable.role })
       .from(usersTable)
       .where(eq(usersTable.id, session.userId));
-    if (!sessionUser) return res.status(401).json({ error: "Unauthorized" });
+    if (!sessionUser) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
     if (sessionUser.role !== "super_admin") {
       const [event] = await db
@@ -1726,7 +1726,7 @@ router.post("/timing/manual-crossing", async (req, res) => {
         .from(eventsTable)
         .where(eq(eventsTable.id, moto.eventId));
       if (!event || event.clubId !== sessionUser.clubId) {
-        return res.status(403).json({ error: "Forbidden: not your event" });
+        return res.status(403).json({ error: "This event belongs to another club. Open one of your club's events instead." });
       }
     }
 
@@ -1759,7 +1759,12 @@ router.post("/timing/manual-crossing", async (req, res) => {
     });
   } catch (err: any) {
     const status = typeof err.status === "number" ? err.status : err instanceof EnduroCrossingRejected ? 409 : 500;
-    return res.status(status).json({ error: err.message ?? "Internal server error" });
+    // Never pass database or library text to the timing screen.
+    return res.status(status).json({
+      error: status >= 500 || !err?.message
+        ? "Couldn't save that lap. Try again in a moment."
+        : err.message,
+    });
   }
 });
 
@@ -1767,7 +1772,7 @@ router.post("/timing/manual-crossing", async (req, res) => {
 router.get("/timing/live/:motoId", async (req, res) => {
   const motoId = Number(req.params.motoId);
   const staffCId = getStaffClubId(res);
-  if (!await checkMotoClubAccess(motoId, staffCId)) return res.status(403).json({ error: "Forbidden" });
+  if (!await checkMotoClubAccess(motoId, staffCId)) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   const sock = (req as any).socket;
   sock?.setNoDelay?.(true);
   sock?.setTimeout?.(0);
@@ -1788,7 +1793,7 @@ router.get("/timing/live/:motoId", async (req, res) => {
     if (snapshot) {
       (res as any).write(`data: ${JSON.stringify(snapshot)}\n\n`);
     } else {
-      (res as any).write(`data: ${JSON.stringify({ error: "Moto not found" })}\n\n`);
+      (res as any).write(`data: ${JSON.stringify({ error: "This moto couldn't be found. Motos may have been regenerated. Refresh the Motos page." })}\n\n`);
     }
     sseSubscribe(motoId, res);
   });
@@ -1813,7 +1818,7 @@ router.get("/timing/live/:motoId", async (req, res) => {
 router.get("/timing/announcer-live/:motoId", async (req, res) => {
   const motoId = Number(req.params.motoId);
   const staffCId = getStaffClubId(res);
-  if (!await checkMotoClubAccess(motoId, staffCId)) return res.status(403).json({ error: "Forbidden" });
+  if (!await checkMotoClubAccess(motoId, staffCId)) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -1860,7 +1865,7 @@ router.get("/timing/announcer-audio/:eventId", (req, res) => {
 router.get("/timing/crossings/:motoId", async (req, res) => {
   const motoId = Number(req.params.motoId);
   const staffCId = getStaffClubId(res);
-  if (!await checkMotoClubAccess(motoId, staffCId)) return res.status(403).json({ error: "Forbidden" });
+  if (!await checkMotoClubAccess(motoId, staffCId)) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   const crossings = await db
     .select({
       id: lapCrossingsTable.id,
@@ -1925,12 +1930,12 @@ router.delete("/timing/crossings/:crossingId", async (req, res) => {
   // ── Auth: must be a logged-in organizer ──────────────────────────────────
   const session = req.session as any;
   if (!session?.userId) {
-    return res.status(401).json({ error: "Unauthorized" });
+    return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   }
 
   const crossingId = Number(req.params.crossingId);
   if (!crossingId || isNaN(crossingId)) {
-    return res.status(400).json({ error: "Invalid crossingId" });
+    return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   }
 
   // Load the crossing to delete
@@ -1940,14 +1945,14 @@ router.delete("/timing/crossings/:crossingId", async (req, res) => {
     .where(eq(lapCrossingsTable.id, crossingId));
 
   if (!crossing) {
-    return res.status(404).json({ error: "Crossing not found" });
+    return res.status(404).json({ error: "This lap couldn't be found. It may have been deleted. Refresh the page." });
   }
 
   const { motoId, rfidNumber, riderId } = crossing;
 
   // Load the moto (need startedAt for lap time recalculation)
   const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, motoId));
-  if (!moto) return res.status(404).json({ error: "Moto not found" });
+  if (!moto) return res.status(404).json({ error: "This moto couldn't be found. Motos may have been regenerated. Refresh the Motos page." });
 
   // ── Ownership check: session user must belong to the same club as the event ──
   const [sessionUser] = await db
@@ -1955,7 +1960,7 @@ router.delete("/timing/crossings/:crossingId", async (req, res) => {
     .from(usersTable)
     .where(eq(usersTable.id, session.userId));
 
-  if (!sessionUser) return res.status(401).json({ error: "Unauthorized" });
+  if (!sessionUser) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   if (sessionUser.role !== "super_admin") {
     const [event] = await db
@@ -1964,7 +1969,7 @@ router.delete("/timing/crossings/:crossingId", async (req, res) => {
       .where(eq(eventsTable.id, moto.eventId));
 
     if (!event || event.clubId !== sessionUser.clubId) {
-      return res.status(403).json({ error: "Forbidden: not your event" });
+      return res.status(403).json({ error: "This event belongs to another club. Open one of your club's events instead." });
     }
   }
 
@@ -2025,10 +2030,10 @@ router.delete("/timing/crossings/:crossingId", async (req, res) => {
 // read with no finish yet). Organizer only (default-deny), club-checked.
 router.get("/motos/:motoId/open-runs", async (req, res) => {
   const motoId = Number(req.params.motoId);
-  if (!Number.isInteger(motoId) || motoId <= 0) return res.status(400).json({ error: "Invalid motoId" });
-  if (!await checkMotoClubAccess(motoId, getStaffClubId(res))) return res.status(403).json({ error: "Forbidden" });
+  if (!Number.isInteger(motoId) || motoId <= 0) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
+  if (!await checkMotoClubAccess(motoId, getStaffClubId(res))) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, motoId));
-  if (!moto) return res.status(404).json({ error: "Moto not found" });
+  if (!moto) return res.status(404).json({ error: "This moto couldn't be found. Motos may have been regenerated. Refresh the Motos page." });
   if (moto.type !== "enduro_test") return res.json([]);
   const rows = await db
     .select({
@@ -2077,11 +2082,11 @@ router.post("/motos/:motoId/riders/:riderId/close-run", async (req, res) => {
   const motoId = Number(req.params.motoId);
   const riderId = Number(req.params.riderId);
   if (!Number.isInteger(motoId) || motoId <= 0 || !Number.isInteger(riderId) || riderId <= 0) {
-    return res.status(400).json({ error: "Invalid motoId or riderId" });
+    return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   }
-  if (!await checkMotoClubAccess(motoId, getStaffClubId(res))) return res.status(403).json({ error: "Forbidden" });
+  if (!await checkMotoClubAccess(motoId, getStaffClubId(res))) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, motoId));
-  if (!moto) return res.status(404).json({ error: "Moto not found" });
+  if (!moto) return res.status(404).json({ error: "This moto couldn't be found. Motos may have been regenerated. Refresh the Motos page." });
   if (moto.type !== "enduro_test") return res.status(400).json({ error: "Only enduro tests have open runs" });
 
   const voided = await withMotoLock(motoId, async () => {
@@ -2109,9 +2114,9 @@ router.post("/motos/:motoId/riders/:riderId/close-run", async (req, res) => {
 router.get("/timing/leaderboard/:motoId", async (req, res) => {
   const motoId = Number(req.params.motoId);
   const staffCId = getStaffClubId(res);
-  if (!await checkMotoClubAccess(motoId, staffCId)) return res.status(403).json({ error: "Forbidden" });
+  if (!await checkMotoClubAccess(motoId, staffCId)) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   const snapshot = await buildLeaderboard(motoId);
-  if (!snapshot) return res.status(404).json({ error: "Moto not found" });
+  if (!snapshot) return res.status(404).json({ error: "This moto couldn't be found. Motos may have been regenerated. Refresh the Motos page." });
   return res.json(snapshot);
 });
 
@@ -2121,10 +2126,10 @@ router.get("/timing/leaderboard/:motoId", async (req, res) => {
 router.get("/timing/rmonitor-feed", async (req, res) => {
   const eventId = Number(req.query.eventId);
   if (!eventId || isNaN(eventId)) {
-    return res.status(400).json({ error: "eventId is required" });
+    return res.status(400).json({ error: "Choose an event first." });
   }
   const staffCId = getStaffClubId(res);
-  if (!await checkEventClubAccess(eventId, staffCId)) return res.status(403).json({ error: "Forbidden" });
+  if (!await checkEventClubAccess(eventId, staffCId)) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -2175,10 +2180,10 @@ router.get("/timing/rmonitor-feed", async (req, res) => {
 router.get("/timing/rmonitor-snapshot", async (req, res) => {
   const eventId = Number(req.query.eventId);
   if (!eventId || isNaN(eventId)) {
-    return res.status(400).json({ error: "eventId is required" });
+    return res.status(400).json({ error: "Choose an event first." });
   }
   const staffCId = getStaffClubId(res);
-  if (!await checkEventClubAccess(eventId, staffCId)) return res.status(403).json({ error: "Forbidden" });
+  if (!await checkEventClubAccess(eventId, staffCId)) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
 
   // Prefer in-progress moto; fall back to most recent completed
   const [activeMoto] = await db
@@ -2214,10 +2219,10 @@ router.get("/timing/rmonitor-snapshot", async (req, res) => {
 router.get("/timing/rmonitor-status", async (req, res) => {
   const eventId = Number(req.query.eventId);
   if (!eventId || isNaN(eventId)) {
-    return res.status(400).json({ error: "eventId is required" });
+    return res.status(400).json({ error: "Choose an event first." });
   }
   const staffCId = getStaffClubId(res);
-  if (!await checkEventClubAccess(eventId, staffCId)) return res.status(403).json({ error: "Forbidden" });
+  if (!await checkEventClubAccess(eventId, staffCId)) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   return res.json({ bridges: rmonitorClientCount(eventId) });
 });
 
@@ -2887,7 +2892,7 @@ router.post("/timing/announce-moto-start", async (req, res) => {
     return res.send(audioBuffer);
   } catch (err: any) {
     req.log.error({ err }, "announce-moto-start TTS error");
-    return res.status(500).json({ error: "Failed to generate announcement" });
+    return res.status(500).json({ error: "Couldn't create the announcement. Try again in a moment." });
   }
 });
 
@@ -2915,7 +2920,7 @@ router.post("/timing/announce", async (req, res) => {
     };
 
     if (!Array.isArray(top5) || top5.length === 0) {
-      return res.status(400).json({ error: "top5 array is required" });
+      return res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
     }
 
     const script = buildRaceAnnouncementScript({
@@ -2934,7 +2939,7 @@ router.post("/timing/announce", async (req, res) => {
     return res.send(audioBuffer);
   } catch (err: any) {
     req.log.error({ err }, "announce TTS error");
-    return res.status(500).json({ error: "Failed to generate announcement" });
+    return res.status(500).json({ error: "Couldn't create the announcement. Try again in a moment." });
   }
 });
 

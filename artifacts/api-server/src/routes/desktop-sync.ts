@@ -68,11 +68,11 @@ function firstDefined(source: Record<string, unknown>, ...keys: string[]): unkno
 
 router.post("/clubs/:clubId/desktop-push", async (req, res) => {
   const clubId = Number(req.params.clubId);
-  if (isNaN(clubId)) return res.status(400).json({ error: "Invalid clubId" });
+  if (isNaN(clubId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const user = await resolveClubUser(req, clubId);
   if (!user || user.clubId !== clubId) {
-    return res.status(403).json({ error: "Access denied" });
+    return res.status(403).json({ error: "This club isn't on your account. Sign in with an organizer account for this club." });
   }
 
   const payload = req.body as Record<string, Record<string, unknown>[]>;
@@ -506,14 +506,14 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
         : null;
       if (resultingPlusLaps !== null && (!Number.isInteger(resultingPlusLaps) || resultingPlusLaps < 0)) {
         req.log.warn(
-          { clubId, motoId: clientId, error: "plusLaps must be a nonnegative integer for a timed race" },
+          { clubId, motoId: clientId, error: "Enter extra laps as a whole number (0 or more)." },
           "desktop-push skipped invalid moto",
         );
         continue;
       }
       if (requestedPlusLaps != null && resultingTimeLimitMs === null) {
         req.log.warn(
-          { clubId, motoId: clientId, error: "plusLaps is only valid when timeLimitMs is set" },
+          { clubId, motoId: clientId, error: "Extra laps only apply to timed races. Set a time limit first, or remove the extra laps." },
           "desktop-push skipped invalid moto",
         );
         continue;
@@ -1551,11 +1551,11 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
 
 router.post("/clubs/:clubId/sync-pull", async (req, res) => {
   const clubId = Number(req.params.clubId);
-  if (isNaN(clubId)) return res.status(400).json({ error: "Invalid clubId" });
+  if (isNaN(clubId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const user = await resolveClubUser(req, clubId);
   if (!user || user.clubId !== clubId) {
-    return res.status(403).json({ error: "Access denied" });
+    return res.status(403).json({ error: "This club isn't on your account. Sign in with an organizer account for this club." });
   }
 
   // Always fetch users first — they must be returned even when the club has

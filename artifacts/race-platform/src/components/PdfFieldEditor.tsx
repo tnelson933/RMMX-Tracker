@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Save, User, Mail, Calendar, PenLine, Trash2, MousePointer } from "lucide-react";
 import { loadPdfJs, PDF_JS_WORKER_URL } from "@/lib/pdfJs";
+import { responseErrorMessage } from "@/lib/friendlyErrors";
 
 export type FieldType = "name" | "email" | "date" | "signature";
 
@@ -64,7 +65,7 @@ export function PdfFieldEditor({ url, initialFields = [], onSave, onCancel }: Pr
         if (!lib.GlobalWorkerOptions.workerSrc)
           lib.GlobalWorkerOptions.workerSrc = PDF_JS_WORKER_URL;
         const resp = await fetch(url, { credentials: "include" });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        if (!resp.ok) throw new Error(responseErrorMessage(resp.status));
         const data = await resp.arrayBuffer();
         if (dead) return;
         const doc = await lib.getDocument({ data }).promise;

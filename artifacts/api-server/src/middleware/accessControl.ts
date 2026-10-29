@@ -86,7 +86,7 @@ export async function accessControlMiddleware(req: Request, res: Response, next:
     const auth = req.headers.authorization ?? "";
     if (BEARER_SYNC_ROUTE.test(path) && auth.startsWith("Bearer ")) return next();
     if (BEARER_LAPTOP_ROUTE.test(path) && auth.startsWith("Bearer ")) return next();
-    return res.status(401).json({ error: "Not authenticated" });
+    return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   }
 
   // Mirroring (a super admin acting as an organizer): Quit always works, the
@@ -96,7 +96,7 @@ export async function accessControlMiddleware(req: Request, res: Response, next:
     if (path === "/admin/mirror/stop" || path === "/admin/mirror/organizers") return next();
     // Includes pairing codes: a laptop key is a lasting club credential.
     if (path === "/auth/offline-token" || path === "/readers/pairing-codes" || /^\/clubs\/\d+\/(sync-pull|desktop-push)$/.test(path)) {
-      return res.status(403).json({ error: "Not available while mirroring an organizer" });
+      return res.status(403).json({ error: "You can't do this while viewing an organizer's account. Exit that view first." });
     }
   }
 
@@ -108,7 +108,7 @@ export async function accessControlMiddleware(req: Request, res: Response, next:
   if (!user) {
     // Stale session (user deleted): treat as logged out.
     if (isPublic) return next();
-    return res.status(401).json({ error: "Not authenticated" });
+    return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   }
 
   // Who the signed-in caller is, set before any public-route return so public
@@ -126,7 +126,7 @@ export async function accessControlMiddleware(req: Request, res: Response, next:
   if (user.role === "staff") return applyStaffRules(user, path, method, res, next);
 
   if (user.clubId == null) {
-    return res.status(403).json({ error: "Forbidden: account has no club assignment" });
+    return res.status(403).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
   }
   res.locals.staffClubId = user.clubId;
   return next();

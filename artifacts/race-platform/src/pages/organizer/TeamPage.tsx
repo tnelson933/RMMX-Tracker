@@ -14,6 +14,7 @@ import { PdfFieldEditor, type WaiverField } from "@/components/PdfFieldEditor";
 import { StateSelect } from "@/components/ui/StateSelect";
 import { TrackCourseMap, type LibraryTrack } from "./CourseMap";
 import { RentalInventory } from "@/components/organizer/RentalInventory";
+import { errorText } from "@/lib/friendlyErrors";
 
 type AdminTab = "forms" | "tracks" | "rentals" | "classes" | "brands";
 const ADMIN_TABS: Array<{ key: AdminTab; label: string; icon: typeof FileText }> = [
@@ -217,8 +218,8 @@ export default function TeamPage() {
       setNewTrackState("");
       setNewTrackZip("");
       toast({ title: "Track added" });
-    } catch {
-      toast({ title: "Failed to add track", variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Couldn't add track", description: errorText(err), variant: "destructive" });
     } finally {
       setAddingTrack(false);
     }
@@ -229,8 +230,8 @@ export default function TeamPage() {
       await fetch(`/api/tracks/${id}`, { method: "DELETE", credentials: "include" });
       setTracks(prev => prev.filter(t => t.id !== id));
       toast({ title: "Track removed" });
-    } catch {
-      toast({ title: "Failed to remove track", variant: "destructive" });
+    } catch (err) {
+      toast({ title: "Couldn't remove track", description: errorText(err), variant: "destructive" });
     }
   };
 
@@ -310,7 +311,7 @@ export default function TeamPage() {
           toast({ title: "Saved", description: "Rider acknowledgement form saved." });
         },
         onError: (err: any) => {
-          toast({ title: "Error", description: err?.data?.error ?? "Failed to save", variant: "destructive" });
+          toast({ title: "Error", description: err?.data?.error ?? "Couldn't save", variant: "destructive" });
         },
         onSettled: () => setAckSaving(false),
       }
@@ -375,7 +376,7 @@ export default function TeamPage() {
       {
         onError: (err: any) => {
           setClasses(classes);
-          toast({ title: "Error", description: err?.data?.error ?? "Failed to save", variant: "destructive" });
+          toast({ title: "Error", description: err?.data?.error ?? "Couldn't save", variant: "destructive" });
         },
       }
     );
@@ -392,7 +393,7 @@ export default function TeamPage() {
       {
         onError: (err: any) => {
           setClasses(classes);
-          toast({ title: "Error", description: err?.data?.error ?? "Failed to save", variant: "destructive" });
+          toast({ title: "Error", description: err?.data?.error ?? "Couldn't save", variant: "destructive" });
         },
       }
     );
@@ -409,7 +410,7 @@ export default function TeamPage() {
         onSuccess: () => toast({ title: "Details saved" }),
         onError: (err: any) => {
           setClasses(classes);
-          toast({ title: "Error", description: err?.data?.error ?? "Failed to save", variant: "destructive" });
+          toast({ title: "Error", description: err?.data?.error ?? "Couldn't save", variant: "destructive" });
         },
       }
     );
@@ -434,7 +435,7 @@ export default function TeamPage() {
         },
         onError: (err: any) => {
           setBrands(brands);
-          toast({ title: "Error", description: err?.data?.error ?? "Failed to save", variant: "destructive" });
+          toast({ title: "Error", description: err?.data?.error ?? "Couldn't save", variant: "destructive" });
         },
       }
     );
@@ -453,7 +454,7 @@ export default function TeamPage() {
         },
         onError: (err: any) => {
           setBrands(brands);
-          toast({ title: "Error", description: err?.data?.error ?? "Failed to save", variant: "destructive" });
+          toast({ title: "Error", description: err?.data?.error ?? "Couldn't save", variant: "destructive" });
         },
       }
     );

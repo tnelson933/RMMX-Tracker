@@ -37,15 +37,15 @@ function getAppUrl(): string {
 /** The registration, its event and rider, if the signed-in account may manage it. Sends the error otherwise. */
 async function loadOwnedRegistration(req: any, res: any) {
   const regId = Number(req.params.regId);
-  if (!Number.isInteger(regId)) { res.status(400).json({ error: "Invalid registration" }); return null; }
+  if (!Number.isInteger(regId)) { res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." }); return null; }
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, req.session.riderAccountId));
-  if (!account) { res.status(401).json({ error: "Not authenticated" }); return null; }
+  if (!account) { res.status(401).json({ error: "You're signed out. Sign in again, then try once more." }); return null; }
   const [reg] = await db.select().from(registrationsTable).where(eq(registrationsTable.id, regId));
-  if (!reg || reg.status === "void") { res.status(404).json({ error: "Registration not found" }); return null; }
+  if (!reg || reg.status === "void") { res.status(404).json({ error: "This registration couldn't be found. It may have been cancelled. Refresh the page and try again." }); return null; }
   const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, reg.riderId));
-  if (!rider || !(await canManageRider(account, rider))) { res.status(403).json({ error: "Not your registration" }); return null; }
+  if (!rider || !(await canManageRider(account, rider))) { res.status(403).json({ error: "This registration isn't on your account. Sign in with the account that registered." }); return null; }
   const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, reg.eventId));
-  if (!event) { res.status(404).json({ error: "Event not found" }); return null; }
+  if (!event) { res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." }); return null; }
   return { account, reg, rider, event };
 }
 

@@ -40,7 +40,7 @@ router.post("/series", async (req, res) => {
   const staffCId = getStaffClubId(res);
   const { name, clubId: rawClubId, season, classes, pointsSystem, scoringTableId, eventIds } = req.body;
   const clubId = staffCId !== null ? staffCId : rawClubId;
-  if (!name || !clubId || !season) return res.status(400).json({ error: "name, clubId, season required" });
+  if (!name || !clubId || !season) return res.status(400).json({ error: "Enter a series name and season." });
   if (!(await scoringTableUsable(scoringTableId, Number(clubId)))) return res.status(400).json({ error: "That scoring table isn't available to this club." });
   const foreignOnCreate = await foreignEventIds(eventIds, Number(clubId));
   if (foreignOnCreate.length > 0) return res.status(400).json({ error: `Events ${foreignOnCreate.join(", ")} don't belong to this club.` });
@@ -60,10 +60,10 @@ router.patch("/series/:seriesId", async (req, res) => {
   const seriesId = Number(req.params.seriesId);
 
   const [existingSeries] = await db.select().from(seriesTable).where(eq(seriesTable.id, seriesId));
-  if (!existingSeries) return res.status(404).json({ error: "Not found" });
+  if (!existingSeries) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   const staffCId = getStaffClubId(res);
-  if (staffCId !== null && existingSeries.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
+  if (staffCId !== null && existingSeries.clubId !== staffCId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
 
   const { name, season, classes, scoringTableId, eventIds } = req.body;
 
@@ -100,7 +100,7 @@ router.patch("/series/:seriesId", async (req, res) => {
   if (eventIds !== undefined) updates.eventIds = uniqueIds(eventIds);
 
   const [updated] = await db.update(seriesTable).set(updates as any).where(eq(seriesTable.id, seriesId)).returning();
-  if (!updated) return res.status(404).json({ error: "Not found" });
+  if (!updated) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   // Events or scoring changed: rebuild the stored series points.
   if (eventIds !== undefined || scoringTableId !== undefined || classes !== undefined) {
     await recalculateSeriesPoints([seriesId]);
@@ -111,7 +111,7 @@ router.patch("/series/:seriesId", async (req, res) => {
 router.get("/series/:seriesId/leaderboard", async (req, res) => {
   const seriesId = Number(req.params.seriesId);
   const [series] = await db.select().from(seriesTable).where(eq(seriesTable.id, seriesId));
-  if (!series) return res.status(404).json({ error: "Not found" });
+  if (!series) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   // Public (embed widgets): finished races count, each class flagged official
   // once all its races are finalized. Same rules as the stored series points.
@@ -124,7 +124,7 @@ router.post("/series/:seriesId/recalculate", async (req, res) => {
   const staffCId = getStaffClubId(res);
   if (staffCId !== null) {
     const [series] = await db.select({ clubId: seriesTable.clubId }).from(seriesTable).where(eq(seriesTable.id, seriesId));
-    if (!series || series.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
+    if (!series || series.clubId !== staffCId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
   await recalculateSeriesPoints([seriesId]);
   return res.json({ ok: true });
@@ -165,7 +165,7 @@ router.get("/public/series", async (req, res) => {
 router.get("/public/series/:seriesId", async (req, res) => {
   const seriesId = Number(req.params.seriesId);
   const [series] = await db.select().from(seriesTable).where(eq(seriesTable.id, seriesId));
-  if (!series) return res.status(404).json({ error: "Not found" });
+  if (!series) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   const allEventIds = series.eventIds as number[];
 
@@ -201,7 +201,7 @@ router.get("/public/series/:seriesId", async (req, res) => {
 router.get("/public/series/:seriesId/standings", async (req, res) => {
   const seriesId = Number(req.params.seriesId);
   const [series] = await db.select().from(seriesTable).where(eq(seriesTable.id, seriesId));
-  if (!series) return res.status(404).json({ error: "Not found" });
+  if (!series) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   const { standings: rows, eventIds } = await computeSeriesStandings(series);
   const standings = rows.map(row => ({ ...row, amaNumber: null as string | null, bikeBrand: null as string | null }));

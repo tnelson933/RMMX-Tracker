@@ -16,7 +16,7 @@ const router = Router();
 // GET /video/status/:eventId — is this event streaming live, and on which cameras?
 router.get("/video/status/:eventId", (req, res) => {
   const eventId = parseInt(req.params.eventId, 10);
-  if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
+  if (isNaN(eventId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   const cameras = getLiveCameras(eventId).map(({ id, name, reconnecting }) => ({ id, name, reconnecting }));
   return res.json({ live: isEventLive(eventId), cameras });
 });
@@ -32,8 +32,8 @@ router.get("/video/live-events", (_req, res) => {
 router.post("/video/broadcast-ticket", async (req, res) => {
   const eventId = Number(req.body?.eventId);
   const cameraId = normalizeCameraId(req.body?.cameraId);
-  if (!Number.isInteger(eventId) || eventId <= 0) return res.status(400).json({ error: "Invalid event ID" });
-  if (!cameraId) return res.status(400).json({ error: "Invalid camera" });
+  if (!Number.isInteger(eventId) || eventId <= 0) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
+  if (!cameraId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const [event] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
   if (!event || !callerOwnsClub(res, event.clubId)) return res.status(404).json({ error: "Event not found" });

@@ -138,14 +138,14 @@ function pruneRecentBroadcasts(now: number) {
 // Optional requestId (client-generated per click) makes a repeated request a no-op.
 router.post("/admin/notifications/broadcast", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const [callingUser] = await db
     .select({ role: usersTable.role, clubId: usersTable.clubId })
     .from(usersTable)
     .where(eq(usersTable.id, userId));
 
-  if (!callingUser) return res.status(401).json({ error: "Not authenticated" });
+  if (!callingUser) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const { title, body, eventId, requestId } = req.body as {
     title?: string;
@@ -155,13 +155,13 @@ router.post("/admin/notifications/broadcast", async (req, res) => {
   };
 
   if (!title?.trim() || !body?.trim()) {
-    return res.status(400).json({ error: "title and body are required" });
+    return res.status(400).json({ error: "Enter a title and a message." });
   }
   if (eventId != null && (!Number.isInteger(eventId) || eventId <= 0)) {
-    return res.status(400).json({ error: "eventId must be a positive integer" });
+    return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   }
   if (requestId != null && (typeof requestId !== "string" || requestId.length === 0 || requestId.length > 100)) {
-    return res.status(400).json({ error: "requestId must be a string of 1-100 characters" });
+    return res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
   }
 
   const now = Date.now();
@@ -252,7 +252,7 @@ router.post("/admin/notifications/broadcast", async (req, res) => {
 // Super admin only — no timing or rate restrictions. Sends to all registered push tokens.
 router.post("/admin/notifications/broadcast-all", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const [callingUser] = await db
     .select({ role: usersTable.role })
@@ -260,7 +260,7 @@ router.post("/admin/notifications/broadcast-all", async (req, res) => {
     .where(eq(usersTable.id, userId));
 
   if (!callingUser || callingUser.role !== "super_admin") {
-    return res.status(403).json({ error: "Super admin access required" });
+    return res.status(403).json({ error: "Only RM Roost admins can do this." });
   }
 
   const { title, body, linkUrl } = req.body as {
@@ -270,7 +270,7 @@ router.post("/admin/notifications/broadcast-all", async (req, res) => {
   };
 
   if (!title?.trim() || !body?.trim()) {
-    return res.status(400).json({ error: "title and body are required" });
+    return res.status(400).json({ error: "Enter a title and a message." });
   }
 
   let cleanLinkUrl: string | null = null;
@@ -278,11 +278,11 @@ router.post("/admin/notifications/broadcast-all", async (req, res) => {
     try {
       const parsed = new URL(linkUrl.trim());
       if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-        return res.status(400).json({ error: "linkUrl must be an http(s) URL" });
+        return res.status(400).json({ error: "The link must start with https:// (or http://)." });
       }
       cleanLinkUrl = parsed.toString();
     } catch {
-      return res.status(400).json({ error: "linkUrl is not a valid URL" });
+      return res.status(400).json({ error: "That link isn't a valid web address. Check it and try again." });
     }
   }
 
@@ -334,25 +334,25 @@ router.post("/admin/notifications/broadcast-all", async (req, res) => {
 // with at least one device; devices = push tokens. `count` mirrors `accounts`.
 router.get("/admin/notifications/audience-count", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const [callingUser] = await db
     .select({ role: usersTable.role, clubId: usersTable.clubId })
     .from(usersTable)
     .where(eq(usersTable.id, userId));
 
-  if (!callingUser) return res.status(401).json({ error: "Not authenticated" });
+  if (!callingUser) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const audienceParam = req.query.audience as string | undefined;
   if (audienceParam !== "all" && audienceParam !== "event") {
-    return res.status(400).json({ error: "audience must be 'all' or 'event'" });
+    return res.status(400).json({ error: "Choose who gets the notification: all riders or one event." });
   }
 
   let eventId: number | null = null;
   if (audienceParam === "event") {
     const eventIdRaw = req.query.eventId as string | undefined;
     if (!eventIdRaw || !/^\d+$/.test(eventIdRaw.trim()) || parseInt(eventIdRaw, 10) <= 0) {
-      return res.status(400).json({ error: "eventId must be a positive integer when audience is 'event'" });
+      return res.status(400).json({ error: "Choose an event to notify." });
     }
     eventId = parseInt(eventIdRaw, 10);
   }
@@ -369,14 +369,14 @@ router.get("/admin/notifications/audience-count", async (req, res) => {
 // clubCount/clubDevices (organizers and staff): the club's "all riders" audience, same resolver as the send.
 router.get("/admin/notifications/push-stats", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const [callingUser] = await db
     .select({ role: usersTable.role, clubId: usersTable.clubId })
     .from(usersTable)
     .where(eq(usersTable.id, userId));
 
-  if (!callingUser) return res.status(401).json({ error: "Not authenticated" });
+  if (!callingUser) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const isSuperAdmin = callingUser.role === "super_admin";
 
@@ -404,14 +404,14 @@ router.get("/admin/notifications/push-stats", async (req, res) => {
 // Returns the last 10 notification sends for the organizer's club.
 router.get("/admin/notifications/history", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const [callingUser] = await db
     .select({ role: usersTable.role, clubId: usersTable.clubId })
     .from(usersTable)
     .where(eq(usersTable.id, userId));
 
-  if (!callingUser) return res.status(401).json({ error: "Not authenticated" });
+  if (!callingUser) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const isSuperAdmin = callingUser.role === "super_admin";
 
@@ -432,7 +432,7 @@ router.get("/admin/notifications/history", async (req, res) => {
       .limit(10);
   } else {
     if (!callingUser.clubId) {
-      return res.status(403).json({ error: "No club associated with your account" });
+      return res.status(403).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
     }
     rows = await db
       .select({

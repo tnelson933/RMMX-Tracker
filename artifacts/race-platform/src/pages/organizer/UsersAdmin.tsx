@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { UserCog, Plus, Mail, Trash2, CheckCircle, Clock, RefreshCw, Copy, Check, AlertTriangle, ShieldCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
+import { errorText } from "@/lib/friendlyErrors";
 
 const INTERNAL_ROLES = [
   { value: "staff", label: "Staff" },
@@ -62,7 +63,7 @@ export default function UsersAdmin() {
           }
         },
         onError: (err: any) => {
-          toast({ title: "Failed to create account", description: err?.message || "Unknown error", variant: "destructive" });
+          toast({ title: "Couldn't create account", description: err?.message || "Unknown error", variant: "destructive" });
         },
       }
     );
@@ -80,7 +81,7 @@ export default function UsersAdmin() {
             toast({ title: "Invite resent", description: `Setup email sent to ${userName}.` });
           }
         },
-        onError: () => toast({ title: "Failed to resend", variant: "destructive" }),
+        onError: (err) => toast({ title: "Couldn't resend", description: errorText(err), variant: "destructive" }),
       }
     );
   };
@@ -94,7 +95,7 @@ export default function UsersAdmin() {
           toast({ title: "Account deleted" });
         },
         onError: (err: any) => {
-          toast({ title: "Failed to delete", description: err?.message, variant: "destructive" });
+          toast({ title: "Couldn't delete", description: err?.message, variant: "destructive" });
         },
       }
     );

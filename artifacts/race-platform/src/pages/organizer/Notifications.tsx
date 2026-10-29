@@ -184,7 +184,7 @@ export function Notifications() {
       if (!res.ok) {
         // A failed send is still logged; refresh history so it shows.
         queryClient.invalidateQueries({ queryKey: getGetNotificationHistoryQueryKey() });
-        throw new Error(data.error || "Failed to send");
+        throw new Error(data.error || "Couldn't send");
       }
 
       const accounts = typeof data.accounts === "number" ? data.accounts : 0;
@@ -210,7 +210,7 @@ export function Notifications() {
       queryClient.invalidateQueries({ queryKey: getGetNotificationHistoryQueryKey() });
     } catch (e: any) {
       toast({
-        title: "Failed to send",
+        title: "Couldn't send",
         description: e.message,
         variant: "destructive",
       });

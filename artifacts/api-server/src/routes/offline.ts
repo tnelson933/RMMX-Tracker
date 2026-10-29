@@ -320,7 +320,7 @@ function mtimeToETag(mtimeMs: number): string {
 router.get("/offline/package-info", (req, res) => {
   const userId = (req.session as any).userId;
   if (!userId) {
-    res.status(401).json({ error: "Not authenticated" });
+    res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
     return;
   }
 
@@ -343,13 +343,13 @@ router.get("/offline/package-info", (req, res) => {
 router.get("/offline/package", (req, res) => {
   const userId = (req.session as any).userId;
   if (!userId) {
-    res.status(401).json({ error: "Not authenticated" });
+    res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
     return;
   }
 
   if (isRebuilding) {
     res.status(503).json({
-      error: "Offline package is being rebuilt — please try again in a moment.",
+      error: "The offline package is being updated. Try again in a minute.",
     });
     return;
   }
@@ -384,10 +384,9 @@ router.get("/offline/package", (req, res) => {
     }
   } catch (err) {
     isRebuilding = false;
-    const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Failed to rebuild local server");
     res.status(503).json({
-      error: `Offline package could not be built: ${msg}`,
+      error: "The offline package couldn't be built right now. Wait a few minutes and try the download again.",
     });
     return;
   }
@@ -457,12 +456,12 @@ router.get("/offline/package", (req, res) => {
 router.post("/offline/package-rebuild", (req, res) => {
   const userId = (req.session as any).userId;
   if (!userId) {
-    res.status(401).json({ error: "Not authenticated" });
+    res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
     return;
   }
 
   if (isRebuilding) {
-    res.status(503).json({ error: "A rebuild is already in progress — please try again in a moment." });
+    res.status(503).json({ error: "The offline package is already being updated. Try again in a minute." });
     return;
   }
 
@@ -479,9 +478,8 @@ router.post("/offline/package-rebuild", (req, res) => {
     req.log.info("Manual offline package rebuild complete.");
   } catch (err) {
     isRebuilding = false;
-    const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err }, "Manual offline package rebuild failed");
-    res.status(503).json({ error: `Rebuild failed: ${msg}` });
+    res.status(503).json({ error: "The offline package couldn't be rebuilt. Wait a few minutes and try again." });
     return;
   }
   isRebuilding = false;
@@ -494,19 +492,23 @@ router.post("/offline/package-rebuild", (req, res) => {
       etag: mtimeToETag(mtimeMs),
     });
   } catch {
-    res.status(503).json({ error: "Rebuild succeeded but dist file is unreadable." });
+    res.status(503).json({ error: "The offline package was built but couldn't be opened. Try the download again in a minute." });
   }
 });
 
 router.post("/offline/sync-upload", (req, res, next) => {
   const userId = (req.session as any).userId;
   if (!userId) {
-    res.status(401).json({ error: "Not authenticated" });
+    res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
     return;
   }
   upload.single("export")(req, res, (err) => {
     if (err) {
-      res.status(400).json({ error: err.message ?? "File upload failed." });
+      res.status(400).json({
+        error: (err as { code?: string }).code === "LIMIT_FILE_SIZE"
+          ? "That file is too big. Upload an export of 500 MB or less."
+          : "The file didn't upload. Choose the export file again and retry.",
+      });
       return;
     }
     if (!req.file) {

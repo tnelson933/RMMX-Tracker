@@ -324,7 +324,7 @@ export async function processPracticeCrossing(
 router.post("/practice/active/crossing", async (req, res) => {
   const clubId = Number(req.query.clubId);
   if (!clubId || isNaN(clubId)) {
-    return res.status(400).json({ error: "clubId query param is required" });
+    return res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
   }
 
   // Accept both RFID bridge and active transponder payload formats.
@@ -332,7 +332,7 @@ router.post("/practice/active/crossing", async (req, res) => {
   const rfidNumber: string | undefined =
     body?.rfidNumber ?? body?.transponder ?? body?.transponderId ?? body?.id;
   if (!rfidNumber) {
-    return res.status(400).json({ error: "rfidNumber (or transponder) is required" });
+    return res.status(400).json({ error: "Enter a transponder or tag number." });
   }
 
   // Accept hardware timestamp in any common field name
@@ -365,7 +365,7 @@ router.post("/practice/active/crossing", async (req, res) => {
 
   if (!session) {
     return res.status(409).json({
-      error: "No active practice session for this club",
+      error: "No practice session is running. Start one on the Practice page.",
       hint: "Start a practice session in the Race Platform organizer portal first.",
     });
   }
@@ -385,9 +385,9 @@ router.post("/practice/active/crossing", async (req, res) => {
 // GET /practice — list sessions for organizer's club (super admins see all)
 router.get("/practice", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const { clubId, isSuperAdmin } = await getCallerInfo(req);
-  if (!isSuperAdmin && !clubId) return res.status(403).json({ error: "No club" });
+  if (!isSuperAdmin && !clubId) return res.status(403).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
 
   const sessions = await db.select().from(practiceSessionsTable)
     .where(isSuperAdmin ? undefined : eq(practiceSessionsTable.clubId, clubId!))
@@ -399,23 +399,23 @@ router.get("/practice", async (req, res) => {
 router.get("/practice/:id", async (req, res) => {
   const id = Number(req.params.id);
   const [session] = await db.select().from(practiceSessionsTable).where(eq(practiceSessionsTable.id, id));
-  if (!session) return res.status(404).json({ error: "Not found" });
+  if (!session) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   const callerClubId = await getClubId(req);
-  if (callerClubId !== null && session.clubId !== callerClubId) return res.status(403).json({ error: "Forbidden" });
+  if (callerClubId !== null && session.clubId !== callerClubId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   return res.json(toJson(session));
 });
 
 // POST /practice — create session
 router.post("/practice", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const { clubId: callerClubId, isSuperAdmin } = await getCallerInfo(req);
   const clubId = isSuperAdmin && req.body.clubId ? Number(req.body.clubId) : callerClubId;
-  if (!clubId) return res.status(403).json({ error: "No club" });
+  if (!clubId) return res.status(403).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
 
   const { name, debounceMs, venueName: venueNameOverride } = req.body;
-  if (!name) return res.status(400).json({ error: "name required" });
-  if (!venueNameOverride?.trim()) return res.status(400).json({ error: "Track name is required" });
+  if (!name) return res.status(400).json({ error: "Enter a name." });
+  if (!venueNameOverride?.trim()) return res.status(400).json({ error: "Enter a track name." });
 
   const venueName: string = venueNameOverride.trim();
 
@@ -463,24 +463,24 @@ router.post("/practice", async (req, res) => {
 router.patch("/practice/:id", async (req, res) => {
   const id = Number(req.params.id);
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const { clubId, isSuperAdmin } = await getCallerInfo(req);
 
   const [existing] = await db.select().from(practiceSessionsTable).where(eq(practiceSessionsTable.id, id));
-  if (!existing) return res.status(404).json({ error: "Not found" });
-  if (!isSuperAdmin && existing.clubId !== clubId) return res.status(403).json({ error: "Forbidden" });
+  if (!existing) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
+  if (!isSuperAdmin && existing.clubId !== clubId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
 
   const updates: Record<string, unknown> = {};
   if (req.body.name !== undefined) updates.name = req.body.name;
   if (req.body.venueName !== undefined) {
     const venueName = String(req.body.venueName).trim();
-    if (!venueName) return res.status(400).json({ error: "Track name is required" });
+    if (!venueName) return res.status(400).json({ error: "Enter a track name." });
     updates.venueName = venueName;
   }
   if (req.body.debounceMs !== undefined) {
     const debounceMs = Number(req.body.debounceMs);
     if (!Number.isInteger(debounceMs) || debounceMs < 0 || debounceMs > 600_000) {
-      return res.status(400).json({ error: "debounceMs must be a whole number of milliseconds between 0 and 600000" });
+      return res.status(400).json({ error: "Enter a minimum lap time between 0 and 600 seconds." });
     }
     updates.debounceMs = debounceMs;
   }
@@ -546,12 +546,12 @@ router.patch("/practice/:id", async (req, res) => {
 router.delete("/practice/:id", async (req, res) => {
   const id = Number(req.params.id);
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const { clubId, isSuperAdmin } = await getCallerInfo(req);
 
   const [existing] = await db.select().from(practiceSessionsTable).where(eq(practiceSessionsTable.id, id));
-  if (!existing) return res.status(404).json({ error: "Not found" });
-  if (!isSuperAdmin && existing.clubId !== clubId) return res.status(403).json({ error: "Forbidden" });
+  if (!existing) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
+  if (!isSuperAdmin && existing.clubId !== clubId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
 
   await db.delete(practiceCrossingsTable).where(eq(practiceCrossingsTable.sessionId, id));
   await db.delete(practiceSessionsTable).where(eq(practiceSessionsTable.id, id));
@@ -562,9 +562,9 @@ router.delete("/practice/:id", async (req, res) => {
 router.get("/practice/:id/crossings", async (req, res) => {
   const id = Number(req.params.id);
   const [session] = await db.select().from(practiceSessionsTable).where(eq(practiceSessionsTable.id, id));
-  if (!session) return res.status(404).json({ error: "Not found" });
+  if (!session) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   const callerClubId = await getClubId(req);
-  if (callerClubId !== null && session.clubId !== callerClubId) return res.status(403).json({ error: "Forbidden" });
+  if (callerClubId !== null && session.clubId !== callerClubId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   const crossings = await db.select().from(practiceCrossingsTable)
     .where(eq(practiceCrossingsTable.sessionId, id))
     .orderBy(asc(practiceCrossingsTable.crossingTime));
@@ -581,15 +581,15 @@ router.post("/practice/:id/crossing", async (req, res) => {
   const body = req.body as any;
   const rfidNumber: string | undefined =
     body?.rfidNumber ?? body?.transponder ?? body?.transponderId;
-  if (!rfidNumber) return res.status(400).json({ error: "rfidNumber required" });
+  if (!rfidNumber) return res.status(400).json({ error: "Enter a transponder or tag number." });
 
   const [session] = await db.select().from(practiceSessionsTable).where(eq(practiceSessionsTable.id, sessionId));
-  if (!session) return res.status(404).json({ error: "Session not found" });
+  if (!session) return res.status(404).json({ error: "This session couldn't be found. It may have been deleted. Refresh the page and try again." });
   const callerClubId = await getClubId(req);
-  if (callerClubId !== null && session.clubId !== callerClubId) return res.status(403).json({ error: "Forbidden" });
+  if (callerClubId !== null && session.clubId !== callerClubId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   // Same reader check as the club's other ingest routes: no anonymous laps.
   if (callerClubId === null && !(await authorizeIngest(req, res, session.clubId, "practice_session_crossing"))) return;
-  if (session.status !== "active") return res.status(409).json({ error: "Session not active" });
+  if (session.status !== "active") return res.status(409).json({ error: "This payment session has ended. Start the payment again." });
 
   const rawTime: string | undefined =
     body?.crossingTime ?? body?.passingTime ?? body?.timestamp;
@@ -617,10 +617,10 @@ router.get("/practice/:id/live", async (req, res) => {
   // Anonymous callers get 401 before the lookup, so session ids can't be probed.
   const hasCredentials = !!(req.session as any)?.userId || !!(req.session as any)?.riderAccountId
     || String(req.headers.authorization ?? "").startsWith("Bearer ");
-  if (!hasCredentials) { res.status(401).json({ error: "Not authenticated" }); return; }
+  if (!hasCredentials) { res.status(401).json({ error: "You're signed out. Sign in again, then try once more." }); return; }
 
   const [session] = await db.select().from(practiceSessionsTable).where(eq(practiceSessionsTable.id, sessionId));
-  if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+  if (!session) { res.status(404).json({ error: "This session couldn't be found. It may have been deleted. Refresh the page and try again." }); return; }
 
   // This route is public in accessControl so riders can watch; authorize here.
   // Organizers/super admins see the whole board for their club's sessions; staff
@@ -657,7 +657,7 @@ router.get("/practice/:id/live", async (req, res) => {
       else deniedStatus = 403;
     }
     if (!riderFilter) {
-      res.status(deniedStatus).json({ error: deniedStatus === 401 ? "Not authenticated" : "Forbidden" });
+      res.status(deniedStatus).json({ error: deniedStatus === 401 ? "You're signed out. Sign in again, then try once more." : "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
       return;
     }
   }

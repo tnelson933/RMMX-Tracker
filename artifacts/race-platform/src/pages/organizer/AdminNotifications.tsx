@@ -56,7 +56,7 @@ export default function AdminNotifications() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to send");
+      if (!res.ok) throw new Error(data.error || "Couldn't send");
       toast({
         title: "Broadcast sent",
         description: `${data.sent} rider${data.sent !== 1 ? "s" : ""} notified`,
@@ -66,7 +66,7 @@ export default function AdminNotifications() {
       setLinkUrl("");
     } catch (e: any) {
       toast({
-        title: "Failed to send",
+        title: "Couldn't send",
         description: e.message,
         variant: "destructive",
       });

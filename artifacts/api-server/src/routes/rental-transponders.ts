@@ -14,13 +14,13 @@ async function clubIdFor(req: any, res: Response): Promise<number | null> {
   const staffClubId = res.locals?.staffClubId;
   if (typeof staffClubId === "number") return staffClubId;
   const userId = req.session?.userId;
-  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return null; }
+  if (!userId) { res.status(401).json({ error: "You're signed out. Sign in again, then try once more." }); return null; }
   const [user] = await db.select({ clubId: usersTable.clubId, role: usersTable.role }).from(usersTable).where(eq(usersTable.id, userId));
   if (user?.clubId) return user.clubId;
   // Platform admins pick the club.
   const requested = Number(req.query.clubId ?? req.body?.clubId);
   if (user?.role === "super_admin" && Number.isInteger(requested) && requested > 0) return requested;
-  res.status(400).json({ error: "clubId is required" });
+  res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
   return null;
 }
 
@@ -123,11 +123,11 @@ router.patch("/rental-transponders/:id", async (req, res) => {
       updates[key] = req.body[key];
     }
   }
-  if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Nothing to change" });
+  if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Nothing was changed. Edit a field, then save." });
   const [unit] = await db.update(rentalTranspondersTable).set(updates as any)
     .where(and(eq(rentalTranspondersTable.id, id), eq(rentalTranspondersTable.clubId, clubId)))
     .returning();
-  if (!unit) return res.status(404).json({ error: "Not found" });
+  if (!unit) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   return res.json(unit);
 });
 
@@ -138,7 +138,7 @@ router.delete("/rental-transponders/:id", async (req, res) => {
   const id = Number(req.params.id);
   const [unit] = await db.select().from(rentalTranspondersTable)
     .where(and(eq(rentalTranspondersTable.id, id), eq(rentalTranspondersTable.clubId, clubId)));
-  if (!unit) return res.status(404).json({ error: "Not found" });
+  if (!unit) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   const current = (await rentalsOut(clubId)).get(unit.transponderNumber);
   if (current) {
     return res.status(409).json({ error: `This unit is out with ${current.riderName} (${current.eventName}). Mark it returned first, or retire it instead.` });

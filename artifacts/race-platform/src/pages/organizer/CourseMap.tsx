@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { responseErrorMessage } from "@/lib/friendlyErrors";
 
 // The course map places an event's readers along the course.
 //   Motocross / supercross: one finish-line reader decides laps and placings;
@@ -43,7 +44,7 @@ export function useLibraryTracks(enabled = true) {
     enabled,
     queryFn: async () => {
       const res = await fetch("/api/tracks", { credentials: "include" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(responseErrorMessage(res.status));
       return res.json();
     },
   });
@@ -344,7 +345,7 @@ function CourseMapEditor({ eventId, track, onSaved }: { eventId: number; track?:
           body: JSON.stringify({ points: toAssignments(sent, false).map(({ readerId, role, sequence, label }) => ({ readerId, role, sequence, label })) }),
         });
         const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+        if (!res.ok) throw new Error(responseErrorMessage(res.status, body));
         if (stateRef.current === sent) setDirty(false);
         await queryClient.invalidateQueries({ queryKey: ["/api/tracks"] });
         toast({
@@ -400,7 +401,7 @@ function CourseMapEditor({ eventId, track, onSaved }: { eventId: number; track?:
     try {
       const res = await fetch(`/api/events/${eventId}/course/reset`, { method: "POST", credentials: "include" });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      if (!res.ok) throw new Error(responseErrorMessage(res.status, body));
       setDirty(false);
       await queryClient.invalidateQueries({ queryKey: getListEventReaderAssignmentsQueryKey(eventId) });
       await queryClient.invalidateQueries({ queryKey: getGetEventQueryKey(eventId) });

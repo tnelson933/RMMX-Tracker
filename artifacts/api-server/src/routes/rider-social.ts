@@ -29,20 +29,20 @@ async function loadRider(riderId: number) {
 // ── #4 Career stats (own and managed profiles: all results) ─────────────────
 router.get("/rider/profiles/:riderId/stats", requireRiderAuth, async (req, res) => {
   const account = await currentAccount(req);
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const rider = await loadRider(Number(req.params.riderId));
-  if (!rider) return res.status(404).json({ error: "Rider not found" });
-  if (!(await canManageRider(account, rider))) return res.status(403).json({ error: "Access denied" });
+  if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
+  if (!(await canManageRider(account, rider))) return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   return res.json({ riderId: rider.id, name: `${rider.firstName} ${rider.lastName}`.trim(), stats: await loadCareerStats(rider.id, false) });
 });
 
 // ── #6 Profile managers ─────────────────────────────────────────────────────
 router.get("/rider/profiles/:riderId/managers", requireRiderAuth, async (req, res) => {
   const account = await currentAccount(req);
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const rider = await loadRider(Number(req.params.riderId));
-  if (!rider) return res.status(404).json({ error: "Rider not found" });
-  if (!(await canManageRider(account, rider))) return res.status(403).json({ error: "Access denied" });
+  if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
+  if (!(await canManageRider(account, rider))) return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   const rows = await db.select().from(riderProfileManagersTable).where(eq(riderProfileManagersTable.riderId, rider.id));
   return res.json({
     isOwner: ownsRider(account, rider),
@@ -56,9 +56,9 @@ router.get("/rider/profiles/:riderId/managers", requireRiderAuth, async (req, re
 
 router.post("/rider/profiles/:riderId/managers", requireRiderAuth, async (req, res) => {
   const account = await currentAccount(req);
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const rider = await loadRider(Number(req.params.riderId));
-  if (!rider) return res.status(404).json({ error: "Rider not found" });
+  if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
   if (!ownsRider(account, rider)) return res.status(403).json({ error: "Only the profile owner can add managers" });
   const email = String(req.body?.email ?? "").trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: "Enter a valid email address" });
@@ -75,14 +75,14 @@ router.post("/rider/profiles/:riderId/managers", requireRiderAuth, async (req, r
 
 router.delete("/rider/profiles/:riderId/managers/:managerId", requireRiderAuth, async (req, res) => {
   const account = await currentAccount(req);
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const rider = await loadRider(Number(req.params.riderId));
-  if (!rider) return res.status(404).json({ error: "Rider not found" });
+  if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
   const [row] = await db.select().from(riderProfileManagersTable)
     .where(and(eq(riderProfileManagersTable.id, Number(req.params.managerId)), eq(riderProfileManagersTable.riderId, rider.id)));
-  if (!row) return res.status(404).json({ error: "Manager not found" });
+  if (!row) return res.status(404).json({ error: "This manager couldn't be found. It may have been deleted. Refresh the page and try again." });
   const isSelf = row.riderAccountId === account.id || row.invitedEmail === account.email.trim().toLowerCase();
-  if (!ownsRider(account, rider) && !isSelf) return res.status(403).json({ error: "Access denied" });
+  if (!ownsRider(account, rider) && !isSelf) return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   await db.delete(riderProfileManagersTable).where(eq(riderProfileManagersTable.id, row.id));
   return res.json({ ok: true });
 });
@@ -90,7 +90,7 @@ router.delete("/rider/profiles/:riderId/managers/:managerId", requireRiderAuth, 
 // ── #5 Following ────────────────────────────────────────────────────────────
 router.get("/rider/riders/search", requireRiderAuth, async (req, res) => {
   const account = await currentAccount(req);
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const q = String(req.query.q ?? "").trim();
   if (q.length < 2) return res.json({ riders: [] });
   const riders = await searchPublicRiders(q.slice(0, 60));
@@ -104,9 +104,9 @@ router.get("/rider/riders/search", requireRiderAuth, async (req, res) => {
 /** Public view of any rider: results of finished races (unofficial until finalized). */
 router.get("/rider/riders/:riderId/public", requireRiderAuth, async (req, res) => {
   const account = await currentAccount(req);
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const rider = await loadRider(Number(req.params.riderId));
-  if (!rider) return res.status(404).json({ error: "Rider not found" });
+  if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
   const [stats, recent, follow] = await Promise.all([
     loadCareerStats(rider.id, true),
     loadResultsFeed([rider.id], 10),
@@ -114,14 +114,14 @@ router.get("/rider/riders/:riderId/public", requireRiderAuth, async (req, res) =
       .where(and(eq(riderFollowsTable.riderAccountId, account.id), eq(riderFollowsTable.riderId, rider.id))),
   ]);
   if (stats.starts === 0 && recent.length === 0 && !(await canManageRider(account, rider))) {
-    return res.status(404).json({ error: "Rider not found" });
+    return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
   }
   return res.json({ riderId: rider.id, name: `${rider.firstName} ${rider.lastName}`.trim(), following: follow.length > 0, stats, recent });
 });
 
 router.get("/rider/follows", requireRiderAuth, async (req, res) => {
   const account = await currentAccount(req);
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const rows = await db.select({ riderId: riderFollowsTable.riderId, firstName: ridersTable.firstName, lastName: ridersTable.lastName, since: riderFollowsTable.createdAt })
     .from(riderFollowsTable).innerJoin(ridersTable, eq(ridersTable.id, riderFollowsTable.riderId))
     .where(eq(riderFollowsTable.riderAccountId, account.id));
@@ -130,16 +130,16 @@ router.get("/rider/follows", requireRiderAuth, async (req, res) => {
 
 router.post("/rider/follows/:riderId", requireRiderAuth, async (req, res) => {
   const account = await currentAccount(req);
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const rider = await loadRider(Number(req.params.riderId));
-  if (!rider) return res.status(404).json({ error: "Rider not found" });
+  if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
   await db.insert(riderFollowsTable).values({ riderAccountId: account.id, riderId: rider.id }).onConflictDoNothing();
   return res.status(201).json({ ok: true, following: true });
 });
 
 router.delete("/rider/follows/:riderId", requireRiderAuth, async (req, res) => {
   const account = await currentAccount(req);
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   await db.delete(riderFollowsTable)
     .where(and(eq(riderFollowsTable.riderAccountId, account.id), eq(riderFollowsTable.riderId, Number(req.params.riderId))));
   return res.json({ ok: true, following: false });
@@ -148,7 +148,7 @@ router.delete("/rider/follows/:riderId", requireRiderAuth, async (req, res) => {
 /** Home feed: finished-race results for followed riders and your own/managed profiles. */
 router.get("/rider/feed", requireRiderAuth, async (req, res) => {
   const account = await currentAccount(req);
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const mine = await managedRiderIds(account);
   const followed = (await db.select({ riderId: riderFollowsTable.riderId }).from(riderFollowsTable)
     .where(eq(riderFollowsTable.riderAccountId, account.id))).map(f => f.riderId);

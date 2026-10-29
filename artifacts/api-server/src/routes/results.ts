@@ -252,7 +252,7 @@ async function callerOwnsEvent(eventId: number, res: any): Promise<boolean> {
 async function checkEventOwnership(eventId: number, staffCId: number | null, res: any): Promise<boolean> {
   if (staffCId === null) return true;
   const [evt] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
-  if (!evt || evt.clubId !== staffCId) { res.status(403).json({ error: "Forbidden" }); return false; }
+  if (!evt || evt.clubId !== staffCId) { res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." }); return false; }
   return true;
 }
 
@@ -471,11 +471,11 @@ router.post("/events/:eventId/results", async (req, res) => {
   const eventId = Number(req.params.eventId);
   if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
   const { motoId, results: riderResults } = req.body;
-  if (!motoId || !Array.isArray(riderResults)) return res.status(400).json({ error: "motoId and results[] required" });
+  if (!motoId || !Array.isArray(riderResults)) return res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
 
   const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, Number(motoId)));
   // The moto must belong to this (ownership-checked) event, or results could be written into another club's race.
-  if (!moto || moto.eventId !== eventId) return res.status(404).json({ error: "Moto not found" });
+  if (!moto || moto.eventId !== eventId) return res.status(404).json({ error: "This moto couldn't be found. Motos may have been regenerated. Refresh the Motos page." });
   const raceClass = moto.raceClass;
   const motoType: string = (moto as any).type ?? "heat";
   const isEnduroTest = motoType === "enduro_test";
@@ -591,7 +591,7 @@ function formatMs(ms: number): string {
 
 router.patch("/events/:eventId/results/:resultId/laps", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  if (!userId) { res.status(401).json({ error: "You're signed out. Sign in again, then try once more." }); return; }
 
   const eventId = Number(req.params.eventId);
   if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
@@ -600,7 +600,7 @@ router.patch("/events/:eventId/results/:resultId/laps", async (req, res) => {
   const { lapTimes } = req.body as { lapTimes?: unknown };
 
   if (!Array.isArray(lapTimes) || lapTimes.some((t) => typeof t !== "number")) {
-    res.status(400).json({ error: "lapTimes must be an array of numbers (milliseconds)" });
+    res.status(400).json({ error: "Some lap times aren't valid. Check the times and try again." });
     return;
   }
 
@@ -608,7 +608,7 @@ router.patch("/events/:eventId/results/:resultId/laps", async (req, res) => {
   const [existingResult] = await db.select({ motoId: raceResultsTable.motoId })
     .from(raceResultsTable)
     .where(and(eq(raceResultsTable.id, resultId), eq(raceResultsTable.eventId, eventId)));
-  if (!existingResult) { res.status(404).json({ error: "Result not found" }); return; }
+  if (!existingResult) { res.status(404).json({ error: "This result couldn't be found. It may have been deleted. Refresh the page and try again." }); return; }
 
   const [lapMoto] = await db.select({ lapCount: motosTable.lapCount, type: motosTable.type, status: motosTable.status })
     .from(motosTable).where(eq(motosTable.id, existingResult.motoId));
@@ -623,7 +623,7 @@ router.patch("/events/:eventId/results/:resultId/laps", async (req, res) => {
     .where(and(eq(raceResultsTable.id, resultId), eq(raceResultsTable.eventId, eventId)))
     .returning();
 
-  if (!updated) { res.status(404).json({ error: "Result not found" }); return; }
+  if (!updated) { res.status(404).json({ error: "This result couldn't be found. It may have been deleted. Refresh the page and try again." }); return; }
 
   if (lapMoto?.type === "enduro_test") {
     await withMotoLock(existingResult.motoId, () => rerankEnduroTest(existingResult.motoId));
@@ -661,18 +661,18 @@ router.post("/events/:eventId/results/publish", async (req, res) => {
 // to each brand (or upload it to XTRM); the brand applies its own rules.
 router.get("/events/:eventId/contingency-report", async (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const eventId = Number(req.params.eventId);
   const [event] = await db.select({
     id: eventsTable.id, clubId: eventsTable.clubId, name: eventsTable.name, date: eventsTable.date,
     contingencyBrands: eventsTable.contingencyBrands,
   }).from(eventsTable).where(eq(eventsTable.id, eventId));
-  if (!event) return res.status(404).json({ error: "Event not found" });
+  if (!event) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
   const staffCId = getStaffClubId(res);
   if (staffCId !== null) {
-    if (event.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
+    if (event.clubId !== staffCId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   } else if (event.clubId !== session.clubId && session.role !== "super_admin") {
-    return res.status(403).json({ error: "Forbidden" });
+    return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
 
   const overall = await computeEventOverall(eventId);
@@ -718,17 +718,17 @@ router.get("/events/:eventId/contingency-report", async (req, res) => {
 // ── AMA Export CSV ─────────────────────────────────────────────────────────────
 router.get("/events/:eventId/ama-export", async (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const eventId = Number(req.params.eventId);
 
   const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
-  if (!event) return res.status(404).json({ error: "Event not found" });
+  if (!event) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
   const staffCId = getStaffClubId(res);
   if (staffCId !== null) {
-    if (event.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
+    if (event.clubId !== staffCId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   } else if ((event as any).clubId !== session.clubId && session.role !== "super_admin") {
-    return res.status(403).json({ error: "Forbidden" });
+    return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
 
   const motos = await db.select().from(motosTable)

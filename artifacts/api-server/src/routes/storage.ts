@@ -71,7 +71,7 @@ router.post(
     const filepath = path.join(UPLOADS_DIR, filename);
 
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
-      res.status(400).json({ error: "No file data received" });
+      res.status(400).json({ error: "No file was received. Choose the file again and upload it." });
       return;
     }
 
@@ -97,7 +97,7 @@ router.post(
       res.json({ objectPath });
     } catch (error) {
       req.log.error({ err: error }, "Error saving uploaded file");
-      res.status(503).json({ error: "Storage unavailable — please try again" });
+      res.status(503).json({ error: "File storage isn't responding. Try again in a moment." });
     }
   }
 );
@@ -113,7 +113,7 @@ router.post(
 router.get("/storage/uploads/:filename", async (req: Request, res: Response) => {
   const filename = Array.isArray(req.params.filename) ? req.params.filename[0] : req.params.filename;
   if (filename.includes("..") || filename.includes("/")) {
-    res.status(400).json({ error: "Invalid filename" });
+    res.status(400).json({ error: "That file name isn't allowed. Rename the file and upload it again." });
     return;
   }
 
@@ -134,7 +134,7 @@ router.get("/storage/uploads/:filename", async (req: Request, res: Response) => 
   }
 
   if (!cloudStorageEnabled) {
-    res.status(404).json({ error: "File not found" });
+    res.status(404).json({ error: "This file couldn't be found. It may have been deleted. Refresh the page and try again." });
     return;
   }
 
@@ -155,11 +155,11 @@ router.get("/storage/uploads/:filename", async (req: Request, res: Response) => 
     }
   } catch (error) {
     if (error instanceof ObjectNotFoundError) {
-      res.status(404).json({ error: "File not found" });
+      res.status(404).json({ error: "This file couldn't be found. It may have been deleted. Refresh the page and try again." });
       return;
     }
     req.log.error({ err: error }, "Error serving upload from cloud storage");
-    res.status(500).json({ error: "Failed to serve file" });
+    res.status(500).json({ error: "Couldn't load this file. Refresh the page and try again." });
   }
 });
 
@@ -173,7 +173,7 @@ router.get("/storage/uploads/:filename", async (req: Request, res: Response) => 
 router.post("/storage/uploads/request-url", async (req: Request, res: Response) => {
   const parsed = RequestUploadUrlBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: "Missing or invalid required fields" });
+    res.status(400).json({ error: "Some required information is missing. Fill in every required field and try again." });
     return;
   }
 
@@ -192,7 +192,7 @@ router.post("/storage/uploads/request-url", async (req: Request, res: Response) 
     );
   } catch (error) {
     req.log.error({ err: error }, "Error generating upload URL");
-    res.status(500).json({ error: "Failed to generate upload URL" });
+    res.status(500).json({ error: "Couldn't start the upload. Try again in a moment." });
   }
 });
 
@@ -209,7 +209,7 @@ router.get("/storage/public-objects/*filePath", async (req: Request, res: Respon
     const filePath = Array.isArray(raw) ? raw.join("/") : raw;
     const file = await objectStorageService.searchPublicObject(filePath);
     if (!file) {
-      res.status(404).json({ error: "File not found" });
+      res.status(404).json({ error: "This file couldn't be found. It may have been deleted. Refresh the page and try again." });
       return;
     }
 
@@ -227,7 +227,7 @@ router.get("/storage/public-objects/*filePath", async (req: Request, res: Respon
     }
   } catch (error) {
     req.log.error({ err: error }, "Error serving public object");
-    res.status(500).json({ error: "Failed to serve public object" });
+    res.status(500).json({ error: "Couldn't load this file. Refresh the page and try again." });
   }
 });
 
@@ -247,7 +247,7 @@ router.get("/storage/objects/*path", async (req: Request, res: Response) => {
 
     // --- Protected route example (uncomment when using replit-auth) ---
     // if (!req.isAuthenticated()) {
-    //   res.status(401).json({ error: "Unauthorized" });
+    //   res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
     //   return;
     // }
     // const canAccess = await objectStorageService.canAccessObjectEntity({
@@ -256,7 +256,7 @@ router.get("/storage/objects/*path", async (req: Request, res: Response) => {
     //   requestedPermission: ObjectPermission.READ,
     // });
     // if (!canAccess) {
-    //   res.status(403).json({ error: "Forbidden" });
+    //   res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
     //   return;
     // }
 
@@ -275,11 +275,11 @@ router.get("/storage/objects/*path", async (req: Request, res: Response) => {
   } catch (error) {
     if (error instanceof ObjectNotFoundError) {
       req.log.warn({ err: error }, "Object not found");
-      res.status(404).json({ error: "Object not found" });
+      res.status(404).json({ error: "This file couldn't be found. It may have been deleted. Refresh the page and try again." });
       return;
     }
     req.log.error({ err: error }, "Error serving object");
-    res.status(500).json({ error: "Failed to serve object" });
+    res.status(500).json({ error: "Couldn't load this file. Refresh the page and try again." });
   }
 });
 

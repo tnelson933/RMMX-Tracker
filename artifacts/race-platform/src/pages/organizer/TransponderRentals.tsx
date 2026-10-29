@@ -34,7 +34,7 @@ export default function TransponderRentals() {
     queryKey,
     queryFn: async () => {
       const res = await fetch(`/api/events/${eventId}/transponder-rentals`);
-      if (!res.ok) throw new Error("Failed to load transponder rentals");
+      if (!res.ok) throw new Error("Couldn't load transponder rentals");
       return res.json();
     },
     enabled: !!eventId,
@@ -82,10 +82,10 @@ export default function TransponderRentals() {
         method: "POST",
       });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j.error || "Failed to send");
+      if (!res.ok) throw new Error(j.error || "Couldn't send");
       toast({ title: "Reminder sent", description: `Notification sent to ${row.riderName}` });
     } catch (e: any) {
-      toast({ title: "Failed to send reminder", description: e.message, variant: "destructive" });
+      toast({ title: "Couldn't send reminder", description: e.message, variant: "destructive" });
     } finally {
       setRemindingRider(null);
     }
@@ -98,14 +98,14 @@ export default function TransponderRentals() {
         method: "POST",
       });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j.error || "Failed to send");
+      if (!res.ok) throw new Error(j.error || "Couldn't send");
       const count = j.sent ?? 0;
       toast({
         title: count > 0 ? `Reminders sent` : "No riders to remind",
         description: count > 0 ? `Sent to ${count} device${count !== 1 ? "s" : ""}` : "No unreturned riders have the app",
       });
     } catch (e: any) {
-      toast({ title: "Failed to send reminders", description: e.message, variant: "destructive" });
+      toast({ title: "Couldn't send reminders", description: e.message, variant: "destructive" });
     } finally {
       setRemindingAll(false);
     }

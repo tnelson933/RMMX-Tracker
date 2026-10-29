@@ -15,7 +15,7 @@ function getStaffClubId(res: any): number | null {
 async function checkEventOwnership(eventId: number, staffCId: number | null, res: any): Promise<boolean> {
   if (staffCId === null) return true;
   const [evt] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
-  if (!evt || evt.clubId !== staffCId) { res.status(403).json({ error: "Forbidden" }); return false; }
+  if (!evt || evt.clubId !== staffCId) { res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." }); return false; }
   return true;
 }
 
@@ -124,7 +124,7 @@ router.post("/events/:eventId/checkins", async (req, res) => {
   const eventId = Number(req.params.eventId);
   if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
   const { riderId, rfidNumber, bibNumber, checkedIn } = req.body;
-  if (!riderId) return res.status(400).json({ error: "riderId required" });
+  if (!riderId) return res.status(400).json({ error: "Pick a rider first." });
   // `checkedIn: false` un-checks the rider (e.g. dragging a pool rider to the trash
   // in Motos). Any other value, including omitted, checks the rider in. Matches the
   // local server.
@@ -275,7 +275,7 @@ router.delete("/events/:eventId/checkins/:checkinId", async (req, res) => {
   const [deleted] = await db.delete(checkinsTable)
     .where(and(eq(checkinsTable.id, checkinId), eq(checkinsTable.eventId, eventId)))
     .returning({ id: checkinsTable.id });
-  if (!deleted) return res.status(404).json({ error: "Checkin not found" });
+  if (!deleted) return res.status(404).json({ error: "This check-in couldn't be found. It may have been deleted. Refresh the page and try again." });
   return res.json({ deleted: 1 });
 });
 

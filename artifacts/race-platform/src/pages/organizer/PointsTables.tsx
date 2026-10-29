@@ -44,6 +44,7 @@ import {
   Users,
   FunctionSquare,
 } from "lucide-react";
+import { errorText } from "@/lib/friendlyErrors";
 
 // A 503 means the AI service can't be reached (in RM Roost: no internet).
 // Show the server's message instead of blaming the organizer's wording.
@@ -1272,7 +1273,7 @@ export default function PointsTables() {
       queryClient.invalidateQueries({ queryKey: getListPointsTablesQueryKey() });
     } catch (err: any) {
       const message = err?.message || err?.response?.data?.error || "Could not delete this scoring table.";
-      toast({ title: "Failed to delete", description: message, variant: "destructive" });
+      toast({ title: "Couldn't delete", description: message, variant: "destructive" });
     }
   }
 
@@ -1313,9 +1314,9 @@ export default function PointsTables() {
                 });
                 queryClient.invalidateQueries({ queryKey: getListClubsQueryKey() });
                 toast({ title: v ? "Auto DNF enabled for all races" : "Auto DNF disabled" });
-              } catch {
+              } catch (err) {
                 setDnfEnabled(!v);
-                toast({ title: "Failed to save setting", variant: "destructive" });
+                toast({ title: "Couldn't save setting", description: errorText(err), variant: "destructive" });
               }
             }}
           />
@@ -1344,8 +1345,8 @@ export default function PointsTables() {
                     try {
                       await updateClubMutation.mutateAsync({ clubId: club.id, data: { autoDnfEnabled: true, autoDnfThreshold: t } });
                       queryClient.invalidateQueries({ queryKey: getListClubsQueryKey() });
-                    } catch {
-                      toast({ title: "Failed to save threshold", variant: "destructive" });
+                    } catch (err) {
+                      toast({ title: "Couldn't save threshold", description: errorText(err), variant: "destructive" });
                     } finally {
                       setDnfSaving(false);
                     }
@@ -1366,8 +1367,8 @@ export default function PointsTables() {
                     await updateClubMutation.mutateAsync({ clubId: club.id, data: { autoDnfEnabled: true, autoDnfThreshold: t } });
                     queryClient.invalidateQueries({ queryKey: getListClubsQueryKey() });
                     toast({ title: "Threshold saved" });
-                  } catch {
-                    toast({ title: "Failed to save threshold", variant: "destructive" });
+                  } catch (err) {
+                    toast({ title: "Couldn't save threshold", description: errorText(err), variant: "destructive" });
                   } finally {
                     setDnfSaving(false);
                   }

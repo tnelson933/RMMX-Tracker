@@ -31,7 +31,7 @@ async function realSuperAdmin(session: MirrorSession) {
 
 router.get("/admin/mirror/organizers", async (req, res) => {
   const session = req.session as unknown as MirrorSession;
-  if (!(await realSuperAdmin(session))) return res.status(403).json({ error: "Super admins only" });
+  if (!(await realSuperAdmin(session))) return res.status(403).json({ error: "Only RM Roost admins can do this." });
   const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
   const rows = await db
     .select({ email: usersTable.email, name: usersTable.name, role: usersTable.role, clubName: clubsTable.name })
@@ -49,9 +49,9 @@ router.get("/admin/mirror/organizers", async (req, res) => {
 
 router.post("/admin/mirror", async (req, res) => {
   const session = req.session as unknown as MirrorSession;
-  if (session.mirrorBy) return res.status(409).json({ error: "Quit the current mirror first" });
+  if (session.mirrorBy) return res.status(409).json({ error: "You're already viewing another account. Exit that view first." });
   const admin = await realSuperAdmin(session);
-  if (!admin) return res.status(403).json({ error: "Super admins only" });
+  if (!admin) return res.status(403).json({ error: "Only RM Roost admins can do this." });
 
   const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
   if (!email) return res.status(400).json({ error: "Enter the organizer's email address" });

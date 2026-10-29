@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { OfficialResultsBadge } from "@/components/OfficialResultsBadge";
 import { contingencyCsv, contingencyFileName, type ContingencyReportData } from "@/lib/contingencyCsv";
 import { Download, Flag } from "lucide-react";
+import { responseErrorMessage } from "@/lib/friendlyErrors";
 
 function download(name: string, csv: string) {
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
@@ -28,7 +29,7 @@ export function ContingencyReport({ eventId }: { eventId: number }) {
     enabled: !!eventId,
     queryFn: async () => {
       const res = await fetch(`/api/events/${eventId}/contingency-report`, { credentials: "include" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(responseErrorMessage(res.status));
       return res.json();
     },
   });

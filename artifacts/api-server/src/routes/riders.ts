@@ -92,7 +92,7 @@ router.get("/riders", async (req, res) => {
 
 router.post("/riders", async (req, res) => {
   const { firstName, lastName, email, phone, bibNumber, dateOfBirth, emergencyContact, emergencyPhone, rfidNumber, bikeManufacturer, bikeModel, bikeYear, sponsors, amaNumber, mylapsTransponderId, streetAddress, city, homeState, zip } = req.body;
-  if (!firstName || !lastName) return res.status(400).json({ error: "firstName and lastName required" });
+  if (!firstName || !lastName) return res.status(400).json({ error: "Enter the rider's first and last name." });
   const normalizedTransponderId =
     normalizeActiveTransponderIdentifier(mylapsTransponderId);
   const hasNonblankTransponder =
@@ -100,7 +100,7 @@ router.post("/riders", async (req, res) => {
     (typeof mylapsTransponderId !== "string" || mylapsTransponderId.trim() !== "");
   if (hasNonblankTransponder && !normalizedTransponderId) {
     return res.status(400).json({
-      error: "Active transponder ID must be 1–9 hexadecimal characters",
+      error: "Enter the ID printed on the transponder (up to 9 numbers or letters A–F).",
     });
   }
 
@@ -119,7 +119,7 @@ router.post("/riders", async (req, res) => {
 router.get("/riders/:riderId", async (req, res) => {
   const id = Number(req.params.riderId);
   const riders = await db.select().from(ridersTable).where(eq(ridersTable.id, id));
-  if (!riders[0]) return res.status(404).json({ error: "Not found" });
+  if (!riders[0]) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   const rider = riders[0];
 
   const staffCId = getStaffClubId(res);
@@ -127,7 +127,7 @@ router.get("/riders/:riderId", async (req, res) => {
 
   if (scopedClubId !== null) {
     const riderIds = await getClubRiderIds(scopedClubId);
-    if (!riderIds.includes(id)) return res.status(403).json({ error: "Forbidden" });
+    if (!riderIds.includes(id)) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
 
   // Results and club data are limited to the caller's club events (super admins: all clubs).
@@ -203,7 +203,7 @@ router.patch("/riders/:riderId", async (req, res) => {
 
   if (scopedClubId !== null) {
     const riderIds = await getClubRiderIds(scopedClubId);
-    if (!riderIds.includes(id)) return res.status(403).json({ error: "Forbidden" });
+    if (!riderIds.includes(id)) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
 
   // Email is the rider profile ownership key (riderAccess.ts). Only the club that
@@ -211,7 +211,7 @@ router.patch("/riders/:riderId", async (req, res) => {
   if (scopedClubId !== null && req.body.email !== undefined) {
     const [existing] = await db.select({ email: ridersTable.email, clubId: ridersTable.clubId })
       .from(ridersTable).where(eq(ridersTable.id, id));
-    if (!existing) return res.status(404).json({ error: "Not found" });
+    if (!existing) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
     const current = (existing.email ?? "").trim().toLowerCase();
     const next = (req.body.email == null ? "" : String(req.body.email)).trim().toLowerCase();
     if (existing.clubId !== scopedClubId && next !== current) {
@@ -235,13 +235,13 @@ router.patch("/riders/:riderId", async (req, res) => {
       (typeof rawTransponderId !== "string" || rawTransponderId.trim() !== "");
     if (hasNonblankTransponder && !normalizedTransponderId) {
       return res.status(400).json({
-        error: "Active transponder ID must be 1–9 hexadecimal characters",
+        error: "Enter the ID printed on the transponder (up to 9 numbers or letters A–F).",
       });
     }
     updates.mylapsTransponderId = normalizedTransponderId;
   }
   const [rider] = await db.update(ridersTable).set(updates as any).where(eq(ridersTable.id, id)).returning();
-  if (!rider) return res.status(404).json({ error: "Not found" });
+  if (!rider) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   return res.json({ ...rider, createdAt: rider.createdAt.toISOString() });
 });
 

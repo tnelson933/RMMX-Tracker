@@ -12,12 +12,12 @@ async function requireOrganizerForClub(
 ): Promise<boolean> {
   const sessionUserId = (req.session as any)?.userId;
   if (!sessionUserId) {
-    res.status(401).json({ error: "Not authenticated" });
+    res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
     return false;
   }
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, sessionUserId));
   if (!user || user.role !== "club_organizer" || user.clubId !== clubId) {
-    res.status(403).json({ error: "Forbidden" });
+    res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
     return false;
   }
   return true;

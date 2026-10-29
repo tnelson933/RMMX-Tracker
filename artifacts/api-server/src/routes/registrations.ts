@@ -22,9 +22,9 @@ import { riderMobileTokensTable } from "@workspace/db";
 /** Payment-check failures: an unknown/invalid Stripe session is the caller's error (404), anything else a 500 without Stripe's internals. */
 function sendPaymentCheckError(res: any, err: any) {
   if (err?.type === "StripeInvalidRequestError") {
-    return res.status(404).json({ error: "Payment session not found" });
+    return res.status(404).json({ error: "We couldn't find that payment. Refresh the page; if you were charged, contact the event organizer." });
   }
-  return res.status(500).json({ error: "Couldn't confirm the payment. Please try again." });
+  return res.status(500).json({ error: "Couldn't confirm the payment yet. Wait a moment and refresh the page." });
 }
 
 const router = Router();
@@ -102,14 +102,14 @@ async function resolveRegistrationRider(
   if (riderId !== undefined && riderId !== null && riderId !== "") {
     const parsedRiderId = Number(riderId);
     if (!Number.isInteger(parsedRiderId) || parsedRiderId <= 0) {
-      return { status: 400, error: "riderId must be a positive integer" };
+      return { status: 400, error: "This link looks broken. Go back and open it again from the list." };
     }
     if (!normalizedEmail) {
-      return { status: 400, error: "email is required when riderId is supplied" };
+      return { status: 400, error: "Enter the rider's email address." };
     }
     const [selected] = await db.select().from(ridersTable).where(eq(ridersTable.id, parsedRiderId));
     if (!selected) {
-      return { status: 404, error: "Rider profile not found" };
+      return { status: 404, error: "This rider profile couldn't be found. It may have been deleted. Refresh the page and try again." };
     }
     if ((selected.email ?? "").trim().toLowerCase() !== normalizedEmail) {
       return { status: 409, error: "The selected rider profile does not match the supplied email" };
@@ -118,7 +118,7 @@ async function resolveRegistrationRider(
   }
 
   if (!normalizedEmail) {
-    return { status: 400, error: "email is required" };
+    return { status: 400, error: "Enter an email address." };
   }
   const emailMatches = await db.select().from(ridersTable)
     .where(sql`lower(${ridersTable.email}) = ${normalizedEmail}`)
@@ -208,13 +208,13 @@ function fillOnlyEmptyProfileFields(
 async function checkEventOwnership(eventId: number, staffCId: number | null, res: any): Promise<boolean> {
   if (staffCId === null) return true;
   const [evt] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
-  if (!evt || evt.clubId !== staffCId) { res.status(403).json({ error: "Forbidden" }); return false; }
+  if (!evt || evt.clubId !== staffCId) { res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." }); return false; }
   return true;
 }
 
 router.get("/public/riders/lookup", async (req, res) => {
   const email = ((req.query.email as string) || "").trim().toLowerCase();
-  if (!email) return res.status(400).json({ error: "email required" });
+  if (!email) return res.status(400).json({ error: "Enter an email address." });
 
   const riders = await db.select().from(ridersTable)
     .where(sql`lower(${ridersTable.email}) = ${email}`)
@@ -388,7 +388,7 @@ router.post("/events/:eventId/registrations", async (req, res) => {
     selectedPurchaseOptions,
   } = req.body;
 
-  if (!raceClass) return res.status(400).json({ error: "raceClass required" });
+  if (!raceClass) return res.status(400).json({ error: "Choose a class." });
 
   const [eventData] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
   const normalizedTransponderNumber =
@@ -398,7 +398,7 @@ router.post("/events/:eventId/registrations", async (req, res) => {
     (typeof myLapsTransponderNumber !== "string" || myLapsTransponderNumber.trim() !== "");
   if (hasNonblankTransponder && !normalizedTransponderNumber) {
     return res.status(400).json({
-      error: "Active transponder number must be 1–9 hexadecimal characters",
+      error: "Enter the ID printed on the transponder (up to 9 numbers or letters A–F).",
     });
   }
   if (!isRegistrationTransponderRequirementSatisfied(
@@ -437,7 +437,7 @@ router.post("/events/:eventId/registrations", async (req, res) => {
       resolvedRiderId = rider.id;
     } else {
       if (!firstName || !lastName) {
-        return res.status(400).json({ error: "firstName and lastName are required to create a rider" });
+        return res.status(400).json({ error: "Enter the rider's first and last name." });
       }
       const [created] = await db.insert(ridersTable).values({
         ...profileFields,
@@ -449,7 +449,7 @@ router.post("/events/:eventId/registrations", async (req, res) => {
       resolvedRiderId = created.id;
     }
   } else {
-    return res.status(400).json({ error: "riderId OR firstName, lastName, and email are required" });
+    return res.status(400).json({ error: "Pick a rider, or enter a new rider's first name, last name and email." });
   }
 
   // Determine if payment is required — on-site registrations start pending when the event has a fee
@@ -560,11 +560,11 @@ router.patch("/registrations/:registrationId", async (req, res) => {
   if (before) {
     if (!await checkEventOwnership(before.eventId, getStaffClubId(res), res)) return;
   } else {
-    return res.status(404).json({ error: "Not found" });
+    return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   }
 
   const [reg] = await db.update(registrationsTable).set(updates as any).where(eq(registrationsTable.id, id)).returning();
-  if (!reg) return res.status(404).json({ error: "Not found" });
+  if (!reg) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   // Voiding or refunding the last entry of a checkout gives its discount-code use back.
   const wasActive = before.status !== "void" && before.paymentStatus !== "refunded";
@@ -646,8 +646,8 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
 
   try {
     const [reg] = await db.select().from(registrationsTable).where(eq(registrationsTable.id, regId));
-    if (!reg) return res.status(404).json({ error: "Registration not found" });
-    if (reg.eventId !== eventId) return res.status(403).json({ error: "Registration does not belong to this event" });
+    if (!reg) return res.status(404).json({ error: "This registration couldn't be found. It may have been cancelled. Refresh the page and try again." });
+    if (reg.eventId !== eventId) return res.status(403).json({ error: "This registration is for a different event. Refresh the page and try again." });
     if (reg.paymentStatus === "paid") return res.status(409).json({ error: "This entry is already paid." });
     if (reg.status === "void") return res.status(409).json({ error: "This entry was cancelled." });
 
@@ -666,7 +666,7 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
     }
 
     const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
-    if (!event?.entryFee) return res.status(400).json({ error: "This event has no entry fee configured" });
+    if (!event?.entryFee) return res.status(400).json({ error: "This event has no entry fee set. Add one on the event's Edit page, then try again." });
 
     const [club] = await db.select().from(clubsTable).where(eq(clubsTable.id, event.clubId));
     if (!club?.stripeAccountId) return res.status(400).json({ error: ORGANIZER_NO_STRIPE });
@@ -763,13 +763,13 @@ router.post("/events/:eventId/registrations/:regId/add-transponder-rental", asyn
   const { paymentMethod } = req.body; // 'cash' | 'card'
 
   const [reg] = await db.select().from(registrationsTable).where(eq(registrationsTable.id, regId));
-  if (!reg) return res.status(404).json({ error: "Registration not found" });
-  if (reg.eventId !== eventId) return res.status(403).json({ error: "Registration does not belong to this event" });
-  if (reg.transponderRental) return res.status(400).json({ error: "Rider already has a transponder rental" });
+  if (!reg) return res.status(404).json({ error: "This registration couldn't be found. It may have been cancelled. Refresh the page and try again." });
+  if (reg.eventId !== eventId) return res.status(403).json({ error: "This registration is for a different event. Refresh the page and try again." });
+  if (reg.transponderRental) return res.status(400).json({ error: "This rider already has a rental transponder for this event." });
 
   const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
   if (!event?.transponderRentalEnabled || !event.transponderRentalFee) {
-    return res.status(400).json({ error: "Transponder rental is not enabled for this event" });
+    return res.status(400).json({ error: "Transponder rentals aren't turned on for this event. Turn them on in the event's settings first." });
   }
 
   const rentalFee = Number(event.transponderRentalFee);
@@ -818,7 +818,7 @@ router.post("/events/:eventId/registrations/:regId/add-transponder-rental", asyn
     }
   }
 
-  return res.status(400).json({ error: "paymentMethod must be 'cash' or 'card'" });
+  return res.status(400).json({ error: "Choose Cash or Card, then try again." });
 });
 
 // ── Organizer: add RFID sticker purchase at check-in gate ─────────────────────
@@ -829,13 +829,13 @@ router.post("/events/:eventId/registrations/:regId/add-rfid-sticker", async (req
   const { paymentMethod } = req.body; // 'cash' | 'card'
 
   const [reg] = await db.select().from(registrationsTable).where(eq(registrationsTable.id, regId));
-  if (!reg) return res.status(404).json({ error: "Registration not found" });
-  if (reg.eventId !== eventId) return res.status(403).json({ error: "Registration does not belong to this event" });
-  if (reg.rfidStickerPurchased) return res.status(400).json({ error: "Rider already has an RFID sticker" });
+  if (!reg) return res.status(404).json({ error: "This registration couldn't be found. It may have been cancelled. Refresh the page and try again." });
+  if (reg.eventId !== eventId) return res.status(403).json({ error: "This registration is for a different event. Refresh the page and try again." });
+  if (reg.rfidStickerPurchased) return res.status(400).json({ error: "This rider already has an RFID sticker for this event." });
 
   const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
   if (!event?.rfidStickerFee) {
-    return res.status(400).json({ error: "RFID sticker is not enabled for this event" });
+    return res.status(400).json({ error: "RFID stickers aren't turned on for this event. Turn them on in the event's settings first." });
   }
 
   const stickerFee = Number(event.rfidStickerFee);
@@ -884,7 +884,7 @@ router.post("/events/:eventId/registrations/:regId/add-rfid-sticker", async (req
     }
   }
 
-  return res.status(400).json({ error: "paymentMethod must be 'cash' or 'card'" });
+  return res.status(400).json({ error: "Choose Cash or Card, then try again." });
 });
 
 // ── Organizer: sell an RM TrackR at the check-in gate (POS) ────────────────────
@@ -898,13 +898,13 @@ router.post("/events/:eventId/registrations/:regId/add-rm-trackr", async (req, r
   const { paymentMethod } = req.body; // 'cash' | 'card'
 
   const [reg] = await db.select().from(registrationsTable).where(eq(registrationsTable.id, regId));
-  if (!reg) return res.status(404).json({ error: "Registration not found" });
-  if (reg.eventId !== eventId) return res.status(403).json({ error: "Registration does not belong to this event" });
+  if (!reg) return res.status(404).json({ error: "This registration couldn't be found. It may have been cancelled. Refresh the page and try again." });
+  if (reg.eventId !== eventId) return res.status(403).json({ error: "This registration is for a different event. Refresh the page and try again." });
   if (reg.status === "void") return res.status(400).json({ error: "This registration was cancelled" });
-  if (reg.rmTrackrPurchased) return res.status(400).json({ error: `Rider already purchased an ${RM_TRACKR_NAME}` });
+  if (reg.rmTrackrPurchased) return res.status(400).json({ error: `This rider already bought an ${RM_TRACKR_NAME} for this registration.` });
 
   const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
-  if (!event) return res.status(404).json({ error: "Event not found" });
+  if (!event) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
   const price = RM_TRACKR_PRICE;
 
   if (paymentMethod === "cash") {
@@ -949,29 +949,29 @@ router.post("/events/:eventId/registrations/:regId/add-rm-trackr", async (req, r
     }
   }
 
-  return res.status(400).json({ error: "paymentMethod must be 'cash' or 'card'" });
+  return res.status(400).json({ error: "Choose Cash or Card, then try again." });
 });
 
 // ── Public: verify RM TrackR Stripe payment and mark purchased ─────────────────
 router.post("/public/registrations/:id/verify-rm-trackr", async (req, res) => {
   const id = Number(req.params.id);
   const { sessionId } = req.body;
-  if (!sessionId) return res.status(400).json({ error: "sessionId required" });
+  if (!sessionId) return res.status(400).json({ error: "This payment link is incomplete. Start the payment again." });
 
   try {
     const stripe = await getUncachableStripeClient();
     const session = await stripe.checkout.sessions.retrieve(sessionId);
 
     if (session.metadata?.registrationId !== String(id) || session.metadata?.type !== "rm_trackr") {
-      return res.status(403).json({ error: "Session does not match this RM TrackR purchase" });
+      return res.status(403).json({ error: "This payment link doesn't match this RM TrackR purchase. Start the payment again." });
     }
     if (session.payment_status !== "paid") {
-      return res.status(402).json({ error: "Payment not yet completed" });
+      return res.status(402).json({ error: "The payment hasn't finished yet. Finish paying in the Stripe window, then try again." });
     }
 
     const [reg] = await db.select({ riderId: registrationsTable.riderId, eventId: registrationsTable.eventId })
       .from(registrationsTable).where(eq(registrationsTable.id, id));
-    if (!reg) return res.status(404).json({ error: "Registration not found" });
+    if (!reg) return res.status(404).json({ error: "This registration couldn't be found. It may have been cancelled. Refresh the page and try again." });
 
     await markRmTrackrPurchased(reg.eventId, reg.riderId);
     return res.json({ paid: true });
@@ -985,22 +985,22 @@ router.post("/public/registrations/:id/verify-rm-trackr", async (req, res) => {
 router.post("/public/registrations/:id/verify-rfid-sticker", async (req, res) => {
   const id = Number(req.params.id);
   const { sessionId } = req.body;
-  if (!sessionId) return res.status(400).json({ error: "sessionId required" });
+  if (!sessionId) return res.status(400).json({ error: "This payment link is incomplete. Start the payment again." });
 
   try {
     const stripe = await getUncachableStripeClient();
     const session = await stripe.checkout.sessions.retrieve(sessionId);
 
     if (session.metadata?.registrationId !== String(id) || session.metadata?.type !== "rfid_sticker") {
-      return res.status(403).json({ error: "Session does not match this sticker purchase" });
+      return res.status(403).json({ error: "This payment link doesn't match this sticker purchase. Start the payment again." });
     }
     if (session.payment_status !== "paid") {
-      return res.status(402).json({ error: "Payment not yet completed" });
+      return res.status(402).json({ error: "The payment hasn't finished yet. Finish paying in the Stripe window, then try again." });
     }
 
     const [reg] = await db.select({ riderId: registrationsTable.riderId, eventId: registrationsTable.eventId })
       .from(registrationsTable).where(eq(registrationsTable.id, id));
-    if (!reg) return res.status(404).json({ error: "Registration not found" });
+    if (!reg) return res.status(404).json({ error: "This registration couldn't be found. It may have been cancelled. Refresh the page and try again." });
 
     await db.update(registrationsTable)
       .set({ rfidStickerPurchased: true })
@@ -1017,17 +1017,17 @@ router.post("/public/registrations/:id/verify-rfid-sticker", async (req, res) =>
 router.post("/public/registrations/:id/verify-transponder-rental", async (req, res) => {
   const id = Number(req.params.id);
   const { sessionId } = req.body;
-  if (!sessionId) return res.status(400).json({ error: "sessionId required" });
+  if (!sessionId) return res.status(400).json({ error: "This payment link is incomplete. Start the payment again." });
 
   try {
     const stripe = await getUncachableStripeClient();
     const session = await stripe.checkout.sessions.retrieve(sessionId);
 
     if (session.metadata?.registrationId !== String(id) || session.metadata?.type !== "transponder_rental") {
-      return res.status(403).json({ error: "Session does not match this rental" });
+      return res.status(403).json({ error: "This payment link doesn't match this rental. Start the payment again." });
     }
     if (session.payment_status !== "paid") {
-      return res.status(402).json({ error: "Payment not yet completed" });
+      return res.status(402).json({ error: "The payment hasn't finished yet. Finish paying in the Stripe window, then try again." });
     }
 
     const [reg] = await db.update(registrationsTable)
@@ -1035,7 +1035,7 @@ router.post("/public/registrations/:id/verify-transponder-rental", async (req, r
       .where(eq(registrationsTable.id, id))
       .returning();
 
-    if (!reg) return res.status(404).json({ error: "Registration not found" });
+    if (!reg) return res.status(404).json({ error: "This registration couldn't be found. It may have been cancelled. Refresh the page and try again." });
 
     return res.json({ paid: true });
   } catch (err: any) {
@@ -1047,7 +1047,7 @@ router.post("/public/registrations/:id/verify-transponder-rental", async (req, r
 // ── Organizer: waiver acknowledgment history for a rider ──────────────────────
 router.get("/clubs/:clubId/riders/:riderId/waiver-acknowledgments", async (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const clubId = Number(req.params.clubId);
   const riderId = Number(req.params.riderId);
@@ -1055,7 +1055,7 @@ router.get("/clubs/:clubId/riders/:riderId/waiver-acknowledgments", async (req, 
   // Enforce club scope: non-super-admin staff may only query their own club
   const staffCId = getStaffClubId(res);
   if (staffCId !== null && staffCId !== clubId) {
-    return res.status(403).json({ error: "Forbidden" });
+    return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
 
   const rows = await db.select({
@@ -1093,7 +1093,7 @@ router.get("/clubs/:clubId/riders/:riderId/waiver-acknowledgments", async (req, 
 router.get("/public/events/:eventId/check-bib", async (req, res) => {
   const eventId = Number(req.params.eventId);
   const bib = ((req.query.bib as string) || "").trim();
-  if (!bib) return res.status(400).json({ error: "bib required" });
+  if (!bib) return res.status(400).json({ error: "Enter a bib number." });
   const excludeRiderId = req.query.excludeRiderId ? Number(req.query.excludeRiderId) : null;
 
   const conditions = [
@@ -1167,7 +1167,7 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
     .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
     .where(eq(eventsTable.id, eventId));
 
-  if (!rows[0]) return res.status(404).json({ error: "Event not found" });
+  if (!rows[0]) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
   const e = rows[0];
 
   // Fetch club settings: waiver text + pdf + default class details
@@ -1224,15 +1224,15 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   const raceClassList: string[] = rawClasses ?? (raceClass ? [raceClass] : []);
 
   if (!firstName || !lastName || !email || raceClassList.length === 0) {
-    return res.status(400).json({ error: "firstName, lastName, email, and at least one raceClass are required" });
+    return res.status(400).json({ error: "Enter the rider's first name, last name and email, and choose at least one class." });
   }
   if (raceClassList.length !== new Set(raceClassList).size) {
-    return res.status(400).json({ error: "Duplicate race classes in selection" });
+    return res.status(400).json({ error: "The same class is picked twice. Remove the duplicate and try again." });
   }
 
   // Confirm event exists and is open for registration
   const events = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
-  if (!events[0]) return res.status(404).json({ error: "Event not found" });
+  if (!events[0]) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
   const normalizedTransponderNumber =
     normalizeActiveTransponderIdentifier(myLapsTransponderNumber);
   const hasNonblankTransponder =
@@ -1240,7 +1240,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     (typeof myLapsTransponderNumber !== "string" || myLapsTransponderNumber.trim() !== "");
   if (hasNonblankTransponder && !normalizedTransponderNumber) {
     return res.status(400).json({
-      error: "Active transponder number must be 1–9 hexadecimal characters",
+      error: "Enter the ID printed on the transponder (up to 9 numbers or letters A–F).",
     });
   }
   if (!isRegistrationTransponderRequirementSatisfied(
@@ -1279,7 +1279,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
       .from(liabilityWaiverSignaturesTable)
       .where(eq(liabilityWaiverSignaturesTable.id, liabilityWaiverSignatureId));
     if (!sig || sig.eventId !== eventId) {
-      return res.status(400).json({ error: "Invalid liability waiver signature" });
+      return res.status(400).json({ error: "The waiver signature couldn't be confirmed. Sign the waiver again." });
     }
     // A signature belongs to one registration and to the person registering: it must be
     // unused and signed with the registration email (or the signed-in rider account's email).
@@ -1308,20 +1308,20 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   // The date check backs up the status sweep: never take a rider registration
   // on or after the event date, even if the status hasn't been advanced yet.
   if (events[0].status !== "registration_open" || eventDateReached(events[0])) {
-    return res.status(409).json({ error: "Registration is not currently open for this event" });
+    return res.status(409).json({ error: "Registration for this event isn't open. Check the event page for registration dates." });
   }
   const now = new Date();
   if (events[0].registrationOpen && now < new Date(events[0].registrationOpen)) {
-    return res.status(409).json({ error: "Registration has not opened yet for this event" });
+    return res.status(409).json({ error: "Registration for this event hasn't opened yet. Check the event page for when it opens." });
   }
   if (events[0].registrationClose && now > new Date(events[0].registrationClose)) {
-    return res.status(409).json({ error: "Registration has closed for this event" });
+    return res.status(409).json({ error: "Registration for this event has closed. Contact the event organizer if you still want to race." });
   }
   // Validate each selected class against the event's class list
   if (events[0].raceClasses) {
     for (const cls of raceClassList) {
       if (!events[0].raceClasses.includes(cls)) {
-        return res.status(400).json({ error: `Invalid race class for this event: ${cls}` });
+        return res.status(400).json({ error: `${cls} isn't a class at this event. Choose a class from the list.` });
       }
     }
   }
@@ -1380,7 +1380,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
         .from(registrationsTable)
         .where(and(eq(registrationsTable.eventId, eventId), eq(registrationsTable.raceClass, cls), ne(registrationsTable.status, "void")));
       if ((classCount[0]?.count ?? 0) >= classLimit) {
-        return res.status(409).json({ error: `${cls} is full (${classLimit} rider limit reached)` });
+        return res.status(409).json({ error: `${cls} is full (${classLimit} riders). Choose another class, or contact the event organizer.` });
       }
     }
   }
@@ -1435,7 +1435,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     }
 
     if (!codeRow) {
-      return res.status(400).json({ error: "Invalid or already-used discount code" });
+      return res.status(400).json({ error: "That discount code isn't valid or has already been used. Check the code and try again." });
     }
     if (codeRow.isActive === false) {
       return res.status(400).json({ error: "This discount code is no longer active" });
@@ -1444,7 +1444,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
       return res.status(400).json({ error: "This discount code has expired" });
     }
     if (codeRow.usesCount >= codeRow.maxUses) {
-      return res.status(400).json({ error: "Invalid or already-used discount code" });
+      return res.status(400).json({ error: "That discount code isn't valid or has already been used. Check the code and try again." });
     }
     // Category restriction: codes only discount entry fees, so a code limited to
     // categories applies only when this event's entry-fee category is one of them.
@@ -1465,7 +1465,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
       }).from(ridersTable).where(eq(ridersTable.id, codeRow.riderId));
 
       if (!assignedRider) {
-        return res.status(400).json({ error: "Invalid comp code" });
+        return res.status(400).json({ error: "That comp code isn't valid. Check the spelling and try again." });
       }
 
       const normalize = (s: string) => s.trim().toLowerCase();
@@ -1474,7 +1474,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
       const emailMatch = normalize(email) === normalize(assignedRider.email ?? "");
 
       if (!firstMatch || !lastMatch || !emailMatch) {
-        return res.status(400).json({ error: "This discount code is reserved for a specific rider and your details do not match" });
+        return res.status(400).json({ error: "This discount code is reserved for a specific rider. Check that your name and email match the code's rider." });
       }
     }
     compDiscountType = (codeRow.discountType as "fixed" | "percentage") ?? "fixed";
@@ -1490,7 +1490,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
       .where(and(eq(compCodesTable.id, validatedCompCodeId), lt(compCodesTable.usesCount, compCodesTable.maxUses)))
       .returning({ id: compCodesTable.id });
     if (!claimed) {
-      return res.status(400).json({ error: "Invalid or already-used discount code" });
+      return res.status(400).json({ error: "That discount code isn't valid or has already been used. Check the code and try again." });
     }
   }
   const releaseCompCodeUse = async () => {
@@ -1807,7 +1807,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
 // ── Transponder rental list for an event ───────────────────────────────────────
 router.get("/events/:eventId/transponder-rentals", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  if (!eventId) return res.status(400).json({ error: "eventId required" });
+  if (!eventId) return res.status(400).json({ error: "Choose an event first." });
   const staffCId = getStaffClubId(res);
   if (!await checkEventOwnership(eventId, staffCId, res)) return;
 
@@ -1871,15 +1871,15 @@ router.post("/events/:eventId/transponder-rentals/:riderId/remind", async (req, 
 
   const [rider] = await db.select({ email: ridersTable.email, firstName: ridersTable.firstName })
     .from(ridersTable).where(eq(ridersTable.id, riderId));
-  if (!rider?.email) return res.status(404).json({ error: "Rider not found or no email" });
+  if (!rider?.email) return res.status(404).json({ error: "This rider has no email address on file. Add one on the rider's profile, then try again." });
 
   const [account] = await db.select({ id: riderAccountsTable.id })
     .from(riderAccountsTable).where(eq(riderAccountsTable.email, rider.email));
-  if (!account) return res.status(404).json({ error: "Rider does not have the app" });
+  if (!account) return res.status(404).json({ error: "This rider hasn't installed the RM Roost app, so they can't get notifications." });
 
   const tokens = await db.select({ expoPushToken: riderPushTokensTable.expoPushToken })
     .from(riderPushTokensTable).where(eq(riderPushTokensTable.riderAccountId, account.id));
-  if (tokens.length === 0) return res.status(404).json({ error: "Rider has no push token" });
+  if (tokens.length === 0) return res.status(404).json({ error: "This rider hasn't turned on notifications in the RM Roost app." });
 
   await sendPushNotifications(tokens.map(t => ({
     to: t.expoPushToken,
@@ -1935,7 +1935,7 @@ router.post("/events/:eventId/transponder-rentals/remind-all", async (req, res) 
 router.post("/events/:eventId/registrations/:regId/assign-rental-transponder", async (req, res) => {
   const eventId = Number(req.params.eventId);
   const regId = Number(req.params.regId);
-  if (!eventId || !regId) return res.status(400).json({ error: "Invalid ids" });
+  if (!eventId || !regId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   const staffCId = getStaffClubId(res);
   if (!await checkEventOwnership(eventId, staffCId, res)) return;
 
@@ -1943,7 +1943,7 @@ router.post("/events/:eventId/registrations/:regId/assign-rental-transponder", a
   const tag = normalizeActiveTransponderIdentifier(transponderNumber);
   if (!tag) {
     return res.status(400).json({
-      error: "transponderNumber must be a 1–9 character hexadecimal active transponder ID",
+      error: "Enter the ID printed on the transponder (up to 9 numbers or letters A–F).",
     });
   }
 
@@ -1953,12 +1953,12 @@ router.post("/events/:eventId/registrations/:regId/assign-rental-transponder", a
     transponderRental: registrationsTable.transponderRental,
   }).from(registrationsTable)
     .where(and(eq(registrationsTable.id, regId), eq(registrationsTable.eventId, eventId)));
-  if (!reg) return res.status(404).json({ error: "Registration not found" });
-  if (!reg.transponderRental) return res.status(400).json({ error: "This registration does not have a transponder rental" });
+  if (!reg) return res.status(404).json({ error: "This registration couldn't be found. It may have been cancelled. Refresh the page and try again." });
+  if (!reg.transponderRental) return res.status(400).json({ error: "This registration doesn't have a rental transponder." });
 
   const [event] = await db.select({ date: eventsTable.date, endDate: eventsTable.endDate, clubId: eventsTable.clubId })
     .from(eventsTable).where(eq(eventsTable.id, eventId));
-  if (!event) return res.status(404).json({ error: "Event not found" });
+  if (!event) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
 
   // The unit is the rider's only for this event: the link expires the morning
   // after the last race day and is then removed automatically (lib/rentalTransponders.ts).
@@ -2025,19 +2025,19 @@ router.post("/events/:eventId/registrations/:regId/assign-rental-transponder", a
 router.patch("/events/:eventId/registrations/:regId/transponder-returned", async (req, res) => {
   const eventId = Number(req.params.eventId);
   const regId = Number(req.params.regId);
-  if (!eventId || !regId) return res.status(400).json({ error: "Invalid ids" });
+  if (!eventId || !regId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   const staffCId = getStaffClubId(res);
   if (!await checkEventOwnership(eventId, staffCId, res)) return;
 
   const { returned } = req.body; // boolean
-  if (typeof returned !== "boolean") return res.status(400).json({ error: "returned (boolean) required" });
+  if (typeof returned !== "boolean") return res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
 
   const [reg] = await db.update(registrationsTable)
     .set({ transponderReturned: returned })
     .where(and(eq(registrationsTable.id, regId), eq(registrationsTable.eventId, eventId)))
     .returning({ id: registrationsTable.id, transponderReturned: registrationsTable.transponderReturned, riderId: registrationsTable.riderId });
 
-  if (!reg) return res.status(404).json({ error: "Registration not found" });
+  if (!reg) return res.status(404).json({ error: "This registration couldn't be found. It may have been cancelled. Refresh the page and try again." });
   // Returned: the unit is no longer this rider's, so its timing link goes now.
   if (returned && reg.riderId != null) await releaseRentalLink(eventId, reg.riderId);
   return res.json({ registrationId: reg.id, transponderReturned: reg.transponderReturned });
@@ -2046,7 +2046,7 @@ router.patch("/events/:eventId/registrations/:regId/transponder-returned", async
 // ── Organizer: list rider-initiated cancellations for an event ────────────────
 router.get("/events/:eventId/cancellations", async (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const staffCId = getStaffClubId(res);
   const eventId = Number(req.params.eventId);
   if (!eventId || !(await checkEventOwnership(eventId, staffCId, res))) return;
@@ -2096,7 +2096,7 @@ router.get("/events/:eventId/cancellations", async (req, res) => {
 // ── Organizer: mark refund as verified ────────────────────────────────────────
 router.patch("/events/:eventId/cancellations/:registrationId/verify", async (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const staffCId = getStaffClubId(res);
   const eventId = Number(req.params.eventId);
   const registrationId = Number(req.params.registrationId);
@@ -2110,8 +2110,8 @@ router.patch("/events/:eventId/cancellations/:registrationId/verify", async (req
       eq(registrationsTable.eventId, eventId),
     ));
 
-  if (!reg) return res.status(404).json({ error: "Registration not found" });
-  if (reg.cancellationSource !== "rider") return res.status(400).json({ error: "Not a rider-initiated cancellation" });
+  if (!reg) return res.status(404).json({ error: "This registration couldn't be found. It may have been cancelled. Refresh the page and try again." });
+  if (reg.cancellationSource !== "rider") return res.status(400).json({ error: "Only cancellations a rider started can be refunded here. Refund it from the registration instead." });
 
   const now = new Date();
   const [updated] = await db
@@ -2234,7 +2234,7 @@ export async function confirmRegistrationSession(
 router.post("/public/registrations/:id/verify-payment", async (req, res) => {
   const id = Number(req.params.id);
   const { sessionId } = req.body;
-  if (!sessionId) return res.status(400).json({ error: "sessionId required" });
+  if (!sessionId) return res.status(400).json({ error: "This payment link is incomplete. Start the payment again." });
 
   try {
     const stripe = await getUncachableStripeClient();
@@ -2243,21 +2243,21 @@ router.post("/public/registrations/:id/verify-payment", async (req, res) => {
     // Support both multi-class (registrationIds comma-sep) and single-class (registrationId)
     const regIdsStr = session.metadata?.registrationIds || session.metadata?.registrationId;
     if (!regIdsStr) {
-      return res.status(403).json({ error: "Session does not match registration" });
+      return res.status(403).json({ error: "This payment link doesn't match this registration. Start the payment again from the registration." });
     }
     // Add-on sessions (transponder_rental, rfid_sticker, ...) also carry a registrationId;
     // they must never confirm the registration itself.
     const sessionType = session.metadata?.type;
     if (sessionType && sessionType !== "registration") {
-      return res.status(403).json({ error: "Session is not a registration payment" });
+      return res.status(403).json({ error: "This payment link doesn't match this registration. Start the payment again from the registration." });
     }
     const regIds = regIdsStr.split(",").map(Number).filter(Boolean);
     if (!regIds.includes(id)) {
-      return res.status(403).json({ error: "Session does not match registration" });
+      return res.status(403).json({ error: "This payment link doesn't match this registration. Start the payment again from the registration." });
     }
 
     if (session.payment_status !== "paid") {
-      return res.status(402).json({ error: "Payment not yet completed", paymentStatus: session.payment_status });
+      return res.status(402).json({ error: "The payment hasn't finished yet. Finish paying in the Stripe window, then try again.", paymentStatus: session.payment_status });
     }
 
     const amountPaidTotal = session.amount_total != null ? session.amount_total / 100 : null;

@@ -1,4 +1,5 @@
 import { getPublicOrigin } from "@/lib/publicOrigin";
+import { responseErrorMessage } from "./friendlyErrors";
 
 /**
  * One camera going live: captures it, records WebM with MediaRecorder and sends
@@ -65,7 +66,7 @@ async function fetchTicket(eventId: number, cameraId: string): Promise<string> {
       ? "This event can't be streamed from this account."
       : "Sign in as the event's organizer to go live.");
   }
-  if (!res.ok || typeof body.ticket !== "string") throw new Error(body.error ?? `HTTP ${res.status}`);
+  if (!res.ok || typeof body.ticket !== "string") throw new Error(responseErrorMessage(res.status, body));
   return body.ticket;
 }
 

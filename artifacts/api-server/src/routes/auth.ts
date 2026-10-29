@@ -98,13 +98,13 @@ router.post("/auth/logout", (req, res) => {
 router.get("/auth/me", async (req, res) => {
   const userId = (req.session as any).userId;
   if (!userId) {
-    return res.status(401).json({ error: "Not authenticated" });
+    return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   }
 
   const users = await db.select().from(usersTable).where(eq(usersTable.id, userId));
   const user = users[0];
   if (!user) {
-    return res.status(401).json({ error: "Not authenticated" });
+    return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   }
 
   return res.json({
@@ -125,7 +125,7 @@ router.get("/auth/me", async (req, res) => {
 router.post("/auth/complete-tour", async (req, res) => {
   const userId = (req.session as any).userId;
   if (!userId) {
-    return res.status(401).json({ error: "Not authenticated" });
+    return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   }
   await db.update(usersTable).set({ tourCompleted: true }).where(eq(usersTable.id, userId));
   return res.json({ ok: true });
@@ -134,7 +134,7 @@ router.post("/auth/complete-tour", async (req, res) => {
 // POST /auth/request-setup — send account setup or password reset email
 router.post("/auth/request-setup", async (req, res) => {
   const { email } = req.body;
-  if (!email) return res.status(400).json({ error: "Email required" });
+  if (!email) return res.status(400).json({ error: "Enter an email address." });
 
   const trimmed = String(email).toLowerCase().trim();
   const [user] = await db.select().from(usersTable).where(eq(usersTable.email, trimmed));
@@ -161,10 +161,10 @@ router.post("/auth/request-setup", async (req, res) => {
 router.post("/auth/complete-setup", async (req, res) => {
   const { token, password } = req.body;
   if (!token || !password) {
-    return res.status(400).json({ error: "Token and password are required" });
+    return res.status(400).json({ error: "This reset link is incomplete. Open the link from your email again." });
   }
   if (String(password).length < 8) {
-    return res.status(400).json({ error: "Password must be at least 8 characters" });
+    return res.status(400).json({ error: "Use a password with at least 8 characters." });
   }
 
   const [record] = await db
@@ -199,11 +199,11 @@ router.post("/auth/complete-setup", async (req, res) => {
 // PATCH /auth/me — update own profile (name)
 router.patch("/auth/me", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const { name } = req.body;
   if (name !== undefined && (typeof name !== "string" || !name.trim())) {
-    return res.status(400).json({ error: "name must be a non-empty string" });
+    return res.status(400).json({ error: "Enter a name." });
   }
 
   const updates: Record<string, string> = {};
@@ -217,7 +217,7 @@ router.patch("/auth/me", async (req, res) => {
       .set(updates)
       .where(eq(usersTable.id, userId))
       .returning();
-  if (!updated) return res.status(401).json({ error: "Not authenticated" });
+  if (!updated) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   return res.json({
     id: updated.id,
@@ -236,13 +236,13 @@ router.patch("/auth/me", async (req, res) => {
 // the Offline Mode page can bake it into the downloaded start script.
 router.post("/auth/offline-token", async (req, res) => {
   const userId = (req.session as any).userId as number | undefined;
-  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const [caller] = await db
     .select({ role: usersTable.role, permissions: usersTable.permissions })
     .from(usersTable)
     .where(eq(usersTable.id, userId));
-  if (!caller) return res.status(401).json({ error: "Not authenticated" });
+  if (!caller) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   if (!canUseOfflineSync(caller)) {
     return res.status(403).json({ error: "Offline mode needs the Offline Mode permission. Ask your club organizer to grant it." });
   }
@@ -254,7 +254,7 @@ router.post("/auth/offline-token", async (req, res) => {
     .where(eq(usersTable.id, userId))
     .returning({ token: usersTable.offlineSyncToken });
 
-  if (!updated) return res.status(500).json({ error: "Failed to generate token" });
+  if (!updated) return res.status(500).json({ error: "Couldn't create a code right now. Try again in a moment." });
   return res.json({ token: updated.token });
 });
 

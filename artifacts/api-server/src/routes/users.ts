@@ -17,12 +17,12 @@ function getAppUrl(): string {
 async function requireSuperAdmin(req: any, res: any): Promise<boolean> {
   const sessionUserId = (req.session as any).userId;
   if (!sessionUserId) {
-    res.status(401).json({ error: "Not authenticated" });
+    res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
     return false;
   }
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, sessionUserId));
   if (!user || user.role !== "super_admin") {
-    res.status(403).json({ error: "Forbidden" });
+    res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
     return false;
   }
   return true;
@@ -64,7 +64,7 @@ router.post("/users", async (req, res) => {
 
   const { email, name, role, clubId } = req.body;
   if (!email || !name || !role) {
-    return res.status(400).json({ error: "email, name, and role are required" });
+    return res.status(400).json({ error: "Enter a name and email address, and choose a role." });
   }
 
   const trimmedEmail = String(email).toLowerCase().trim();
@@ -73,7 +73,7 @@ router.post("/users", async (req, res) => {
     .from(usersTable)
     .where(eq(usersTable.email, trimmedEmail));
   if (existing[0]) {
-    return res.status(409).json({ error: "An account with this email already exists" });
+    return res.status(409).json({ error: "That email address already has an account. Sign in instead, or use Forgot password." });
   }
 
   const [newUser] = await db
@@ -113,7 +113,7 @@ router.delete("/users/:userId", async (req, res) => {
   const sessionUserId = (req.session as any).userId;
   const userId = Number(req.params.userId);
   if (userId === sessionUserId) {
-    return res.status(400).json({ error: "Cannot delete your own account" });
+    return res.status(400).json({ error: "You can't delete your own account here. Ask another owner to do it." });
   }
 
   await db.delete(usersTable).where(eq(usersTable.id, userId));
@@ -125,7 +125,7 @@ router.post("/users/:userId/resend-invite", async (req, res) => {
 
   const userId = Number(req.params.userId);
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
-  if (!user) return res.status(404).json({ error: "User not found" });
+  if (!user) return res.status(404).json({ error: "This account couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   const token = crypto.randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);

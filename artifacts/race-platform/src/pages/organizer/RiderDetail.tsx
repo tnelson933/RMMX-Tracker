@@ -163,7 +163,7 @@ function WaiverAcknowledgmentsCard({ riderId, clubId }: { riderId: number; clubI
     queryKey: ["waiver-acknowledgments", clubId, riderId],
     queryFn: async () => {
       const res = await fetch(`/api/clubs/${clubId}/riders/${riderId}/waiver-acknowledgments`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch waiver acknowledgments");
+      if (!res.ok) throw new Error("Couldn't fetch waiver acknowledgments");
       return res.json();
     },
   });
@@ -172,7 +172,7 @@ function WaiverAcknowledgmentsCard({ riderId, clubId }: { riderId: number; clubI
     queryKey: ["liability-waiver-signatures", clubId, riderId],
     queryFn: async () => {
       const res = await fetch(`/api/clubs/${clubId}/riders/${riderId}/liability-waiver-signatures`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch signed waivers");
+      if (!res.ok) throw new Error("Couldn't fetch signed waivers");
       return res.json();
     },
   });
@@ -459,7 +459,7 @@ function DiscountCodeCard({ riderId, clubId }: { riderId: number; clubId: number
         toast({ title: "Discount code generated", description: `Code: ${data.code}` });
       } else {
         const err = await res.json().catch(() => ({}));
-        toast({ title: "Failed to generate code", description: err.error, variant: "destructive" });
+        toast({ title: "Couldn't generate code", description: err.error, variant: "destructive" });
       }
     } finally {
       setGenerating(false);
@@ -478,7 +478,7 @@ function DiscountCodeCard({ riderId, clubId }: { riderId: number; clubId: number
         toast({ title: "Discount code removed" });
       } else {
         const err = await res.json().catch(() => ({}));
-        toast({ title: "Failed to delete code", description: err.error, variant: "destructive" });
+        toast({ title: "Couldn't delete code", description: err.error, variant: "destructive" });
       }
     } finally {
       setDeleting(false);

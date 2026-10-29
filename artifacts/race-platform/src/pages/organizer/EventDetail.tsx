@@ -26,6 +26,7 @@ import { formatEventDatesFull } from "@/lib/eventDates";
 import { TransponderRequirementTip } from "@/components/organizer/TransponderRequirementTip";
 import { eventTimingTags, timingTagsLabel } from "@/components/organizer/timingTags";
 import { DEFAULT_QUICK_CHECKIN_REQUIREMENTS, QuickCheckinRequirementsDialog, quickCheckinRequirementsSummary, toQuickCheckinRequirements } from "@/components/organizer/QuickCheckinRequirements";
+import { errorText } from "@/lib/friendlyErrors";
 
 const TIME_OPTIONS: string[] = [];
 for (let h = 0; h < 24; h++) {
@@ -192,7 +193,7 @@ export default function EventDetail() {
         toast({ title: "Event deleted" });
         navigate("/events");
       },
-      onError: () => toast({ title: "Failed to delete event", variant: "destructive" }),
+      onError: (err) => toast({ title: "Couldn't delete event", description: errorText(err), variant: "destructive" }),
     });
   };
 
@@ -370,7 +371,7 @@ export default function EventDetail() {
         await loadExistingCodes();
       } else {
         const err = await res.json().catch(() => ({}));
-        toast({ title: err.error ?? "Failed to create code", variant: "destructive" });
+        toast({ title: err.error ?? "Couldn't create code", variant: "destructive" });
       }
     } finally {
       setCompGenerating(false);

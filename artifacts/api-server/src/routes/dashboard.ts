@@ -14,7 +14,7 @@ router.get("/dashboard/club/:clubId", async (req, res) => {
   // Staff club scoping: reject if requesting another club's dashboard
   const staffCId = res.locals.staffClubId;
   if (typeof staffCId === "number" && staffCId !== clubId) {
-    return res.status(403).json({ error: "Forbidden" });
+    return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
 
   const [eventsCount] = await db.select({ count: count() }).from(eventsTable).where(eq(eventsTable.clubId, clubId));
@@ -246,10 +246,10 @@ router.get("/dashboard/club/:clubId", async (req, res) => {
 router.get("/events/:eventId/raceday-summary", async (req, res) => {
   const eventId = Number(req.params.eventId);
   const events = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
-  if (!events[0]) return res.status(404).json({ error: "Not found" });
+  if (!events[0]) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   const staffCId = res.locals.staffClubId;
   if (typeof staffCId === "number" && events[0].clubId !== staffCId) {
-    return res.status(403).json({ error: "Forbidden" });
+    return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
 
   const [regCount] = await db.select({ count: count() }).from(registrationsTable).where(and(eq(registrationsTable.eventId, eventId), ne(registrationsTable.status, "void")));
@@ -461,10 +461,10 @@ router.get("/public/recent-results", async (req, res) => {
 router.get("/reports/event/:eventId", async (req, res) => {
   const eventId = Number(req.params.eventId);
   const events = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
-  if (!events[0]) return res.status(404).json({ error: "Not found" });
+  if (!events[0]) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   const staffCId = res.locals.staffClubId;
   if (typeof staffCId === "number" && events[0].clubId !== staffCId) {
-    return res.status(403).json({ error: "Forbidden" });
+    return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
 
   const [regCount] = await db.select({ count: count() }).from(registrationsTable).where(eq(registrationsTable.eventId, eventId));
@@ -564,7 +564,7 @@ router.get("/public/events/browse", async (req, res) => {
 // GET /public/events/:eventId/schedule — event schedule with motos for public viewing
 router.get("/public/events/:eventId/schedule", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
+  if (isNaN(eventId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const [event] = await db.select({
     id: eventsTable.id,
@@ -582,7 +582,7 @@ router.get("/public/events/:eventId/schedule", async (req, res) => {
       ne(eventsTable.status, "draft"),
     ));
 
-  if (!event) return res.status(404).json({ error: "Event not found" });
+  if (!event) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
 
   const motos = await db.select().from(motosTable)
     .where(eq(motosTable.eventId, eventId))
@@ -620,7 +620,7 @@ router.get("/public/events/:eventId/schedule", async (req, res) => {
 // GET /public/events/:eventId/overall-standings — per-class aggregate standings for an event
 router.get("/public/events/:eventId/overall-standings", async (req, res) => {
   const eventId = Number(req.params.eventId);
-  if (isNaN(eventId)) return res.status(400).json({ error: "Invalid event ID" });
+  if (isNaN(eventId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   // Finished races only; Olympic tables rank lowest first (lib/eventOverall.ts).
   return res.json(await computeEventOverall(eventId));
 });
@@ -629,7 +629,7 @@ router.get("/public/events/:eventId/overall-standings", async (req, res) => {
 router.get("/public/motos/:motoId/laps/:riderId", async (req, res) => {
   const motoId = Number(req.params.motoId);
   const riderId = Number(req.params.riderId);
-  if (isNaN(motoId) || isNaN(riderId)) return res.status(400).json({ error: "Invalid ID" });
+  if (isNaN(motoId) || isNaN(riderId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const [moto] = await db.select({ lapCount: motosTable.lapCount })
     .from(motosTable).where(eq(motosTable.id, motoId));
@@ -655,10 +655,10 @@ router.get("/public/motos/:motoId/laps/:riderId", async (req, res) => {
 // GET /public/motos/:motoId/detail — public moto detail (leaderboard + lineup, no auth)
 router.get("/public/motos/:motoId/detail", async (req, res) => {
   const motoId = Number(req.params.motoId);
-  if (isNaN(motoId)) return res.status(400).json({ error: "Invalid moto ID" });
+  if (isNaN(motoId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const snapshot = await buildLeaderboard(motoId);
-  if (!snapshot) return res.status(404).json({ error: "Moto not found" });
+  if (!snapshot) return res.status(404).json({ error: "This moto couldn't be found. Motos may have been regenerated. Refresh the Motos page." });
 
   const [moto] = await db.select({ lineup: motosTable.lineup }).from(motosTable).where(eq(motosTable.id, motoId));
   const rawLineup = (Array.isArray(moto?.lineup) ? moto.lineup : []) as Array<{

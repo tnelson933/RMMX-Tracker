@@ -43,6 +43,7 @@ import {
   Copy, Check, AlertTriangle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { errorText } from "@/lib/friendlyErrors";
 
 const US_STATES = [
   "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA",
@@ -181,7 +182,7 @@ export default function ClubsAdmin() {
               toast({ title: "Club updated", description: `${data.name} has been updated.` });
             }
           },
-          onError: () => toast({ title: "Error", description: "Failed to update club.", variant: "destructive" }),
+          onError: () => toast({ title: "Error", description: "Couldn't update club.", variant: "destructive" }),
         }
       );
     } else {
@@ -204,7 +205,7 @@ export default function ClubsAdmin() {
               toast({ title: "Club created", description: `${data.name} has been added.` });
             }
           },
-          onError: () => toast({ title: "Error", description: "Failed to create club.", variant: "destructive" }),
+          onError: () => toast({ title: "Error", description: "Couldn't create club.", variant: "destructive" }),
         }
       );
     }
@@ -224,7 +225,7 @@ export default function ClubsAdmin() {
               : `${club.name} is active again.`,
           });
         },
-        onError: () => toast({ title: "Error", description: "Failed to update club status.", variant: "destructive" }),
+        onError: () => toast({ title: "Error", description: "Couldn't update club status.", variant: "destructive" }),
         onSettled: () => setTogglingId(null),
       }
     );
@@ -243,7 +244,7 @@ export default function ClubsAdmin() {
             toast({ title: "Invite resent", description: `Setup email sent to ${userName}.` });
           }
         },
-        onError: () => toast({ title: "Failed to resend", variant: "destructive" }),
+        onError: (err) => toast({ title: "Couldn't resend", description: errorText(err), variant: "destructive" }),
       }
     );
   };
@@ -262,7 +263,7 @@ export default function ClubsAdmin() {
           const msg = err?.response?.data?.message ?? err?.message;
           toast({
             title: "Cannot delete club",
-            description: msg ?? "Failed to delete club.",
+            description: msg ?? "Couldn't delete club.",
             variant: "destructive",
           });
         },

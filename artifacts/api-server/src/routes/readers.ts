@@ -42,14 +42,14 @@ async function getCallerClubId(req: any): Promise<number | null> {
 // GET /readers/connector-status — live RM Connect app connections for this club
 router.get("/readers/connector-status", async (req, res) => {
   const clubId = await getCallerClubId(req);
-  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  if (!clubId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   return res.json(getConnectorStatus(clubId));
 });
 
 // GET /readers/recent-tags — live tag scanner: tags recently seen by this club's readers
 router.get("/readers/recent-tags", async (req, res) => {
   const clubId = await getCallerClubId(req);
-  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  if (!clubId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const tags = getRecentTags(clubId);
   if (tags.length === 0) return res.json([]);
@@ -94,7 +94,7 @@ router.get("/readers/recent-tags", async (req, res) => {
 // DELETE /readers/recent-tags — clear the live tag scanner list
 router.delete("/readers/recent-tags", async (req, res) => {
   const clubId = await getCallerClubId(req);
-  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  if (!clubId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   clearRecentTags(clubId);
   return res.status(204).end();
 });
@@ -102,7 +102,7 @@ router.delete("/readers/recent-tags", async (req, res) => {
 // GET /readers — list club's readers
 router.get("/readers", async (req, res) => {
   const clubId = await getCallerClubId(req);
-  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  if (!clubId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const rows = await db
     .select()
@@ -116,13 +116,13 @@ router.get("/readers", async (req, res) => {
 // POST /readers — register a new reader (generates a unique token)
 router.post("/readers", async (req, res) => {
   const clubId = await getCallerClubId(req);
-  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  if (!clubId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
   const type = normalizeReaderType(req.body?.type);
   const hardwareAddress = typeof req.body?.hardwareAddress === "string" ? req.body.hardwareAddress.trim() || null : null;
 
-  if (!name) return res.status(400).json({ error: "name is required" });
+  if (!name) return res.status(400).json({ error: "Enter a name." });
 
   const [reader] = await db
     .insert(readersTable)
@@ -135,13 +135,13 @@ router.post("/readers", async (req, res) => {
 // PATCH /readers/:readerId — rename a reader
 router.patch("/readers/:readerId", async (req, res) => {
   const clubId = await getCallerClubId(req);
-  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  if (!clubId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const readerId = Number(req.params.readerId);
-  if (!readerId) return res.status(400).json({ error: "Invalid readerId" });
+  if (!readerId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
-  if (!name) return res.status(400).json({ error: "name is required" });
+  if (!name) return res.status(400).json({ error: "Enter a name." });
 
   const hardwareAddressRaw = req.body?.hardwareAddress;
   const hardwareAddress = hardwareAddressRaw === undefined
@@ -150,8 +150,8 @@ router.patch("/readers/:readerId", async (req, res) => {
 
   // Verify ownership before update
   const [existing] = await db.select({ clubId: readersTable.clubId }).from(readersTable).where(eq(readersTable.id, readerId));
-  if (!existing) return res.status(404).json({ error: "Reader not found" });
-  if (existing.clubId !== clubId) return res.status(403).json({ error: "Forbidden" });
+  if (!existing) return res.status(404).json({ error: "This reader couldn't be found. It may have been deleted. Refresh Reader Setup." });
+  if (existing.clubId !== clubId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
 
   const updatePayload: Record<string, unknown> = { name };
   if (hardwareAddress !== undefined) updatePayload.hardwareAddress = hardwareAddress;
@@ -168,7 +168,7 @@ router.patch("/readers/:readerId", async (req, res) => {
 // POST /readers/llrp-config — broadcast RF config to all connected RM Connect instances for this club
 router.post("/readers/llrp-config", async (req, res) => {
   const clubId = await getCallerClubId(req);
-  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  if (!clubId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const { transmitPowerIndex, rfModeIndex, tagPopulation, tagTransitTime } = req.body ?? {};
 
@@ -178,7 +178,7 @@ router.post("/readers/llrp-config", async (req, res) => {
     typeof tagPopulation !== "number" || tagPopulation < 1 || tagPopulation > 64 ||
     typeof tagTransitTime !== "number" || tagTransitTime < 50 || tagTransitTime > 5000
   ) {
-    return res.status(400).json({ error: "Invalid RF config values" });
+    return res.status(400).json({ error: "Some reader settings are out of range. Check the values and try again." });
   }
 
   const sent = sendConnectorCommand(clubId, {
@@ -193,17 +193,17 @@ router.post("/readers/llrp-config", async (req, res) => {
 // organizer portal and send them to this reader's RM Connect instance.
 router.post("/readers/:readerId/active-timing-config", async (req, res) => {
   const clubId = await getCallerClubId(req);
-  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  if (!clubId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const readerId = Number(req.params.readerId);
-  if (!readerId) return res.status(400).json({ error: "Invalid readerId" });
+  if (!readerId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   const config = parseActiveTimingConfig(req.body?.config);
   if (!config) return res.status(400).json({ error: "Channel must be 0–5, power must be 0–100, and both loop settings are required." });
   const syncClock = req.body?.syncClock === true;
 
   const [reader] = await db.select().from(readersTable).where(eq(readersTable.id, readerId));
-  if (!reader) return res.status(404).json({ error: "Reader not found" });
-  if (reader.clubId !== clubId) return res.status(403).json({ error: "Forbidden" });
+  if (!reader) return res.status(404).json({ error: "This reader couldn't be found. It may have been deleted. Refresh Reader Setup." });
+  if (reader.clubId !== clubId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   if (normalizeReaderType(reader.type) !== "active_transponder") {
     return res.status(400).json({ error: "This configuration is only available for an Active Timing Reader." });
   }
@@ -229,17 +229,17 @@ router.post("/readers/:readerId/active-timing-config", async (req, res) => {
 // must be given the new one.
 router.post("/readers/:readerId/rotate-token", async (req, res) => {
   const clubId = await getCallerClubId(req);
-  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  if (!clubId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const readerId = Number(req.params.readerId);
-  if (!readerId) return res.status(400).json({ error: "Invalid readerId" });
+  if (!readerId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const [existing] = await db
     .select({ clubId: readersTable.clubId, token: readersTable.token })
     .from(readersTable)
     .where(eq(readersTable.id, readerId));
-  if (!existing) return res.status(404).json({ error: "Reader not found" });
-  if (existing.clubId !== clubId) return res.status(403).json({ error: "Forbidden" });
+  if (!existing) return res.status(404).json({ error: "This reader couldn't be found. It may have been deleted. Refresh Reader Setup." });
+  if (existing.clubId !== clubId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
 
   const [reader] = await db
     .update(readersTable)
@@ -255,18 +255,18 @@ router.post("/readers/:readerId/rotate-token", async (req, res) => {
 // DELETE /readers/:readerId — remove a reader
 router.delete("/readers/:readerId", async (req, res) => {
   const clubId = await getCallerClubId(req);
-  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  if (!clubId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const readerId = Number(req.params.readerId);
-  if (!readerId) return res.status(400).json({ error: "Invalid readerId" });
+  if (!readerId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   // Verify ownership before delete
   const [reader] = await db
     .select({ clubId: readersTable.clubId, token: readersTable.token })
     .from(readersTable)
     .where(eq(readersTable.id, readerId));
-  if (!reader) return res.status(404).json({ error: "Reader not found" });
-  if (reader.clubId !== clubId) return res.status(403).json({ error: "Forbidden" });
+  if (!reader) return res.status(404).json({ error: "This reader couldn't be found. It may have been deleted. Refresh Reader Setup." });
+  if (reader.clubId !== clubId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
 
   // Delete dependent assignments first (no DB-level CASCADE on this FK)
   await db.delete(eventReaderAssignmentsTable).where(eq(eventReaderAssignmentsTable.readerId, readerId));

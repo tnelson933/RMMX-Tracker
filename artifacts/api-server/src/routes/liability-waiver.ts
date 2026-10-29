@@ -14,10 +14,10 @@ router.post("/public/events/:eventId/liability-waiver/sign", async (req, res) =>
   const eventId = Number(req.params.eventId);
   const { signerName, signerEmail, consentToEsign, waiverSnapshot, fieldLayout, signerType, minorRiderName } = req.body;
 
-  if (!signerName?.trim()) return res.status(400).json({ error: "signerName is required" });
-  if (!signerEmail?.trim()) return res.status(400).json({ error: "signerEmail is required" });
-  if (!consentToEsign) return res.status(400).json({ error: "consentToEsign must be true" });
-  if (!waiverSnapshot?.trim()) return res.status(400).json({ error: "waiverSnapshot is required" });
+  if (!signerName?.trim()) return res.status(400).json({ error: "Type your full name to sign." });
+  if (!signerEmail?.trim()) return res.status(400).json({ error: "Enter your email address to sign." });
+  if (!consentToEsign) return res.status(400).json({ error: "Check the box to agree to sign electronically." });
+  if (!waiverSnapshot?.trim()) return res.status(400).json({ error: "The waiver didn't load. Refresh the page and sign again." });
 
   const [event] = await db.select({
     id: eventsTable.id,
@@ -26,7 +26,7 @@ router.post("/public/events/:eventId/liability-waiver/sign", async (req, res) =>
     requireLiabilityWaiver: eventsTable.requireLiabilityWaiver,
   }).from(eventsTable).where(eq(eventsTable.id, eventId));
 
-  if (!event) return res.status(404).json({ error: "Event not found" });
+  if (!event) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
   if (!event.requireLiabilityWaiver) return res.status(400).json({ error: "This event does not require a liability waiver" });
 
   const contentHash = createHash("sha256").update(waiverSnapshot, "utf8").digest("hex");
@@ -76,16 +76,16 @@ router.get("/clubs/:clubId/riders/:riderId/liability-waiver-signatures", async (
   const riderId = Number(req.params.riderId);
 
   const sessionUserId = (req.session as any)?.userId;
-  if (!sessionUserId) return res.status(401).json({ error: "Not authenticated" });
+  if (!sessionUserId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, sessionUserId));
-  if (!user) return res.status(401).json({ error: "Not authenticated" });
+  if (!user) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const isSuperAdmin = user.role === "super_admin";
   // Club organizers, and club staff with the riders permission (they see the rider page).
   const canReadRiders =
     user.role === "club_organizer" ||
     (user.role === "staff" && (user.permissions ?? []).includes("riders"));
   if (!isSuperAdmin && (!canReadRiders || user.clubId !== clubId)) {
-    return res.status(403).json({ error: "Forbidden" });
+    return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
 
   // Look up the rider's email to match against liability_waiver_signatures
@@ -140,12 +140,12 @@ router.get("/clubs/:clubId/events/:eventId/liability-waiver/signatures", async (
   const eventId = Number(req.params.eventId);
 
   const sessionUserId = (req.session as any)?.userId;
-  if (!sessionUserId) return res.status(401).json({ error: "Not authenticated" });
+  if (!sessionUserId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, sessionUserId));
-  if (!user) return res.status(401).json({ error: "Not authenticated" });
+  if (!user) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const isSuperAdmin = user.role === "super_admin";
   if (!isSuperAdmin && (user.role !== "club_organizer" || user.clubId !== clubId)) {
-    return res.status(403).json({ error: "Forbidden" });
+    return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
 
   const sigs = await db.select().from(liabilityWaiverSignaturesTable)

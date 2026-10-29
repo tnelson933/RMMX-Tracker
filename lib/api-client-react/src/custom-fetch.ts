@@ -148,12 +148,27 @@ function truncate(text: string, maxLength = 300): string {
   return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
 }
 
-function buildErrorMessage(response: Response, data: unknown): string {
-  const prefix = `HTTP ${response.status} ${response.statusText}`;
+/**
+ * Plain-language fallback when the server didn't send its own message. Toasts
+ * show `err.message`, so it must never be "HTTP 500 Internal Server Error".
+ */
+function fallbackErrorMessage(status: number): string {
+  if (status >= 500) {
+    return `RM Roost's server had a problem (error ${status}). Wait a minute and try again. ` +
+      "If it keeps happening, contact Rocky Mountain ATV/MC support and mention this error code.";
+  }
+  if (status === 401) return "You're signed out. Sign in again, then try once more.";
+  if (status === 403) return "Your account doesn't have access to this. Ask your club's owner to give you access on the Team page.";
+  if (status === 404) return "That item couldn't be found. It may have been deleted. Refresh the page and try again.";
+  if (status === 429) return "Too many tries in a short time. Wait a minute, then try again.";
+  return `That didn't work (error ${status}). Check what you entered and try again.`;
+}
 
+function buildErrorMessage(response: Response, data: unknown): string {
   if (typeof data === "string") {
     const text = data.trim();
-    return text ? `${prefix}: ${truncate(text)}` : prefix;
+    // Proxy error pages arrive as HTML; never show markup in a toast.
+    return text && !text.startsWith("<") ? truncate(text) : fallbackErrorMessage(response.status);
   }
 
   const title = getStringField(data, "title");
@@ -163,12 +178,12 @@ function buildErrorMessage(response: Response, data: unknown): string {
     getStringField(data, "error_description") ??
     getStringField(data, "error");
 
-  if (title && detail) return `${prefix}: ${title} — ${detail}`;
-  if (detail) return `${prefix}: ${detail}`;
-  if (message) return `${prefix}: ${message}`;
-  if (title) return `${prefix}: ${title}`;
+  if (title && detail) return `${title} — ${detail}`;
+  if (detail) return detail;
+  if (message) return message;
+  if (title) return title;
 
-  return prefix;
+  return fallbackErrorMessage(response.status);
 }
 
 export class ApiError<T = unknown> extends Error {
@@ -217,8 +232,8 @@ export class ResponseParseError extends Error {
     requestInfo: { method: string; url: string },
   ) {
     super(
-      `Failed to parse response from ${requestInfo.method} ${response.url || requestInfo.url} ` +
-        `(${response.status} ${response.statusText}) as JSON`,
+      "RM Roost sent back a response this page couldn't read. Refresh the page and try again. " +
+        "If it keeps happening, contact Rocky Mountain ATV/MC support.",
     );
     Object.setPrototypeOf(this, new.target.prototype);
 
@@ -360,7 +375,16 @@ export async function customFetch<T = unknown>(
 
   const requestInfo = { method, url: resolveUrl(input) };
 
-  const response = await fetch(input, { ...init, method, headers });
+  let response: Response;
+  try {
+    response = await fetch(input, { ...init, method, headers });
+  } catch (err) {
+    // Aborts are intentional; anything else means the request never reached the server.
+    if ((err as { name?: string })?.name === "AbortError") throw err;
+    throw new TypeError(
+      "Can't reach RM Roost from this network. Check that you're connected to the internet, then try again.",
+    );
+  }
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);

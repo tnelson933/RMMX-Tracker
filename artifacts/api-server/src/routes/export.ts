@@ -23,7 +23,7 @@ router.get("/clubs/:clubId/export", async (req, res) => {
   const userId = (req.session as any).userId;
 
   if (!userId) {
-    return res.status(401).json({ error: "Not authenticated" });
+    return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   }
 
   const [requestingUser] = await db
@@ -32,12 +32,12 @@ router.get("/clubs/:clubId/export", async (req, res) => {
     .where(eq(usersTable.id, userId));
 
   if (!requestingUser || requestingUser.clubId !== clubId) {
-    return res.status(403).json({ error: "Access denied" });
+    return res.status(403).json({ error: "This club isn't on your account. Sign in with an organizer account for this club." });
   }
   // The export holds every rider's contact details, so staff accounts (limited
   // page access) can't download it; club organizers and admins can.
   if (requestingUser.role === "staff") {
-    return res.status(403).json({ error: "Only club organizers can export club data" });
+    return res.status(403).json({ error: "Only your club's organizer can export club data. Ask them to run the export." });
   }
 
   const [club] = await db
@@ -45,7 +45,7 @@ router.get("/clubs/:clubId/export", async (req, res) => {
     .from(clubsTable)
     .where(eq(clubsTable.id, clubId));
   if (!club) {
-    return res.status(404).json({ error: "Club not found" });
+    return res.status(404).json({ error: "This club couldn't be found. It may have been deleted. Refresh the page and try again." });
   }
 
   // Never export credentials: no password hashes or offline sync tokens.

@@ -16,7 +16,7 @@ function scopedClubId(res: any): number | null {
 function canManageClub(res: any, clubId: number | null | undefined): boolean {
   const scope = scopedClubId(res);
   if (scope !== null && clubId !== scope) {
-    res.status(403).json({ error: "Forbidden" });
+    res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
     return false;
   }
   return true;
@@ -51,16 +51,16 @@ function generateCode(): string {
 // ── Organizer: generate discount codes for an event ──────────────────────────
 router.post("/events/:eventId/comp-codes", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const eventId = Number(req.params.eventId);
   const { amount, count, discountType = "fixed", maxUses, expiresAt, code: customCode } = req.body;
 
   if (!amount || Number(amount) <= 0) {
-    return res.status(400).json({ error: "amount required and must be > 0" });
+    return res.status(400).json({ error: "Enter an amount greater than $0." });
   }
   if (discountType === "percentage" && Number(amount) > 100) {
-    return res.status(400).json({ error: "Percentage discount cannot exceed 100%" });
+    return res.status(400).json({ error: "A percentage discount can't be more than 100%." });
   }
 
   const maxUsesNum = maxUses === -1 ? 999999 : Math.max(1, Number(maxUses) || 1);
@@ -70,13 +70,13 @@ router.post("/events/:eventId/comp-codes", async (req, res) => {
     .select({ id: eventsTable.id, clubId: eventsTable.clubId })
     .from(eventsTable)
     .where(eq(eventsTable.id, eventId));
-  if (!event) return res.status(404).json({ error: "Event not found" });
+  if (!event) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
   if (!canManageClub(res, event.clubId)) return;
 
   // Custom code — create exactly one with the specified string
   if (customCode) {
     const codeStr = String(customCode).trim().toUpperCase();
-    if (!codeStr) return res.status(400).json({ error: "Code string cannot be empty" });
+    if (!codeStr) return res.status(400).json({ error: "Enter a code." });
     try {
       const [row] = await db.insert(compCodesTable).values({
         eventId,
@@ -90,7 +90,7 @@ router.post("/events/:eventId/comp-codes", async (req, res) => {
       }).returning({ code: compCodesTable.code });
       return res.status(201).json({ codes: row ? [row.code] : [], amount: Number(amount), discountType });
     } catch (err: any) {
-      if (err?.code === "23505") return res.status(409).json({ error: "A code with that string already exists" });
+      if (err?.code === "23505") return res.status(409).json({ error: "That code is already in use. Pick a different code." });
       throw err;
     }
   }
@@ -125,11 +125,11 @@ router.post("/events/:eventId/comp-codes", async (req, res) => {
 // ── Organizer: list discount codes for event ─────────────────────────────────
 router.get("/events/:eventId/comp-codes", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const eventId = Number(req.params.eventId);
   const [ownerEvent] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
-  if (!ownerEvent) return res.status(404).json({ error: "Event not found" });
+  if (!ownerEvent) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
   if (!canManageClub(res, ownerEvent.clubId)) return;
   const codes = await db
     .select({
@@ -198,13 +198,13 @@ function validateCodeRow(
 router.post("/public/events/:eventId/validate-comp-code", async (req, res) => {
   const eventId = Number(req.params.eventId);
   const { code } = req.body;
-  if (!code) return res.status(400).json({ error: "code required" });
+  if (!code) return res.status(400).json({ error: "Enter a code." });
 
   const codeStr = String(code).trim().toUpperCase();
 
   const [event] = await db.select({ clubId: eventsTable.clubId, entryFeeCategoryId: eventsTable.entryFeeCategoryId })
     .from(eventsTable).where(eq(eventsTable.id, eventId));
-  if (!event) return res.status(404).json({ valid: false, error: "Invalid discount code" });
+  if (!event) return res.status(404).json({ valid: false, error: "That discount code isn't valid. Check the spelling and try again." });
 
   let [row] = await db.select().from(compCodesTable).where(
     and(eq(compCodesTable.eventId, eventId), eq(compCodesTable.code, codeStr))
@@ -222,7 +222,7 @@ router.post("/public/events/:eventId/validate-comp-code", async (req, res) => {
     }
   }
 
-  if (!row) return res.status(404).json({ valid: false, error: "Invalid discount code" });
+  if (!row) return res.status(404).json({ valid: false, error: "That discount code isn't valid. Check the spelling and try again." });
 
   const result = validateCodeRow(row, event.entryFeeCategoryId);
   if (!result.valid) {
@@ -234,7 +234,7 @@ router.post("/public/events/:eventId/validate-comp-code", async (req, res) => {
 // ── Organizer: get rider's current discount code ──────────────────────────────
 router.get("/clubs/:clubId/riders/:riderId/discount-code", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const clubId = Number(req.params.clubId);
   if (!canManageClub(res, clubId)) return;
@@ -242,7 +242,7 @@ router.get("/clubs/:clubId/riders/:riderId/discount-code", async (req, res) => {
 
   const [rider] = await db.select({ firstName: ridersTable.firstName, lastName: ridersTable.lastName })
     .from(ridersTable).where(eq(ridersTable.id, riderId));
-  if (!rider) return res.status(404).json({ error: "Rider not found" });
+  if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   const [codeRow] = await db.select().from(compCodesTable).where(
     and(
@@ -269,24 +269,24 @@ router.get("/clubs/:clubId/riders/:riderId/discount-code", async (req, res) => {
 // ── Organizer: generate a rider-specific discount code ────────────────────────
 router.post("/clubs/:clubId/riders/:riderId/discount-code", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const clubId = Number(req.params.clubId);
   if (!canManageClub(res, clubId)) return;
   const riderId = Number(req.params.riderId);
   const { amount } = req.body;
 
-  if (!amount || Number(amount) <= 0) return res.status(400).json({ error: "amount required and must be > 0" });
+  if (!amount || Number(amount) <= 0) return res.status(400).json({ error: "Enter an amount greater than $0." });
 
   const [club] = await db.select({ id: clubsTable.id }).from(clubsTable).where(eq(clubsTable.id, clubId));
-  if (!club) return res.status(404).json({ error: "Club not found" });
+  if (!club) return res.status(404).json({ error: "This club couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   const [rider] = await db.select({ id: ridersTable.id, firstName: ridersTable.firstName, lastName: ridersTable.lastName })
     .from(ridersTable).where(eq(ridersTable.id, riderId));
-  if (!rider) return res.status(404).json({ error: "Rider not found" });
+  if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
   const scope = scopedClubId(res);
   if (scope !== null && !(await riderBelongsToClub(riderId, scope))) {
-    return res.status(403).json({ error: "Forbidden" });
+    return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
 
   // Check if an active (unused) code already exists
@@ -332,13 +332,13 @@ router.post("/clubs/:clubId/riders/:riderId/discount-code", async (req, res) => 
     }
   }
 
-  return res.status(500).json({ error: "Failed to generate a unique code, please try again" });
+  return res.status(500).json({ error: "Couldn't create a unique code. Try again." });
 });
 
 // ── Organizer: delete a rider's discount code ─────────────────────────────────
 router.delete("/clubs/:clubId/riders/:riderId/discount-code", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const clubId = Number(req.params.clubId);
   if (!canManageClub(res, clubId)) return;
@@ -352,7 +352,7 @@ router.delete("/clubs/:clubId/riders/:riderId/discount-code", async (req, res) =
     )
   );
 
-  if (!existing) return res.status(404).json({ error: "No discount code found for this rider" });
+  if (!existing) return res.status(404).json({ error: "This rider doesn't have a discount code yet. Generate one first." });
 
   await db.delete(compCodesTable).where(eq(compCodesTable.id, existing.id));
 

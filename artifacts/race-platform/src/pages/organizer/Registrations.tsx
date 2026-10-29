@@ -27,6 +27,7 @@ import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import { isInvalidAssignedActiveTransponderIdentifier } from "@/lib/activeTransponder";
 import { eventTimingTags, splitRegistrationTag } from "@/components/organizer/timingTags";
+import { responseErrorMessage } from "@/lib/friendlyErrors";
 
 // RFID tags are alphanumeric + dashes, 1–32 characters.
 // Spaces, special chars, or extreme lengths are invalid.
@@ -249,7 +250,7 @@ export default function Registrations() {
           emergencyPhone: data.emergencyPhone || null,
         }),
       });
-      if (!riderRes.ok) { const j = await riderRes.json(); throw new Error(j.error || "Failed to update rider"); }
+      if (!riderRes.ok) { const j = await riderRes.json(); throw new Error(j.error || "Couldn't update rider"); }
 
       // Registration-specific fields only; retain its original riderId.
       const regRes = await fetch(`/api/registrations/${editingReg.id}`, {
@@ -261,13 +262,13 @@ export default function Registrations() {
           displayLastName: null,
         }),
       });
-      if (!regRes.ok) { const j = await regRes.json(); throw new Error(j.error || "Failed to update registration"); }
+      if (!regRes.ok) { const j = await regRes.json(); throw new Error(j.error || "Couldn't update registration"); }
 
       await queryClient.invalidateQueries({ queryKey: getListRegistrationsQueryKey(eventId) });
       setEditingReg(null);
       toast({ title: "Registration updated" });
     } catch (e: any) {
-      toast({ title: "Failed to update", description: e.message, variant: "destructive" });
+      toast({ title: "Couldn't update", description: e.message, variant: "destructive" });
     } finally {
       setEditSaving(false);
     }
@@ -319,7 +320,7 @@ export default function Registrations() {
       fetch(`/api/public/events/${eventId}/check-bib?bib=${encodeURIComponent(bib)}`)
         .then(r => {
           // A failed check (rate limit, server error) must not read as "available".
-          if (!r.ok) throw new Error(`Bib check failed (HTTP ${r.status})`);
+          if (!r.ok) throw new Error(`Couldn\'t check that bib number. ${responseErrorMessage(r.status)}`);
           return r.json();
         })
         .then(data => setBibCheckState(data?.taken ? "taken" : "available"))
@@ -587,7 +588,7 @@ export default function Registrations() {
         headers: { "Content-Type": "application/json" },
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to start card payment");
+      if (!res.ok) throw new Error(json.error || "Couldn't start card payment");
 
       setPendingCard({
         regId: regSuccess.id,
@@ -647,7 +648,7 @@ export default function Registrations() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ paymentStatus: "paid", amountPaid: amount, paymentMethod: "cash" }),
       });
-      if (!res.ok) throw new Error("Failed to record payment");
+      if (!res.ok) throw new Error("Couldn't record payment");
       await queryClient.invalidateQueries({ queryKey: getListRegistrationsQueryKey(eventId) });
       setPaymentDone({ method: "cash", amount });
       setStep("pay-done");
@@ -679,7 +680,7 @@ export default function Registrations() {
         toast({ title: "# saved" });
       },
       onError: (err) => {
-        toast({ title: "Failed to save bib", description: err.message, variant: "destructive" });
+        toast({ title: "Couldn't save bib", description: err.message, variant: "destructive" });
       }
     });
   };
@@ -693,12 +694,12 @@ export default function Registrations() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ raceClass: editClassValue }),
       });
-      if (!res.ok) { const j = await res.json(); throw new Error(j.error || "Failed to update class"); }
+      if (!res.ok) { const j = await res.json(); throw new Error(j.error || "Couldn't update class"); }
       await queryClient.invalidateQueries({ queryKey: getListRegistrationsQueryKey(eventId) });
       setEditingClassId(null);
       toast({ title: "Class updated", description: "Check-in and results updated automatically." });
     } catch (e: any) {
-      toast({ title: "Failed to update class", description: e.message, variant: "destructive" });
+      toast({ title: "Couldn't update class", description: e.message, variant: "destructive" });
     } finally {
       setClassSaving(false);
     }

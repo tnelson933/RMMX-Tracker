@@ -84,19 +84,19 @@ interface SyncWatermarks {
 router.post("/clubs/:clubId/sync", async (req, res) => {
   const clubId = Number(req.params.clubId);
   if (isNaN(clubId)) {
-    return res.status(400).json({ error: "Invalid clubId" });
+    return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   }
 
   // Accept either a session cookie (browser) or a Bearer sync token (local server).
   // Staff need the offline_mode permission (checked on every use, not only at issue).
   const sessionUserId = (req.session as any).userId as number | undefined;
   const authHeader = (req.headers.authorization ?? "") as string;
-  if (!sessionUserId && !authHeader.startsWith("Bearer ")) return res.status(401).json({ error: "Not authenticated" });
+  if (!sessionUserId && !authHeader.startsWith("Bearer ")) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const user = await resolveSyncUser(req);
   if (!user && !sessionUserId) return res.status(401).json({ error: "Invalid sync token" });
 
   if (!user || user.clubId !== clubId) {
-    return res.status(403).json({ error: "Access denied" });
+    return res.status(403).json({ error: "This club isn't on your account. Sign in with an organizer account for this club." });
   }
 
   const {

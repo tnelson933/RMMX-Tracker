@@ -176,7 +176,7 @@ export default function Dashboard() {
       setProfileSaved(true);
       setTimeout(() => setProfileSaved(false), 3000);
     } catch {
-      setProfileError("Failed to save — please try again.");
+      setProfileError("Couldn't save — please try again.");
     } finally {
       setProfileSaving(false);
     }

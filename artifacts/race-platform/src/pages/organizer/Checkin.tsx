@@ -87,13 +87,13 @@ function RentalTransponderInput({ registrationId, eventId, onDone, currentNumber
         body: JSON.stringify({ transponderNumber: normalizedTag }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to assign");
+      if (!res.ok) throw new Error(json.error || "Couldn't assign");
       queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
       queryClient.invalidateQueries({ queryKey: RENTAL_UNITS_KEY });
       toast({ title: "Rental assigned", description: `#${normalizedTag.toUpperCase()} — removed from the rider automatically after the event` });
       onDone();
     } catch (e: any) {
-      toast({ title: "Failed to assign transponder", description: e.message, variant: "destructive" });
+      toast({ title: "Couldn't assign transponder", description: e.message, variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -171,7 +171,7 @@ function RfidInput({ riderId, eventId, onDone, isActiveTransponder, currentTag }
         onDone();
       },
       onError: (err) => {
-        toast({ title: isActiveTransponder ? "Failed to assign transponder" : "Failed to assign RFID", description: err.message, variant: "destructive" });
+        toast({ title: isActiveTransponder ? "Couldn't assign transponder" : "Couldn't assign RFID", description: err.message, variant: "destructive" });
       }
     });
   };
@@ -443,7 +443,7 @@ export default function Checkin() {
         }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to sign waiver");
+      if (!res.ok) throw new Error(json.error || "Couldn't sign waiver");
       queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
       const t = waiverTarget;
       closeWaiverModal();
@@ -476,7 +476,7 @@ export default function Checkin() {
         body: JSON.stringify({ paymentMethod: "cash" }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to add sticker");
+      if (!res.ok) throw new Error(json.error || "Couldn't add sticker");
       queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
       toast({ title: "RFID sticker added", description: `$${Number(json.stickerFee).toFixed(2)} collected` });
       closeStickerModal();
@@ -499,7 +499,7 @@ export default function Checkin() {
         body: JSON.stringify({ paymentMethod: "card" }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to create payment");
+      if (!res.ok) throw new Error(json.error || "Couldn't create payment");
       setStickerCard({ checkoutUrl: json.checkoutUrl, sessionId: json.sessionId, regId: stickerTarget.registrationId, stickerFee: json.stickerFee });
       setStickerStep("card");
     } catch (e: any) {
@@ -529,7 +529,7 @@ export default function Checkin() {
         body: JSON.stringify({ paymentMethod }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || `Failed to sell ${RM_TRACKR_NAME} (error ${res.status})`);
+      if (!res.ok) throw new Error(json.error || `Couldn't sell ${RM_TRACKR_NAME} (error ${res.status})`);
       if (paymentMethod === "cash") {
         queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
         toast({ title: `${RM_TRACKR_NAME} sold`, description: `$${Number(json.price).toFixed(2)} collected in cash. Assign the transponder to finish.` });
@@ -594,7 +594,7 @@ export default function Checkin() {
         body: JSON.stringify({ paymentMethod: "cash" }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to add rental");
+      if (!res.ok) throw new Error(json.error || "Couldn't add rental");
       queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
       toast({ title: "Transponder rental added", description: `$${Number(json.rentalFee).toFixed(2)} collected` });
       closeRentalModal();
@@ -617,7 +617,7 @@ export default function Checkin() {
         body: JSON.stringify({ paymentMethod: "card" }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Failed to create payment");
+      if (!res.ok) throw new Error(json.error || "Couldn't create payment");
       setRentalCard({ checkoutUrl: json.checkoutUrl, sessionId: json.sessionId, regId: rentalTarget.registrationId, rentalFee: json.rentalFee });
       setRentalStep("card");
     } catch (e: any) {

@@ -122,7 +122,7 @@ async function placementsFor(readerIds: number[]): Promise<Map<number, Placement
 
 router.get("/readers/hand-scanners", async (req, res) => {
   const caller = await callerClub(req);
-  if (!caller) return res.status(401).json({ error: "Unauthorized" });
+  if (!caller) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const scanners = await db.select().from(readersTable)
     .where(and(eq(readersTable.clubId, caller.clubId), eq(readersTable.connection, HAND_SCANNER)))
     .orderBy(readersTable.name);
@@ -139,7 +139,7 @@ router.get("/readers/hand-scanners", async (req, res) => {
 
 router.post("/readers/hand-scanners", async (req, res) => {
   const caller = await callerClub(req);
-  if (!caller) return res.status(401).json({ error: "Unauthorized" });
+  if (!caller) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const name = typeof req.body?.name === "string" ? req.body.name.trim().slice(0, 60) : "";
   if (!name) return res.status(400).json({ error: "Give the scanner a name, like \"Section 4 check\"." });
   const [reader] = await db.insert(readersTable)
@@ -152,10 +152,10 @@ router.post("/readers/hand-scanners", async (req, res) => {
 
 router.post("/readers/hand-scanners/:id/code", async (req, res) => {
   const caller = await callerClub(req);
-  if (!caller) return res.status(401).json({ error: "Unauthorized" });
+  if (!caller) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const [reader] = await db.select().from(readersTable).where(eq(readersTable.id, Number(req.params.id)));
-  if (!reader || reader.connection !== HAND_SCANNER) return res.status(404).json({ error: "Scanner not found" });
-  if (reader.clubId !== caller.clubId) return res.status(403).json({ error: "Forbidden" });
+  if (!reader || reader.connection !== HAND_SCANNER) return res.status(404).json({ error: "This scanner couldn't be found. It may have been deleted. Refresh Reader Setup." });
+  if (reader.clubId !== caller.clubId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   const code = await newScannerCode(caller.clubId, reader.id, caller.userId);
   if (!code) return res.status(503).json({ error: "Couldn't create a code right now. Try again." });
   return res.status(201).json(code);

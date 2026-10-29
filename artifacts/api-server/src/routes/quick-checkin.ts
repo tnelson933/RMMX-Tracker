@@ -57,7 +57,7 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
     .select()
     .from(riderAccountsTable)
     .where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   // Resolve all riders linked to this account by email
   const familyRiders = await db
@@ -253,7 +253,7 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
 router.get("/rider/quick-checkin-geofences", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId as number;
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const riders = await db.select({ id: ridersTable.id }).from(ridersTable).where(await managedRiderWhere(account));
   if (riders.length === 0) return res.json({ radiusMiles: QUICK_CHECKIN_RADIUS_MILES, events: [] });
@@ -299,7 +299,7 @@ router.get("/rider/quick-checkin-geofences", requireRiderAuth, async (req, res) 
 router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId as number;
   const eventId = Number(req.params.eventId);
-  if (isNaN(eventId)) return res.status(400).json({ error: "Invalid eventId" });
+  if (isNaN(eventId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const { riderId: bodyRiderId, registrationId: bodyRegistrationId, latitude, longitude } =
     req.body as { riderId?: number; registrationId?: number; latitude?: number; longitude?: number };
@@ -308,7 +308,7 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
     .select()
     .from(riderAccountsTable)
     .where(eq(riderAccountsTable.id, riderAccountId));
-  if (!account) return res.status(401).json({ error: "Not authenticated" });
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   // Verify the event is eligible for quick check-in today
   const [event] = await db
@@ -328,13 +328,13 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
     .from(eventsTable)
     .where(eq(eventsTable.id, eventId));
 
-  if (!event) return res.status(404).json({ error: "Event not found" });
-  if (!event.quickCheckinEnabled) return res.status(400).json({ error: "Quick check-in not enabled for this event" });
-  if (event.status !== "race_day") return res.status(400).json({ error: "Event is not in race_day status" });
+  if (!event) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
+  if (!event.quickCheckinEnabled) return res.status(400).json({ error: "Quick Check-In isn't turned on for this event. Check in at the gate." });
+  if (event.status !== "race_day") return res.status(400).json({ error: "Quick Check-In opens once the organizer starts race day. Try again soon, or check in at the gate." });
 
   // Race day at the track, in the event's local time.
   if (String(event.date).substring(0, 10) !== eventToday(event)) {
-    return res.status(400).json({ error: "Quick check-in is only available on race day" });
+    return res.status(400).json({ error: "Quick Check-In opens on race day. Come back then, or check in at the gate." });
   }
 
   const requirements = quickCheckinRequirements(event.quickCheckinRequirements);
@@ -382,7 +382,7 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
     riderId = row.riderId;
   } else {
     riderId = bodyRiderId && familyRiderIds.includes(bodyRiderId) ? bodyRiderId : familyRiderIds[0];
-    if (!riderId) return res.status(400).json({ error: "No rider found for this account" });
+    if (!riderId) return res.status(400).json({ error: "No rider profile is on this account yet. Add a rider profile first." });
     const [row] = await db
       .select()
       .from(registrationsTable)

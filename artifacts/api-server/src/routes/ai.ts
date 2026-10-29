@@ -40,10 +40,10 @@ Rules:
 
 router.post("/ai/suggest-points-table", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  if (!userId) { res.status(401).json({ error: "You're signed out. Sign in again, then try once more." }); return; }
 
   if (!ANTHROPIC_BASE_URL || !ANTHROPIC_API_KEY) {
-    res.status(500).json({ error: "AI integration not configured" });
+    res.status(500).json({ error: "The AI helper isn't available right now. Try again later." });
     return;
   }
 
@@ -53,7 +53,7 @@ router.post("/ai/suggest-points-table", async (req, res) => {
   };
 
   if (!scoringDescription?.trim()) {
-    res.status(400).json({ error: "scoringDescription is required" });
+    res.status(400).json({ error: "Describe how you want scoring to work." });
     return;
   }
 
@@ -83,7 +83,7 @@ router.post("/ai/suggest-points-table", async (req, res) => {
     if (!response.ok) {
       const err = await response.text();
       req.log.error({ err }, "Anthropic API error");
-      res.status(500).json({ error: "AI request failed" });
+      res.status(500).json({ error: "The AI helper didn't respond. Try again in a moment." });
       return;
     }
 
@@ -126,7 +126,7 @@ router.post("/ai/suggest-points-table", async (req, res) => {
     res.json(parsed);
   } catch (err) {
     req.log.error({ err }, "AI suggest-points-table error");
-    res.status(500).json({ error: "AI request failed. Please try again." });
+    res.status(500).json({ error: "The AI helper didn't respond. Try again in a moment." });
   }
 });
 
@@ -153,10 +153,10 @@ Rules:
 
 router.post("/ai/tweak-points-table", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) { res.status(401).json({ error: "Unauthorized" }); return; }
+  if (!userId) { res.status(401).json({ error: "You're signed out. Sign in again, then try once more." }); return; }
 
   if (!ANTHROPIC_BASE_URL || !ANTHROPIC_API_KEY) {
-    res.status(500).json({ error: "AI integration not configured" });
+    res.status(500).json({ error: "The AI helper isn't available right now. Try again later." });
     return;
   }
 
@@ -172,11 +172,11 @@ router.post("/ai/tweak-points-table", async (req, res) => {
   };
 
   if (!instruction?.trim()) {
-    res.status(400).json({ error: "instruction is required" });
+    res.status(400).json({ error: "Type what you want to change." });
     return;
   }
   if (!currentTable || !Array.isArray(currentTable.pointsScale)) {
-    res.status(400).json({ error: "currentTable is required" });
+    res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
     return;
   }
 
@@ -210,7 +210,7 @@ router.post("/ai/tweak-points-table", async (req, res) => {
     if (!response.ok) {
       const err = await response.text();
       req.log.error({ err }, "Anthropic API error");
-      res.status(500).json({ error: "AI request failed" });
+      res.status(500).json({ error: "The AI helper didn't respond. Try again in a moment." });
       return;
     }
 
@@ -252,7 +252,7 @@ router.post("/ai/tweak-points-table", async (req, res) => {
     res.json(parsed);
   } catch (err) {
     req.log.error({ err }, "AI tweak-points-table error");
-    res.status(500).json({ error: "AI request failed. Please try again." });
+    res.status(500).json({ error: "The AI helper didn't respond. Try again in a moment." });
   }
 });
 

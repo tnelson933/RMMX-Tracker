@@ -226,7 +226,7 @@ export function useEnduroOverall(eventId: number, enabled: boolean, refetchMs?: 
     queryKey: ["event-overall-standings", eventId],
     queryFn: async () => {
       const res = await fetch(`/api/public/events/${eventId}/overall-standings`);
-      if (!res.ok) throw new Error("Failed to load overall standings");
+      if (!res.ok) throw new Error("Couldn't load overall standings");
       return res.json();
     },
     enabled: enabled && !!eventId,

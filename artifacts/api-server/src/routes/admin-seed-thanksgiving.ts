@@ -77,7 +77,7 @@ function prng(seed: number) {
 router.post("/admin/seed-thanksgiving", async (req, res) => {
   const auth = req.headers["authorization"] ?? "";
   if (auth !== `Bearer ${process.env.SESSION_SECRET}`) {
-    return res.status(401).json({ error: "unauthorized" });
+    return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   }
 
   const rand = prng(99);

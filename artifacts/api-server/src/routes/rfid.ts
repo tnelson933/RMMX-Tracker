@@ -33,17 +33,17 @@ router.get("/rfid", async (req, res) => {
   const { eventId, assignmentType } = req.query;
   const isActiveTransponder = assignmentType === "active_transponder";
   if (assignmentType != null && assignmentType !== "rfid" && !isActiveTransponder) {
-    return res.status(400).json({ error: "Invalid assignmentType" });
+    return res.status(400).json({ error: "Choose RFID sticker or active transponder." });
   }
   const numEventId = eventId ? parseInt(String(eventId), 10) : null;
   if (eventId && (numEventId === null || isNaN(numEventId))) {
-    return res.status(400).json({ error: "Invalid eventId" });
+    return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   }
   const staffCId = getStaffClubId(res);
   // Staff: verify the requested event belongs to their club
   if (staffCId !== null && numEventId) {
     const [evt] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, numEventId));
-    if (!evt || evt.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
+    if (!evt || evt.clubId !== staffCId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
 
   // Active transponders are not passive RFID assignments. Event registrations
@@ -51,7 +51,7 @@ router.get("/rfid", async (req, res) => {
   // persistent active-transponder profile field.
   if (isActiveTransponder) {
     if (!numEventId) {
-      return res.status(400).json({ error: "eventId required for active transponder assignments" });
+      return res.status(400).json({ error: "Choose an event for this transponder." });
     }
     const activeRows = await db.select({
       id: registrationsTable.id,
@@ -126,35 +126,35 @@ router.get("/rfid", async (req, res) => {
 
 router.post("/rfid", async (req, res) => {
   const { riderId, rfidNumber, eventId, assignmentType } = req.body;
-  if (!riderId || !rfidNumber) return res.status(400).json({ error: "riderId and rfidNumber required" });
+  if (!riderId || !rfidNumber) return res.status(400).json({ error: "Pick a rider and enter a tag number." });
   const isActiveTransponder = assignmentType === "active_transponder";
   if (assignmentType != null && assignmentType !== "rfid" && !isActiveTransponder) {
-    return res.status(400).json({ error: "Invalid assignmentType" });
+    return res.status(400).json({ error: "Choose RFID sticker or active transponder." });
   }
 
   const numRiderId = parseInt(String(riderId), 10);
-  if (isNaN(numRiderId)) return res.status(400).json({ error: "Invalid riderId" });
+  if (isNaN(numRiderId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   const numEventId = eventId != null ? parseInt(String(eventId), 10) : null;
   if (eventId != null && (numEventId === null || isNaN(numEventId))) {
-    return res.status(400).json({ error: "Invalid eventId" });
+    return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   }
 
   // Staff: verify the event belongs to their club
   const staffCId = getStaffClubId(res);
   if (staffCId !== null && numEventId) {
     const [evt] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, numEventId));
-    if (!evt || evt.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
+    if (!evt || evt.clubId !== staffCId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
   // No event: the assignment lands on the rider profile, so the rider must belong to the club.
   if (staffCId !== null && !numEventId && !(await riderBelongsToClub(numRiderId, staffCId))) {
-    return res.status(403).json({ error: "Forbidden" });
+    return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
 
   if (isActiveTransponder) {
     const activeTransponderNumber = normalizeActiveTransponderIdentifier(rfidNumber);
     if (!activeTransponderNumber) {
       return res.status(400).json({
-        error: "rfidNumber must be a 1–9 character hexadecimal active transponder ID",
+        error: "Enter the ID printed on the transponder (up to 9 numbers or letters A–F).",
       });
     }
 

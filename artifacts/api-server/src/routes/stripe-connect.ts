@@ -31,12 +31,12 @@ async function syncOnboardingState(clubId: number, account: { charges_enabled?: 
 async function requireAuth(req: any, res: any): Promise<{ userId: number; clubId: number | null; role: string } | null> {
   const sessionUserId = (req.session as any).userId;
   if (!sessionUserId) {
-    res.status(401).json({ error: "Not authenticated" });
+    res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
     return null;
   }
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, sessionUserId));
   if (!user) {
-    res.status(401).json({ error: "Not authenticated" });
+    res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
     return null;
   }
   return { userId: user.id, clubId: user.clubId, role: user.role };
@@ -99,7 +99,7 @@ router.get("/stripe/connect/status", async (req, res) => {
 // real-time Stripe status without relying solely on the sync cycle.
 router.get("/stripe/clubs/:clubId/status", async (req, res) => {
   const clubId = Number(req.params.clubId);
-  if (isNaN(clubId) || clubId <= 0) return res.status(400).json({ error: "Invalid clubId" });
+  if (isNaN(clubId) || clubId <= 0) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const [club] = await db
     .select({
@@ -120,14 +120,14 @@ router.get("/stripe/clubs/:clubId/status", async (req, res) => {
 router.post("/stripe/connect/start", async (req, res) => {
   const auth = await requireOrganizer(req, res);
   if (!auth) return;
-  if (!auth.clubId) return res.status(400).json({ error: "No club associated with this account" });
+  if (!auth.clubId) return res.status(400).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
 
   const appUrl = getAppUrl();
 
   try {
     const stripe = await getUncachableStripeClient();
     const [club] = await db.select().from(clubsTable).where(eq(clubsTable.id, auth.clubId));
-    if (!club) return res.status(404).json({ error: "Club not found" });
+    if (!club) return res.status(404).json({ error: "This club couldn't be found. It may have been deleted. Refresh the page and try again." });
 
     let accountId = club.stripeAccountId;
     // A saved account RM Roost's Stripe can't use (connected in the other mode or
@@ -212,10 +212,10 @@ router.get("/stripe/connect/return", async (req, res) => {
 router.get("/stripe/connect/dashboard-link", async (req, res) => {
   const auth = await requireOrganizer(req, res);
   if (!auth) return;
-  if (!auth.clubId) return res.status(400).json({ error: "No club" });
+  if (!auth.clubId) return res.status(400).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
 
   const [club] = await db.select().from(clubsTable).where(eq(clubsTable.id, auth.clubId));
-  if (!club?.stripeAccountId) return res.status(400).json({ error: "No Stripe account connected" });
+  if (!club?.stripeAccountId) return res.status(400).json({ error: "Card payments aren't set up for your club yet. Go to Payments and connect Stripe." });
 
   try {
     const stripe = await getUncachableStripeClient();
@@ -230,7 +230,7 @@ router.get("/stripe/connect/dashboard-link", async (req, res) => {
 router.delete("/stripe/connect", async (req, res) => {
   const auth = await requireOrganizer(req, res);
   if (!auth) return;
-  if (!auth.clubId) return res.status(400).json({ error: "No club" });
+  if (!auth.clubId) return res.status(400).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
 
   // A rider may be paying right now: their money would go to the old account
   // with nothing here to record it. Wait until open checkouts finish or expire.
