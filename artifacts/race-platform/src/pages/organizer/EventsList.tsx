@@ -22,6 +22,7 @@ import { zodResolver } from "@/lib/zodResolver";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { TransponderRequirementTip } from "@/components/organizer/TransponderRequirementTip";
+import { DEFAULT_QUICK_CHECKIN_REQUIREMENTS, QuickCheckinRequirementsDialog, quickCheckinRequirementsSummary, toQuickCheckinRequirements } from "@/components/organizer/QuickCheckinRequirements";
 
 const TIME_OPTIONS: string[] = [];
 for (let h = 0; h < 24; h++) {
@@ -107,6 +108,9 @@ const createEventSchema = z.object({
   requireWaiver: z.boolean().default(false),
   requireLiabilityWaiver: z.boolean().default(false),
   quickCheckinEnabled: z.boolean().default(false),
+  quickCheckinRequirements: z.object({
+    paid: z.boolean(), timing: z.boolean(), waiver: z.boolean(), pickup: z.boolean(), atTrack: z.boolean(),
+  }).default(DEFAULT_QUICK_CHECKIN_REQUIREMENTS),
   scoringTableId: z.number().optional(),
   entryFee: z.string().optional(),
   earlyBirdEnabled: z.boolean().default(false),
@@ -348,6 +352,7 @@ export default function EventsList() {
       requireWaiver: false,
       requireLiabilityWaiver: false,
       quickCheckinEnabled: false,
+      quickCheckinRequirements: DEFAULT_QUICK_CHECKIN_REQUIREMENTS,
       scoringTableId: undefined,
       entryFee: "",
       earlyBirdEnabled: false,
@@ -367,6 +372,7 @@ export default function EventsList() {
   const { fields: purchaseOptionFields, append: appendPurchaseOption, remove: removePurchaseOption } = useFieldArray({ control: form.control, name: "purchaseOptions" });
 
   const watchPaymentEnabled = form.watch("paymentEnabled");
+  const [qcReqOpen, setQcReqOpen] = useState(false);
   const watchEarlyBirdEnabled = form.watch("earlyBirdEnabled");
   const watchTimingTechnology = form.watch("timingTechnology");
   const watchTransponderRentalEnabled = form.watch("transponderRentalEnabled");
@@ -442,6 +448,7 @@ export default function EventsList() {
       requireLiabilityWaiver: data.requireLiabilityWaiver,
       requireTransponder: activeTiming ? !!data.requireTransponder : false,
       quickCheckinEnabled: data.quickCheckinEnabled,
+      quickCheckinRequirements: data.quickCheckinEnabled ? data.quickCheckinRequirements : null,
       scoringTableId: data.scoringTableId ?? null,
       entryFee: paid && data.entryFee ? Number(data.entryFee) : undefined,
       earlyBirdFee: earlyBird && data.earlyBirdFee ? Number(data.earlyBirdFee) : undefined,
@@ -989,7 +996,7 @@ export default function EventsList() {
                       </FormLabel>
                       <p className="text-xs text-muted-foreground -mt-1 mb-2">
                         Let riders self-check-in from the rider app when they arrive within 1 mile of the track on race day.
-                        Requires their RFID or active transponder to be assigned and any required waivers signed.
+                        You choose what riders need first (payment, timing tag, waivers and more).
                       </p>
                       <div className="grid grid-cols-2 gap-2">
                         {[
@@ -999,7 +1006,11 @@ export default function EventsList() {
                           <button
                             key={String(opt.value)}
                             type="button"
-                            onClick={() => field.onChange(opt.value)}
+                            onClick={() => {
+                              // Turning it on asks what riders need first (everything checked to start).
+                              if (opt.value && !field.value) setQcReqOpen(true);
+                              field.onChange(opt.value);
+                            }}
                             className={`flex flex-col items-start px-4 py-3 rounded-md border text-left transition-all ${
                               field.value === opt.value
                                 ? "border-primary bg-primary/5 text-foreground"
@@ -1011,6 +1022,25 @@ export default function EventsList() {
                           </button>
                         ))}
                       </div>
+                      {field.value && (
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs mt-2">
+                          <span className="text-muted-foreground">{quickCheckinRequirementsSummary(form.watch("quickCheckinRequirements"), watchTimingTechnology)}</span>
+                          <button type="button" className="font-semibold text-primary underline underline-offset-2" onClick={() => setQcReqOpen(true)}>
+                            Edit requirements
+                          </button>
+                        </div>
+                      )}
+                      <QuickCheckinRequirementsDialog
+                        open={qcReqOpen}
+                        onOpenChange={setQcReqOpen}
+                        value={form.watch("quickCheckinRequirements")}
+                        onSave={v => { form.setValue("quickCheckinRequirements", v, { shouldDirty: true }); setQcReqOpen(false); }}
+                        context={{
+                          timingTechnology: watchTimingTechnology,
+                          paymentEnabled: !!watchPaymentEnabled,
+                          requiresWaiver: !!(form.watch("requireWaiver") || form.watch("requireLiabilityWaiver")),
+                        }}
+                      />
                       {field.value && (
                         <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-3 py-2 mt-2">
                           We'll look up the track's location when you save (add a street address for the best match). On race day riders get a phone notification when they arrive within 1 mile, then tap Check In in the rider app.
@@ -1943,7 +1973,7 @@ export default function EventsList() {
                       <div className="flex items-center gap-2">
                         {(event as any).timingTechnology && (
                           <span className="bg-muted text-muted-foreground border border-border px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
-                            {(event as any).timingTechnology === "active_transponder" ? "Active Timing Reader" : "RFID"}
+                            {(event as any).timingTechnology === "active_transponder" ? "RM TrackR" : "RFID"}
                           </span>
                         )}
                         {(() => {

@@ -91,7 +91,7 @@ Main fields:
 - Rider requirements: **Require AMA #**, **Require club ID #**, **Do not allow duplicate race numbers**, **Require rider acknowledgement form**, **Require liability waiver e-signature**
 - **Registration Window** Opens / Closes
 - **Brand Contingencies** offered at this event, and **Series** links
-- **Quick Check-In** on/off
+- **Quick Check-In** on/off; turning it on opens **Quick Check-In requirements** (see Quick Check-In below), and **Edit requirements** reopens it
 - **Event image** — upload or remove on the Overview card
 
 **Classes:** in Edit, click Club Classes chips (or **Select All**) or **+ Add Class**, then set each class's Max Riders, Series, and details.
@@ -335,7 +335,14 @@ Organizers can turn on **Quick Check-In** per event so riders check themselves i
 - **In-app card on Home:** shows every registration on the rider's account for today's Quick Check-In race. Within 1 mile of the track each eligible registration has a **Check In** button (and **Check In for All** when there are several); farther away it shows how many miles away they are. Registrations that aren't eligible show why (RFID sticker not assigned, no transponder number, waiver not signed) and must check in at the gate.
 - The server confirms the rider is at the track (about 1 mile) before checking them in. The check-in appears on the organizer's Check-In tab right away.
 
-**Eligibility (enforced automatically):** event is in Race Day status on its start date with Quick Check-In on; RFID events: the rider has an RFID tag assigned; active timing events: a transponder number already on file (on the registration or rider profile), whether or not "Require transponder number?" is on. Anyone who still needs something handed out or collected at the gate (sticker, rental or RM TrackR transponder, waiver) checks in at the gate; any required waiver signed; not already checked in.
+**Requirements (the organizer chooses):** turning Quick Check-In on (Create Event, Edit, or Overview → **Enable**) opens **Quick Check-In requirements** with every box checked. Uncheck any the event doesn't need; **Check all** restores them. On the Overview, **Requirements** reopens it and a line lists what's not required.
+- **Registration paid** — riders who haven't finished paying online check in at the gate (only matters with Collect Payments on).
+- **RFID tag assigned** / **Transponder number on file** — on the registration or the rider profile, whether or not "Require transponder number?" is on.
+- **Required waivers signed** — whichever waiver the event requires.
+- **Nothing to pick up** — riders who rented or bought a transponder, or bought an RFID sticker, that hasn't been handed out yet.
+- **At the track** — the phone is within 1 mile of the track. Unchecked, riders can check in from anywhere on race day.
+
+Always enforced: event in Race Day status on its start date, Quick Check-In on, a registration that isn't void, not already checked in. Riders who don't meet a requirement see why in the app and check in at the gate.
 
 ---
 

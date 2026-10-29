@@ -44,6 +44,7 @@ const REASONS: Record<string, string> = {
   missing_transponder: "No transponder number on file.",
   missing_waiver: "Waiver not signed yet.",
   payment_required: "Payment not complete.",
+  pickup_required: "You have a transponder or RFID sticker to pick up at the gate.",
 };
 
 const REFRESH_MS = 60_000;

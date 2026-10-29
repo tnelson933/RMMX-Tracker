@@ -70,6 +70,8 @@ export const eventsTable = pgTable("events", {
   raceStyle: text("race_style").notNull().default("motocross"),
   enduroPenaltyConfig: jsonb("enduro_penalty_config").$type<EnduroPenaltyConfig | null>(),
   quickCheckinEnabled: boolean("quick_checkin_enabled").notNull().default(false),
+  // Requirements riders must meet to Quick Check-In; null or a missing key = on.
+  quickCheckinRequirements: jsonb("quick_checkin_requirements").$type<Partial<Record<"paid" | "timing" | "waiver" | "pickup" | "atTrack", boolean>> | null>(),
   quickCheckinNotifiedAt: timestamp("quick_checkin_notified_at"),
   trackLat: doublePrecision("track_lat"),
   trackLng: doublePrecision("track_lng"),

@@ -2,6 +2,8 @@
 // first bad field, or null when the input is acceptable. Fields that are absent,
 // null or "" are left to the route (they usually mean "not set").
 
+import { parseQuickCheckinRequirements } from "./quickCheckinRequirements";
+
 const isBlank = (v: unknown) => v === undefined || v === null || v === "";
 
 /** YYYY-MM-DD that is a real calendar date. */
@@ -59,8 +61,14 @@ export function validateEventInput(body: Record<string, unknown>): string | null
     (!isBlank(body.maxRiders) && (!Number.isInteger(Number(body.maxRiders)) || Number(body.maxRiders) < 1)
       ? "maxRiders must be a whole number of 1 or more" : null) ??
     checkEventDateOrder(body) ??
-    checkPurchaseOptions(body.purchaseOptions)
+    checkPurchaseOptions(body.purchaseOptions) ??
+    (body.quickCheckinRequirements === undefined ? null : quickCheckinRequirementsError(body.quickCheckinRequirements))
   );
+}
+
+function quickCheckinRequirementsError(input: unknown): string | null {
+  const parsed = parseQuickCheckinRequirements(input);
+  return "error" in parsed ? parsed.error : null;
 }
 
 // Registration may close in the evening of the last race day in any US time zone,

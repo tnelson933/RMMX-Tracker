@@ -24,6 +24,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { format, parseISO } from "date-fns";
 import { formatEventDatesFull } from "@/lib/eventDates";
 import { TransponderRequirementTip } from "@/components/organizer/TransponderRequirementTip";
+import { DEFAULT_QUICK_CHECKIN_REQUIREMENTS, QuickCheckinRequirementsDialog, quickCheckinRequirementsSummary, toQuickCheckinRequirements } from "@/components/organizer/QuickCheckinRequirements";
 
 const TIME_OPTIONS: string[] = [];
 for (let h = 0; h < 24; h++) {
@@ -121,6 +122,9 @@ const updateEventSchema = z.object({
   requireLiabilityWaiver: z.boolean().default(false),
   requireTransponder: z.boolean().default(false),
   quickCheckinEnabled: z.boolean().default(false),
+  quickCheckinRequirements: z.object({
+    paid: z.boolean(), timing: z.boolean(), waiver: z.boolean(), pickup: z.boolean(), atTrack: z.boolean(),
+  }).default(DEFAULT_QUICK_CHECKIN_REQUIREMENTS),
   scoringTableId: z.number().optional(),
   purchaseOptions: z.array(z.object({
     optionId: z.string().optional(),
@@ -413,6 +417,7 @@ export default function EventDetail() {
       requireLiabilityWaiver: false,
       requireTransponder: false,
       quickCheckinEnabled: false,
+      quickCheckinRequirements: DEFAULT_QUICK_CHECKIN_REQUIREMENTS,
       scoringTableId: undefined,
       purchaseOptions: [],
       amaEventId: "",
@@ -422,6 +427,8 @@ export default function EventDetail() {
   const watchMultiDay = form.watch("multiDay");
 
   const watchPaymentEnabled = form.watch("paymentEnabled");
+  const [qcReqOpen, setQcReqOpen] = useState(false);
+  const [overviewQcReqOpen, setOverviewQcReqOpen] = useState(false);
   const watchEarlyBirdEnabled = form.watch("earlyBirdEnabled");
   const watchTimingTechnology = form.watch("timingTechnology");
   const watchTransponderRentalEnabled = form.watch("transponderRentalEnabled");
@@ -478,6 +485,7 @@ export default function EventDetail() {
       requireLiabilityWaiver: (evt as any).requireLiabilityWaiver ?? false,
       requireTransponder: (evt as any).requireTransponder ?? false,
       quickCheckinEnabled: (evt as any).quickCheckinEnabled ?? false,
+      quickCheckinRequirements: toQuickCheckinRequirements((evt as any).quickCheckinRequirements),
       scoringTableId: (evt as any).scoringTableId ?? undefined,
       purchaseOptions: ((evt as any).purchaseOptions ?? []).map((o: { id: string; name: string; amount: number }) => ({ optionId: o.id, name: o.name, amount: String(o.amount) })),
       amaEventId: (evt as any).amaEventId ?? "",
@@ -591,6 +599,7 @@ export default function EventDetail() {
         requireLiabilityWaiver: data.requireLiabilityWaiver,
         requireTransponder: data.timingTechnology === "active_transponder" ? data.requireTransponder : false,
         quickCheckinEnabled: data.quickCheckinEnabled,
+        quickCheckinRequirements: data.quickCheckinRequirements,
         scoringTableId: data.scoringTableId ?? null,
         entryFee: data.paymentEnabled && data.entryFee ? Number(data.entryFee) : undefined,
         earlyBirdFee: data.paymentEnabled && data.earlyBirdEnabled && data.earlyBirdFee ? Number(data.earlyBirdFee) : null,
@@ -1061,7 +1070,7 @@ export default function EventDetail() {
                           </FormLabel>
                           <p className="text-xs text-muted-foreground -mt-1 mb-2">
                             Let riders self-check-in from the rider app when they are within 1 mile of the track on race day.
-                            Requires their RFID or active transponder to be assigned and any required waivers signed.
+                            You choose what riders need first (payment, timing tag, waivers and more).
                           </p>
                           <div className="grid grid-cols-2 gap-2">
                             {[
@@ -1071,7 +1080,11 @@ export default function EventDetail() {
                               <button
                                 key={String(opt.value)}
                                 type="button"
-                                onClick={() => field.onChange(opt.value)}
+                                onClick={() => {
+                                  // Turning it on asks what riders need first (everything checked to start).
+                                  if (opt.value && !field.value) setQcReqOpen(true);
+                                  field.onChange(opt.value);
+                                }}
                                 className={`flex flex-col items-start px-4 py-3 rounded-md border text-left transition-all ${
                                   field.value === opt.value
                                     ? "border-primary bg-primary/5 text-foreground"
@@ -1083,6 +1096,25 @@ export default function EventDetail() {
                               </button>
                             ))}
                           </div>
+                          {field.value && (
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs mt-2">
+                              <span className="text-muted-foreground">{quickCheckinRequirementsSummary(form.watch("quickCheckinRequirements"), watchTimingTechnology)}</span>
+                              <button type="button" className="font-semibold text-primary underline underline-offset-2" onClick={() => setQcReqOpen(true)}>
+                                Edit requirements
+                              </button>
+                            </div>
+                          )}
+                          <QuickCheckinRequirementsDialog
+                            open={qcReqOpen}
+                            onOpenChange={setQcReqOpen}
+                            value={form.watch("quickCheckinRequirements")}
+                            onSave={v => { form.setValue("quickCheckinRequirements", v, { shouldDirty: true }); setQcReqOpen(false); }}
+                            context={{
+                              timingTechnology: watchTimingTechnology,
+                              paymentEnabled: !!watchPaymentEnabled,
+                              requiresWaiver: !!(form.watch("requireWaiver") || form.watch("requireLiabilityWaiver")),
+                            }}
+                          />
                           {field.value && (
                             <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-3 py-2 mt-2">
                               We'll look up the track's location when you save (add a street address for the best match). On race day riders get a phone notification when they arrive within 1 mile, then tap Check In in the rider app.
@@ -1891,7 +1923,7 @@ export default function EventDetail() {
                       <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Timing Technology</div>
                       <div className="font-medium">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-muted text-muted-foreground border border-border">
-                          {((event as any).timingTechnology ?? "rfid") === "active_transponder" ? "Active Timing Reader" : "RFID"}
+                          {((event as any).timingTechnology ?? "rfid") === "active_transponder" ? "RM TrackR" : "RFID"}
                         </span>
                       </div>
                     </div>
@@ -1910,18 +1942,50 @@ export default function EventDetail() {
                           size="sm"
                           disabled={updateMutation.isPending}
                           onClick={() => {
+                            // Turning it on asks what riders need first.
+                            if (!(event as any).quickCheckinEnabled) { setOverviewQcReqOpen(true); return; }
                             updateMutation.mutate(
-                              { eventId, data: { quickCheckinEnabled: !(event as any).quickCheckinEnabled } as any },
+                              { eventId, data: { quickCheckinEnabled: false } as any },
                               { onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetEventQueryKey(eventId) }) }
                             );
                           }}
                         >
                           {(event as any).quickCheckinEnabled ? "Disable" : "Enable"}
                         </Button>
+                        {(event as any).quickCheckinEnabled && (
+                          <Button variant="ghost" size="sm" onClick={() => setOverviewQcReqOpen(true)}>Requirements</Button>
+                        )}
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
                         On race day, riders get a phone notification when they arrive within 1 mile of the track and check in from the rider app.
                       </p>
+                      {(event as any).quickCheckinEnabled && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {quickCheckinRequirementsSummary(toQuickCheckinRequirements((event as any).quickCheckinRequirements), (event as any).timingTechnology ?? "rfid")}
+                        </p>
+                      )}
+                      <QuickCheckinRequirementsDialog
+                        open={overviewQcReqOpen}
+                        onOpenChange={setOverviewQcReqOpen}
+                        value={toQuickCheckinRequirements((event as any).quickCheckinRequirements)}
+                        saving={updateMutation.isPending}
+                        onSave={v => {
+                          updateMutation.mutate(
+                            { eventId, data: { quickCheckinEnabled: true, quickCheckinRequirements: v } as any },
+                            {
+                              onSuccess: () => {
+                                setOverviewQcReqOpen(false);
+                                queryClient.invalidateQueries({ queryKey: getGetEventQueryKey(eventId) });
+                              },
+                            }
+                          );
+                        }}
+                        context={{
+                          timingTechnology: (event as any).timingTechnology ?? "rfid",
+                          paymentEnabled: !!(event as any).paymentEnabled,
+                          requiresWaiver: !!((event as any).requireWaiver || (event as any).requireLiabilityWaiver),
+                        }}
+                      />
                       {(event as any).quickCheckinEnabled && (event as any).trackLat == null && (
                         <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mt-2 flex gap-1.5">
                           <AlertTriangle size={14} className="shrink-0 mt-0.5" />

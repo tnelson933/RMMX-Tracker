@@ -15,6 +15,7 @@ import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { sendPushNotifications, type PushMessage } from "./push";
 import { accountIdsForRiders } from "./riderAccess";
+import { quickCheckinIneligibleReason, quickCheckinRequirements } from "./quickCheckinRequirements";
 
 // Race-day morning push for quick check-in.
 //
@@ -49,6 +50,7 @@ export async function runQuickCheckinNotifierOnce(): Promise<void> {
       requireWaiver: eventsTable.requireWaiver,
       requireLiabilityWaiver: eventsTable.requireLiabilityWaiver,
       requireTransponder: eventsTable.requireTransponder,
+      quickCheckinRequirements: eventsTable.quickCheckinRequirements,
       date: eventsTable.date,
       state: eventsTable.state,
       trackLat: eventsTable.trackLat,
@@ -85,10 +87,12 @@ type EventRow = {
   requireWaiver: boolean | null;
   requireLiabilityWaiver: boolean | null;
   requireTransponder: boolean | null;
+  quickCheckinRequirements: unknown;
 };
 
 async function notifyForEvent(event: EventRow): Promise<void> {
-  // Confirmed registrations (class entries)
+  const requirements = quickCheckinRequirements(event.quickCheckinRequirements);
+  // Registrations (class entries): paid ones, unless the event doesn't require payment
   const regs = await db
     .select({
       registrationId: registrationsTable.id,
@@ -96,6 +100,11 @@ async function notifyForEvent(event: EventRow): Promise<void> {
       raceClass: registrationsTable.raceClass,
       myLapsTransponderNumber: registrationsTable.myLapsTransponderNumber,
       waiverAcknowledgedAt: registrationsTable.waiverAcknowledgedAt,
+      status: registrationsTable.status,
+      transponderRental: registrationsTable.transponderRental,
+      rmTrackrPurchased: registrationsTable.rmTrackrPurchased,
+      rmTrackrFulfilledAt: registrationsTable.rmTrackrFulfilledAt,
+      rfidStickerPurchased: registrationsTable.rfidStickerPurchased,
       riderTransponder: ridersTable.mylapsTransponderId,
     })
     .from(registrationsTable)
@@ -103,7 +112,8 @@ async function notifyForEvent(event: EventRow): Promise<void> {
     .where(
       and(
         eq(registrationsTable.eventId, event.id),
-        eq(registrationsTable.status, "confirmed"), // unpaid registrations check in at the gate
+        // unpaid registrations check in at the gate when payment is required
+        requirements.paid ? eq(registrationsTable.status, "confirmed") : ne(registrationsTable.status, "void"),
       ),
     );
   if (regs.length === 0) return;
@@ -144,10 +154,19 @@ async function notifyForEvent(event: EventRow): Promise<void> {
   const eligibleRiderIds = new Set<number>();
   for (const r of regs) {
     if (checkedInSet.has(`${r.riderId}:${r.raceClass ?? "Unknown"}`)) continue;
-    if (event.timingTechnology === "rfid" && !rfidSet.has(r.riderId)) continue;
-    if (event.timingTechnology === "active_transponder" && !r.myLapsTransponderNumber && !r.riderTransponder) continue;
-    if (event.requireWaiver && !event.requireLiabilityWaiver && !r.waiverAcknowledgedAt) continue;
-    if (event.requireLiabilityWaiver && !waiverRiderIds.has(r.riderId)) continue;
+    const hasRfid = rfidSet.has(r.riderId);
+    const reason = quickCheckinIneligibleReason(requirements, {
+      registrationConfirmed: r.status === "confirmed",
+      timingTechnology: event.timingTechnology,
+      hasRfid,
+      hasTransponder: !!r.myLapsTransponderNumber || !!r.riderTransponder,
+      waiverRequired: !!(event.requireWaiver || event.requireLiabilityWaiver),
+      waiverSigned: event.requireLiabilityWaiver ? waiverRiderIds.has(r.riderId) : !!r.waiverAcknowledgedAt,
+      needsPickup: (!!r.transponderRental && !r.myLapsTransponderNumber?.trim())
+        || (!!r.rmTrackrPurchased && !r.rmTrackrFulfilledAt)
+        || (!!r.rfidStickerPurchased && !hasRfid),
+    });
+    if (reason) continue;
     eligibleRiderIds.add(r.riderId);
   }
   if (eligibleRiderIds.size === 0) return;

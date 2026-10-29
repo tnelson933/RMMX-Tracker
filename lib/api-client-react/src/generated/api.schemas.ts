@@ -279,6 +279,23 @@ export const EventRaceStyle = {
   cross_country: 'cross_country',
 } as const;
 
+/**
+ * What riders need to Quick Check-In. Each key is on unless set to false; null means all on.
+ * @nullable
+ */
+export type EventQuickCheckinRequirements = {
+  /** Registration is paid */
+  paid?: boolean;
+  /** An RFID tag or transponder number is on file */
+  timing?: boolean;
+  /** Any waiver the event requires is signed */
+  waiver?: boolean;
+  /** Nothing to pick up at the gate (rental */
+  pickup?: boolean;
+  /** Within 1 mile of the track */
+  atTrack?: boolean;
+} | null | null;
+
 export interface EnduroPenaltyConfig {
   /** Seconds added to overall time per whole minute a rider arrives early */
   earlySecPerMin: number;
@@ -396,6 +413,11 @@ export interface Event {
   /** When true, riders within 1 mile of the track on race day can self-check-in from the rider app. */
   quickCheckinEnabled?: boolean;
   /**
+     * What riders need to Quick Check-In. Each key is on unless set to false; null means all on.
+     * @nullable
+     */
+  quickCheckinRequirements?: EventQuickCheckinRequirements;
+  /**
      * Latitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.
      * @nullable
      */
@@ -444,6 +466,23 @@ export const EventInputRaceStyle = {
   enduro: 'enduro',
   cross_country: 'cross_country',
 } as const;
+
+/**
+ * What riders need to Quick Check-In. Each key is on unless set to false; null means all on.
+ * @nullable
+ */
+export type EventInputQuickCheckinRequirements = {
+  /** Registration is paid */
+  paid?: boolean;
+  /** An RFID tag or transponder number is on file */
+  timing?: boolean;
+  /** Any waiver the event requires is signed */
+  waiver?: boolean;
+  /** Nothing to pick up at the gate (rental */
+  pickup?: boolean;
+  /** Within 1 mile of the track */
+  atTrack?: boolean;
+} | null | null;
 
 /**
  * Maps each race class name to a rules/details paragraph shown to riders.
@@ -508,6 +547,11 @@ export interface EventInput {
   raceStyle?: EventInputRaceStyle;
   /** When true, riders within 1 mile of the track on race day can self-check-in from the rider app. */
   quickCheckinEnabled?: boolean;
+  /**
+     * What riders need to Quick Check-In. Each key is on unless set to false; null means all on.
+     * @nullable
+     */
+  quickCheckinRequirements?: EventInputQuickCheckinRequirements;
   /** Street address of the track venue. */
   streetAddress?: string;
   /** ZIP code of the track venue. */
@@ -557,6 +601,23 @@ export const EventUpdateRaceStyle = {
   enduro: 'enduro',
   cross_country: 'cross_country',
 } as const;
+
+/**
+ * What riders need to Quick Check-In. Each key is on unless set to false; null means all on.
+ * @nullable
+ */
+export type EventUpdateQuickCheckinRequirements = {
+  /** Registration is paid */
+  paid?: boolean;
+  /** An RFID tag or transponder number is on file */
+  timing?: boolean;
+  /** Any waiver the event requires is signed */
+  waiver?: boolean;
+  /** Nothing to pick up at the gate (rental */
+  pickup?: boolean;
+  /** Within 1 mile of the track */
+  atTrack?: boolean;
+} | null | null;
 
 export interface EventUpdate {
   name?: string;
@@ -626,6 +687,11 @@ export interface EventUpdate {
   contingencyBrands?: string[] | null;
   /** When true, riders within 1 mile of the track on race day can self-check-in from the rider app. */
   quickCheckinEnabled?: boolean;
+  /**
+     * What riders need to Quick Check-In. Each key is on unless set to false; null means all on.
+     * @nullable
+     */
+  quickCheckinRequirements?: EventUpdateQuickCheckinRequirements;
   /**
      * Street address of the track venue.
      * @nullable

@@ -7,6 +7,7 @@
  */
 import type { EnduroPenaltyConfig } from './enduroPenaltyConfig';
 import type { EventCourseSource } from './eventCourseSource';
+import type { EventQuickCheckinRequirements } from './eventQuickCheckinRequirements';
 import type { EventRaceClassDetails } from './eventRaceClassDetails';
 import type { EventRaceClassLimits } from './eventRaceClassLimits';
 import type { EventRaceClassSeriesMap } from './eventRaceClassSeriesMap';
@@ -109,6 +110,11 @@ export interface Event {
   contingencyBrands?: string[] | null;
   /** When true, riders within 1 mile of the track on race day can self-check-in from the rider app. */
   quickCheckinEnabled?: boolean;
+  /**
+     * What riders need to Quick Check-In. Each key is on unless set to false; null means all on.
+     * @nullable
+     */
+  quickCheckinRequirements?: EventQuickCheckinRequirements;
   /**
      * Latitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.
      * @nullable

@@ -13,6 +13,7 @@ import {
 import { eq, and, ne, inArray } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { requireRiderAuth } from "./rider-portal";
+import { QUICK_CHECKIN_REASON_TEXT, quickCheckinIneligibleReason, quickCheckinRequirements } from "../lib/quickCheckinRequirements";
 import { managedRiderWhere } from "../lib/riderAccess";
 
 const router = Router();
@@ -34,9 +35,20 @@ function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): 
 }
 
 // GET /rider/quick-checkin-events
+/** The rider rented or bought something (transponder, RM TrackR, RFID sticker) that staff haven't handed out yet. */
+function needsGatePickup(
+  reg: { transponderRental: boolean | null; myLapsTransponderNumber: string | null; rmTrackrPurchased: boolean | null; rmTrackrFulfilledAt: Date | null; rfidStickerPurchased: boolean | null },
+  hasRfid: boolean,
+): boolean {
+  return (!!reg.transponderRental && !reg.myLapsTransponderNumber?.trim())
+    || (!!reg.rmTrackrPurchased && !reg.rmTrackrFulfilledAt)
+    || (!!reg.rfidStickerPurchased && !hasRfid);
+}
+
 // Returns events where quick check-in is enabled and the rider is eligible today.
 // Eligibility: quickCheckinEnabled=true, event is today (or first day for multi-day),
-// rider registered (not void), not already checked in, required transponder/rfid/waiver met.
+// rider registered (not void), not already checked in, and the event's chosen
+// requirements met (lib/quickCheckinRequirements: paid, timing tag, waiver, nothing to pick up).
 router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId as number;
 
@@ -72,6 +84,10 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
       myLapsTransponderNumber: registrationsTable.myLapsTransponderNumber,
       regStatus: registrationsTable.status,
       waiverAcknowledgedAt: registrationsTable.waiverAcknowledgedAt,
+      transponderRental: registrationsTable.transponderRental,
+      rmTrackrPurchased: registrationsTable.rmTrackrPurchased,
+      rmTrackrFulfilledAt: registrationsTable.rmTrackrFulfilledAt,
+      rfidStickerPurchased: registrationsTable.rfidStickerPurchased,
       eventName: eventsTable.name,
       eventDate: eventsTable.date,
       eventEndDate: eventsTable.endDate,
@@ -80,6 +96,7 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
       requireWaiver: eventsTable.requireWaiver,
       requireLiabilityWaiver: eventsTable.requireLiabilityWaiver,
       quickCheckinEnabled: eventsTable.quickCheckinEnabled,
+      quickCheckinRequirements: eventsTable.quickCheckinRequirements,
       trackLat: eventsTable.trackLat,
       trackLng: eventsTable.trackLng,
       location: eventsTable.location,
@@ -174,49 +191,27 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
     const key = `${r.eventId}:${r.riderId}`;
     const checkedIn = checkedInSet.has(`${r.eventId}:${r.riderId}:${r.raceClass ?? "Unknown"}`);
 
-    let eligible = true;
-    let ineligibleReason: string | null = null;
-
-    // Unpaid online registrations (checkout not completed) pay at the gate.
-    if (r.regStatus !== "confirmed") {
-      eligible = false;
-      ineligibleReason = "payment_required";
-    }
-
-    // RFID events: must have an RFID assignment for this event
-    if (eligible && r.timingTechnology === "rfid" && !rfidSet.has(key)) {
-      eligible = false;
-      ineligibleReason = "missing_rfid";
-    }
-
-    // Active transponder events must have a registration-level or rider-level number.
-    // Like RFID: only riders with a transponder number already on file can skip the gate.
-    if (eligible && r.timingTechnology === "active_transponder") {
-      const hasRegTransponder = !!r.myLapsTransponderNumber;
-      const hasRiderTransponder = !!transponderByRiderId.get(r.riderId);
-      if (!hasRegTransponder && !hasRiderTransponder) {
-        eligible = false;
-        ineligibleReason = "missing_transponder";
-      }
-    }
-
-    // Waiver check:
+    const requirements = quickCheckinRequirements(r.quickCheckinRequirements);
+    const hasRfid = rfidSet.has(key);
     // requireWaiver = simple acknowledgment stored on the registration row (waiver_acknowledged_at)
     // requireLiabilityWaiver = full PDF e-signature stored in liability_waiver_signatures
-    if (eligible && r.requireWaiver && !r.requireLiabilityWaiver) {
-      // Simple acknowledgment — satisfied by waiver_acknowledged_at on the registration
-      if (!r.waiverAcknowledgedAt) {
-        eligible = false;
-        ineligibleReason = "missing_waiver";
-      }
-    } else if (eligible && r.requireLiabilityWaiver) {
-      // Full liability waiver — must be in liability_waiver_signatures
-      const hasWaiver = waiverByRider.has(`${r.eventId}:${r.riderId}`);
-      if (!hasWaiver) {
-        eligible = false;
-        ineligibleReason = "missing_waiver";
-      }
-    }
+    const waiverSigned = r.requireLiabilityWaiver ? waiverByRider.has(key) : !!r.waiverAcknowledgedAt;
+    const ineligibleReason = quickCheckinIneligibleReason(requirements, {
+      // Unpaid online registrations (checkout not completed) pay at the gate.
+      registrationConfirmed: r.regStatus === "confirmed",
+      timingTechnology: r.timingTechnology,
+      hasRfid,
+      // A registration-level or rider-level number (including legacy stored values).
+      hasTransponder: !!r.myLapsTransponderNumber || !!transponderByRiderId.get(r.riderId),
+      waiverRequired: !!(r.requireWaiver || r.requireLiabilityWaiver),
+      waiverSigned,
+      needsPickup: needsGatePickup(r, hasRfid),
+    });
+    const eligible = ineligibleReason == null;
+    // Not required to be at the track: send no track location, so the app
+    // (like the server) skips the distance check for this event.
+    const trackLat = requirements.atTrack ? r.trackLat ?? null : null;
+    const trackLng = requirements.atTrack ? r.trackLng ?? null : null;
 
     results.push({
       eventId: r.eventId,
@@ -226,8 +221,8 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
       location: r.location ?? null,
       state: r.state,
       trackName: r.trackName ?? null,
-      trackLat: r.trackLat ?? null,
-      trackLng: r.trackLng ?? null,
+      trackLat,
+      trackLng,
       riderId: r.riderId,
       riderName: nameById.get(r.riderId) ?? "Rider",
       registrationId: r.registrationId,
@@ -317,6 +312,7 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
       requireWaiver: eventsTable.requireWaiver,
       requireLiabilityWaiver: eventsTable.requireLiabilityWaiver,
       requireTransponder: eventsTable.requireTransponder,
+      quickCheckinRequirements: eventsTable.quickCheckinRequirements,
       trackLat: eventsTable.trackLat,
       trackLng: eventsTable.trackLng,
       state: eventsTable.state,
@@ -333,9 +329,12 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
     return res.status(400).json({ error: "Quick check-in is only available on race day" });
   }
 
-  // The rider has to be at the track. (Events whose track location couldn't be
-  // found skip this; the organizer is warned when enabling Quick Check-In.)
-  if (event.trackLat != null && event.trackLng != null) {
+  const requirements = quickCheckinRequirements(event.quickCheckinRequirements);
+
+  // The rider has to be at the track, unless the organizer turned that off.
+  // (Events whose track location couldn't be found skip this; the organizer is
+  // warned when enabling Quick Check-In.)
+  if (requirements.atTrack && event.trackLat != null && event.trackLng != null) {
     const lat = Number(latitude);
     const lng = Number(longitude);
     if (latitude == null || longitude == null || !Number.isFinite(lat) || !Number.isFinite(lng)) {
@@ -355,6 +354,11 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
 
   const familyRiderIds = familyRiders.map(r => r.id);
 
+  // Paid registrations only, unless the organizer doesn't require payment (any entry that isn't void).
+  const registrationUsable = requirements.paid
+    ? eq(registrationsTable.status, "confirmed")
+    : ne(registrationsTable.status, "void");
+
   // Resolve the target registration: by registrationId if provided, otherwise by riderId
   let reg;
   let riderId: number;
@@ -362,7 +366,7 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
     const [row] = await db
       .select()
       .from(registrationsTable)
-      .where(and(eq(registrationsTable.id, bodyRegistrationId), eq(registrationsTable.eventId, eventId), eq(registrationsTable.status, "confirmed")));
+      .where(and(eq(registrationsTable.id, bodyRegistrationId), eq(registrationsTable.eventId, eventId), registrationUsable));
     if (!row || !familyRiderIds.includes(row.riderId)) {
       return res.status(400).json({ error: "No paid registration found for this event. Finish payment or check in at the gate." });
     }
@@ -374,37 +378,22 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
     const [row] = await db
       .select()
       .from(registrationsTable)
-      .where(and(eq(registrationsTable.eventId, eventId), eq(registrationsTable.riderId, riderId), eq(registrationsTable.status, "confirmed")));
+      .where(and(eq(registrationsTable.eventId, eventId), eq(registrationsTable.riderId, riderId), registrationUsable));
     if (!row) return res.status(400).json({ error: "No paid registration found for this event. Finish payment or check in at the gate." });
     reg = row;
   }
 
-  // RFID eligibility
-  if (event.timingTechnology === "rfid") {
-    const [rfid] = await db
-      .select()
-      .from(rfidAssignmentsTable)
-      .where(and(eq(rfidAssignmentsTable.riderId, riderId), eq(rfidAssignmentsTable.eventId, eventId)));
-    if (!rfid) return res.status(400).json({ error: "RFID not assigned — contact the organizer" });
-  }
-
-  // Active transponder eligibility (including legacy stored values).
-  if (event.timingTechnology === "active_transponder") {
-    const riderRow = familyRiders.find(r => r.id === riderId);
-    if (!reg.myLapsTransponderNumber && !riderRow?.transponderId) {
-      return res.status(400).json({ error: "Active transponder number not assigned — contact the organizer" });
-    }
-  }
-
-  // Waiver eligibility:
+  // The event's chosen requirements (timing tag, waiver, nothing to pick up).
+  const [rfid] = await db
+    .select({ id: rfidAssignmentsTable.id })
+    .from(rfidAssignmentsTable)
+    .where(and(eq(rfidAssignmentsTable.riderId, riderId), eq(rfidAssignmentsTable.eventId, eventId)));
+  const riderRow = familyRiders.find(r => r.id === riderId);
   // requireWaiver = simple acknowledgment on the registration row (waiver_acknowledged_at)
-  // requireLiabilityWaiver = full PDF e-signature in liability_waiver_signatures
-  if (event.requireWaiver && !event.requireLiabilityWaiver) {
-    if (!reg.waiverAcknowledgedAt) {
-      return res.status(400).json({ error: "Waiver not signed — please complete the waiver before checking in" });
-    }
-  } else if (event.requireLiabilityWaiver) {
-    // Must be linked to one of this rider's registrations for the event (any class entry).
+  // requireLiabilityWaiver = full PDF e-signature in liability_waiver_signatures,
+  // linked to one of this rider's registrations for the event (any class entry).
+  let waiverSigned = !!reg.waiverAcknowledgedAt;
+  if (event.requireLiabilityWaiver) {
     const [sig] = await db
       .select({ id: liabilityWaiverSignaturesTable.id })
       .from(liabilityWaiverSignaturesTable)
@@ -415,9 +404,18 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
         eq(registrationsTable.riderId, riderId),
       ))
       .limit(1);
-    const hasSig = !!sig;
-    if (!hasSig) return res.status(400).json({ error: "Waiver not signed — please complete the waiver before checking in" });
+    waiverSigned = !!sig;
   }
+  const reason = quickCheckinIneligibleReason(requirements, {
+    registrationConfirmed: reg.status === "confirmed",
+    timingTechnology: event.timingTechnology,
+    hasRfid: !!rfid,
+    hasTransponder: !!reg.myLapsTransponderNumber || !!riderRow?.transponderId,
+    waiverRequired: !!(event.requireWaiver || event.requireLiabilityWaiver),
+    waiverSigned,
+    needsPickup: needsGatePickup(reg, !!rfid),
+  });
+  if (reason) return res.status(400).json({ error: QUICK_CHECKIN_REASON_TEXT[reason], reason });
 
   // Check if already checked in (scoped to this registration's class)
   const [existing] = await db

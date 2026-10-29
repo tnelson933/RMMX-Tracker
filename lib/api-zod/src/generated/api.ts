@@ -513,6 +513,13 @@ export const ListEventsResponseItem = zod.object({
   "classOrder": zod.array(zod.string()).nullish().describe('Organizer-defined run order for race classes. Used by Generate Lineups so classes listed first race first.'),
   "contingencyBrands": zod.array(zod.string()).nullish().describe('Brands selected for contingency sponsorships at this event.'),
   "quickCheckinEnabled": zod.boolean().default(listEventsResponseQuickCheckinEnabledDefault).describe('When true, riders within 1 mile of the track on race day can self-check-in from the rider app.'),
+  "quickCheckinRequirements": zod.object({
+  "paid": zod.boolean().optional().describe('Registration is paid'),
+  "timing": zod.boolean().optional().describe('An RFID tag or transponder number is on file'),
+  "waiver": zod.boolean().optional().describe('Any waiver the event requires is signed'),
+  "pickup": zod.boolean().optional().describe('Nothing to pick up at the gate (rental'),
+  "atTrack": zod.boolean().optional().describe('Within 1 mile of the track')
+}).nullish().describe('What riders need to Quick Check-In. Each key is on unless set to false; null means all on.'),
   "trackLat": zod.number().nullish().describe('Latitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.'),
   "trackLng": zod.number().nullish().describe('Longitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.'),
   "streetAddress": zod.string().nullish().describe('Street address of the track venue.'),
@@ -569,6 +576,13 @@ export const CreateEventBody = zod.object({
   "raceClassSeriesMap": zod.record(zod.string(), zod.array(zod.number())).optional().describe('Maps each race class name to an array of series IDs that should award points for that class.'),
   "raceStyle": zod.enum(['motocross', 'enduro', 'cross_country']).default(createEventBodyRaceStyleDefault).describe('Determines the race workflow — motocross (default circuit laps), enduro (timed tests), or cross_country (point-to-point elapsed time)'),
   "quickCheckinEnabled": zod.boolean().default(createEventBodyQuickCheckinEnabledDefault).describe('When true, riders within 1 mile of the track on race day can self-check-in from the rider app.'),
+  "quickCheckinRequirements": zod.object({
+  "paid": zod.boolean().optional().describe('Registration is paid'),
+  "timing": zod.boolean().optional().describe('An RFID tag or transponder number is on file'),
+  "waiver": zod.boolean().optional().describe('Any waiver the event requires is signed'),
+  "pickup": zod.boolean().optional().describe('Nothing to pick up at the gate (rental'),
+  "atTrack": zod.boolean().optional().describe('Within 1 mile of the track')
+}).nullish().describe('What riders need to Quick Check-In. Each key is on unless set to false; null means all on.'),
   "streetAddress": zod.string().optional().describe('Street address of the track venue.'),
   "zip": zod.string().optional().describe('ZIP code of the track venue.'),
   "requireLiabilityWaiver": zod.boolean().optional().describe('When true, riders must e-sign the club liability waiver.'),
@@ -646,6 +660,13 @@ export const GetEventResponse = zod.object({
   "classOrder": zod.array(zod.string()).nullish().describe('Organizer-defined run order for race classes. Used by Generate Lineups so classes listed first race first.'),
   "contingencyBrands": zod.array(zod.string()).nullish().describe('Brands selected for contingency sponsorships at this event.'),
   "quickCheckinEnabled": zod.boolean().default(getEventResponseQuickCheckinEnabledDefault).describe('When true, riders within 1 mile of the track on race day can self-check-in from the rider app.'),
+  "quickCheckinRequirements": zod.object({
+  "paid": zod.boolean().optional().describe('Registration is paid'),
+  "timing": zod.boolean().optional().describe('An RFID tag or transponder number is on file'),
+  "waiver": zod.boolean().optional().describe('Any waiver the event requires is signed'),
+  "pickup": zod.boolean().optional().describe('Nothing to pick up at the gate (rental'),
+  "atTrack": zod.boolean().optional().describe('Within 1 mile of the track')
+}).nullish().describe('What riders need to Quick Check-In. Each key is on unless set to false; null means all on.'),
   "trackLat": zod.number().nullish().describe('Latitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.'),
   "trackLng": zod.number().nullish().describe('Longitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.'),
   "streetAddress": zod.string().nullish().describe('Street address of the track venue.'),
@@ -713,6 +734,13 @@ export const UpdateEventBody = zod.object({
   "classOrder": zod.array(zod.string()).nullish().describe('Organizer-defined run order for race classes. Used by Generate Lineups so classes listed first race first.'),
   "contingencyBrands": zod.array(zod.string()).nullish().describe('Brands selected for contingency sponsorships at this event.'),
   "quickCheckinEnabled": zod.boolean().optional().describe('When true, riders within 1 mile of the track on race day can self-check-in from the rider app.'),
+  "quickCheckinRequirements": zod.object({
+  "paid": zod.boolean().optional().describe('Registration is paid'),
+  "timing": zod.boolean().optional().describe('An RFID tag or transponder number is on file'),
+  "waiver": zod.boolean().optional().describe('Any waiver the event requires is signed'),
+  "pickup": zod.boolean().optional().describe('Nothing to pick up at the gate (rental'),
+  "atTrack": zod.boolean().optional().describe('Within 1 mile of the track')
+}).nullish().describe('What riders need to Quick Check-In. Each key is on unless set to false; null means all on.'),
   "streetAddress": zod.string().nullish().describe('Street address of the track venue.'),
   "zip": zod.string().nullish().describe('ZIP code of the track venue.')
 })
@@ -777,6 +805,13 @@ export const UpdateEventResponse = zod.object({
   "classOrder": zod.array(zod.string()).nullish().describe('Organizer-defined run order for race classes. Used by Generate Lineups so classes listed first race first.'),
   "contingencyBrands": zod.array(zod.string()).nullish().describe('Brands selected for contingency sponsorships at this event.'),
   "quickCheckinEnabled": zod.boolean().default(updateEventResponseQuickCheckinEnabledDefault).describe('When true, riders within 1 mile of the track on race day can self-check-in from the rider app.'),
+  "quickCheckinRequirements": zod.object({
+  "paid": zod.boolean().optional().describe('Registration is paid'),
+  "timing": zod.boolean().optional().describe('An RFID tag or transponder number is on file'),
+  "waiver": zod.boolean().optional().describe('Any waiver the event requires is signed'),
+  "pickup": zod.boolean().optional().describe('Nothing to pick up at the gate (rental'),
+  "atTrack": zod.boolean().optional().describe('Within 1 mile of the track')
+}).nullish().describe('What riders need to Quick Check-In. Each key is on unless set to false; null means all on.'),
   "trackLat": zod.number().nullish().describe('Latitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.'),
   "trackLng": zod.number().nullish().describe('Longitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.'),
   "streetAddress": zod.string().nullish().describe('Street address of the track venue.'),
@@ -2545,6 +2580,13 @@ export const GetClubDashboardResponse = zod.object({
   "classOrder": zod.array(zod.string()).nullish().describe('Organizer-defined run order for race classes. Used by Generate Lineups so classes listed first race first.'),
   "contingencyBrands": zod.array(zod.string()).nullish().describe('Brands selected for contingency sponsorships at this event.'),
   "quickCheckinEnabled": zod.boolean().default(getClubDashboardResponseUpcomingEventListItemQuickCheckinEnabledDefault).describe('When true, riders within 1 mile of the track on race day can self-check-in from the rider app.'),
+  "quickCheckinRequirements": zod.object({
+  "paid": zod.boolean().optional().describe('Registration is paid'),
+  "timing": zod.boolean().optional().describe('An RFID tag or transponder number is on file'),
+  "waiver": zod.boolean().optional().describe('Any waiver the event requires is signed'),
+  "pickup": zod.boolean().optional().describe('Nothing to pick up at the gate (rental'),
+  "atTrack": zod.boolean().optional().describe('Within 1 mile of the track')
+}).nullish().describe('What riders need to Quick Check-In. Each key is on unless set to false; null means all on.'),
   "trackLat": zod.number().nullish().describe('Latitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.'),
   "trackLng": zod.number().nullish().describe('Longitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.'),
   "streetAddress": zod.string().nullish().describe('Street address of the track venue.'),

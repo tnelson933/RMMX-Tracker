@@ -11,6 +11,7 @@ import { eq, and, sql, inArray, isNull, ne } from "drizzle-orm";
 import { normalizeEventPurchaseOptions } from "../lib/rmTrackr";
 import { sendStatsEmail } from "../lib/email";
 import { normalizeState } from "../utils/normalizeState";
+import { quickCheckinRequirements } from "../lib/quickCheckinRequirements";
 
 const router = Router();
 const normalizeTimingTechnology = (value: unknown) =>
@@ -102,6 +103,7 @@ router.get("/events", async (req, res) => {
     raceStyle: eventsTable.raceStyle,
     enduroPenaltyConfig: eventsTable.enduroPenaltyConfig,
     quickCheckinEnabled: eventsTable.quickCheckinEnabled,
+    quickCheckinRequirements: eventsTable.quickCheckinRequirements,
     trackLat: eventsTable.trackLat,
     trackLng: eventsTable.trackLng,
     streetAddress: eventsTable.streetAddress,
@@ -190,6 +192,7 @@ router.post("/events", async (req, res) => {
     noDuplicateBibs: !!noDuplicateBibs,
     raceClassDetails: raceClassDetails && typeof raceClassDetails === "object" && !Array.isArray(raceClassDetails) ? raceClassDetails : {},
     contingencyBrands: Array.isArray(contingencyBrands) ? contingencyBrands.map(String) : null,
+    quickCheckinRequirements: req.body.quickCheckinRequirements ? quickCheckinRequirements(req.body.quickCheckinRequirements) : null,
     entryFee: entryFee ? String(entryFee) : null,
     earlyBirdFee: earlyBirdFee ? String(earlyBirdFee) : null,
     earlyBirdEndsAt: earlyBirdEndsAt ? String(earlyBirdEndsAt).substring(0, 10) : null,
@@ -269,6 +272,7 @@ router.get("/events/:eventId", async (req, res) => {
     raceStyle: eventsTable.raceStyle,
     enduroPenaltyConfig: eventsTable.enduroPenaltyConfig,
     quickCheckinEnabled: eventsTable.quickCheckinEnabled,
+    quickCheckinRequirements: eventsTable.quickCheckinRequirements,
     trackLat: eventsTable.trackLat,
     trackLng: eventsTable.trackLng,
     streetAddress: eventsTable.streetAddress,
@@ -307,6 +311,7 @@ router.get("/events/:eventId", async (req, res) => {
   return res.json({
     ...e,
     timingTechnology: normalizeTimingTechnology(e.timingTechnology),
+    quickCheckinRequirements: quickCheckinRequirements(e.quickCheckinRequirements),
     classStartTimes,
     status: advanced.get(e.id) ?? e.status,
     entryFee: e.entryFee ? Number(e.entryFee) : null,
@@ -348,6 +353,9 @@ router.patch("/events/:eventId", async (req, res) => {
     updates.timingTechnology = normalizeTimingTechnology(updates.timingTechnology);
   }
   if (updates.purchaseOptions !== undefined) updates.purchaseOptions = normalizeEventPurchaseOptions(updates.purchaseOptions);
+  if (req.body.quickCheckinRequirements !== undefined) {
+    updates.quickCheckinRequirements = req.body.quickCheckinRequirements === null ? null : quickCheckinRequirements(req.body.quickCheckinRequirements);
+  }
   // Always store date fields as plain YYYY-MM-DD — strip any time component that
   // may arrive from a datetime-local input or ISO timestamp (e.g. "2026-06-23T18:00:00.000Z").
   if (typeof updates.date === "string") updates.date = updates.date.substring(0, 10);

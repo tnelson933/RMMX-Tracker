@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { EnduroPenaltyConfig } from './enduroPenaltyConfig';
+import type { EventUpdateQuickCheckinRequirements } from './eventUpdateQuickCheckinRequirements';
 import type { EventUpdateRaceClassDetails } from './eventUpdateRaceClassDetails';
 import type { EventUpdateRaceClassLimits } from './eventUpdateRaceClassLimits';
 import type { EventUpdateRaceClassSeriesMap } from './eventUpdateRaceClassSeriesMap';
@@ -81,6 +82,11 @@ export interface EventUpdate {
   contingencyBrands?: string[] | null;
   /** When true, riders within 1 mile of the track on race day can self-check-in from the rider app. */
   quickCheckinEnabled?: boolean;
+  /**
+     * What riders need to Quick Check-In. Each key is on unless set to false; null means all on.
+     * @nullable
+     */
+  quickCheckinRequirements?: EventUpdateQuickCheckinRequirements;
   /**
      * Street address of the track venue.
      * @nullable

@@ -3698,6 +3698,15 @@ components:
           type: boolean
           default: false
           description: When true, riders within 1 mile of the track on race day can self-check-in from the rider app.
+        quickCheckinRequirements:
+          type: ["object", "null"]
+          description: What riders need to Quick Check-In. Each key is on unless set to false; null means all on.
+          properties:
+            paid: { type: boolean, description: Registration is paid }
+            timing: { type: boolean, description: An RFID tag or transponder number is on file }
+            waiver: { type: boolean, description: Any waiver the event requires is signed }
+            pickup: { type: boolean, description: Nothing to pick up at the gate (rental, RM TrackR, RFID sticker) }
+            atTrack: { type: boolean, description: Within 1 mile of the track }
         trackLat:
           type: ["number", "null"]
           description: Latitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.
@@ -3812,6 +3821,15 @@ components:
           type: boolean
           default: false
           description: When true, riders within 1 mile of the track on race day can self-check-in from the rider app.
+        quickCheckinRequirements:
+          type: ["object", "null"]
+          description: What riders need to Quick Check-In. Each key is on unless set to false; null means all on.
+          properties:
+            paid: { type: boolean, description: Registration is paid }
+            timing: { type: boolean, description: An RFID tag or transponder number is on file }
+            waiver: { type: boolean, description: Any waiver the event requires is signed }
+            pickup: { type: boolean, description: Nothing to pick up at the gate (rental, RM TrackR, RFID sticker) }
+            atTrack: { type: boolean, description: Within 1 mile of the track }
         streetAddress:
           type: string
           description: Street address of the track venue.
@@ -3954,6 +3972,15 @@ components:
         quickCheckinEnabled:
           type: boolean
           description: When true, riders within 1 mile of the track on race day can self-check-in from the rider app.
+        quickCheckinRequirements:
+          type: ["object", "null"]
+          description: What riders need to Quick Check-In. Each key is on unless set to false; null means all on.
+          properties:
+            paid: { type: boolean, description: Registration is paid }
+            timing: { type: boolean, description: An RFID tag or transponder number is on file }
+            waiver: { type: boolean, description: Any waiver the event requires is signed }
+            pickup: { type: boolean, description: Nothing to pick up at the gate (rental, RM TrackR, RFID sticker) }
+            atTrack: { type: boolean, description: Within 1 mile of the track }
         streetAddress:
           type: ["string", "null"]
           description: Street address of the track venue.
