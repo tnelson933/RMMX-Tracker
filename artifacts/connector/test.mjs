@@ -59,6 +59,8 @@ const { migrateLegacyActiveTransponderAddress, migrateSettings } = migrationsMod
 const activeReaderModule = await import(pathToFileURL(activeReaderOutputFile).href);
 const {
   ActiveTransponderClient,
+  formatDeviceTime,
+  parseDeviceWallTime,
   formatLocalClockCommands,
   parseTimestamp,
   isLoopWorking,
@@ -179,6 +181,105 @@ test("a reconnect resends local date, time, and configuration", async () => {
         ["setActiveChannel", "1"], ["setActivePower", "80"], ["loopEnable", "1"], ["loopEnable", "2"],
       ]);
     }
+  } finally {
+    client.disconnect();
+    for (const peer of peers) peer.destroy();
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test("after a dropout, asks the reader to resend the gap and keeps those reads' original times", async () => {
+  const sessions = [];
+  const peers = [];
+  const server = net.createServer(peer => {
+    const messages = [];
+    sessions.push(messages);
+    peers.push(peer);
+    peer.on("data", chunk => messages.push(chunk.toString("utf8")));
+    peer.on("error", () => {});
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = `127.0.0.1:${server.address().port}`;
+  const client = new ActiveTransponderClient();
+  client.on("disconnected", () => {});
+  const tags = [];
+  client.on("tag", (tag, time, receipt) => tags.push({ tag, time, receipt }));
+  try {
+    await client.connect(address);
+    client.startReading();
+    // A live read sets the reader's clock offset (in sync here).
+    peers[0].write(`unit-1@epc@0001@${formatDeviceTime(Date.now())},AAA111;`);
+    await waitFor(() => tags.length === 1);
+    assert.equal(tags[0].receipt.replayed, undefined);
+    assert.ok(tags[0].receipt.receivedAt instanceof Date);
+
+    // The network drops; the reader keeps reading while RM Connect can't hear it.
+    peers[0].destroy();
+    await waitFor(() => !client.getStatus().connected);
+    const missedAt = Date.now();
+    await new Promise(resolve => setTimeout(resolve, 20));
+
+    await client.connect(address);
+    await waitFor(() => peers.length >= 2);
+    peers[1].write("unit-1@heartBeat@0001@;");
+    await waitFor(() => commandPackets(sessions[1] ?? []).some(p => p.command === "rewindData"));
+    const rewind = commandPackets(sessions[1]).find(p => p.command === "rewindData");
+    const [from, to] = rewind.parameters.split(",");
+    assert.match(from, /^\d{4}-\d{1,2}-\d{1,2}_\d{2}:\d{2}:\d{2}\.\d{3}$/);
+    // From 30 s before the last contact (overlap) to the reconnect.
+    assert.ok(parseDeviceWallTime(from).getTime() <= missedAt - 29_000);
+    assert.ok(parseDeviceWallTime(to).getTime() >= missedAt);
+
+    // The reader resends the read it took during the gap, plus the one that did get through.
+    peers[1].write(`unit-1@epc@0002@${formatDeviceTime(missedAt)},BBB222;`);
+    peers[1].write(`unit-1@epc@0003@${formatDeviceTime(missedAt)},BBB222;`);
+    await waitFor(() => tags.length === 3);
+    const replayed = tags[1];
+    assert.equal(replayed.tag, "BBB222");
+    assert.equal(replayed.receipt.replayed, true);
+    assert.equal(replayed.receipt.receivedAt, null);
+    assert.equal(replayed.receipt.source, "connector_rewind");
+    assert.ok(Math.abs(replayed.time.getTime() - missedAt) < 5, "keeps the time it was read, not when it arrived");
+    assert.equal(client.getStatus().lastReplay.reads, 2);
+
+    // A fresh read after reconnecting is live again.
+    await new Promise(resolve => setTimeout(resolve, 20));
+    peers[1].write(`unit-1@epc@0004@${formatDeviceTime(Date.now() + 1_000)},CCC333;`);
+    await waitFor(() => tags.length === 4);
+    assert.equal(tags[3].receipt.replayed, undefined);
+  } finally {
+    client.disconnect();
+    for (const peer of peers) peer.destroy();
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test("a deliberate disconnect isn't a dropout: no replay on the next connect elsewhere", async () => {
+  const sessions = [];
+  const peers = [];
+  const server = net.createServer(peer => {
+    const messages = [];
+    sessions.push(messages);
+    peers.push(peer);
+    peer.on("data", chunk => messages.push(chunk.toString("utf8")));
+    peer.on("error", () => {});
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const client = new ActiveTransponderClient();
+  try {
+    await client.connect(`127.0.0.1:${server.address().port}`);
+    peers[0].write("unit-1@heartBeat@0001@;");
+    await waitFor(() => commandsFromWire(sessions[0]).length >= 6);
+    client.disconnect();
+    // Another address (another reader): nothing from the first one is replayed.
+    await client.connect(`localhost:${server.address().port}`);
+    await waitFor(() => peers.length >= 2);
+    peers[1].write("unit-1@heartBeat@0001@;");
+    await waitFor(() => commandsFromWire(sessions[1]).length >= 6);
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(commandsFromWire(sessions[1]).includes("rewindData"), false);
   } finally {
     client.disconnect();
     for (const peer of peers) peer.destroy();

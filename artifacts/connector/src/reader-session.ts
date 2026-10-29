@@ -372,7 +372,9 @@ export class ReaderSession extends EventEmitter {
     receipt?: ActiveTimingReceiptMetadata,
   ): Promise<void> {
     if (!shouldForwardCrossing(source, this.activeMoto !== null, this.testMode)) return;
-    if (!this.deduper.accept(rfidNumber)) return;
+    // Reads the RM TrackR resent after a dropout arrive together (several laps of
+    // one rider at once): RM Roost dedupes them by crossing time instead.
+    if (!receipt?.replayed && !this.deduper.accept(rfidNumber)) return;
 
     // Keep the original crossing and receipt timestamps so a delayed delivery
     // is scored at the moment the rider crossed.

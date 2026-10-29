@@ -43,6 +43,18 @@ export interface ActiveTransponderStatus {
   reader1Working: string | null;
   reader2Working: string | null;
   eventId: string | null;
+  /** The last replay of reads missed during a dropout, if any. */
+  lastReplay: ActiveTransponderReplay | null;
+}
+
+export interface ActiveTransponderReplay {
+  /** When the app asked the RM TrackR for the missed reads. */
+  requestedAt: string;
+  /** The gap that was replayed (this computer's time). */
+  from: string;
+  to: string;
+  /** Reads the RM TrackR resent for that gap so far. */
+  reads: number;
 }
 
 export interface ActiveTransponderConfiguration {
@@ -56,7 +68,12 @@ export interface ActiveTransponderPassingMetadata {
   receivedAtUtc: string;
   /** Host IANA zone used while parsing the F2000's local wall-clock timestamp. */
   deviceTimezone: string;
-  source: "f2000_tcp";
+  /**
+   * f2000_tcp: read live. f2000_rewind: resent by the RM TrackR after a
+   * dropout; its time is when it was read, so the local server must not
+   * replace it with the (late) receipt.
+   */
+  source: "f2000_tcp" | "f2000_rewind";
   timeSource: "f2000_device";
 }
 
@@ -72,6 +89,12 @@ const CONNECT_TIMEOUT_MS = 8_000;
 const RECONNECT_DELAY_MS = 1_000;
 const HEARTBEAT_TIMEOUT_MS = 15_000;
 const READER_OPEN_RETRY_MS = 2_000;
+// Replay after a dropout: ask from a little before the last contact (reads
+// already recorded are rejected as duplicates), expect the resent reads within
+// a couple of minutes, and never ask for more than a race day.
+const REPLAY_OVERLAP_MS = 30_000;
+const REPLAY_WINDOW_MS = 2 * 60_000;
+const MAX_REPLAY_SPAN_MS = 12 * 60 * 60 * 1000;
 const DEFAULT_CONFIGURATION: ActiveTransponderConfiguration = {
   activeChannel: 0,
   activePower: 100,
@@ -142,6 +165,15 @@ let configuration: ActiveTransponderConfiguration = {
 };
 let configApplied = false;
 let lastReaderOpenRequestAt = 0;
+// Replay after a dropout. The RM TrackR keeps reading and storing while the
+// network is down; on reconnect the app asks it to resend that window.
+let lastContactAt: number | null = null;
+/** RM TrackR clock minus this computer's, from the last live read. */
+let deviceOffsetMs = 0;
+/** This computer's time the current gap started (earliest, across retries). */
+let gapStartedAt: number | null = null;
+let replay: { fromDeviceMs: number; untilDeviceMs: number; offsetMs: number; expiresAt: number } | null = null;
+let lastReplay: ActiveTransponderReplay | null = null;
 const intentionallyDisconnectedSockets = new WeakSet<net.Socket>();
 
 export function formatActiveTransponderLocalClock(now = new Date()): { date: string; time: string } {
@@ -188,12 +220,27 @@ export function getActiveTransponderStatus(): ActiveTransponderStatus {
     reader1Working,
     reader2Working,
     eventId,
+    lastReplay: lastReplay ? { ...lastReplay } : null,
   };
+}
+
+/** "2026-6-30_17:34:25.333": the RM TrackR's local wall-clock format (rewindData and epc). */
+export function formatF2000DeviceTime(ms: number): string {
+  const d = new Date(ms);
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}_${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, "0")}`;
 }
 
 export function connectActiveTransponder(address: string, onPassing: ActiveTransponderPassingCallback, onStatus?: ActiveTransponderStatusCallback): Promise<void> {
   const { host, port } = normalizeActiveTransponderAddress(address);
+  // Reconnecting to the same reader replays from the dropout (or, for a
+  // connection that froze without closing, from the last contact).
+  const sameReader = host === targetHost && port === targetPort;
+  const pendingGap = sameReader ? gapStartedAt ?? lastContactAt : null;
+  const pendingContact = sameReader ? lastContactAt : null;
   disconnectActiveTransponder();
+  gapStartedAt = pendingGap;
+  lastContactAt = pendingContact;
   resetConnectionState();
   deviceIp = host;
   targetPort = port;
@@ -208,6 +255,9 @@ export function connectActiveTransponder(address: string, onPassing: ActiveTrans
 
 export function disconnectActiveTransponder(): void {
   desiredConnected = false;
+  // A deliberate disconnect isn't a dropout: nothing to replay.
+  gapStartedAt = null;
+  replay = null;
   testActive = false;
   localReaderActive = false;
   connectionEpoch++;
@@ -335,6 +385,8 @@ function createConnection(host: string, port: number, epoch: number, reportIniti
       if (connectingSocket === connection) connectingSocket = null;
       if (!isCurrent()) { if (!connected) failInitial(new Error("Connection attempt cancelled.")); return; }
       clearHeartbeatWatch();
+      // Reads during the gap stay on the RM TrackR: replay them on reconnect.
+      if (!intentionallyDisconnectedSockets.has(connection) && lastContactAt !== null && gapStartedAt === null) gapStartedAt = lastContactAt;
       if (!intentionallyDisconnectedSockets.has(connection) && !connectError) connectError = "RM TrackR disconnected unexpectedly. Reconnecting…";
       clearDeviceSessionState();
       notifyStatus();
@@ -402,7 +454,8 @@ function processPacket(packet: string, onPassing: ActiveTransponderPassingCallba
   if (parts.length < 4) return;
   const [packetMachineId, command, , ...parameterParts] = parts;
   if (!packetMachineId || !command) return;
-  if (!machineId) { machineId = packetMachineId; applyConfiguration(); }
+  lastContactAt = receivedAt.getTime();
+  if (!machineId) { machineId = packetMachineId; applyConfiguration(); requestReplay(receivedAt); }
   const parameters = parameterParts.join("@");
   if (command === "epc") processEpc(parameters, onPassing, receivedAt);
   else if (command === "heartBeat") {
@@ -420,8 +473,27 @@ function processPacket(packet: string, onPassing: ActiveTransponderPassingCallba
 function processEpc(parameters: string, onPassing: ActiveTransponderPassingCallback | undefined, receivedAt: Date): void {
   const commaIndex = parameters.indexOf(",");
   if (commaIndex < 1) return;
-  const timestamp = parseF2000Timestamp(parameters.slice(0, commaIndex).trim(), receivedAt);
+  const stamp = parameters.slice(0, commaIndex).trim();
   const epc = parameters.slice(commaIndex + 1).trim();
+  const deviceTime = parseF2000WallTime(stamp);
+  const activeReplay = replay && receivedAt.getTime() <= replay.expiresAt ? replay : null;
+  if (epc && deviceTime && activeReplay
+    && deviceTime.getTime() >= activeReplay.fromDeviceMs && deviceTime.getTime() <= activeReplay.untilDeviceMs) {
+    // Resent from the dropout: keep the moment it was read (this computer's
+    // time), never the moment it arrived.
+    if (lastReplay) lastReplay.reads++;
+    onPassing?.(epc, new Date(deviceTime.getTime() - activeReplay.offsetMs), {
+      receivedAtUtc: receivedAt.toISOString(),
+      deviceTimezone: getHostIanaTimezone(),
+      source: "f2000_rewind",
+      timeSource: "f2000_device",
+    });
+    return;
+  }
+  if (deviceTime && Math.abs(deviceTime.getTime() - receivedAt.getTime()) < 24 * 60 * 60 * 1000) {
+    deviceOffsetMs = deviceTime.getTime() - receivedAt.getTime();
+  }
+  const timestamp = parseF2000Timestamp(stamp, receivedAt);
   if (!timestamp || !epc) return;
   lastPassingAt = timestamp.toISOString(); passingCount++; connectError = null;
   // Reading works: stop re-sending readerOpen, which can briefly interrupt loops.
@@ -455,6 +527,32 @@ function processMachineState(parameters: string): void {
 function parseOptionalNumber(value: string | undefined): number | null {
   const parsed = Number(value);
   return value === undefined || value === "" || !Number.isFinite(parsed) ? null : parsed;
+}
+
+/** The RM TrackR's local wall-clock timestamp as a Date, with no skew clamp (null if malformed). */
+function parseF2000WallTime(value: string): Date | null {
+  const match = /^(\d{4})-(\d{1,2})-(\d{1,2})_(\d{1,2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/.exec(value);
+  if (!match) return null;
+  const [, y, mo, d, h, mi, s, ms = "0"] = match;
+  const date = new Date(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s), Number(ms.padEnd(3, "0")));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/**
+ * After a dropout, ask the RM TrackR to resend what it read while this app
+ * couldn't hear it (rewindData). The window starts a little before the last
+ * contact; reads that did get through are rejected as duplicates.
+ */
+function requestReplay(now: Date): void {
+  if (gapStartedAt === null) return;
+  const nowMs = now.getTime();
+  const fromMs = Math.max(gapStartedAt - REPLAY_OVERLAP_MS, nowMs - MAX_REPLAY_SPAN_MS);
+  const offsetMs = deviceOffsetMs;
+  gapStartedAt = null;
+  if (nowMs <= fromMs) return;
+  replay = { fromDeviceMs: fromMs + offsetMs, untilDeviceMs: nowMs + offsetMs, offsetMs, expiresAt: nowMs + REPLAY_WINDOW_MS };
+  lastReplay = { requestedAt: now.toISOString(), from: new Date(fromMs).toISOString(), to: now.toISOString(), reads: 0 };
+  sendCommand("rewindData", `${formatF2000DeviceTime(fromMs + offsetMs)},${formatF2000DeviceTime(nowMs + offsetMs)}`);
 }
 
 function parseF2000Timestamp(value: string, receivedAt: Date): Date | null {
