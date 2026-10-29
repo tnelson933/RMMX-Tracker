@@ -40,13 +40,32 @@ test("seeds a mid-race join without replaying start or completed laps", () => {
   });
 });
 
-test("waits for field progression and suppresses duplicate lap updates", () => {
+test("calls the lap the moment the leader crosses, once", () => {
   const state = createAnnouncerLifecycleState();
   advanceAnnouncerLifecycle(state, "in_progress", field(0));
-  const partial = field(0).map((rider, index) => ({ ...rider, laps: index < 4 ? 1 : 0 }));
-  assert.equal(advanceAnnouncerLifecycle(state, "in_progress", partial, 5).kind, "none");
+  // Only the leader has crossed: that's the moment to call it, not after the field.
+  const leaderOnly = field(0).map((rider, index) => ({ ...rider, laps: index === 0 ? 1 : 0 }));
+  assert.equal(advanceAnnouncerLifecycle(state, "in_progress", leaderOnly, 5).kind, "lap");
+  assert.equal(advanceAnnouncerLifecycle(state, "in_progress", field(1), 5).kind, "none");
+});
+
+test("stays quiet under a red flag and calls the next lap after the restart", () => {
+  const state = createAnnouncerLifecycleState();
+  advanceAnnouncerLifecycle(state, "in_progress", field(0));
+  assert.equal(advanceAnnouncerLifecycle(state, "in_progress", field(1), 5, { paused: true }).kind, "none");
   assert.equal(advanceAnnouncerLifecycle(state, "in_progress", field(1), 5).kind, "lap");
-  assert.equal(advanceAnnouncerLifecycle(state, "in_progress", field(1)).kind, "none");
+});
+
+test("a pass names the rider who held that spot", () => {
+  const state = createAnnouncerLifecycleState();
+  advanceAnnouncerLifecycle(state, "in_progress", field(0));
+  const lap = advanceAnnouncerLifecycle(state, "in_progress", field(1, [2, 1, 3, 4, 5]));
+  assert.equal(lap.kind, "lap");
+  if (lap.kind === "lap") {
+    const toFirst = lap.positionChanges.find(c => c.to === 1);
+    assert.ok(toFirst?.passedName, "the old leader is named");
+    assert.notEqual(toFirst?.passedName, toFirst?.riderName);
+  }
 });
 
 test("captures position changes and emits one completion recap", () => {

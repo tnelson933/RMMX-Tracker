@@ -7,7 +7,9 @@ import { SplitView360 } from "@/components/SplitView360";
 import { StackedSplitView } from "@/components/StackedSplitView";
 import { getPublicOrigin } from "@/lib/publicOrigin";
 import {
-  announcementStartOffsetSeconds,
+  isAnnouncementStale,
+  queueAnnouncement,
+  type QueuedAnnouncement,
   appendAnnouncementTask,
   isCurrentAnnouncementGeneration,
   sharedAnnouncerMotoId,
@@ -115,7 +117,7 @@ export default function WatchLive() {
 
   // Announcer refs
   const announcerOnRef = useRef(true);
-  const audioQueueRef = useRef<Array<{ url: string; offsetSeconds: number }>>([]);
+  const audioQueueRef = useRef<QueuedAnnouncement[]>([]);
   const annPlayingRef = useRef(false);
   const lastAnnouncementSequenceRef = useRef(0);
   const announcementFetchRef = useRef<Promise<void>>(Promise.resolve());
@@ -191,7 +193,13 @@ export default function WatchLive() {
   const drainQueue = useCallback(() => {
     if (annPlayingRef.current || audioQueueRef.current.length === 0) return;
     if (!announcerOnRef.current) { audioQueueRef.current = []; return; }
-    const { url, offsetSeconds } = audioQueueRef.current.shift()!;
+    const { url, announcement } = audioQueueRef.current.shift()!;
+    // Too late to be worth hearing: skip it rather than talk over what's happening now.
+    if (isAnnouncementStale(announcement)) {
+      URL.revokeObjectURL(url);
+      drainQueue();
+      return;
+    }
     annPlayingRef.current = true;
     const audio = new Audio(url);
     currentAudioRef.current = audio;
@@ -203,18 +211,16 @@ export default function WatchLive() {
     };
     audio.onended = cleanup;
     audio.onerror = cleanup;
-    audio.onloadedmetadata = () => {
-      if (offsetSeconds > 0 && Number.isFinite(audio.duration) && offsetSeconds < audio.duration) {
-        audio.currentTime = offsetSeconds;
-      }
-    };
     audio.play().catch(() => { annPlayingRef.current = false; drainQueue(); });
   }, []);
 
-  const enqueueAudio = useCallback((blob: Blob, offsetSeconds = 0) => {
+  const enqueueAudio = useCallback((blob: Blob, announcement: SharedAnnouncement) => {
     if (!announcerOnRef.current) return;   // discard if muted after fetch resolved
     const url = URL.createObjectURL(blob);
-    audioQueueRef.current.push({ url, offsetSeconds });
+    // Always start a call from its beginning; a newer call replaces ones still waiting.
+    const { queue, dropped } = queueAnnouncement(audioQueueRef.current, { url, announcement });
+    for (const item of dropped) URL.revokeObjectURL(item.url);
+    audioQueueRef.current = queue;
     drainQueue();
   }, [drainQueue]);
 
@@ -245,7 +251,7 @@ export default function WatchLive() {
           return;
         }
         if (!isCurrentAnnouncementGeneration(announcementGenerationRef.current, generation)) return;
-        enqueueAudio(blob, announcementStartOffsetSeconds(announcement));
+        enqueueAudio(blob, announcement);
         setTimeout(() => setAnnouncerLabel(null), 6_000);
       } catch { setAnnouncerLabel(null); }
     });

@@ -18,7 +18,7 @@ import { fetchEnduoPenaltyMap } from "./enduro-scoring";
 import { eq, and, asc, desc, isNotNull, isNull, or, gt, lt, sql, inArray, ilike } from "drizzle-orm";
 import type { Request, Response } from "express";
 import { authorizeIngest, clubIdForEvent, clubIdForMoto } from "../lib/ingestAuth";
-import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
+import { textToSpeech, speakScript } from "@workspace/integrations-openai-ai-server/audio";
 import { processPracticeCrossing } from "./practice";
 import { computeMotoSectors } from "../lib/sectors";
 import { recordTagSeen } from "../lib/recentTags";
@@ -37,7 +37,9 @@ import {
   type AnnouncerLifecycleState,
 } from "../lib/announcerLifecycle";
 import {
+  buildAnnouncement,
   buildAnnouncementScript as buildRaceAnnouncementScript,
+  type AnnouncementMood,
   type AnnouncerEntry,
   type AnnouncerPositionChange,
 } from "../lib/announcerScript";
@@ -91,6 +93,8 @@ type AnnouncerEvent = {
   kind: "start" | "lap" | "time_expired" | "extra_lap" | "finish";
   lap: number;
   createdAt: string;
+  /** When the race moment happened (leader's crossing, start, flag); players drop calls that arrive too late. */
+  eventAt: string;
   audioUrl: string;
   label: string;
 };
@@ -2060,6 +2064,30 @@ Deliver every word with maximum energy, drama, and passion. \
 Speak in a powerful, resonant baritone. Vary your pacing — build tension, pause on big moments, then hit the crowd with explosive energy. \
 Sound like you are in a packed stadium with 60,000 fans on their feet. Every race is the most important race in the world.`;
 
+// The live race calls build like a real broadcast: steady and conversational on
+// routine laps, lifting for battles and passes, big at the white flag and the
+// checkered flag. Shouting every line flattens it.
+const CALL_VOICE_BASE = "Voice: a seasoned American motocross and supercross TV play-by-play announcer, calling the race live from the booth. \
+Natural, fluent and quick, like reacting to what you see, never reading. Say rider numbers the racing way. \
+Read the text exactly as written; add nothing.";
+const CALL_VOICE_MOOD: Record<AnnouncementMood | "start", string> = {
+  start: "Delivery: sudden burst of excitement as the gate drops; fast, punchy, rising.",
+  steady: "Delivery: confident, brisk and conversational; medium energy, clear and crisp.",
+  rising: "Delivery: building excitement, a little faster and louder, urgency in the voice.",
+  excited: "Delivery: big excitement, fast and emphatic, punch the key words.",
+  peak: "Delivery: peak excitement on the first sentence, a roar of celebration, then settle slightly for the rest.",
+};
+const callVoice = (mood: AnnouncementMood | "start") => `${CALL_VOICE_BASE}\n${CALL_VOICE_MOOD[mood]}`;
+
+/** How late a call may be produced and still be worth playing. */
+const CALL_MAX_AGE_MS: Record<AnnouncerEvent["kind"], number> = {
+  start: 20_000,
+  lap: 25_000,
+  extra_lap: 25_000,
+  time_expired: 20_000,
+  finish: 120_000,
+};
+
 /** Pick a random element from an array. */
 function pick<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)]; }
 
@@ -2388,13 +2416,21 @@ async function createSharedAnnouncement(
   state: AnnouncerState,
   kind: AnnouncerEvent["kind"],
   lap: number,
-  script: string,
+  call: { script: string; mood: AnnouncementMood | "start"; eventAtMs: number },
   label: string,
   persistMarker?: () => Promise<number | null>,
 ) {
-  const audioBuffer = await textToSpeech(script, "onyx", "mp3", ANNOUNCER_VOICE_INSTRUCTIONS);
+  const tooOld = () => Date.now() - call.eventAtMs > CALL_MAX_AGE_MS[kind];
+  // Nothing worth saying (a quiet lap), or the moment has passed (e.g. reads
+  // that arrived late in a desktop sync): mark it handled so it never replays.
+  if (!call.script || tooOld()) {
+    if (persistMarker) await persistMarker();
+    return;
+  }
+  const audioBuffer = await speakScript(call.script, { voice: "onyx", instructions: callVoice(call.mood) });
   const persistedSequence = persistMarker ? await persistMarker() : null;
   if (persistMarker && persistedSequence == null) return;
+  if (tooOld()) return;
   const sequence = persistedSequence ?? state.sequence + 1;
   state.sequence = Math.max(state.sequence, sequence);
   const id = `${motoId}-${Date.now()}-${sequence}`;
@@ -2405,6 +2441,7 @@ async function createSharedAnnouncement(
     kind,
     lap,
     createdAt: new Date().toISOString(),
+    eventAt: new Date(call.eventAtMs).toISOString(),
     audioUrl: `/api/timing/announcer-audio/${id}`,
     label,
   };
@@ -2442,15 +2479,20 @@ async function processSharedAnnouncer(snapshot: LeaderboardSnapshot): Promise<vo
     {
       timeExpired: !!snapshot.timeExpiredAt,
       plusLaps: snapshot.plusLaps,
+      paused: !!snapshot.pausedAt,
     },
   );
+  // Practice motos have no race to call.
+  if (snapshot.motoType === "practice") {
+    state.lifecycle = nextLifecycle;
+    return;
+  }
+  const typeLabel =
+    snapshot.motoType === "heat" ? "heat race" :
+    snapshot.motoType === "main" ? "main event" :
+    snapshot.motoType === "lcq" ? "last chance qualifier" :
+    "race";
   if (action.kind === "start") {
-    const typeLabel =
-      snapshot.motoType === "heat" ? "heat race" :
-      snapshot.motoType === "main" ? "main event" :
-      snapshot.motoType === "practice" ? "practice session" :
-      snapshot.motoType === "lcq" ? "last chance qualifier" :
-      "race";
     const script = buildRaceUnderwayScript({
       typeLabel,
       raceClass: snapshot.raceClass,
@@ -2461,7 +2503,7 @@ async function processSharedAnnouncer(snapshot: LeaderboardSnapshot): Promise<vo
       state,
       "start",
       0,
-      script,
+      { script, mood: "start", eventAtMs: snapshot.startedAt ? Date.parse(snapshot.startedAt) : Date.now() },
       "Race starting!",
       async () => {
         const claimed = await db.update(motosTable)
@@ -2485,11 +2527,13 @@ async function processSharedAnnouncer(snapshot: LeaderboardSnapshot): Promise<vo
     state.lifecycle = nextLifecycle;
     return;
   }
-  const script = buildRaceAnnouncementScript({
+  const call = buildAnnouncement({
     lapCompleted: action.lap,
     top5: active.slice(0, 5) as AnnouncerEntry[],
     positionChanges: action.kind === "lap" ? action.positionChanges : [],
     kind: action.kind,
+    raceClass: expandAbbrev(snapshot.raceClass),
+    typeLabel,
     timeRemainingMs: action.kind === "lap" && snapshot.timeLimitMs != null && !snapshot.timeExpiredAt
       ? snapshot.timeRemainingMs
       : null,
@@ -2501,12 +2545,21 @@ async function processSharedAnnouncer(snapshot: LeaderboardSnapshot): Promise<vo
         ? action.extraLapsRemaining
         : undefined,
   });
+  // When the moment happened: the leader's crossing (start + race time, plus
+  // any red-flag time), the flag, or the finish.
+  const startedMs = snapshot.startedAt ? Date.parse(snapshot.startedAt) : null;
+  const leaderTotalMs = (active[0] as { totalMs?: number } | undefined)?.totalMs ?? 0;
+  const eventAtMs =
+    action.kind === "finish" ? (snapshot.completedAt ? Date.parse(snapshot.completedAt) : Date.now()) :
+    action.kind === "time_expired" ? (snapshot.timeExpiredAt ? Date.parse(snapshot.timeExpiredAt) : Date.now()) :
+    startedMs != null && leaderTotalMs > 0 ? startedMs + leaderTotalMs + (snapshot.totalPausedMs ?? 0) :
+    Date.now();
   await createSharedAnnouncement(
     snapshot.motoId,
     state,
     action.kind,
     action.lap,
-    script,
+    { script: call.text, mood: call.mood, eventAtMs },
     action.kind === "finish"
       ? "Race complete!"
       : action.kind === "time_expired"
@@ -2585,18 +2638,27 @@ async function processSharedAnnouncer(snapshot: LeaderboardSnapshot): Promise<vo
   state.lifecycle = nextLifecycle;
 }
 
+const announcerRetryAttempts = new WeakMap<LeaderboardSnapshot, number>();
+
 export function updateSharedAnnouncer(snapshot: LeaderboardSnapshot): Promise<void> {
   const state = getAnnouncerState(snapshot.motoId);
+  // A newer snapshot replaces a failed one: replaying the old one first would
+  // play an outdated call right before the current one. The lifecycle only
+  // advances on success, so the newer snapshot still makes the missed call.
+  state.retrySnapshot = null;
   state.pending = state.pending.catch(() => {}).then(async () => {
-    if (state.retrySnapshot) {
-      const retry = state.retrySnapshot;
-      await processSharedAnnouncer(retry);
-      state.retrySnapshot = null;
-    }
     try {
       await processSharedAnnouncer(snapshot);
     } catch (error) {
-      state.retrySnapshot ??= snapshot;
+      // Nothing newer may arrive (e.g. the finish): try once more shortly.
+      const attempts = (announcerRetryAttempts.get(snapshot) ?? 0) + 1;
+      announcerRetryAttempts.set(snapshot, attempts);
+      if (attempts <= 2) {
+        state.retrySnapshot = snapshot;
+        setTimeout(() => {
+          if (state.retrySnapshot === snapshot) void updateSharedAnnouncer(snapshot).catch(() => {});
+        }, 3_000).unref?.();
+      }
       throw error;
     }
   });

@@ -185,6 +185,41 @@ export async function textToSpeech(
   return Buffer.from(audioData, "base64");
 }
 
+/**
+ * Speech for scripted lines: the TTS model reads the text exactly as written
+ * (a chat model asked to "read" it may paraphrase) and follows a delivery
+ * style per call. Falls back to gpt-audio if the speech endpoint isn't
+ * available (e.g. through an integrations proxy).
+ */
+export async function speakScript(
+  text: string,
+  options: {
+    voice?: "alloy" | "ash" | "ballad" | "coral" | "echo" | "fable" | "onyx" | "nova" | "sage" | "shimmer" | "verse";
+    instructions?: string;
+    format?: "mp3" | "wav" | "opus";
+  } = {},
+): Promise<Buffer> {
+  const voice = options.voice ?? "onyx";
+  const format = options.format ?? "mp3";
+  try {
+    const response = await openai.audio.speech.create({
+      model: "gpt-4o-mini-tts",
+      voice,
+      input: text,
+      instructions: options.instructions,
+      response_format: format,
+    } as Parameters<typeof openai.audio.speech.create>[0]);
+    return Buffer.from(await response.arrayBuffer());
+  } catch (err) {
+    const fallbackVoice = (["alloy", "echo", "fable", "onyx", "nova", "shimmer"] as const).find(v => v === voice) ?? "onyx";
+    try {
+      return await textToSpeech(text, fallbackVoice, format === "opus" ? "mp3" : format, options.instructions);
+    } catch {
+      throw err;
+    }
+  }
+}
+
 /** Streaming Text-to-Speech. */
 export async function textToSpeechStream(
   text: string,

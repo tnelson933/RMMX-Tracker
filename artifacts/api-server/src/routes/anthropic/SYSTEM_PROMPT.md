@@ -584,6 +584,9 @@ Staff also have a phone-friendly **Gate Schedule Link** (`/gate-mobile?club=…`
 ### How spectators watch
 Spectators open the event's watch page (`/watch/[eventId]`), linked from the public home page and the public event results page, and shown with a copy button on the broadcast panel. No login needed. With several cameras live, buttons along the top of the video switch cameras; if the camera they're watching ends, they move to another live one automatically.
 
+### AI announcer (what spectators hear)
+The watch page has an automatic race announcer (spectators can mute it with the **Announcer** button). It calls the start, the leader at the line, lead changes and passes for the podium (naming who was passed), close battles, "two to go", the white flag, timed-race flags and extra laps, and the checkered flag with the podium. Riders are called by last name and number. Quiet laps get no call, it stays silent during a red flag and in practice motos, and a call that would arrive too late after the moment is skipped rather than played late.
+
 ### Desktop app note
 In the desktop app, broadcasting needs cloud sync set up ("Go to Settings → Cloud Sync") and an internet connection.
 

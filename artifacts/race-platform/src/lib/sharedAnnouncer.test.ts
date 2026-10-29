@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  announcementStartOffsetSeconds,
+  isAnnouncementStale,
+  queueAnnouncement,
   appendAnnouncementTask,
   isCurrentAnnouncementGeneration,
   sharedAnnouncerMotoId,
@@ -51,9 +52,23 @@ test("preserves local mute control without changing the shared event cursor", ()
   assert.equal(shouldQueueAnnouncementAudio(true), true);
 });
 
-test("starts an active shared clip near its current broadcast position", () => {
-  const offset = announcementStartOffsetSeconds(announcement);
-  assert.ok(offset >= 1.5 && offset <= 3);
+test("never plays a call long after the moment it describes", () => {
+  const now = Date.parse("2026-10-29T12:00:00Z");
+  const at = (secondsAgo: number) => new Date(now - secondsAgo * 1000).toISOString();
+  assert.equal(isAnnouncementStale({ ...announcement, kind: "lap", eventAt: at(5) }, now), false);
+  assert.equal(isAnnouncementStale({ ...announcement, kind: "lap", eventAt: at(40) }, now), true);
+  // The checkered flag call stays worth hearing for longer.
+  assert.equal(isAnnouncementStale({ ...announcement, kind: "finish", eventAt: at(40) }, now), false);
+});
+
+test("a newer call replaces calls still waiting, except the finish", () => {
+  const item = (sequence: number, kind: "lap" | "finish") => ({ url: `u${sequence}`, announcement: { ...announcement, sequence, kind } });
+  const first = queueAnnouncement([], item(1, "lap"));
+  const second = queueAnnouncement(first.queue, item(2, "lap"));
+  assert.deepEqual(second.queue.map(q => q.announcement.sequence), [2]);
+  assert.deepEqual(second.dropped.map(q => q.announcement.sequence), [1]);
+  const withFinish = queueAnnouncement([item(3, "finish")], item(4, "lap"));
+  assert.deepEqual(withFinish.queue.map(q => q.announcement.sequence), [3, 4]);
 });
 
 test("delivers clips in server sequence even when later work is ready first", async () => {

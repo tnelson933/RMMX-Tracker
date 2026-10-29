@@ -20,7 +20,7 @@ export type AnnouncerRider = {
 export type AnnouncerAction =
   | { kind: "none" }
   | { kind: "start"; lap: 0 }
-  | { kind: "lap"; lap: number; positionChanges: Array<{ riderName: string; from: number; to: number }> }
+  | { kind: "lap"; lap: number; positionChanges: Array<{ riderName: string; from: number; to: number; passedName: string | null }> }
   | { kind: "time_expired"; lap: number; extraLapsRemaining: number }
   | { kind: "extra_lap"; lap: number; extraLapsCompleted: number; extraLapsRemaining: number }
   | { kind: "finish"; lap: number };
@@ -96,6 +96,8 @@ export function advanceAnnouncerLifecycle(
   timing: {
     timeExpired?: boolean;
     plusLaps?: number | null;
+    /** Red flag: nothing is called until the race resumes. */
+    paused?: boolean;
   } = {},
 ): AnnouncerAction {
   const active = leaderboard.filter(rider => !rider.dnf && !rider.dns);
@@ -167,16 +169,23 @@ export function advanceAnnouncerLifecycle(
   if (status !== "in_progress" || state.finished || leaderLap <= state.lastAnnouncedLap) {
     return { kind: "none" };
   }
+  // During a red flag, keep the last announced lap so the next leader crossing
+  // after the restart is called.
+  if (timing.paused) return { kind: "none" };
+  void expectedFieldSize;
 
-  const ridersOnLeaderLap = active.filter(rider => rider.laps >= leaderLap).length;
-  const announcementThreshold = Math.min(5, Math.max(expectedFieldSize, active.length));
-  if (ridersOnLeaderLap < announcementThreshold) return { kind: "none" };
-
+  // Called the moment the leader starts a new lap. Changes are measured against
+  // the order at the last call, and name who held that spot before.
+  const previousHolder = new Map<number, string>();
+  for (const [riderId, pos] of state.previousPositions) {
+    const rider = leaderboard.find(r => r.riderId === riderId);
+    if (rider) previousHolder.set(pos, rider.riderName);
+  }
   const positionChanges = active.flatMap(rider => {
     const from = state.previousPositions.get(rider.riderId);
-    return from != null && rider.position != null && from !== rider.position
-      ? [{ riderName: rider.riderName, from, to: rider.position }]
-      : [];
+    if (from == null || rider.position == null || from === rider.position) return [];
+    const passed = previousHolder.get(rider.position);
+    return [{ riderName: rider.riderName, from, to: rider.position, passedName: passed && passed !== rider.riderName ? passed : null }];
   });
   state.lastAnnouncedLap = leaderLap;
   state.previousPositions = positions();

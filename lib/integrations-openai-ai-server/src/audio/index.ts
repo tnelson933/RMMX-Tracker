@@ -7,5 +7,6 @@ export {
   voiceChat,
   voiceChatStream,
   textToSpeech,
+  speakScript,
   textToSpeechStream,
 } from "./client";
