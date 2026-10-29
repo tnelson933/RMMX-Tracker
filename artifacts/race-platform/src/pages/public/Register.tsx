@@ -206,6 +206,8 @@ interface EventInfo {
   timingTechnology: string;
   /** Which kinds of tag the event's readers use (RM TrackR, RFID or both). */
   timingTags?: TimingTags;
+  /** Brands that pay contingency at this event. */
+  contingencyBrands?: string[] | null;
   transponderRentalEnabled: boolean;
   transponderRentalFee: number | null;
   rfidStickerFee: number | null;
@@ -1575,6 +1577,21 @@ export default function Register() {
                 <Card>
                   <SectionHeader>Bike</SectionHeader>
                   <CardContent className="p-6">
+                    {/* Contingency: the organizer reports each brand's finishers from these answers. */}
+                    {(event.contingencyBrands ?? []).length > 0 && (
+                      <div className="mb-5 rounded-lg border border-primary/30 bg-primary/[0.03] px-4 py-3">
+                        <p className="text-sm font-semibold flex items-center gap-1.5"><Flag size={14} className="text-primary" /> Contingency at this event</p>
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {(event.contingencyBrands ?? []).map(b => (
+                            <span key={b} className="rounded-full border bg-background px-2.5 py-0.5 text-xs font-semibold">{b}</span>
+                          ))}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-2">
+                          These brands pay contingency on their own rules. To be included in a brand's results, pick your bike brand below and list gear or parts brands under Sponsors.
+                          Register with the brand's program first, and use the same name you registered with.
+                        </p>
+                      </div>
+                    )}
                     <FormField
                       control={form.control}
                       name="bikeBrand"

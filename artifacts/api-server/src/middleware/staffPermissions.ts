@@ -53,6 +53,7 @@ const STAFF_RULES: RouteRule[] = [
   { pattern: /^\/events\/\d+\/checkins/, permissions: ["events"] },
   { pattern: /^\/events\/\d+\/results/, permissions: ["events"] },
   { pattern: /^\/events\/\d+\/ama-export/, permissions: ["events"] },
+  { pattern: /^\/events\/\d+\/contingency-report/, permissions: ["events"] },
 
   // ── Events list/detail: read-only for gate_schedule; writes need events ───
   // The event list alone is also readable with notifications (to pick an audience).

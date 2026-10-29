@@ -1154,6 +1154,7 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
     transponderRentalEnabled: eventsTable.transponderRentalEnabled,
     transponderRentalFee: eventsTable.transponderRentalFee,
     purchaseOptions: eventsTable.purchaseOptions,
+    contingencyBrands: eventsTable.contingencyBrands,
     noDuplicateBibs: eventsTable.noDuplicateBibs,
     requireClubId: eventsTable.requireClubId,
     requireWaiver: eventsTable.requireWaiver,

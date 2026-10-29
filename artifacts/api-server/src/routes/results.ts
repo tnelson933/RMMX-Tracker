@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { computeEnduroEventOverall, eventLowerIsBetter } from "../lib/eventOverall";
+import { computeEnduroEventOverall, computeEventOverall, eventLowerIsBetter } from "../lib/eventOverall";
+import { buildContingencyReport } from "../lib/contingencyReport";
 import { ENDURO_ALL_CLASSES, loadEnduroRiderClasses, rerankEnduroTest } from "./enduro-scoring";
 import { syncEventPublication } from "../lib/resultsVisibility";
 import { lapTimeToMs } from "../lib/lapScoring";
@@ -652,6 +653,66 @@ router.post("/events/:eventId/results/publish", async (req, res) => {
   if (newlyPublished) void notifyFollowersOfResults(eventId);
 
   return res.json({ ok: true, published });
+});
+
+// ── Brand contingency report ─────────────────────────────────────────────────
+// Each brand the event offers contingency with, and the finishers who ran it
+// (bike brand or a listed sponsor), from the class overall. Promoters send this
+// to each brand (or upload it to XTRM); the brand applies its own rules.
+router.get("/events/:eventId/contingency-report", async (req, res) => {
+  const session = req.session as any;
+  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  const eventId = Number(req.params.eventId);
+  const [event] = await db.select({
+    id: eventsTable.id, clubId: eventsTable.clubId, name: eventsTable.name, date: eventsTable.date,
+    contingencyBrands: eventsTable.contingencyBrands,
+  }).from(eventsTable).where(eq(eventsTable.id, eventId));
+  if (!event) return res.status(404).json({ error: "Event not found" });
+  const staffCId = getStaffClubId(res);
+  if (staffCId !== null) {
+    if (event.clubId !== staffCId) return res.status(403).json({ error: "Forbidden" });
+  } else if (event.clubId !== session.clubId && session.role !== "super_admin") {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const overall = await computeEventOverall(eventId);
+  // Official once every finished race counted here has been finalized.
+  const counted = await db.select({ finalizedAt: motosTable.resultsFinalizedAt }).from(motosTable)
+    .where(and(eq(motosTable.eventId, eventId), eq(motosTable.status, "completed"), ne(motosTable.type, "practice")));
+  const official = overall.format === "enduro"
+    ? !!overall.official
+    : counted.length > 0 && counted.every(m => m.finalizedAt != null);
+
+  const regs = await db.select({
+    riderId: registrationsTable.riderId,
+    raceClass: registrationsTable.raceClass,
+    amaNumber: registrationsTable.amaNumber,
+    bikeBrand: registrationsTable.bikeBrand,
+    bikeModel: registrationsTable.bikeModel,
+    bikeYear: registrationsTable.bikeYear,
+    sponsors: registrationsTable.sponsors,
+    firstName: ridersTable.firstName,
+    lastName: ridersTable.lastName,
+  }).from(registrationsTable)
+    .innerJoin(ridersTable, eq(registrationsTable.riderId, ridersTable.id))
+    .where(and(eq(registrationsTable.eventId, eventId), ne(registrationsTable.status, "void")))
+    .orderBy(registrationsTable.id);
+  // The entry in the result's class, else the rider's first entry.
+  const details = (riderId: number, raceClass: string) => {
+    const r = regs.find(x => x.riderId === riderId && x.raceClass === raceClass) ?? regs.find(x => x.riderId === riderId);
+    return r ? {
+      firstName: r.firstName ?? "", lastName: r.lastName ?? "", amaNumber: r.amaNumber ?? null,
+      bikeBrand: r.bikeBrand, bikeModel: r.bikeModel ?? null, bikeYear: r.bikeYear ?? null, sponsors: r.sponsors,
+    } : null;
+  };
+
+  return res.json({
+    eventId,
+    eventName: event.name,
+    eventDate: String(event.date).slice(0, 10),
+    official,
+    brands: buildContingencyReport((event.contingencyBrands as string[] | null) ?? [], overall.classes, details),
+  });
 });
 
 // ── AMA Export CSV ─────────────────────────────────────────────────────────────

@@ -806,7 +806,9 @@ A library of race classes that pre-fill the class list on new events.
 - Click the ℹ icon on a class to write its rules or details (eligibility, bike specs, ages) → **Save Details**. Riders see these during registration.
 
 ### Brand Contingencies
-Sponsor or manufacturer brands that pay contingency at your events (e.g. Honda, Kawasaki, Fox Racing). Type the brand → **Add Brand**. When creating or editing an event, check which brands have contingency at that event; riders see it at registration.
+Sponsor or manufacturer brands that pay contingency at your events (e.g. Honda, Kawasaki, Fox Racing). Type the brand → **Add Brand**. When creating or editing an event, check which brands have contingency at that event. Riders see them at registration in a "Contingency at this event" box above the bike brand, which tells them to pick their bike brand, list gear or parts brands under Sponsors, register with the brand's program first and use the same name.
+
+**Brand Contingency Report** (event → **Report** tab, below the overall standings): for each of the event's contingency brands, the finishers who ran it, matched by the bike brand they picked or a sponsor they listed (spelling and capitals don't matter; "Kawi" and "Husky" count; "Fox" is not "Fox Racing"). Each row has class, place and riders in class, legal first and last name, AMA #, bib, bike year/brand/model, and whether the brand is their bike or a sponsor. It's labelled Unofficial until the races are finalized. **CSV** downloads one brand; **All brands (CSV)** downloads all. Promoters email each brand its file or upload it to XTRM (the system several manufacturers use for contingency payouts); the brand applies its own rules for paying places, classes and model years. Riders usually aren't paid when results are sent late or their name doesn't match their contingency registration, so send files soon after results are official.
 
 ### Track Library
 Save your tracks once and reuse them. **Add New Track** → name, address, city, ZIP, state → **Add Track**. Saved tracks fill the track field on new events and are the track choices for Practice sessions.
