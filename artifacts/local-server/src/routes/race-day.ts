@@ -165,7 +165,21 @@ router.get("/events/:eventId/transponder-rentals", (req, res) => {
   })));
 });
 
-// Assign a transponder to a rental (event-scoped, expires 24 h after the event).
+/** Same rule as the cloud (api-server lib/rentalTransponders.ts): noon UTC the day after the last race day. */
+export function rentalExpiry(event: { date: string; end_date?: string | null }): string {
+  const lastDay = event.end_date && event.end_date > event.date ? event.end_date : event.date;
+  const [y, m, d] = String(lastDay).slice(0, 10).split("-").map(Number);
+  if (!y || !m || !d) return new Date(Date.now() + 36 * 60 * 60_000).toISOString();
+  return new Date(Date.UTC(y, m - 1, d + 1, 12, 0, 0)).toISOString();
+}
+
+/** Rental links whose event is over are removed automatically (organizers never clear them). */
+export function sweepExpiredRentals(): number {
+  return getDb().prepare("DELETE FROM rfid_assignments WHERE expires_at IS NOT NULL AND expires_at < ?")
+    .run(new Date().toISOString()).changes;
+}
+
+// Assign a transponder to a rental (event-scoped, expires after the event).
 router.post("/events/:eventId/registrations/:regId/assign-rental-transponder", (req, res) => {
   if (!requireUser(req, res)) return;
   const eventId = Number(req.params.eventId);
@@ -185,11 +199,10 @@ router.post("/events/:eventId/registrations/:regId/assign-rental-transponder", (
   if (!reg) return res.status(404).json({ error: "Registration not found" });
   if (reg.transponder_rental !== 1) return res.status(400).json({ error: "This registration does not have a transponder rental" });
 
-  const event = db.prepare("SELECT date FROM events WHERE id = ?").get(eventId) as { date: string } | undefined;
+  const event = db.prepare("SELECT date, end_date FROM events WHERE id = ?").get(eventId) as { date: string; end_date: string | null } | undefined;
   if (!event) return res.status(404).json({ error: "Event not found" });
-  // Expiry = event date + 24 hours (event.date is a date string like "2026-06-24").
-  const eventDateMs = new Date(event.date).getTime();
-  const expiresAt = new Date((Number.isNaN(eventDateMs) ? Date.now() : eventDateMs) + 24 * 60 * 60 * 1000).toISOString();
+  // The unit is the rider's only for this event; removed automatically after it.
+  const expiresAt = rentalExpiry(event);
 
   const conflict = db
     .prepare("SELECT rider_id FROM rfid_assignments WHERE lower(trim(rfid_number)) = ? AND event_id = ? LIMIT 1")
@@ -232,6 +245,11 @@ router.patch("/events/:eventId/registrations/:regId/transponder-returned", (req,
   const result = db.prepare("UPDATE registrations SET transponder_returned = ? WHERE id = ? AND event_id = ?")
     .run(returned ? 1 : 0, regId, eventId);
   if (result.changes === 0) return res.status(404).json({ error: "Registration not found" });
+  // Returned: the unit is no longer this rider's, so its timing link goes now.
+  if (returned) {
+    const reg = db.prepare("SELECT rider_id FROM registrations WHERE id = ?").get(regId) as { rider_id: number } | undefined;
+    if (reg) db.prepare("DELETE FROM rfid_assignments WHERE event_id = ? AND rider_id = ? AND expires_at IS NOT NULL").run(eventId, reg.rider_id);
+  }
   return res.json({ registrationId: regId, transponderReturned: returned });
 });
 

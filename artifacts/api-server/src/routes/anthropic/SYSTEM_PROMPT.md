@@ -70,7 +70,7 @@ To delete an event: Overview tab → **Delete Event** (top right).
 - **Race Day Display** — jumbotron / announcer display link
 - **Reader Setup** — RM Connect download and setup steps, your readers with live status, tag scanner
 - **Offline Mode** — download the RM Roost desktop app for race days without internet
-- **Admin** — club settings in four tabs along the top: **Forms** (rider acknowledgement form, liability waiver), **Track Library** (tracks and their course maps), **Race Classes** (default classes), **Brand Contingencies**. The open tab is kept in the link (e.g. `/team?tab=tracks`).
+- **Admin** — club settings in tabs along the top: **Forms** (rider acknowledgement form, liability waiver), **Track Library** (tracks and their course maps), **Rentals** (rental transponder inventory), **Race Classes** (default classes), **Brand Contingencies**. The open tab is kept in the link (e.g. `/team?tab=tracks`).
 - **Staff** — invite staff and choose which pages each can open; gate schedule link for staff
 
 Platform admins also see a separate section with Users, Clubs, and Notifications.
@@ -87,7 +87,7 @@ Main fields:
 - **Timing Technology** — **RFID Stickers** or **Active Timing Reader**
 - **Scoring Format** (points scoring table), **AMA Event ID**
 - **Collect Payments** and **Entry Fee ($)**; optional **Add early sign-up incentive period** (Early Bird Fee and the date it ends)
-- **RFID Sticker Fee**; **Offer transponder rentals to riders** with a Rental Fee; **Require transponder number?** (active timing events without payments)
+- **RFID Sticker Fee**; **Offer transponder rentals to riders** with a Rental Fee (active timing events; with online payments off, riders pay the rental at the gate and check-in shows it as due); **Require transponder number?** (active timing events without payments)
 - Rider requirements: **Require AMA #**, **Require club ID #**, **Do not allow duplicate race numbers**, **Require rider acknowledgement form**, **Require liability waiver e-signature**
 - **Registration Window** Opens / Closes
 - **Brand Contingencies** offered at this event, and **Series** links
@@ -370,7 +370,16 @@ Click **Mark Refunded** next to any Pending row. This records the timestamp and 
 
 ## Transponder Rentals Tab
 
-If your event charges a transponder rental fee (set in the event's Overview settings), this tab shows all riders who rented a transponder and tracks whether they have returned it after the event.
+If your event offers transponder rentals (set in the event's Overview settings — online payments are optional; without them the rental is paid at the gate), this tab shows all riders who rented a transponder and tracks whether they have returned it after the event.
+
+### How a rental works
+1. The rider ticks **Rent an active transponder** at registration (or staff click **+ Add Transponder Rental** at check-in, cash or card).
+2. At check-in, click the green **Transponder Rental** badge and pick a unit: the box suggests your club's **available** rental units (Admin → **Rentals**), or type any number. A unit still out from an earlier event (not marked returned) can't be handed to a new rider until it's marked returned there.
+3. During the event the unit times as that rider's transponder (races and practice).
+4. **After the event it's removed from the rider automatically** — the morning after the last race day, or right away when it's marked returned. It never becomes the rider's own transponder, and organizers don't need to clear anything.
+
+### Rental unit inventory (Admin → Rentals)
+Add your rental units' numbers (one per line or comma-separated); units handed out at check-in are added automatically. Each unit shows **Available**, **Out** (with the rider and event), **Missing** or **Retired**. **Missing** reports a lost unit (cleared automatically when it's handed out again); **Retire** takes a unit out of service; remove deletes a unit that isn't out.
 
 ### What the tab shows
 - Header summary: **X Rented**, **X Still Out**, **X Returned**
@@ -378,7 +387,7 @@ If your event charges a transponder rental fee (set in the event's Overview sett
 - A progress bar at the bottom showing the overall return rate
 
 ### Marking a transponder returned
-Click the circle button in the **Returned** column — it turns green with a checkmark. Click it again to un-mark (in case of error).
+Click the circle button in the **Returned** column — it turns green with a checkmark, the unit is available again in the inventory, and it's removed from the rider straight away. Click it again to un-mark (in case of error).
 
 ### Sending return reminders
 - **Per-rider bell button** — sends a push notification to that rider (only shows if the rider has the Rider App with push notifications enabled)

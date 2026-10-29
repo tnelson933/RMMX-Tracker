@@ -9,15 +9,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { Settings, Plus, Trash2, RefreshCw, Flag, FileText, ListChecks, MapPin, Info, UploadCloud, X, ExternalLink, ShieldCheck, LayoutTemplate } from "lucide-react";
+import { Settings, Plus, Trash2, RefreshCw, Flag, FileText, ListChecks, MapPin, Info, UploadCloud, X, ExternalLink, ShieldCheck, LayoutTemplate, Radio } from "lucide-react";
 import { PdfFieldEditor, type WaiverField } from "@/components/PdfFieldEditor";
 import { StateSelect } from "@/components/ui/StateSelect";
 import { TrackCourseMap, type LibraryTrack } from "./CourseMap";
+import { RentalInventory } from "@/components/organizer/RentalInventory";
 
-type AdminTab = "forms" | "tracks" | "classes" | "brands";
+type AdminTab = "forms" | "tracks" | "rentals" | "classes" | "brands";
 const ADMIN_TABS: Array<{ key: AdminTab; label: string; icon: typeof FileText }> = [
   { key: "forms", label: "Forms", icon: FileText },
   { key: "tracks", label: "Track Library", icon: MapPin },
+  { key: "rentals", label: "Rentals", icon: Radio },
   { key: "classes", label: "Race Classes", icon: ListChecks },
   { key: "brands", label: "Brand Contingencies", icon: Flag },
 ];
@@ -820,6 +822,8 @@ export default function TeamPage() {
       </Dialog>
 
       </>)}
+
+      {adminTab === "rentals" && <RentalInventory />}
 
       {adminTab === "classes" && (<>
       {/* Default Race Classes */}

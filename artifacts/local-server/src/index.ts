@@ -2,6 +2,7 @@ import http from "http";
 import app from "./app";
 import { startAutoSync, AUTO_SYNC_ENABLED, CLOUD_URL, CLUB_ID, EMAIL } from "./auto-sync";
 import { startRaceClock } from "./routes/timing";
+import { sweepExpiredRentals } from "./routes/race-day";
 
 const rawPort = process.env.PORT;
 const port = rawPort ? Number(rawPort) : 8080;
@@ -47,4 +48,8 @@ server.listen(port, "127.0.0.1", () => {
   startAutoSync();
   // Timed races: drop the flag and close finished races on this server's clock.
   startRaceClock();
+  // Rental transponders stop belonging to a rider once their event is over.
+  const sweepRentals = () => { try { sweepExpiredRentals(); } catch { /* not fatal */ } };
+  sweepRentals();
+  setInterval(sweepRentals, 15 * 60_000).unref?.();
 });

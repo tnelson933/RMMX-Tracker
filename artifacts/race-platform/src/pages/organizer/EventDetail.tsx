@@ -596,8 +596,8 @@ export default function EventDetail() {
         earlyBirdEndsAt: data.paymentEnabled && data.earlyBirdEnabled && data.earlyBirdEndsAt ? data.earlyBirdEndsAt : null,
         registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
         registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
-        transponderRentalEnabled: data.timingTechnology === "active_transponder" && data.paymentEnabled ? data.transponderRentalEnabled : false,
-        transponderRentalFee: data.timingTechnology === "active_transponder" && data.paymentEnabled && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
+        transponderRentalEnabled: data.timingTechnology === "active_transponder" ? data.transponderRentalEnabled : false,
+        transponderRentalFee: data.timingTechnology === "active_transponder" && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
         rfidStickerFee: data.timingTechnology === "rfid" && data.paymentEnabled && data.rfidStickerFee ? Number(data.rfidStickerFee) : undefined,
         purchaseOptions: data.purchaseOptions.map(o => ({ id: o.optionId || crypto.randomUUID(), name: o.name.trim(), amount: Number(o.amount) })),
         amaEventId: data.amaEventId || undefined,
@@ -1623,8 +1623,9 @@ export default function EventDetail() {
                       </div>
                     )}
 
-                    {/* Transponder rental — shown for active-transponder events with payments */}
-                    {stripeReady && watchPaymentEnabled && watchTimingTechnology === "active_transponder" && (
+                    {/* Transponder rental — active-transponder events. Paid online with the
+                        entry when payments are on, otherwise collected at the gate. */}
+                    {watchTimingTechnology === "active_transponder" && (
                       <div className="space-y-2 pl-0.5">
                         <FormField
                           control={form.control}
@@ -1648,6 +1649,9 @@ export default function EventDetail() {
                                 <FormControl>
                                   <Input type="number" min="0" step="0.01" placeholder="15.00" {...field} />
                                 </FormControl>
+                                {!(stripeReady && watchPaymentEnabled) && (
+                                  <p className="text-xs text-muted-foreground">Online payments are off, so riders pay the rental at the gate. Check-in shows it as owed.</p>
+                                )}
                                 <FormMessage />
                               </FormItem>
                             )}

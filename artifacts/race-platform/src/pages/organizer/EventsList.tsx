@@ -446,8 +446,8 @@ export default function EventsList() {
       entryFee: paid && data.entryFee ? Number(data.entryFee) : undefined,
       earlyBirdFee: earlyBird && data.earlyBirdFee ? Number(data.earlyBirdFee) : undefined,
       earlyBirdEndsAt: earlyBird && data.earlyBirdEndsAt ? data.earlyBirdEndsAt : undefined,
-      transponderRentalEnabled: activeTiming && paid ? data.transponderRentalEnabled : false,
-      transponderRentalFee: activeTiming && paid && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
+      transponderRentalEnabled: activeTiming ? data.transponderRentalEnabled : false,
+      transponderRentalFee: activeTiming && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
       rfidStickerFee: !activeTiming && paid && data.rfidStickerFee ? Number(data.rfidStickerFee) : undefined,
       purchaseOptions: (data.purchaseOptions ?? [])
         .filter(o => o.optionId === RM_TRACKR_OPTION_ID || (o.name?.trim() && o.amount !== ""))
@@ -1341,8 +1341,9 @@ export default function EventsList() {
                     </div>
                   )}
 
-                  {/* Transponder rental (Active Timing Reader + payment only) */}
-                  {stripeReady && watchPaymentEnabled && watchTimingTechnology === "active_transponder" && (
+                  {/* Transponder rental (Active Timing Reader). Paid online with the
+                      entry when payments are on, otherwise collected at the gate. */}
+                  {watchTimingTechnology === "active_transponder" && (
                     <div className="space-y-2 pl-0.5">
                       <FormField
                         control={form.control}
@@ -1366,6 +1367,9 @@ export default function EventsList() {
                               <FormControl>
                                 <Input type="number" min="0" step="0.01" placeholder="15.00" {...field} />
                               </FormControl>
+                                {!(stripeReady && watchPaymentEnabled) && (
+                                  <p className="text-xs text-muted-foreground">Online payments are off, so riders pay the rental at the gate. Check-in shows it as owed.</p>
+                                )}
                               <FormMessage />
                             </FormItem>
                           )}

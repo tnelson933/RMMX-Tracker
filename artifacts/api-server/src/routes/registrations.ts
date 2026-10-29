@@ -1,9 +1,11 @@
 import { eventToday } from "@workspace/api-zod";
+import { rentalsOut } from "./rental-transponders";
+import { releaseRentalLink, rentalExpiry } from "../lib/rentalTransponders";
 import { checkMoney, checkOneOf } from "../lib/validateInput";
 import { eventDateReached } from "../lib/eventStatus";
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { registrationsTable, ridersTable, checkinsTable, eventsTable, clubsTable, compCodesTable, rfidAssignmentsTable, clubSettingsTable, riderAccountsTable, riderPushTokensTable, raceResultsTable, liabilityWaiverSignaturesTable } from "@workspace/db";
+import { registrationsTable, ridersTable, checkinsTable, eventsTable, clubsTable, compCodesTable, rfidAssignmentsTable, clubSettingsTable, riderAccountsTable, riderPushTokensTable, raceResultsTable, liabilityWaiverSignaturesTable, rentalTranspondersTable } from "@workspace/db";
 import { eq, and, sql, desc, asc, ne, isNull, inArray, or, lt } from "drizzle-orm";
 import { getUncachableStripeClient } from "../stripeClient";
 import { sendPushNotifications } from "../lib/push";
@@ -1950,12 +1952,13 @@ router.post("/events/:eventId/registrations/:regId/assign-rental-transponder", a
   if (!reg) return res.status(404).json({ error: "Registration not found" });
   if (!reg.transponderRental) return res.status(400).json({ error: "This registration does not have a transponder rental" });
 
-  const [event] = await db.select({ date: eventsTable.date }).from(eventsTable).where(eq(eventsTable.id, eventId));
+  const [event] = await db.select({ date: eventsTable.date, endDate: eventsTable.endDate, clubId: eventsTable.clubId })
+    .from(eventsTable).where(eq(eventsTable.id, eventId));
   if (!event) return res.status(404).json({ error: "Event not found" });
 
-  // Expiry = event date + 24 hours (event.date is a date string like "2026-06-24")
-  const eventDate = new Date(event.date);
-  const expiresAt = new Date(eventDate.getTime() + 24 * 60 * 60 * 1000);
+  // The unit is the rider's only for this event: the link expires the morning
+  // after the last race day and is then removed automatically (lib/rentalTransponders.ts).
+  const expiresAt = rentalExpiry(event);
 
   // Guard: transponder must not be assigned to a different rider in this event
   const conflict = await db.select({ riderId: rfidAssignmentsTable.riderId })
@@ -1967,6 +1970,17 @@ router.post("/events/:eventId/registrations/:regId/assign-rental-transponder", a
   if (conflict.length > 0 && conflict[0].riderId !== reg.riderId) {
     return res.status(409).json({ error: `Transponder ${tag} is already assigned to another rider for this event` });
   }
+
+  // A unit still out from an earlier event (not marked returned) can't go to a new rider.
+  const stillOut = (await rentalsOut(event.clubId)).get(tag);
+  if (stillOut && stillOut.eventId !== eventId) {
+    return res.status(409).json({
+      error: `Rental ${tag} is still out from ${stillOut.eventName} (${stillOut.eventDate}). Mark it returned on that event's Transponder Rentals tab first.`,
+    });
+  }
+  // Keep the club's rental inventory complete, and a unit handed out isn't missing.
+  await db.insert(rentalTranspondersTable).values({ clubId: event.clubId, transponderNumber: tag })
+    .onConflictDoUpdate({ target: [rentalTranspondersTable.clubId, rentalTranspondersTable.transponderNumber], set: { missing: false } });
 
   // Upsert rfid_assignment with expiresAt (rental = temporary, does NOT update riders.rfidNumber)
   const existing = await db.select({ id: rfidAssignmentsTable.id })
@@ -1996,7 +2010,7 @@ router.post("/events/:eventId/registrations/:regId/assign-rental-transponder", a
       eq(registrationsTable.transponderRental, true),
     ));
 
-  await fulfillRmTrackr(eventId, reg.riderId, tag);
+  // A rental is not the rider's purchase: never mark a bought RM TrackR fulfilled with it.
 
   return res.json({ success: true, transponderNumber: tag, expiresAt: expiresAt.toISOString() });
 });
@@ -2015,9 +2029,11 @@ router.patch("/events/:eventId/registrations/:regId/transponder-returned", async
   const [reg] = await db.update(registrationsTable)
     .set({ transponderReturned: returned })
     .where(and(eq(registrationsTable.id, regId), eq(registrationsTable.eventId, eventId)))
-    .returning({ id: registrationsTable.id, transponderReturned: registrationsTable.transponderReturned });
+    .returning({ id: registrationsTable.id, transponderReturned: registrationsTable.transponderReturned, riderId: registrationsTable.riderId });
 
   if (!reg) return res.status(404).json({ error: "Registration not found" });
+  // Returned: the unit is no longer this rider's, so its timing link goes now.
+  if (returned && reg.riderId != null) await releaseRentalLink(eventId, reg.riderId);
   return res.json({ registrationId: reg.id, transponderReturned: reg.transponderReturned });
 });
 

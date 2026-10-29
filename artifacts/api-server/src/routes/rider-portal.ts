@@ -1419,7 +1419,8 @@ router.get("/rider/profiles/:riderId/practice", requireRiderAuth, async (req, re
       })
       .from(registrationsTable)
       .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
-      .where(eq(registrationsTable.riderId, riderId)),
+      // Rental units aren't the rider's: they go to other riders at later events.
+      .where(and(eq(registrationsTable.riderId, riderId), eq(registrationsTable.transponderRental, false))),
     db
       .select({
         clubId: eventsTable.clubId,
@@ -1427,7 +1428,7 @@ router.get("/rider/profiles/:riderId/practice", requireRiderAuth, async (req, re
       })
       .from(rfidAssignmentsTable)
       .innerJoin(eventsTable, eq(rfidAssignmentsTable.eventId, eventsTable.id))
-      .where(eq(rfidAssignmentsTable.riderId, riderId)),
+      .where(and(eq(rfidAssignmentsTable.riderId, riderId), isNull(rfidAssignmentsTable.expiresAt))),
   ]);
 
   // Fetch only exact candidate identifiers. The resolver below applies club

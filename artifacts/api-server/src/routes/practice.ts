@@ -13,7 +13,7 @@ import {
   riderAccountsTable,
   riderMobileTokensTable,
 } from "@workspace/db";
-import { eq, and, desc, asc, ilike, or, inArray, ne } from "drizzle-orm";
+import { eq, and, desc, asc, ilike, or, inArray, ne, isNull, gt } from "drizzle-orm";
 import { managedRiderIds } from "../lib/riderAccess";
 import type { Response } from "express";
 import { sendConnectorCommand } from "../lib/connectorRelay";
@@ -229,6 +229,8 @@ export async function processPracticeCrossing(
     .where(and(
       ilike(rfidAssignmentsTable.rfidNumber, tagNumber),
       eq(eventsTable.clubId, session.clubId),
+      // A rental counts only until its event is over.
+      or(isNull(rfidAssignmentsTable.expiresAt), gt(rfidAssignmentsTable.expiresAt, new Date())),
     ))
     // A tag reused across events belongs to whoever has it now.
     .orderBy(desc(rfidAssignmentsTable.id))
@@ -257,6 +259,8 @@ export async function processPracticeCrossing(
       .where(and(
         eq(eventsTable.clubId, session.clubId),
         ilike(registrationsTable.myLapsTransponderNumber, tagNumber),
+        // A rental unit's number on an old registration isn't that rider's.
+        eq(registrationsTable.transponderRental, false),
       ))
       .orderBy(asc(registrationsTable.id), asc(registrationsTable.riderId))
       .limit(1);

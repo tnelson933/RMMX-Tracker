@@ -1429,6 +1429,7 @@ export default function Register() {
                                     </label>
                                     <p className="text-xs text-muted-foreground">
                                       Don't have your own? Add a rental — the transponder will be ready for you at the gate.
+                                      {!event.paymentEnabled && " You pay the rental fee at the gate."}
                                     </p>
                                   </div>
                                 </div>

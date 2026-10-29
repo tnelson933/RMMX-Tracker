@@ -1,4 +1,5 @@
 import http from "http";
+import { startRentalSweeper } from "./lib/rentalTransponders";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { attachVideoWebSocket } from "./lib/videoRelay";
@@ -43,4 +44,5 @@ httpServer.listen(port, (err?: Error) => {
   startRaceClock();
   // Card payments the rider's browser and Stripe's webhook both missed.
   startPaymentSweeper();
+  startRentalSweeper();
 });

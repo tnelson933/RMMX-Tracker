@@ -98,6 +98,9 @@ const STAFF_RULES: RouteRule[] = [
   { pattern: /^\/points-tables(\/|$)/, permissions: ["points_tables"] },
   { pattern: /^\/ai(\/|$)/, permissions: ["points_tables"] },
 
+  // ── Rental transponder inventory: check-in staff (events) pick from it ──────
+  { pattern: /^\/rental-transponders(\/|$)/, permissions: ["events"] },
+
   // ── Payments / Stripe Connect ─────────────────────────────────────────────
   { pattern: /^\/stripe\/connect(\/|$)/, permissions: ["payments"] },
 

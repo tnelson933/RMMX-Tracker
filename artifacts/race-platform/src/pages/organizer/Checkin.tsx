@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { RENTAL_UNITS_KEY, useRentalUnits } from "@/components/organizer/RentalInventory";
 import { useParams } from "wouter";
 import { useGetEvent, useListCheckins, useGetRaceDaySummary, useCheckinRider, useAssignRfid, useUpdateRegistration } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -32,6 +33,10 @@ function RentalTransponderInput({ registrationId, eventId, onDone, currentNumber
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
+  // The club's available rental units, offered as suggestions (typing any number still works).
+  const { data: units = [] } = useRentalUnits();
+  const available = units.filter(u => u.status === "available");
+  const listId = `rental-units-${registrationId}`;
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
@@ -57,7 +62,8 @@ function RentalTransponderInput({ registrationId, eventId, onDone, currentNumber
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to assign");
       queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
-      toast({ title: "Transponder assigned", description: `#${normalizedTag} — auto-removes 24 h after the event` });
+      queryClient.invalidateQueries({ queryKey: RENTAL_UNITS_KEY });
+      toast({ title: "Rental assigned", description: `#${normalizedTag.toUpperCase()} — removed from the rider automatically after the event` });
       onDone();
     } catch (e: any) {
       toast({ title: "Failed to assign transponder", description: e.message, variant: "destructive" });
@@ -74,10 +80,17 @@ function RentalTransponderInput({ registrationId, eventId, onDone, currentNumber
         value={value}
         onChange={e => setValue(e.target.value)}
         onKeyDown={e => { if (e.key === "Enter") submit(); if (e.key === "Escape") onDone(); }}
-        placeholder="Enter transponder number…"
+        placeholder={available.length ? `Pick or type a rental unit (${available.length} available)` : "Enter transponder number…"}
         className="h-9 text-sm font-mono flex-1"
         disabled={saving}
+        list={listId}
+        aria-label="Rental transponder number"
       />
+      <datalist id={listId}>
+        {available.map(u => (
+          <option key={u.id} value={u.transponderNumber.toUpperCase()}>{u.label ?? ""}</option>
+        ))}
+      </datalist>
       <Button size="sm" className="h-9 font-heading uppercase px-3 bg-emerald-600 hover:bg-emerald-700" onClick={submit} disabled={!value.trim() || saving}>
         Assign
       </Button>
@@ -950,6 +963,10 @@ export default function Checkin() {
                               title="Click to assign transponder number"
                             >
                               <CheckCircle2 size={12} /> Transponder Rental
+                              {/* Pay-at-gate events: the rental fee is collected here with the entry. */}
+                              {!(event as any)?.paymentEnabled && (checkin as any).paymentStatus !== "paid" && (
+                                <span className="ml-1 text-amber-800 font-bold">· ${Number(transponderRentalFee).toFixed(2)} due</span>
+                              )}
                             </button>
                           ) : (
                             <button

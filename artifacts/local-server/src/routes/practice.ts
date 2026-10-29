@@ -159,10 +159,11 @@ export function resolvePracticeRider(
        LEFT JOIN riders r ON ra.rider_id = r.id
        LEFT JOIN events e ON ra.event_id = e.id
        WHERE ra.rfid_number = ? COLLATE NOCASE AND e.club_id = ? AND ra.rider_id IS NOT NULL
+         AND (ra.expires_at IS NULL OR ra.expires_at > ?)
        ORDER BY ra.id DESC
        LIMIT 1`,
     )
-    .get(tag, clubId) as any;
+    .get(tag, clubId, new Date().toISOString()) as any;
   if (assignment) return { riderId: assignment.rider_id, riderName: name(assignment), bibNumber: assignment.bib_number ?? null };
 
   const registration = db
@@ -172,6 +173,7 @@ export function resolvePracticeRider(
        LEFT JOIN riders r ON reg.rider_id = r.id
        JOIN events e ON reg.event_id = e.id
        WHERE e.club_id = ? AND reg.mylaps_transponder_number = ? COLLATE NOCASE AND reg.rider_id IS NOT NULL
+         AND COALESCE(reg.transponder_rental, 0) = 0
        ORDER BY reg.id ASC
        LIMIT 1`,
     )
