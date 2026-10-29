@@ -92,7 +92,7 @@ router.post("/rider/registrations/:regId/checkout", requireRiderAuth, async (req
   if (pending.some(r => r.transponderRental) && event.transponderRentalEnabled && Number(event.transponderRentalFee) > 0) {
     lineItems.push({ name: "Active Transponder Rental", amount: Number(event.transponderRentalFee) });
   }
-  if (pending.some(r => r.rfidStickerPurchased) && event.timingTechnology === "rfid" && Number(event.rfidStickerFee) > 0) {
+  if (pending.some(r => r.rfidStickerPurchased) && Number(event.rfidStickerFee) > 0) {
     lineItems.push({ name: "RFID Sticker", amount: Number(event.rfidStickerFee) });
   }
   for (const r of pending) {
@@ -243,9 +243,6 @@ router.post("/rider/registrations/:regId/transponder", requireRiderAuth, async (
   const owned = await loadOwnedRegistration(req, res);
   if (!owned) return;
   const { rider, event } = owned;
-  if (event.timingTechnology !== "active_transponder") {
-    return res.status(400).json({ error: "This event doesn't use active transponders." });
-  }
   const number = normalizeActiveTransponderIdentifier(String(req.body?.transponderNumber ?? ""));
   if (!number) return res.status(400).json({ error: "Enter the ID printed on your transponder (up to 9 numbers or letters A–F)." });
 
@@ -278,7 +275,6 @@ router.post("/rider/registrations/:regId/rfid", requireRiderAuth, async (req, re
   const owned = await loadOwnedRegistration(req, res);
   if (!owned) return;
   const { rider, event } = owned;
-  if (event.timingTechnology !== "rfid") return res.status(400).json({ error: "This event doesn't use RFID stickers." });
   const number = String(req.body?.rfidNumber ?? "").trim().toUpperCase();
   if (!/^[A-Z0-9]{1,32}$/.test(number)) return res.status(400).json({ error: "Enter the number printed on your RFID sticker (letters and numbers only)." });
 

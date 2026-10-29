@@ -238,6 +238,9 @@ export const EventStatus = {
   completed: 'completed',
 } as const;
 
+/**
+ * Legacy. Events no longer pick a timing technology; see timingTags.
+ */
 export type EventTimingTechnology = typeof EventTimingTechnology[keyof typeof EventTimingTechnology];
 
 
@@ -245,6 +248,17 @@ export const EventTimingTechnology = {
   rfid: 'rfid',
   active_transponder: 'active_transponder',
 } as const;
+
+/**
+ * Which kinds of tag the event's readers use (its course map, else its track's, else the club's readers). fromReaders is false when no readers are set up, so either kind may be used.
+ */
+export type EventTimingTags = {
+  /** RM TrackR active transponder */
+  transponder: boolean;
+  /** Passive RFID sticker */
+  rfid: boolean;
+  fromReaders: boolean;
+};
 
 /**
  * track: the course map follows the track's; custom: changed for this event
@@ -359,7 +373,10 @@ export interface Event {
   clubLogoUrl?: string | null;
   /** @nullable */
   imageUrl?: string | null;
+  /** Legacy. Events no longer pick a timing technology; see timingTags. */
   timingTechnology?: EventTimingTechnology;
+  /** Which kinds of tag the event's readers use (its course map, else its track's, else the club's readers). fromReaders is false when no readers are set up, so either kind may be used. */
+  timingTags?: EventTimingTags;
   transponderRentalEnabled?: boolean;
   /** @nullable */
   transponderRentalFee?: number | null;

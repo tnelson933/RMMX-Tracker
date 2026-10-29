@@ -13,6 +13,7 @@ import type { EventRaceClassLimits } from './eventRaceClassLimits';
 import type { EventRaceClassSeriesMap } from './eventRaceClassSeriesMap';
 import type { EventRaceStyle } from './eventRaceStyle';
 import type { EventStatus } from './eventStatus';
+import type { EventTimingTags } from './eventTimingTags';
 import type { EventTimingTechnology } from './eventTimingTechnology';
 import type { PurchaseOption } from './purchaseOption';
 
@@ -57,7 +58,10 @@ export interface Event {
   clubLogoUrl?: string | null;
   /** @nullable */
   imageUrl?: string | null;
+  /** Legacy. Events no longer pick a timing technology; see timingTags. */
   timingTechnology?: EventTimingTechnology;
+  /** Which kinds of tag the event's readers use (its course map, else its track's, else the club's readers). fromReaders is false when no readers are set up, so either kind may be used. */
+  timingTags?: EventTimingTags;
   transponderRentalEnabled?: boolean;
   /** @nullable */
   transponderRentalFee?: number | null;

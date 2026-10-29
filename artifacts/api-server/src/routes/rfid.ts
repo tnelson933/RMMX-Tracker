@@ -185,8 +185,18 @@ router.post("/rfid", async (req, res) => {
           eq(registrationsTable.riderId, numRiderId),
         ));
 
+      // The check-in row keeps one "last tag" number for older screens. A rider
+      // with an RFID sticker for this event keeps the sticker there: the
+      // transponder already lives on the registration.
+      const [sticker] = await db.select({ id: rfidAssignmentsTable.id }).from(rfidAssignmentsTable)
+        .where(and(
+          eq(rfidAssignmentsTable.eventId, numEventId),
+          eq(rfidAssignmentsTable.riderId, numRiderId),
+          isNull(rfidAssignmentsTable.expiresAt),
+        ))
+        .limit(1);
       await db.update(checkinsTable)
-        .set({ rfidNumber: activeTransponderNumber, rfidLinked: true })
+        .set(sticker ? { rfidLinked: true } : { rfidNumber: activeTransponderNumber, rfidLinked: true })
         .where(and(
           eq(checkinsTable.eventId, numEventId),
           eq(checkinsTable.riderId, numRiderId),
@@ -219,13 +229,14 @@ router.post("/rfid", async (req, res) => {
     }
   }
 
-  // Upsert: if this rider already has an assignment for this event, replace it
+  // Upsert: if this rider already has a sticker for this event, replace it. A
+  // rental transponder link (the row with an expiry) is left alone.
   let assignment;
   if (numEventId) {
     const existing = await db
       .select({ id: rfidAssignmentsTable.id })
       .from(rfidAssignmentsTable)
-      .where(and(eq(rfidAssignmentsTable.riderId, numRiderId), eq(rfidAssignmentsTable.eventId, numEventId)))
+      .where(and(eq(rfidAssignmentsTable.riderId, numRiderId), eq(rfidAssignmentsTable.eventId, numEventId), isNull(rfidAssignmentsTable.expiresAt)))
       .limit(1);
     if (existing.length > 0) {
       [assignment] = await db.update(rfidAssignmentsTable)
@@ -242,9 +253,9 @@ router.post("/rfid", async (req, res) => {
   // Legacy callers omit assignmentType and retain the passive RFID behavior.
   await db.update(ridersTable).set({ rfidNumber }).where(eq(ridersTable.id, numRiderId));
 
-  // Keep event-scoped registration/check-in data synchronized. Active timing
-  // is surfaced on check-in rows from the associated registration, while
-  // passive RFID continues to use the checkins RFID columns exactly as before.
+  // Keep the event's check-in row in step. A sticker never touches the
+  // registration's transponder number or an RM TrackR purchase: an event can use
+  // both kinds of reader, so a rider may have a sticker and a transponder.
   if (numEventId) {
     await db.update(checkinsTable)
       .set({ rfidNumber, rfidLinked: true })
@@ -252,17 +263,6 @@ router.post("/rfid", async (req, res) => {
         eq(checkinsTable.eventId, numEventId),
         eq(checkinsTable.riderId, numRiderId),
       ));
-
-    // Sync transponder number to ALL of this rider's registration rows for the event
-    // so multi-class riders don't end up with stale/missing numbers on some classes.
-    await db.update(registrationsTable)
-      .set({ myLapsTransponderNumber: rfidNumber })
-      .where(and(
-        eq(registrationsTable.eventId, numEventId),
-        eq(registrationsTable.riderId, numRiderId),
-      ));
-
-    await fulfillRmTrackr(numEventId, numRiderId, rfidNumber);
   }
 
   const riders = await db.select().from(ridersTable).where(eq(ridersTable.id, numRiderId));

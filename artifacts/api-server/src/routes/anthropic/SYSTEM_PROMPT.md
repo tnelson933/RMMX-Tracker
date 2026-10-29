@@ -84,10 +84,10 @@ Platform admins also see a separate section with Users, Clubs, and Notifications
 Main fields:
 - **Race Style** — Motocross/Supercross, Enduro, or Cross Country/Desert
 - Name, Date, End Date, Track Name (pre-filled from the Admin Track Library), City, State
-- **Timing Technology** — **RFID Stickers** or **RM TrackR** (active timing). New events start on RM TrackR.
+- **Timing** — there is no technology to pick. Whatever readers time the event (RM TrackR loops, RFID readers, or both) decide which tags riders need; see Timing Systems.
 - **Scoring Format** (points scoring table), **AMA Event ID**
 - **Collect Payments** and **Entry Fee ($)**; optional **Add early sign-up incentive period** (Early Bird Fee and the date it ends)
-- **RFID Sticker Fee**; **Offer transponder rentals to riders** with a Rental Fee (active timing events; with online payments off, riders pay the rental at the gate and check-in shows it as due); **Require transponder number?** (RM TrackR events, with or without payments). Renting or buying a transponder at registration also satisfies it. When it's on, the form recommends offering rentals and the RM TrackR Transponder sale, with **Offer rentals** and **Sell the RM TrackR Transponder** buttons; without either, riders who don't own a transponder can't register
+- **RFID Sticker Fee**; **Offer transponder rentals to riders** with a Rental Fee (with online payments off, riders pay the rental at the gate and check-in shows it as due); **Require transponder number?** (turn on when an RM TrackR loop times the event; with or without payments). Renting or buying a transponder at registration also satisfies it. When it's on, the form recommends offering rentals and the RM TrackR Transponder sale, with **Offer rentals** and **Sell the RM TrackR Transponder** buttons; without either, riders who don't own a transponder can't register
 - Rider requirements: **Require AMA #**, **Require club ID #**, **Do not allow duplicate race numbers**, **Require rider acknowledgement form**, **Require liability waiver e-signature**
 - **Registration Window** Opens / Closes
 - **Brand Contingencies** offered at this event, and **Series** links
@@ -260,7 +260,9 @@ Practice motos use a **countdown timer** instead of lap counting. When started, 
 
 ## Timing Systems
 
-RM Roost supports two timing technologies. Select the mode for an event in the event's Overview tab (Edit → Timing Technology field). In Reader Setup they are labelled **RFID** and **Active Timing Reader**.
+RM Roost supports two kinds of timing hardware, and one event can use both: for example an RM TrackR loop at the finish line and RFID readers at course sections. Events don't pick a technology. Set up each reader in Reader Setup (labelled **RFID** and **Active Timing Reader**) and place it on the event's Course Map; crossings from either kind are matched to riders and combined into the same laps and segment times.
+
+**Which tags riders need** comes from the readers: the event's own Course Map, else its track's course map (Admin → Track Library), else every reader the club has. Riders need a tag for each kind used: an RM TrackR Transponder number for RM TrackR loops and an RFID sticker for RFID readers. With no readers set up yet, either kind counts. Check-In, Registrations, Quick Check-In and the "Timed with …" labels all follow this. Tip: map the course for each event (or its track) so riders aren't asked for a tag kind the event won't use.
 
 - **RFID** — sticker tags read by an Impinj (R700), Zebra (FX7500, FX9600), or other LLRP-compatible UHF RFID reader. Riders are assigned RFID tag numbers (alphanumeric, 1–32 chars) on the Check-In tab.
 - **Active Timing Reader** — an RM TrackR reader with RM TrackR Transponders. RM TrackR is RM Roost's own active timing system. Each rider needs an RM TrackR Transponder number (up to 9 numbers or letters A–F), assigned on the Check-In tab or entered at registration. The RM TrackR always connects over the network on TCP port 55555.
@@ -296,20 +298,20 @@ The header of the organizer portal shows an active timing chip: "Active Timing R
 - RM TrackR Transponder sales: riders can buy their own RM TrackR Transponder for a standard $40.
   - In the event's Purchase Options, click **Add RM TrackR Transponder ($40)**. Its name and price are fixed.
   - Riders who buy one at registration show an amber **RM TrackR Transponder Purchased — Assign** flag on the Check-In tab. Assigning the transponder number marks it fulfilled and clears the flag.
-  - On Check-In, **+ Sell RM TrackR** appears for riders without a transponder (active timing events, online only). Staff can collect cash or take a card. For a card, staff either type the card on their own device (Stripe checkout) or the rider scans the QR code to pay on their phone. The window closes by itself once payment goes through.
+  - On Check-In, **+ Sell RM TrackR** appears for riders without a transponder (events timed with an RM TrackR loop, online only). Staff can collect cash or take a card. For a card, staff either type the card on their own device (Stripe checkout) or the rider scans the QR code to pay on their phone. The window closes by itself once payment goes through.
 
 ---
 
 ## Check-In Tab
 
 ### Find and check in a rider
-Check-In tab → search by name or bib. Filter chips: **Pending**, **Done**, and **No RFID** (or **No Transponder**). Click **Check In** on the rider's card; it turns green. The refresh button pulls the latest registrations ("Pull latest data from cloud").
+Check-In tab → search by name or bib. Filter chips: **Pending**, **Done**, and **Missing Tag** (riders without a tag for each kind of reader the event uses). Click **Check In** on the rider's card; it turns green. The refresh button pulls the latest registrations ("Pull latest data from cloud").
 
 ### Assign a bib number
 Click the bib area on the left of a rider card (before check-in) to edit it inline; Enter or click away saves. Duplicate bibs are flagged red. Once checked in, the bib is locked.
 
 ### Assign an RFID tag or transponder
-Click the **"No RFID — Assign"** (or **"No Transponder — Assign"**) chip on the rider's card → type or scan the number → save.
+Each rider card shows a chip for each kind of tag the event uses. Click **"No Transponder — Assign"** or **"No RFID — Assign"** (or an assigned number, to change it) → type or scan the number → save. A rider can have both a transponder and an RFID sticker.
 
 ### Liability waivers at check-in
 Cards show **Waiver Signed** or **No Waiver**. If the event requires the e-signed waiver and the rider hasn't signed, checking them in opens **"Rider Has Not Signed Liability Waiver"** with the PDF; collect their name and email → **Sign & Check In**.
@@ -337,7 +339,7 @@ Organizers can turn on **Quick Check-In** per event so riders check themselves i
 
 **Requirements (the organizer chooses):** turning Quick Check-In on (Create Event, Edit, or Overview → **Enable**) opens **Quick Check-In requirements** with every box checked. Uncheck any the event doesn't need; **Check all** restores them. On the Overview, **Requirements** reopens it and a line lists what's not required.
 - **Registration paid** — riders who haven't finished paying online check in at the gate (only matters with Collect Payments on).
-- **RFID tag assigned** / **Transponder number on file** — on the registration or the rider profile, whether or not "Require transponder number?" is on.
+- **Timing tag on file** — a tag for each kind of reader timing the event (RM TrackR transponder on the registration or rider profile, RFID sticker assigned for the event), whether or not "Require transponder number?" is on.
 - **Required waivers signed** — whichever waiver the event requires.
 - **Nothing to pick up** — riders who rented or bought a transponder, or bought an RFID sticker, that hasn't been handed out yet.
 - **At the track** — the phone is within 1 mile of the track. Unchecked, riders can check in from anywhere on race day.
@@ -656,6 +658,7 @@ In the desktop app, broadcasting needs cloud sync set up ("Go to Settings → Cl
 ## RFID / Transponder Management
 
 A club-wide list of every RFID tag or active transponder assigned to riders, at `/rfid` (it is not in the sidebar; most organizers assign tags on the Check-In tab or the rider's page instead).
+- Switch between **RFID Stickers** and **RM TrackR** at the top. Transponders are assigned per event, so pick an event to see them.
 - Filter by event ("All events" by default) and search by rider name or tag number.
 - **Assign RFID Tag** / **Assign Transponder** → **Select Rider** → enter the number → **Link RFID Tag** / **Link Transponder**.
 

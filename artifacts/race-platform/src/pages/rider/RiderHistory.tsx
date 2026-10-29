@@ -1,3 +1,4 @@
+import { eventTimingTags, timingTagsLabel } from "@/components/organizer/timingTags";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { OfficialResultsBadge } from "@/components/OfficialResultsBadge";
 import { formatEventDates } from "@/lib/eventDates";
@@ -691,10 +692,10 @@ function EventCard({ event }: { event: EventHistory }) {
                 </span>
               )}
               <Badge variant="secondary" className="text-xs">{event.raceClass}</Badge>
-              {event.timingTechnology && (
+              {(
                 <span className="flex items-center gap-1 text-xs text-muted-foreground">
                   <Timer size={11} />
-                  {event.timingTechnology === "active_transponder" ? "Timed with Active Timing Reader" : "Timed with RFID"}
+                  Timed with {timingTagsLabel(eventTimingTags(event))}
                 </span>
               )}
             </div>

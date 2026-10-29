@@ -4,6 +4,7 @@ import { conversations, messages, eventsTable, motosTable, checkinsTable, usersT
 import { eq, and, desc, count, asc, ne } from "drizzle-orm";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import SYSTEM_PROMPT from "./SYSTEM_PROMPT.md";
+import { eventTimingTags, timingTagsLabel } from "../../lib/eventTimingTags";
 
 const router = Router();
 
@@ -194,7 +195,7 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
         `- **Date:** ${event.date}`,
         `- **Status:** ${event.status.replace(/_/g, " ")}`,
         `- **Race style:** ${event.raceStyle}`,
-        `- **Timing technology:** ${event.timingTechnology === "active_transponder" ? "Active Transponder Timing" : "RFID"}`,
+        `- **Timing tags (from its readers):** ${timingTagsLabel(await eventTimingTags(event.id))}`,
         ...(venue ? [`- **Venue:** ${venue}`] : []),
         `- **Race classes:** ${classes.length > 0 ? classes.join(", ") : "none set"}`,
         `- **Online payments:** ${event.paymentEnabled ? "on" : "off"}`,

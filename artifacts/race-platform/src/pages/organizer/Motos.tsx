@@ -1,3 +1,4 @@
+import { eventTimingTags, timingTagsLabel } from "@/components/organizer/timingTags";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { SectorTimes, type SectorEntry } from "@/components/SectorTimes";
 import { formatEventDatesFull } from "@/lib/eventDates";
@@ -1943,7 +1944,7 @@ export default function Motos() {
     const groupMembers: number[] = (motoObj as any)?.staggeredGroupMembers ?? [];
     const partnerIds = groupMembers.filter(id => id !== motoId);
 
-    const timingLabel = (event as any)?.timingTechnology === "active_transponder" ? "Active Timing Reader" : "RFID";
+    const timingLabel = timingTagsLabel(eventTimingTags(event));
 
     try {
       // Fire all group start requests simultaneously so no moto briefly shows "Waiting".
@@ -1979,7 +1980,7 @@ export default function Motos() {
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
-          if (status === "in_progress") toast({ title: `🏁 Moto started — ${(event as any)?.timingTechnology === "active_transponder" ? "Active Timing Reader" : "RFID"} timing active` });
+          if (status === "in_progress") toast({ title: `🏁 Moto started — ${timingTagsLabel(eventTimingTags(event))} timing active` });
           if (status === "completed") {
             toast({ title: "Moto finished" });
             if (autoStartEnabled) {

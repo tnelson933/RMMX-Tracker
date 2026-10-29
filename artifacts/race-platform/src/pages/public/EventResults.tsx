@@ -1,3 +1,4 @@
+import { eventTimingTags, timingTagsLabel } from "@/components/organizer/timingTags";
 import { useState, useEffect } from "react";
 import { OfficialResultsBadge } from "@/components/OfficialResultsBadge";
 import { useParams, Link } from "wouter";
@@ -551,10 +552,10 @@ export default function EventResults() {
                     Registration Open
                   </Badge>
                 )}
-                {event.timingTechnology && (
+                {(
                   <Badge variant="outline" className="bg-white/10 text-white/80 border-white/20 font-heading uppercase tracking-wider px-3 py-1 text-sm flex items-center gap-1.5">
                     <Timer size={13} />
-                    {event.timingTechnology === "active_transponder" ? "Timed with Active Timing Reader" : "Timed with RFID"}
+                    Timed with {timingTagsLabel(eventTimingTags(event))}
                   </Badge>
                 )}
               </div>

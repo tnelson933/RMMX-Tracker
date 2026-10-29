@@ -12,6 +12,7 @@ import { normalizeEventPurchaseOptions } from "../lib/rmTrackr";
 import { sendStatsEmail } from "../lib/email";
 import { normalizeState } from "../utils/normalizeState";
 import { quickCheckinRequirements } from "../lib/quickCheckinRequirements";
+import { eventTimingTags, eventsTimingTags } from "../lib/eventTimingTags";
 
 const router = Router();
 const normalizeTimingTechnology = (value: unknown) =>
@@ -123,9 +124,11 @@ router.get("/events", async (req, res) => {
     : await query.orderBy(eventsTable.date);
 
   const advanced = await advanceStatuses(events);
+  const tagsByEvent = await eventsTimingTags(events.map(e => e.id));
   return res.json(events.map(e => ({
     ...e,
     timingTechnology: normalizeTimingTechnology(e.timingTechnology),
+    timingTags: tagsByEvent.get(e.id),
     status: advanced.get(e.id) ?? e.status,
     entryFee: e.entryFee ? Number(e.entryFee) : null,
     earlyBirdFee: e.earlyBirdFee ? Number(e.earlyBirdFee) : null,
@@ -312,6 +315,8 @@ router.get("/events/:eventId", async (req, res) => {
     ...e,
     timingTechnology: normalizeTimingTechnology(e.timingTechnology),
     quickCheckinRequirements: quickCheckinRequirements(e.quickCheckinRequirements),
+    // Which kinds of tag the event's readers use (RM TrackR, RFID or both).
+    timingTags: await eventTimingTags(id),
     classStartTimes,
     status: advanced.get(e.id) ?? e.status,
     entryFee: e.entryFee ? Number(e.entryFee) : null,

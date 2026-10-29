@@ -6,13 +6,14 @@ import { eventDateReached } from "../lib/eventStatus";
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { registrationsTable, ridersTable, checkinsTable, eventsTable, clubsTable, compCodesTable, rfidAssignmentsTable, clubSettingsTable, riderAccountsTable, riderPushTokensTable, raceResultsTable, liabilityWaiverSignaturesTable, rentalTranspondersTable } from "@workspace/db";
-import { eq, and, sql, desc, asc, ne, isNull, inArray, or, lt } from "drizzle-orm";
+import { eq, and, sql, desc, asc, ne, isNull, isNotNull, inArray, or, lt } from "drizzle-orm";
 import { getUncachableStripeClient } from "../stripeClient";
 import { sendPushNotifications } from "../lib/push";
 import { normalizeActiveTransponderIdentifier } from "../lib/riderTimingIdentity";
 import { isRegistrationTransponderRequirementSatisfied } from "../lib/registrationTransponderRequirement";
 import { resolvePurchaseOptions } from "../lib/purchaseOptions";
 import { includesRmTrackr, markRmTrackrPurchased, fulfillRmTrackr } from "../lib/rmTrackr";
+import { eventTimingTags } from "../lib/eventTimingTags";
 import { RM_TRACKR_NAME, RM_TRACKR_PRICE } from "@workspace/db";
 import { canManageRider } from "../lib/riderAccess";
 import { riderMobileTokensTable } from "@workspace/db";
@@ -28,8 +29,10 @@ function sendPaymentCheckError(res: any, err: any) {
 const router = Router();
 
 // ── Auto-link an active transponder when it's provided at registration ──────────
-// Saves it to the rider's permanent profile and creates an rfid_assignment so
+// Saves it to the rider's permanent profile and marks the check-in row linked so
 // the check-in screen shows the transponder already linked — no manual entry needed.
+// Timing matches it from the registration; RFID sticker rows (rfid_assignments)
+// are only for stickers, since one event can use both kinds of reader.
 async function autoLinkTransponder(riderId: number, eventId: number, transponderNumber: string) {
   const normalized = normalizeActiveTransponderIdentifier(transponderNumber);
   if (!normalized) {
@@ -46,19 +49,7 @@ async function autoLinkTransponder(riderId: number, eventId: number, transponder
       or(isNull(ridersTable.mylapsTransponderId), eq(ridersTable.mylapsTransponderId, "")),
     ));
 
-  // 2. Create an rfid_assignment for this event if one doesn't exist yet
-  const existing = await db.select({ id: rfidAssignmentsTable.id })
-    .from(rfidAssignmentsTable)
-    .where(and(
-      eq(rfidAssignmentsTable.riderId, riderId),
-      eq(rfidAssignmentsTable.eventId, eventId),
-    ))
-    .limit(1);
-  if (!existing.length) {
-    await db.insert(rfidAssignmentsTable).values({ riderId, eventId, rfidNumber: normalized });
-  }
-
-  // 3. Mark the check-in row as transponder-linked
+  // 2. Mark the check-in row as transponder-linked
   await db.update(checkinsTable)
     .set({ rfidNumber: normalized, rfidLinked: true })
     .where(and(
@@ -316,6 +307,8 @@ router.get("/events/:eventId/registrations", async (req, res) => {
       rfidNumber: rfidAssignmentsTable.rfidNumber,
     })
     .from(rfidAssignmentsTable)
+    // RFID stickers only: a rental transponder link (with an expiry) isn't a sticker.
+    .where(isNull(rfidAssignmentsTable.expiresAt))
     .orderBy(rfidAssignmentsTable.riderId, rfidAssignmentsTable.eventId, desc(rfidAssignmentsTable.id))
     .as("latest_rfid");
 
@@ -460,7 +453,8 @@ router.post("/events/:eventId/registrations", async (req, res) => {
 
   // Determine if payment is required — on-site registrations start pending when the event has a fee
   const needsPayment = !!(eventData?.paymentEnabled && eventData?.entryFee);
-  const wantsRental = !!(rentTransponder && eventData?.transponderRentalEnabled && eventData?.transponderRentalFee);
+  // A rental is recorded even when the event charges nothing for it.
+  const wantsRental = !!(rentTransponder && eventData?.transponderRentalEnabled);
 
   // Enforce club ID# if required
   if (eventData?.requireClubId && !clubIdNumber) {
@@ -1203,6 +1197,8 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
 
   return res.json({
     ...e,
+    // Which kinds of tag the event's readers use (RM TrackR, RFID or both).
+    timingTags: await eventTimingTags(eventId),
     entryFee: e.entryFee ? Number(e.entryFee) : null,
     earlyBirdFee: e.earlyBirdFee ? Number(e.earlyBirdFee) : null,
     earlyBirdEndsAt: e.earlyBirdEndsAt ?? null,
@@ -1533,8 +1529,9 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   }
 
   // Determine if payment is required (accounting for comp discount and purchase options)
-  const wantsRental = !!(rentTransponder && events[0].transponderRentalEnabled && events[0].transponderRentalFee);
-  const wantsRfidSticker = !!(purchaseRfidSticker && events[0].timingTechnology === "rfid" && events[0].rfidStickerFee);
+  // A rental is recorded even when the event charges nothing for it.
+  const wantsRental = !!(rentTransponder && events[0].transponderRentalEnabled);
+  const wantsRfidSticker = !!(purchaseRfidSticker && events[0].rfidStickerFee);
   const todayStrReg = eventToday(events[0]);
   const earlyBirdActiveReg = !!(events[0].earlyBirdEndsAt && todayStrReg <= events[0].earlyBirdEndsAt && events[0].earlyBirdFee);
   const entryFeeNum = earlyBirdActiveReg
@@ -1990,10 +1987,12 @@ router.post("/events/:eventId/registrations/:regId/assign-rental-transponder", a
   await db.insert(rentalTranspondersTable).values({ clubId: event.clubId, transponderNumber: tag })
     .onConflictDoUpdate({ target: [rentalTranspondersTable.clubId, rentalTranspondersTable.transponderNumber], set: { missing: false } });
 
-  // Upsert rfid_assignment with expiresAt (rental = temporary, does NOT update riders.rfidNumber)
+  // Upsert the rental link: the rider's assignment row with an expiry (rental =
+  // temporary, does NOT update riders.rfidNumber). It's kept apart from an RFID
+  // sticker row (no expiry), since one event can use both kinds of reader.
   const existing = await db.select({ id: rfidAssignmentsTable.id })
     .from(rfidAssignmentsTable)
-    .where(and(eq(rfidAssignmentsTable.riderId, reg.riderId), eq(rfidAssignmentsTable.eventId, eventId)))
+    .where(and(eq(rfidAssignmentsTable.riderId, reg.riderId), eq(rfidAssignmentsTable.eventId, eventId), isNotNull(rfidAssignmentsTable.expiresAt)))
     .limit(1);
   if (existing.length > 0) {
     await db.update(rfidAssignmentsTable)

@@ -26,6 +26,7 @@ import { useToast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import { isInvalidAssignedActiveTransponderIdentifier } from "@/lib/activeTransponder";
+import { eventTimingTags } from "@/components/organizer/timingTags";
 
 // RFID tags are alphanumeric + dashes, 1–32 characters.
 // Spaces, special chars, or extreme lengths are invalid.
@@ -272,10 +273,13 @@ export default function Registrations() {
     }
   };
 
-  const isActiveTransponder = (event as any)?.timingTechnology === "active_transponder";
+  // Which kinds of tag the event's readers use (RM TrackR, RFID or both).
+  const tags = eventTimingTags(event);
   const transponderRentalEnabled = !!(event as any)?.transponderRentalEnabled;
   const transponderRentalFee: number | null = (event as any)?.transponderRentalFee ?? null;
-  const rfidStickerFee: number | null = !isActiveTransponder ? ((event as any)?.rfidStickerFee ?? null) : null;
+  const rfidStickerFee: number | null = (event as any)?.rfidStickerFee ?? null;
+  // The transponder field shows when RM TrackR loops time the event, or transponders are required or rented.
+  const isActiveTransponder = tags.transponder || !!(event as any)?.requireTransponder || transponderRentalEnabled;
   const eventPurchaseOptions = ((event as any)?.purchaseOptions ?? []) as Array<{ id: string; name: string; amount: number }>;
 
   useEffect(() => {
@@ -452,12 +456,10 @@ export default function Registrations() {
 
   // Float registrations with invalid transponder/RFID numbers to the top.
   const sortedRegs = [...filteredRegs].sort((a, b) => {
-    const aInvalid = isActiveTransponder
-      ? isInvalidAssignedActiveTransponderIdentifier((a as any).myLapsTransponderNumber)
-      : isInvalidRfid((a as any).rfidNumber);
-    const bInvalid = isActiveTransponder
-      ? isInvalidAssignedActiveTransponderIdentifier((b as any).myLapsTransponderNumber)
-      : isInvalidRfid((b as any).rfidNumber);
+    const invalid = (r: any) =>
+      isInvalidAssignedActiveTransponderIdentifier(r.myLapsTransponderNumber) || isInvalidRfid(r.rfidNumber);
+    const aInvalid = invalid(a);
+    const bInvalid = invalid(b);
     if (aInvalid && !bInvalid) return -1;
     if (!aInvalid && bInvalid) return 1;
     return 0;
@@ -873,7 +875,7 @@ export default function Registrations() {
             )}
 
             {/* ── RFID Sticker ── */}
-            {!isActiveTransponder && rfidStickerFee != null && (
+            {rfidStickerFee != null && (
               <div className="space-y-2">
                 <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">RFID Sticker</h3>
                 <FormField control={form.control} name="purchaseRfidSticker" render={({ field }) => (
@@ -1760,7 +1762,7 @@ export default function Registrations() {
                 <TableHead className="font-heading font-bold uppercase tracking-wider">Rider</TableHead>
                 <TableHead className="font-heading font-bold uppercase tracking-wider">Class</TableHead>
                 <TableHead className="font-heading font-bold uppercase tracking-wider">#</TableHead>
-                <TableHead className="font-heading font-bold uppercase tracking-wider">{isActiveTransponder ? "Transponder" : "RFID"}</TableHead>
+                <TableHead className="font-heading font-bold uppercase tracking-wider">{tags.transponder && tags.rfid ? "Tags" : tags.transponder ? "Transponder" : "RFID"}</TableHead>
                 <TableHead className="font-heading font-bold uppercase tracking-wider">Status</TableHead>
                 <TableHead className="font-heading font-bold uppercase tracking-wider">Waiver</TableHead>
                 <TableHead className="text-right font-heading font-bold uppercase tracking-wider">Actions</TableHead>
@@ -1778,9 +1780,14 @@ export default function Registrations() {
                   const isEditing = editingBibId === reg.id;
                   const transponderVal = (reg as any).myLapsTransponderNumber as string | null;
                   const transponderIsRental = !!(reg as any).transponderRental;
-                  const hasInvalidTransponder = isActiveTransponder && isInvalidAssignedActiveTransponderIdentifier(transponderVal);
-                  const rfidVal = !isActiveTransponder ? (reg as any).rfidNumber as string | null : null;
-                  const hasInvalidRfid = !isActiveTransponder && isInvalidRfid(rfidVal);
+                  const hasInvalidTransponder = isInvalidAssignedActiveTransponderIdentifier(transponderVal);
+                  // Older registrations also stored the transponder as a sticker: don't show it twice.
+                  const rawRfid = (reg as any).rfidNumber as string | null;
+                  const rfidVal = rawRfid && rawRfid.trim().toLowerCase() !== transponderVal?.trim().toLowerCase() ? rawRfid : null;
+                  const hasInvalidRfid = isInvalidRfid(rfidVal);
+                  // Show each kind of tag the event uses, or any the rider has anyway.
+                  const showTransponder = tags.transponder || !!transponderVal || transponderIsRental;
+                  const showRfid = tags.rfid || !!rfidVal;
 
                   return (
                     <TableRow key={reg.id} className={hasInvalidTransponder || hasInvalidRfid ? "bg-red-50 dark:bg-red-950/20 border-l-4 border-l-destructive" : ""}>
@@ -1898,7 +1905,8 @@ export default function Registrations() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {isActiveTransponder ? (
+                        <div className="flex flex-col gap-0.5">
+                        {showTransponder && (
                           hasInvalidTransponder ? (
                             <div className="flex items-center gap-1.5">
                               <span className="font-mono text-sm text-destructive">{transponderVal}</span>
@@ -1908,13 +1916,14 @@ export default function Registrations() {
                               </span>
                             </div>
                           ) : transponderVal ? (
-                            <span className="font-mono text-sm">{transponderVal}</span>
+                            <span className="font-mono text-sm">{showRfid && <span className="text-[10px] font-sans font-bold uppercase text-muted-foreground mr-1">TrackR</span>}{transponderVal}</span>
                           ) : transponderIsRental ? (
                             <span className="text-xs text-muted-foreground italic">Rental</span>
                           ) : (
-                            <span className="text-muted-foreground/40 text-sm">—</span>
+                            <span className="text-muted-foreground/40 text-sm">{showRfid ? "TrackR —" : "—"}</span>
                           )
-                        ) : (
+                        )}
+                        {showRfid && (
                           hasInvalidRfid ? (
                             <div className="flex items-center gap-1.5">
                               <span className="font-mono text-sm text-destructive">{rfidVal}</span>
@@ -1924,11 +1933,12 @@ export default function Registrations() {
                               </span>
                             </div>
                           ) : rfidVal ? (
-                            <span className="font-mono text-sm">{rfidVal}</span>
+                            <span className="font-mono text-sm">{showTransponder && <span className="text-[10px] font-sans font-bold uppercase text-muted-foreground mr-1">RFID</span>}{rfidVal}</span>
                           ) : (
-                            <span className="text-muted-foreground/40 text-sm">—</span>
+                            <span className="text-muted-foreground/40 text-sm">{showTransponder ? "RFID —" : "—"}</span>
                           )
                         )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1.5 flex-wrap">

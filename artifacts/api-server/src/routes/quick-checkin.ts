@@ -10,10 +10,11 @@ import {
   riderAccountsTable,
   liabilityWaiverSignaturesTable,
 } from "@workspace/db";
-import { eq, and, ne, inArray } from "drizzle-orm";
+import { eq, and, ne, inArray, isNull } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { requireRiderAuth } from "./rider-portal";
-import { QUICK_CHECKIN_REASON_TEXT, quickCheckinIneligibleReason, quickCheckinRequirements } from "../lib/quickCheckinRequirements";
+import { eventTimingTags, eventsTimingTags } from "../lib/eventTimingTags";
+import { hasStickerBesidesTransponder, QUICK_CHECKIN_REASON_TEXT, quickCheckinIneligibleReason, quickCheckinRequirements } from "../lib/quickCheckinRequirements";
 import { managedRiderWhere } from "../lib/riderAccess";
 
 const router = Router();
@@ -92,7 +93,6 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
       eventDate: eventsTable.date,
       eventEndDate: eventsTable.endDate,
       eventStatus: eventsTable.status,
-      timingTechnology: eventsTable.timingTechnology,
       requireWaiver: eventsTable.requireWaiver,
       requireLiabilityWaiver: eventsTable.requireLiabilityWaiver,
       quickCheckinEnabled: eventsTable.quickCheckinEnabled,
@@ -126,6 +126,8 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
   if (todayRegs.length === 0) return res.json([]);
 
   const eventIds = [...new Set(todayRegs.map(r => r.eventId))];
+  // Tag kinds each event's readers use (RM TrackR, RFID or both).
+  const tagsByEvent = await eventsTimingTags(eventIds);
   const riderIds = [...new Set(todayRegs.map(r => r.riderId))];
 
   // Check which riders are already checked in
@@ -142,17 +144,22 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
   // Keyed per registration: event + rider + class
   const checkedInSet = new Set(checkins.map(c => `${c.eventId}:${c.riderId}:${c.raceClass}`));
 
-  // Check RFID assignments for RFID events
+  // RFID stickers assigned for the events
   const rfidRows = await db
-    .select({ riderId: rfidAssignmentsTable.riderId, eventId: rfidAssignmentsTable.eventId })
+    .select({ riderId: rfidAssignmentsTable.riderId, eventId: rfidAssignmentsTable.eventId, rfidNumber: rfidAssignmentsTable.rfidNumber })
     .from(rfidAssignmentsTable)
     .where(
       and(
         inArray(rfidAssignmentsTable.riderId, riderIds),
         inArray(rfidAssignmentsTable.eventId, eventIds),
+        isNull(rfidAssignmentsTable.expiresAt), // stickers, not rental transponder links
       )
     );
-  const rfidSet = new Set(rfidRows.map(r => `${r.eventId}:${r.riderId}`));
+  const stickersByKey = new Map<string, string[]>();
+  for (const r of rfidRows) {
+    const k = `${r.eventId}:${r.riderId}`;
+    stickersByKey.set(k, [...(stickersByKey.get(k) ?? []), r.rfidNumber]);
+  }
 
   // Check waiver signatures for events that require them
   // A signature counts for a rider only when it is linked to one of that rider's
@@ -192,14 +199,14 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
     const checkedIn = checkedInSet.has(`${r.eventId}:${r.riderId}:${r.raceClass ?? "Unknown"}`);
 
     const requirements = quickCheckinRequirements(r.quickCheckinRequirements);
-    const hasRfid = rfidSet.has(key);
+    const hasRfid = hasStickerBesidesTransponder(stickersByKey.get(key), r.myLapsTransponderNumber);
     // requireWaiver = simple acknowledgment stored on the registration row (waiver_acknowledged_at)
     // requireLiabilityWaiver = full PDF e-signature stored in liability_waiver_signatures
     const waiverSigned = r.requireLiabilityWaiver ? waiverByRider.has(key) : !!r.waiverAcknowledgedAt;
     const ineligibleReason = quickCheckinIneligibleReason(requirements, {
       // Unpaid online registrations (checkout not completed) pay at the gate.
       registrationConfirmed: r.regStatus === "confirmed",
-      timingTechnology: r.timingTechnology,
+      tags: tagsByEvent.get(r.eventId) ?? { transponder: true, rfid: true, fromReaders: false },
       hasRfid,
       // A registration-level or rider-level number (including legacy stored values).
       hasTransponder: !!r.myLapsTransponderNumber || !!transponderByRiderId.get(r.riderId),
@@ -308,7 +315,6 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
       quickCheckinEnabled: eventsTable.quickCheckinEnabled,
       status: eventsTable.status,
       date: eventsTable.date,
-      timingTechnology: eventsTable.timingTechnology,
       requireWaiver: eventsTable.requireWaiver,
       requireLiabilityWaiver: eventsTable.requireLiabilityWaiver,
       requireTransponder: eventsTable.requireTransponder,
@@ -384,10 +390,10 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
   }
 
   // The event's chosen requirements (timing tag, waiver, nothing to pick up).
-  const [rfid] = await db
-    .select({ id: rfidAssignmentsTable.id })
+  const stickers = await db
+    .select({ rfidNumber: rfidAssignmentsTable.rfidNumber })
     .from(rfidAssignmentsTable)
-    .where(and(eq(rfidAssignmentsTable.riderId, riderId), eq(rfidAssignmentsTable.eventId, eventId)));
+    .where(and(eq(rfidAssignmentsTable.riderId, riderId), eq(rfidAssignmentsTable.eventId, eventId), isNull(rfidAssignmentsTable.expiresAt)));
   const riderRow = familyRiders.find(r => r.id === riderId);
   // requireWaiver = simple acknowledgment on the registration row (waiver_acknowledged_at)
   // requireLiabilityWaiver = full PDF e-signature in liability_waiver_signatures,
@@ -408,12 +414,12 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
   }
   const reason = quickCheckinIneligibleReason(requirements, {
     registrationConfirmed: reg.status === "confirmed",
-    timingTechnology: event.timingTechnology,
-    hasRfid: !!rfid,
+    tags: await eventTimingTags(eventId),
+    hasRfid: hasStickerBesidesTransponder(stickers.map(x => x.rfidNumber), reg.myLapsTransponderNumber),
     hasTransponder: !!reg.myLapsTransponderNumber || !!riderRow?.transponderId,
     waiverRequired: !!(event.requireWaiver || event.requireLiabilityWaiver),
     waiverSigned,
-    needsPickup: needsGatePickup(reg, !!rfid),
+    needsPickup: needsGatePickup(reg, hasStickerBesidesTransponder(stickers.map(x => x.rfidNumber), reg.myLapsTransponderNumber)),
   });
   if (reason) return res.status(400).json({ error: QUICK_CHECKIN_REASON_TEXT[reason], reason });
 

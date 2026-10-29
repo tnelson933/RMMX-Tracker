@@ -24,6 +24,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { format, parseISO } from "date-fns";
 import { formatEventDatesFull } from "@/lib/eventDates";
 import { TransponderRequirementTip } from "@/components/organizer/TransponderRequirementTip";
+import { eventTimingTags, timingTagsLabel } from "@/components/organizer/timingTags";
 import { DEFAULT_QUICK_CHECKIN_REQUIREMENTS, QuickCheckinRequirementsDialog, quickCheckinRequirementsSummary, toQuickCheckinRequirements } from "@/components/organizer/QuickCheckinRequirements";
 
 const TIME_OPTIONS: string[] = [];
@@ -98,7 +99,6 @@ const updateEventSchema = z.object({
   location: z.string().optional(),
   trackName: z.string().optional(),
   status: z.string(),
-  timingTechnology: z.enum(["rfid", "active_transponder"]).default("rfid"),
   raceClasses: z.array(z.object({
     name: z.string().min(1, "Class name is required"),
     maxRiders: z.coerce.number().int().min(1).optional().or(z.literal("")),
@@ -398,7 +398,6 @@ export default function EventDetail() {
       location: "",
       trackName: "",
       status: "draft",
-      timingTechnology: "rfid",
       raceClasses: [],
       paymentEnabled: false,
       requireAma: false,
@@ -430,7 +429,6 @@ export default function EventDetail() {
   const [qcReqOpen, setQcReqOpen] = useState(false);
   const [overviewQcReqOpen, setOverviewQcReqOpen] = useState(false);
   const watchEarlyBirdEnabled = form.watch("earlyBirdEnabled");
-  const watchTimingTechnology = form.watch("timingTechnology");
   const watchTransponderRentalEnabled = form.watch("transponderRentalEnabled");
   const watchRequireTransponder = form.watch("requireTransponder");
 
@@ -461,7 +459,6 @@ export default function EventDetail() {
       location: evt.location || "",
       trackName: evt.trackName || "",
       status: evt.status,
-      timingTechnology: ((evt as any).timingTechnology ?? "rfid") as "rfid" | "active_transponder",
       raceClasses: (evt.raceClasses ?? []).map((cls) => ({
         name: cls,
         maxRiders: limits[cls] ?? "",
@@ -586,7 +583,6 @@ export default function EventDetail() {
         streetAddress: data.trackName?.trim() ? (manualTrackAddress.trim() || null) : null,
         zip: data.trackName?.trim() ? (manualTrackZip.trim() || null) : null,
         status: data.status,
-        timingTechnology: data.timingTechnology,
         raceClasses: classNames,
         raceClassLimits: classLimits,
         raceClassSeriesMap: classSeriesMap,
@@ -597,7 +593,7 @@ export default function EventDetail() {
         requireClubId: data.requireClubId,
         requireWaiver: data.requireWaiver,
         requireLiabilityWaiver: data.requireLiabilityWaiver,
-        requireTransponder: data.timingTechnology === "active_transponder" ? data.requireTransponder : false,
+        requireTransponder: data.requireTransponder,
         quickCheckinEnabled: data.quickCheckinEnabled,
         quickCheckinRequirements: data.quickCheckinRequirements,
         scoringTableId: data.scoringTableId ?? null,
@@ -606,9 +602,9 @@ export default function EventDetail() {
         earlyBirdEndsAt: data.paymentEnabled && data.earlyBirdEnabled && data.earlyBirdEndsAt ? data.earlyBirdEndsAt : null,
         registrationOpen: data.registrationOpen ? new Date(data.registrationOpen).toISOString() : undefined,
         registrationClose: data.registrationClose ? new Date(data.registrationClose).toISOString() : undefined,
-        transponderRentalEnabled: data.timingTechnology === "active_transponder" ? data.transponderRentalEnabled : false,
-        transponderRentalFee: data.timingTechnology === "active_transponder" && data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
-        rfidStickerFee: data.timingTechnology === "rfid" && data.paymentEnabled && data.rfidStickerFee ? Number(data.rfidStickerFee) : undefined,
+        transponderRentalEnabled: data.transponderRentalEnabled,
+        transponderRentalFee: data.transponderRentalEnabled && data.transponderRentalFee ? Number(data.transponderRentalFee) : undefined,
+        rfidStickerFee: data.paymentEnabled && data.rfidStickerFee ? Number(data.rfidStickerFee) : undefined,
         purchaseOptions: data.purchaseOptions.map(o => ({ id: o.optionId || crypto.randomUUID(), name: o.name.trim(), amount: Number(o.amount) })),
         amaEventId: data.amaEventId || undefined,
         contingencyBrands: editContingencyBrands.length > 0 ? editContingencyBrands : null,
@@ -981,42 +977,14 @@ export default function EventDetail() {
                       />
                     )}
 
-                    {/* Timing Technology */}
-                    <FormField
-                      control={form.control}
-                      name="timingTechnology"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Timing Technology</FormLabel>
-                          <FormControl>
-                            <div className="grid grid-cols-2 gap-2">
-                              {[
-                                { value: "rfid", label: "RFID Stickers", desc: "Passive RFID tags" },
-                    { value: "active_transponder", label: "RM TrackR", desc: "RM TrackR Transponders (active timing)" },
-                              ].map(opt => (
-                                <button
-                                  key={opt.value}
-                                  type="button"
-                                  onClick={() => field.onChange(opt.value)}
-                                  className={`flex flex-col items-start px-4 py-3 rounded-md border text-left transition-all ${
-                                    field.value === opt.value
-                                      ? "border-primary bg-primary/5 text-foreground"
-                                      : "border-input bg-transparent text-muted-foreground hover:border-primary/50"
-                                  }`}
-                                >
-                                  <span className={`text-sm font-semibold ${field.value === opt.value ? "text-primary" : ""}`}>{opt.label}</span>
-                                  <span className="text-xs mt-0.5">{opt.desc}</span>
-                                </button>
-                              ))}
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                    {/* Timing: no technology to pick. Whatever readers time the event (RM TrackR loops,
+                        RFID readers or both) decide which tags riders need. */}
+                    <div className="rounded-md border bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground">
+                      <span className="font-semibold text-foreground">Timing:</span> use RM TrackR loops, RFID readers, or both. Set up your readers in Reader Setup and place them on the event's Course Map; riders need a tag for each kind of reader you use.
+                    </div>
 
-                    {/* Require transponder — RM TrackR timing. Riders can rent or buy one instead. */}
-                    {watchTimingTechnology === "active_transponder" && (
+                    {/* Require transponder (for RM TrackR loops). Riders can rent or buy one instead. */}
+                    {(
                       <FormField
                         control={form.control}
                         name="requireTransponder"
@@ -1098,7 +1066,7 @@ export default function EventDetail() {
                           </div>
                           {field.value && (
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs mt-2">
-                              <span className="text-muted-foreground">{quickCheckinRequirementsSummary(form.watch("quickCheckinRequirements"), watchTimingTechnology)}</span>
+                              <span className="text-muted-foreground">{quickCheckinRequirementsSummary(form.watch("quickCheckinRequirements"))}</span>
                               <button type="button" className="font-semibold text-primary underline underline-offset-2" onClick={() => setQcReqOpen(true)}>
                                 Edit requirements
                               </button>
@@ -1110,7 +1078,6 @@ export default function EventDetail() {
                             value={form.watch("quickCheckinRequirements")}
                             onSave={v => { form.setValue("quickCheckinRequirements", v, { shouldDirty: true }); setQcReqOpen(false); }}
                             context={{
-                              timingTechnology: watchTimingTechnology,
                               paymentEnabled: !!watchPaymentEnabled,
                               requiresWaiver: !!(form.watch("requireWaiver") || form.watch("requireLiabilityWaiver")),
                             }}
@@ -1642,7 +1609,7 @@ export default function EventDetail() {
                     )}
 
                     {/* RFID sticker fee — only shown for RFID events with payments */}
-                    {stripeReady && watchPaymentEnabled && watchTimingTechnology === "rfid" && (
+                    {stripeReady && watchPaymentEnabled && (
                       <div className="space-y-2 pl-0.5">
                         <FormField
                           control={form.control}
@@ -1663,7 +1630,7 @@ export default function EventDetail() {
 
                     {/* Transponder rental — active-transponder events. Paid online with the
                         entry when payments are on, otherwise collected at the gate. */}
-                    {watchTimingTechnology === "active_transponder" && (
+                    {(
                       <div className="space-y-2 pl-0.5">
                         <FormField
                           control={form.control}
@@ -1923,7 +1890,7 @@ export default function EventDetail() {
                       <div className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-1">Timing Technology</div>
                       <div className="font-medium">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-muted text-muted-foreground border border-border">
-                          {((event as any).timingTechnology ?? "rfid") === "active_transponder" ? "RM TrackR" : "RFID"}
+                          {timingTagsLabel(eventTimingTags(event))}
                         </span>
                       </div>
                     </div>
@@ -1961,7 +1928,7 @@ export default function EventDetail() {
                       </p>
                       {(event as any).quickCheckinEnabled && (
                         <p className="text-xs text-muted-foreground mt-1">
-                          {quickCheckinRequirementsSummary(toQuickCheckinRequirements((event as any).quickCheckinRequirements), (event as any).timingTechnology ?? "rfid")}
+                          {quickCheckinRequirementsSummary(toQuickCheckinRequirements((event as any).quickCheckinRequirements))}
                         </p>
                       )}
                       <QuickCheckinRequirementsDialog
@@ -1981,7 +1948,6 @@ export default function EventDetail() {
                           );
                         }}
                         context={{
-                          timingTechnology: (event as any).timingTechnology ?? "rfid",
                           paymentEnabled: !!(event as any).paymentEnabled,
                           requiresWaiver: !!((event as any).requireWaiver || (event as any).requireLiabilityWaiver),
                         }}

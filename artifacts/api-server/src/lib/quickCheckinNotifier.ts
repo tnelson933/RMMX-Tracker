@@ -11,11 +11,12 @@ import {
   riderNotificationPrefsTable,
   quickCheckinNotificationsTable,
 } from "@workspace/db";
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { sendPushNotifications, type PushMessage } from "./push";
 import { accountIdsForRiders } from "./riderAccess";
-import { quickCheckinIneligibleReason, quickCheckinRequirements } from "./quickCheckinRequirements";
+import { eventTimingTags } from "./eventTimingTags";
+import { hasStickerBesidesTransponder, quickCheckinIneligibleReason, quickCheckinRequirements } from "./quickCheckinRequirements";
 
 // Race-day morning push for quick check-in.
 //
@@ -46,7 +47,6 @@ export async function runQuickCheckinNotifierOnce(): Promise<void> {
       name: eventsTable.name,
       clubId: eventsTable.clubId,
       trackName: eventsTable.trackName,
-      timingTechnology: eventsTable.timingTechnology,
       requireWaiver: eventsTable.requireWaiver,
       requireLiabilityWaiver: eventsTable.requireLiabilityWaiver,
       requireTransponder: eventsTable.requireTransponder,
@@ -83,7 +83,6 @@ type EventRow = {
   name: string;
   clubId: number | null;
   trackName: string | null;
-  timingTechnology: string | null;
   requireWaiver: boolean | null;
   requireLiabilityWaiver: boolean | null;
   requireTransponder: boolean | null;
@@ -127,15 +126,14 @@ async function notifyForEvent(event: EventRow): Promise<void> {
     .where(and(eq(checkinsTable.eventId, event.id), eq(checkinsTable.checkedIn, true)));
   const checkedInSet = new Set(checkins.map(c => `${c.riderId}:${c.raceClass ?? "Unknown"}`));
 
-  // RFID assignments (only needed for RFID events)
-  const rfidSet = new Set<number>();
-  if (event.timingTechnology === "rfid") {
-    const rfidRows = await db
-      .select({ riderId: rfidAssignmentsTable.riderId })
-      .from(rfidAssignmentsTable)
-      .where(and(eq(rfidAssignmentsTable.eventId, event.id), inArray(rfidAssignmentsTable.riderId, riderIds)));
-    for (const r of rfidRows) rfidSet.add(r.riderId);
-  }
+  // RFID assignments, and which tag kinds the event's readers use
+  const stickersByRider = new Map<number, string[]>();
+  const rfidRows = await db
+    .select({ riderId: rfidAssignmentsTable.riderId, rfidNumber: rfidAssignmentsTable.rfidNumber })
+    .from(rfidAssignmentsTable)
+    .where(and(eq(rfidAssignmentsTable.eventId, event.id), inArray(rfidAssignmentsTable.riderId, riderIds), isNull(rfidAssignmentsTable.expiresAt)));
+  for (const r of rfidRows) stickersByRider.set(r.riderId, [...(stickersByRider.get(r.riderId) ?? []), r.rfidNumber]);
+  const tags = await eventTimingTags(event.id);
 
   // Waiver signatures (only needed when the event requires the full waiver)
   // A signature counts for a rider when it's linked to any of their registrations
@@ -154,10 +152,10 @@ async function notifyForEvent(event: EventRow): Promise<void> {
   const eligibleRiderIds = new Set<number>();
   for (const r of regs) {
     if (checkedInSet.has(`${r.riderId}:${r.raceClass ?? "Unknown"}`)) continue;
-    const hasRfid = rfidSet.has(r.riderId);
+    const hasRfid = hasStickerBesidesTransponder(stickersByRider.get(r.riderId), r.myLapsTransponderNumber);
     const reason = quickCheckinIneligibleReason(requirements, {
       registrationConfirmed: r.status === "confirmed",
-      timingTechnology: event.timingTechnology,
+      tags,
       hasRfid,
       hasTransponder: !!r.myLapsTransponderNumber || !!r.riderTransponder,
       waiverRequired: !!(event.requireWaiver || event.requireLiabilityWaiver),

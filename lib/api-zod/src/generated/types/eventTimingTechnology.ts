@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * Legacy. Events no longer pick a timing technology; see timingTags.
+ */
 export type EventTimingTechnology = typeof EventTimingTechnology[keyof typeof EventTimingTechnology];
 
 

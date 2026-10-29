@@ -1,3 +1,4 @@
+import { eventTimingTags, timingTagsLabel } from "@/components/organizer/timingTags";
 import { eventToday } from "@workspace/api-zod";
 import { localDateString } from "@/lib/eventDates";
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
@@ -1232,8 +1233,7 @@ export default function EventSchedule() {
   const raceStyle: "motocross" | "enduro" | "cross_country" = (event as any)?.raceStyle ?? "motocross";
   const isEnduro = raceStyle === "enduro";
   const isCrossCountry = raceStyle === "cross_country";
-  const isActiveTransponder = ((event as any)?.timingTechnology ?? "rfid") === "active_transponder";
-  const timingLabel = isActiveTransponder ? "Active Timing Reader" : "RFID";
+  const timingLabel = timingTagsLabel(eventTimingTags(event));
 
   // ── Local state ──
   const [viewMode, setViewMode] = useState<ViewMode>("run-order");

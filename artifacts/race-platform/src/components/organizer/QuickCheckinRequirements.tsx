@@ -35,13 +35,11 @@ export function toQuickCheckinRequirements(stored: unknown): QuickCheckinRequire
 }
 
 interface EventContext {
-  timingTechnology: string;
   paymentEnabled: boolean;
   requiresWaiver: boolean;
 }
 
 function rows(ctx: EventContext) {
-  const isRfid = ctx.timingTechnology === "rfid";
   return [
     {
       key: "paid" as const,
@@ -52,10 +50,8 @@ function rows(ctx: EventContext) {
     },
     {
       key: "timing" as const,
-      label: isRfid ? "RFID tag assigned" : "Transponder number on file",
-      desc: isRfid
-        ? "Riders without an RFID tag for this event check in at the gate."
-        : "Riders without a transponder number check in at the gate. Turn off to assign numbers later.",
+      label: "Timing tag on file",
+      desc: "A tag for each kind of reader timing the event (RM TrackR transponder, RFID sticker or both). Riders without one check in at the gate. Turn off to assign tags later.",
     },
     {
       key: "waiver" as const,
@@ -78,8 +74,8 @@ function rows(ctx: EventContext) {
 }
 
 /** One line for the forms: "All requirements" or what's turned off. */
-export function quickCheckinRequirementsSummary(req: QuickCheckinRequirements, timingTechnology: string): string {
-  const off = rows({ timingTechnology, paymentEnabled: true, requiresWaiver: true })
+export function quickCheckinRequirementsSummary(req: QuickCheckinRequirements): string {
+  const off = rows({ paymentEnabled: true, requiresWaiver: true })
     .filter(r => !req[r.key]).map(r => r.label.toLowerCase());
   if (off.length === 0) return "Riders must meet every requirement.";
   if (off.length === KEYS.length) return "No requirements: any registered rider can check in on race day.";

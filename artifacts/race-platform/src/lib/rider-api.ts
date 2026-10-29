@@ -76,6 +76,8 @@ export interface EventHistory {
   eventState: string;
   eventLocation: string | null;
   timingTechnology: string | null;
+  /** Which kinds of tag the event's readers used (RM TrackR, RFID or both). */
+  timingTags?: { transponder: boolean; rfid: boolean; fromReaders: boolean };
   raceStyle?: string | null;
   raceClass: string;
   motos: MotoResult[];

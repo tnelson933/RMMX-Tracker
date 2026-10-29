@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { checkinsTable, ridersTable, rfidAssignmentsTable, registrationsTable, eventsTable, motosTable, liabilityWaiverSignaturesTable } from "@workspace/db";
-import { eq, and, ne, asc } from "drizzle-orm";
+import { eq, and, ne, asc, isNull } from "drizzle-orm";
 import { fulfillRmTrackr } from "../lib/rmTrackr";
 
 const router = Router();
@@ -68,10 +68,24 @@ router.get("/events/:eventId/checkins", async (req, res) => {
     .where(eq(liabilityWaiverSignaturesTable.eventId, eventId));
   const signedEmails = new Set(sigRows.map(s => s.signerEmail.toLowerCase()));
 
+  // RFID stickers assigned for this event. An event can use RM TrackR loops and
+  // RFID readers together, so a rider may have a transponder and a sticker.
+  const stickerRows = await db.select({ riderId: rfidAssignmentsTable.riderId, rfidNumber: rfidAssignmentsTable.rfidNumber })
+    .from(rfidAssignmentsTable)
+    // Stickers only: a rental transponder link has an expiry.
+    .where(and(eq(rfidAssignmentsTable.eventId, eventId), isNull(rfidAssignmentsTable.expiresAt)))
+    .orderBy(asc(rfidAssignmentsTable.id));
+  const stickerByRider = new Map<number, string>();
+  for (const a of stickerRows) stickerByRider.set(a.riderId, a.rfidNumber);
+
   return res.json(regs.map(r => {
     const c = checkinByRider.get(r.riderId);
     const riderEmail = r.email?.toLowerCase() ?? null;
     const timingNumber = c?.rfidNumber ?? r.myLapsTransponderNumber ?? null;
+    const transponderNumber = r.myLapsTransponderNumber?.trim() || null;
+    // Older registrations also stored the transponder as a sticker row: skip that.
+    const sticker = stickerByRider.get(r.riderId) ?? null;
+    const rfidTag = sticker && sticker.trim().toLowerCase() !== transponderNumber?.toLowerCase() ? sticker : null;
     return {
       id: c?.id ?? null,
       eventId,
@@ -95,6 +109,9 @@ router.get("/events/:eventId/checkins", async (req, res) => {
       checkedInAt: c?.checkedInAt?.toISOString() ?? null,
       rfidNumber: timingNumber,
       rfidLinked: Boolean(c?.rfidLinked || timingNumber),
+      // Each kind of tag on its own (rfidNumber above is whichever was set last).
+      transponderNumber,
+      rfidTag,
       waiverSigned: riderEmail ? signedEmails.has(riderEmail) : false,
     };
   }));
@@ -178,8 +195,11 @@ router.post("/events/:eventId/checkins", async (req, res) => {
   }
 
   if (rfidNumber) {
-    await db.update(ridersTable).set({ rfidNumber }).where(eq(ridersTable.id, checkin.riderId));
-    await fulfillRmTrackr(eventId, checkin.riderId, rfidNumber);
+    // A transponder number sent here (the check-in row's last-set tag) stays a
+    // transponder: only a sticker goes on the profile's RFID field.
+    const isTransponder = regs.some(r => r.myLapsTransponderNumber?.trim().toLowerCase() === String(rfidNumber).trim().toLowerCase());
+    if (isTransponder) await fulfillRmTrackr(eventId, checkin.riderId, rfidNumber);
+    else await db.update(ridersTable).set({ rfidNumber }).where(eq(ridersTable.id, checkin.riderId));
   }
 
   // Auto-slot rider into pre-generated lineup slots (created via useRegistrations).

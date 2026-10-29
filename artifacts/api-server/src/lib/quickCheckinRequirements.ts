@@ -1,3 +1,5 @@
+import { hasRequiredTags, type TimingTags } from "./eventTimingTags";
+
 /**
  * What a rider needs before they can Quick Check-In from the rider app. Each
  * event can turn requirements off (Edit event → Quick Check-In → Requirements);
@@ -47,7 +49,8 @@ export function parseQuickCheckinRequirements(input: unknown): { value: QuickChe
 
 export interface QuickCheckinRiderState {
   registrationConfirmed: boolean;
-  timingTechnology: string | null;
+  /** Tag kinds the event's readers use (lib/eventTimingTags). */
+  tags: TimingTags;
   hasRfid: boolean;
   hasTransponder: boolean;
   waiverRequired: boolean;
@@ -64,11 +67,23 @@ export function quickCheckinIneligibleReason(
   s: QuickCheckinRiderState,
 ): QuickCheckinIneligibleReason | null {
   if (req.paid && !s.registrationConfirmed) return "payment_required";
-  if (req.timing && s.timingTechnology === "rfid" && !s.hasRfid) return "missing_rfid";
-  if (req.timing && s.timingTechnology === "active_transponder" && !s.hasTransponder) return "missing_transponder";
+  if (req.timing && !hasRequiredTags(s.tags, { transponder: s.hasTransponder, rfid: s.hasRfid })) {
+    // Name the kind that's missing (a transponder when either would do).
+    if (!s.tags.fromReaders || (s.tags.transponder && !s.hasTransponder)) return "missing_transponder";
+    return "missing_rfid";
+  }
   if (req.waiver && s.waiverRequired && !s.waiverSigned) return "missing_waiver";
   if (req.pickup && s.needsPickup) return "pickup_required";
   return null;
+}
+
+/**
+ * Does any of a rider's sticker rows count as an RFID sticker? Older
+ * registrations also stored the transponder number as a sticker row.
+ */
+export function hasStickerBesidesTransponder(stickers: string[] | undefined, transponder: string | null | undefined): boolean {
+  const t = transponder?.trim().toLowerCase() ?? "";
+  return (stickers ?? []).some(n => n.trim().toLowerCase() !== t);
 }
 
 export const QUICK_CHECKIN_REASON_TEXT: Record<QuickCheckinIneligibleReason, string> = {

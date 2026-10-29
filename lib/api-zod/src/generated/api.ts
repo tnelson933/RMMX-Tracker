@@ -480,7 +480,12 @@ export const ListEventsResponseItem = zod.object({
   "clubName": zod.string().nullish(),
   "clubLogoUrl": zod.string().nullish(),
   "imageUrl": zod.string().nullish(),
-  "timingTechnology": zod.enum(['rfid', 'active_transponder']).default(listEventsResponseTimingTechnologyDefault),
+  "timingTechnology": zod.enum(['rfid', 'active_transponder']).default(listEventsResponseTimingTechnologyDefault).describe('Legacy. Events no longer pick a timing technology; see timingTags.'),
+  "timingTags": zod.object({
+  "transponder": zod.boolean().describe('RM TrackR active transponder'),
+  "rfid": zod.boolean().describe('Passive RFID sticker'),
+  "fromReaders": zod.boolean()
+}).optional().describe('Which kinds of tag the event\'s readers use (its course map, else its track\'s, else the club\'s readers). fromReaders is false when no readers are set up, so either kind may be used.'),
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().nullish(),
   "noDuplicateBibs": zod.boolean().optional(),
@@ -627,7 +632,12 @@ export const GetEventResponse = zod.object({
   "clubName": zod.string().nullish(),
   "clubLogoUrl": zod.string().nullish(),
   "imageUrl": zod.string().nullish(),
-  "timingTechnology": zod.enum(['rfid', 'active_transponder']).default(getEventResponseTimingTechnologyDefault),
+  "timingTechnology": zod.enum(['rfid', 'active_transponder']).default(getEventResponseTimingTechnologyDefault).describe('Legacy. Events no longer pick a timing technology; see timingTags.'),
+  "timingTags": zod.object({
+  "transponder": zod.boolean().describe('RM TrackR active transponder'),
+  "rfid": zod.boolean().describe('Passive RFID sticker'),
+  "fromReaders": zod.boolean()
+}).optional().describe('Which kinds of tag the event\'s readers use (its course map, else its track\'s, else the club\'s readers). fromReaders is false when no readers are set up, so either kind may be used.'),
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().nullish(),
   "noDuplicateBibs": zod.boolean().optional(),
@@ -772,7 +782,12 @@ export const UpdateEventResponse = zod.object({
   "clubName": zod.string().nullish(),
   "clubLogoUrl": zod.string().nullish(),
   "imageUrl": zod.string().nullish(),
-  "timingTechnology": zod.enum(['rfid', 'active_transponder']).default(updateEventResponseTimingTechnologyDefault),
+  "timingTechnology": zod.enum(['rfid', 'active_transponder']).default(updateEventResponseTimingTechnologyDefault).describe('Legacy. Events no longer pick a timing technology; see timingTags.'),
+  "timingTags": zod.object({
+  "transponder": zod.boolean().describe('RM TrackR active transponder'),
+  "rfid": zod.boolean().describe('Passive RFID sticker'),
+  "fromReaders": zod.boolean()
+}).optional().describe('Which kinds of tag the event\'s readers use (its course map, else its track\'s, else the club\'s readers). fromReaders is false when no readers are set up, so either kind may be used.'),
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().nullish(),
   "noDuplicateBibs": zod.boolean().optional(),
@@ -2547,7 +2562,12 @@ export const GetClubDashboardResponse = zod.object({
   "clubName": zod.string().nullish(),
   "clubLogoUrl": zod.string().nullish(),
   "imageUrl": zod.string().nullish(),
-  "timingTechnology": zod.enum(['rfid', 'active_transponder']).default(getClubDashboardResponseUpcomingEventListItemTimingTechnologyDefault),
+  "timingTechnology": zod.enum(['rfid', 'active_transponder']).default(getClubDashboardResponseUpcomingEventListItemTimingTechnologyDefault).describe('Legacy. Events no longer pick a timing technology; see timingTags.'),
+  "timingTags": zod.object({
+  "transponder": zod.boolean().describe('RM TrackR active transponder'),
+  "rfid": zod.boolean().describe('Passive RFID sticker'),
+  "fromReaders": zod.boolean()
+}).optional().describe('Which kinds of tag the event\'s readers use (its course map, else its track\'s, else the club\'s readers). fromReaders is false when no readers are set up, so either kind may be used.'),
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().nullish(),
   "noDuplicateBibs": zod.boolean().optional(),

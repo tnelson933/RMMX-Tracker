@@ -205,7 +205,7 @@ router.post("/rfid", (req, res) => {
     db.prepare(
       "UPDATE checkins SET rfid_number = ?, rfid_linked = 1 WHERE event_id = ? AND rider_id = ?",
     ).run(rfidNumber, numEventId, numRiderId);
-    fulfillRmTrackr(db, numEventId, numRiderId, rfidNumber);
+    // A sticker never fulfils an RM TrackR purchase (a rider may have both).
   }
 
   const assignmentRow = numEventId

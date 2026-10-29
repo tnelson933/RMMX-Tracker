@@ -25,11 +25,14 @@ export default function RfidManagement() {
   const { user } = useAuth();
   const sessionClubId = user?.role === "super_admin" ? undefined : user?.clubId ?? undefined;
   const { data: events } = useListEvents({ clubId: sessionClubId }, { query: {} as any });
-  const selectedEvent = events?.find(e => e.id.toString() === filterEventId);
   const hasEventFilter = filterEventId !== "all";
-  const tech = ((selectedEvent as any)?.timingTechnology ?? "rfid") as "rfid" | "active_transponder";
-  const isActiveTransponder = hasEventFilter && tech === "active_transponder";
-  const isRfid = hasEventFilter && tech === "rfid";
+  // Events don't pick a timing technology (RM TrackR loops and RFID readers can
+  // time the same event), so choose which kind of tag to look at here.
+  const [kind, setKind] = useState<"rfid" | "transponder">("rfid");
+  const isActiveTransponder = kind === "transponder";
+  const isRfid = kind === "rfid";
+  // Transponders are assigned per event (on the registration).
+  const needsEventPick = isActiveTransponder && !hasEventFilter;
   const activeAssignmentParams = filterEventId !== "all" && isActiveTransponder
     ? { eventId: Number(filterEventId), assignmentType: "active_transponder" as const }
     : undefined;
@@ -43,7 +46,7 @@ export default function RfidManagement() {
   const assignDialogTitle = isActiveTransponder ? "Assign RM TrackR Transponder" : isRfid ? "Assign RFID Tag" : "Assign Transponder";
   const scanLabel = isActiveTransponder ? "Enter Transponder Number" : isRfid ? "Scan or Enter Tag Number" : "Enter Tag / Transponder Number";
   const placeholder = isActiveTransponder ? "e.g. 12345" : isRfid ? "e.g. 1A2B3C4D" : "e.g. 1A2B3C4D or 12345";
-  const emptyLabel = isActiveTransponder ? "No transponders assigned yet" : isRfid ? "No RFID tags assigned yet" : "No transponders assigned yet";
+  const emptyLabel = needsEventPick ? "Pick an event to see its transponders" : isActiveTransponder ? "No transponders assigned yet" : isRfid ? "No RFID tags assigned yet" : "No transponders assigned yet";
   const successLabel = isActiveTransponder ? "Transponder assigned successfully" : isRfid ? "RFID tag assigned successfully" : "Transponder assigned successfully";
   const pageTitle = isActiveTransponder ? "RM TrackR Transponder Management" : isRfid ? "RFID Management" : "Transponder Management";
   const pageDesc = isActiveTransponder ? "Track and assign active transponder numbers to riders." : isRfid ? "Track and assign RFID tags to riders." : "Track and assign timing transponders to riders.";
@@ -74,7 +77,7 @@ export default function RfidManagement() {
     });
   };
 
-  const filteredTags = (rfidTags ?? []).filter(t => {
+  const filteredTags = (needsEventPick ? [] : rfidTags ?? []).filter(t => {
     const matchesSearch =
       t.rfidNumber.toLowerCase().includes(search.toLowerCase()) ||
       (t.riderName && t.riderName.toLowerCase().includes(search.toLowerCase()));
@@ -95,7 +98,7 @@ export default function RfidManagement() {
         
         <Dialog open={isAssignOpen} onOpenChange={setIsAssignOpen}>
           <DialogTrigger asChild>
-            <Button className="font-heading uppercase tracking-wider h-12 px-6">
+            <Button className="font-heading uppercase tracking-wider h-12 px-6" disabled={needsEventPick} title={needsEventPick ? "Pick an event first" : undefined}>
               <Plus size={16} className="mr-2" /> {assignLabel}
             </Button>
           </DialogTrigger>
@@ -141,7 +144,20 @@ export default function RfidManagement() {
 
       <Card className="border-sidebar-border overflow-hidden">
         <div className="p-4 bg-muted/30 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-          <div className="flex flex-col sm:flex-row gap-3 w-full sm:max-w-2xl">
+          <div className="flex flex-col sm:flex-row gap-3 w-full sm:max-w-3xl">
+            <div className="flex rounded-md border overflow-hidden shrink-0 h-10" role="group" aria-label="Tag type">
+              {([["rfid", "RFID Stickers"], ["transponder", "RM TrackR"]] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setKind(value)}
+                  aria-pressed={kind === value}
+                  className={`px-3 text-xs font-heading font-bold uppercase tracking-wider ${kind === value ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={18} />
               <Input 
@@ -160,9 +176,6 @@ export default function RfidManagement() {
                 {events?.map(e => (
                   <SelectItem key={e.id} value={e.id.toString()}>
                     {e.name}
-                    {(e as any).timingTechnology === "active_transponder" && (
-                       <span className="ml-1 text-xs text-muted-foreground">(Active Timing Reader)</span>
-                    )}
                   </SelectItem>
                 ))}
               </SelectContent>

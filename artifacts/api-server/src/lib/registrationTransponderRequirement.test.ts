@@ -9,7 +9,6 @@ test("allows a blank transponder when the event setting is off", () => {
   assert.equal(
     isRegistrationTransponderRequirementSatisfied(
       {
-        timingTechnology: "active_transponder",
         requireTransponder: false,
         transponderRentalEnabled: false,
       },
@@ -21,7 +20,6 @@ test("allows a blank transponder when the event setting is off", () => {
 
 test("requires a personal transponder or available rental when the setting is on", () => {
   const requiredEvent = {
-    timingTechnology: "active_transponder",
     requireTransponder: true,
     transponderRentalEnabled: true,
   };
@@ -53,7 +51,6 @@ test("does not accept a rental that the event does not offer", () => {
   assert.equal(
     isRegistrationTransponderRequirementSatisfied(
       {
-        timingTechnology: "active_transponder",
         requireTransponder: true,
         transponderRentalEnabled: false,
       },
@@ -67,25 +64,10 @@ test("buying an RM TrackR at registration satisfies the requirement", () => {
   assert.equal(
     isRegistrationTransponderRequirementSatisfied(
       {
-        timingTechnology: "active_transponder",
         requireTransponder: true,
         transponderRentalEnabled: false,
       },
       { transponderNumber: "", rentTransponder: false, buyTransponder: true },
-    ),
-    true,
-  );
-});
-
-test("does not require active transponders for passive RFID events", () => {
-  assert.equal(
-    isRegistrationTransponderRequirementSatisfied(
-      {
-        timingTechnology: "rfid",
-        requireTransponder: true,
-        transponderRentalEnabled: false,
-      },
-      { transponderNumber: "", rentTransponder: false },
     ),
     true,
   );

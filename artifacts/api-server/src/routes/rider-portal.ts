@@ -51,6 +51,7 @@ import {
 import { eq, desc, asc, or, and, ne, inArray, sql, ilike, isNull } from "drizzle-orm";
 import { canManageRider, managedRiderIds, managedRiderWhere, ownsRider } from "../lib/riderAccess";
 import { EXPO_PUSH_TOKEN_RE } from "../lib/push";
+import { eventsTimingTags, type TimingTags } from "../lib/eventTimingTags";
 
 const router = Router();
 
@@ -946,6 +947,7 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
     eventState: string;
     eventLocation: string | null;
     timingTechnology: string | null;
+    timingTags?: TimingTags;
     raceStyle: string | null;
     raceClass: string;
     motos: Array<{
@@ -1003,10 +1005,13 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
     });
   }
 
+  // Which kinds of tag timed each event (RM TrackR, RFID or both), for its label.
+  const tagsByEvent = await eventsTimingTags([...eventMap.keys()]);
   const history = Array.from(eventMap.values()).map((ev) => {
     const finishes = ev.motos.filter((m) => !m.dnf && !m.dns);
     return {
       ...ev,
+      timingTags: tagsByEvent.get(ev.eventId),
       totalPoints: finishes.reduce((s, m) => s + (m.points ?? 0), 0),
       bestPosition: finishes.length > 0 ? Math.min(...finishes.map((m) => m.position)) : null,
     };

@@ -16,6 +16,7 @@ import { CacheStatusBadge } from "@/components/CacheStatusBadge";
 import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
 import { isInvalidAssignedActiveTransponderIdentifier } from "@/lib/activeTransponder";
 import { RM_TRACKR_NAME, RM_TRACKR_PRICE } from "@/lib/rmTrackr";
+import { eventTimingTags, type TimingTags } from "@/components/organizer/timingTags";
 
 // RFID tags: alphanumeric + dashes, 1–32 characters.
 function isInvalidRfid(val: string | null | undefined): boolean {
@@ -24,6 +25,30 @@ function isInvalidRfid(val: string | null | undefined): boolean {
 }
 import { getListCheckinsQueryKey, getGetRaceDaySummaryQueryKey, getListRegistrationsQueryKey, getListRidersQueryKey } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
+
+type TagKind = "transponder" | "rfid";
+
+/**
+ * A check-in row's transponder number and RFID sticker, each on its own. An
+ * event can be timed by RM TrackR loops and RFID readers together, so a rider
+ * may have both. Older servers (the desktop app) only send the last-set tag.
+ */
+function riderTags(c: any, tags: TimingTags): { transponder: string | null; rfid: string | null } {
+  const transponder = (c.transponderNumber !== undefined ? c.transponderNumber : c.myLapsTransponderNumber)?.trim() || null;
+  let rfid: string | null;
+  if (c.rfidTag !== undefined) rfid = c.rfidTag?.trim() || null;
+  else {
+    const last = c.rfidNumber?.trim() || null;
+    rfid = last && last.toLowerCase() !== transponder?.toLowerCase() && tags.rfid ? last : null;
+  }
+  return { transponder, rfid };
+}
+
+/** Has the rider a tag for each kind of reader timing the event (any one when none are set up)? */
+function hasNeededTags(tags: TimingTags, held: { transponder: string | null; rfid: string | null }): boolean {
+  if (!tags.fromReaders) return !!(held.transponder || held.rfid);
+  return (!tags.transponder || !!held.transponder) && (!tags.rfid || !!held.rfid);
+}
 
 function RentalTransponderInput({ registrationId, eventId, onDone, currentNumber }: { registrationId: number; eventId: number; onDone: () => void; currentNumber?: string }) {
   const [value, setValue] = useState(
@@ -242,7 +267,8 @@ export default function Checkin() {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [rfidInputOpenId, setRfidInputOpenId] = useState<number | null>(null);
+  // The inline tag input that is open: which rider, and which kind of tag.
+  const [tagInput, setTagInput] = useState<{ riderId: number; kind: TagKind } | null>(null);
   const [bibEditId, setBibEditId] = useState<number | null>(null);
   const [bibEdits, setBibEdits] = useState<Map<number, string>>(new Map());
   const [syncingFromCloud, setSyncingFromCloud] = useState(false);
@@ -293,12 +319,13 @@ export default function Checkin() {
   // Close any open RFID/rental panels when the search changes
   const handleSearchChange = (value: string) => {
     setSearch(value);
-    setRfidInputOpenId(null);
+    setTagInput(null);
     setRentalAssignInputId(null);
   };
 
   const { data: event, isLoading: eventLoading } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
-  const isActiveTransponder = ((event as any)?.timingTechnology ?? "rfid") === "active_transponder";
+  // Which kinds of tag the event's readers use (RM TrackR, RFID or both).
+  const tags = eventTimingTags(event);
   const { data: rawCheckins, isLoading: checkinsLoading, isError: checkinsError } = useListCheckins(eventId, {
     query: { enabled: !!eventId, refetchInterval: 10000 } as any
   });
@@ -678,7 +705,7 @@ export default function Checkin() {
     all: allCheckins.length,
     not_checked_in: allCheckins.filter(c => !c.checkedIn).length,
     checked_in: allCheckins.filter(c => c.checkedIn === true).length,
-    no_rfid: allCheckins.filter(c => !c.rfidLinked).length,
+    no_rfid: allCheckins.filter(c => !hasNeededTags(tags, riderTags(c, tags))).length,
   };
 
   const q = search.trim().toLowerCase();
@@ -686,7 +713,7 @@ export default function Checkin() {
   const statusFiltered = allCheckins.filter(c => {
     if (statusFilter === "checked_in") return c.checkedIn === true;
     if (statusFilter === "not_checked_in") return c.checkedIn !== true;
-    if (statusFilter === "no_rfid") return c.rfidLinked !== true;
+    if (statusFilter === "no_rfid") return !hasNeededTags(tags, riderTags(c, tags));
     return true;
   });
 
@@ -697,7 +724,7 @@ export default function Checkin() {
         const email = (c.email ?? "").toLowerCase();
         const phone = (c.phone ?? "").replace(/\D/g, "");
         const transponder = (c.myLapsTransponderNumber ?? "").toLowerCase();
-        const rfid = (c.rfidNumber ?? "").toLowerCase();
+        const rfid = `${c.rfidNumber ?? ""} ${(c as any).rfidTag ?? ""}`.toLowerCase();
         const qDigits = q.replace(/\D/g, "");
         return (
           name.includes(q) ||
@@ -757,7 +784,7 @@ export default function Checkin() {
               <div className="text-xl md:text-2xl font-heading font-bold text-secondary">{summary?.checkedIn || 0} / {summary?.totalRegistered || 0}</div>
             </div>
             <div className="bg-sidebar-accent/50 rounded-lg px-3 py-2 border border-sidebar-border text-center flex-1 md:flex-none md:min-w-32">
-              <div className="text-sidebar-foreground/60 text-[10px] font-bold uppercase tracking-widest mb-0.5">{isActiveTransponder ? "Transponder" : "RFID Linked"}</div>
+              <div className="text-sidebar-foreground/60 text-[10px] font-bold uppercase tracking-widest mb-0.5">Tagged</div>
               <div className="text-xl md:text-2xl font-heading font-bold text-white">{summary?.rfidLinked || 0}</div>
             </div>
             {(pendingCount > 0 || isSyncing) && (
@@ -812,7 +839,7 @@ export default function Checkin() {
               { key: "all", label: "All" },
               { key: "not_checked_in", label: "Pending" },
               { key: "checked_in", label: "Done" },
-              { key: "no_rfid", label: isActiveTransponder ? "No Transponder" : "No RFID" },
+              { key: "no_rfid", label: "Missing Tag" },
             ].map(({ key, label }) => (
               <Button
                 key={key}
@@ -832,12 +859,12 @@ export default function Checkin() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {filteredCheckins.map(checkin => {
-              const tagVal = isActiveTransponder
-                ? (checkin as any).myLapsTransponderNumber as string | null
-                : checkin.rfidNumber ?? null;
-              const isTagInvalid = isActiveTransponder
-                ? isInvalidAssignedActiveTransponderIdentifier(tagVal)
-                : isInvalidRfid(tagVal);
+              const held = riderTags(checkin, tags);
+              const transponderInvalid = isInvalidAssignedActiveTransponderIdentifier(held.transponder);
+              const rfidInvalid = isInvalidRfid(held.rfid);
+              const isTagInvalid = transponderInvalid || rfidInvalid;
+              const toggleTagInput = (kind: TagKind) =>
+                setTagInput(tagInput?.riderId === checkin.riderId && tagInput.kind === kind ? null : { riderId: checkin.riderId, kind });
               // Rented or bought a transponder at registration: staff hand one out here.
               // A rental's unit number is stored on the registration when it's assigned.
               const rentalNumber = (checkin as any).transponderRental
@@ -998,7 +1025,7 @@ export default function Checkin() {
                             </span>
                           ) : (
                             <button
-                              onClick={() => setRfidInputOpenId(checkin.riderId)}
+                              onClick={() => setTagInput({ riderId: checkin.riderId, kind: "transponder" })}
                               className="flex items-center gap-1 text-amber-800 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded text-xs font-semibold hover:bg-amber-200 transition-colors"
                               title={`Rider bought an ${RM_TRACKR_NAME}. Hand it over and assign its number to mark it fulfilled.`}
                             >
@@ -1009,7 +1036,7 @@ export default function Checkin() {
                               )}
                             </button>
                           )
-                        ) : isActiveTransponder && !isOffline && !checkin.rfidLinked && !(checkin as any).transponderRental && checkin.registrationId != null && (
+                        ) : tags.transponder && !isOffline && !held.transponder && !(checkin as any).transponderRental && checkin.registrationId != null && (
                           <button
                             onClick={() => setTrackrTarget({ registrationId: checkin.registrationId!, riderName: checkin.riderName })}
                             className="flex items-center gap-1 text-xs font-semibold text-primary bg-primary/5 border border-primary/30 px-2 py-0.5 rounded hover:bg-primary/10 transition-colors"
@@ -1018,7 +1045,7 @@ export default function Checkin() {
                           </button>
                         )}
                         {/* RFID sticker status */}
-                        {!isActiveTransponder && rfidStickerFee != null && (
+                        {tags.rfid && rfidStickerFee != null && (
                           (checkin as any).rfidStickerPurchased ? (
                             <span className="flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-xs font-semibold">
                               <CheckCircle2 size={12} /> RFID Tag Purchased
@@ -1032,34 +1059,47 @@ export default function Checkin() {
                             </button>
                           )
                         )}
-                        {isTagInvalid ? (
-                          <button
-                            onClick={() => setRfidInputOpenId(rfidInputOpenId === checkin.riderId ? null : checkin.riderId)}
-                            className="flex items-center gap-1 text-destructive hover:text-destructive/80 transition-colors"
-                            title={`${isActiveTransponder ? "Transponder" : "RFID"} number is invalid — click to fix`}
-                          >
-                            <AlertCircle size={14} />
-                            <span className="font-mono">{tagVal}</span>
-                            <span className="font-bold">— {isActiveTransponder ? "Transponder" : "RFID"} invalid</span>
-                          </button>
-                        ) : checkin.rfidLinked ? (
-                          <button
-                            onClick={() => setRfidInputOpenId(rfidInputOpenId === checkin.riderId ? null : checkin.riderId)}
-                            className="flex items-center gap-1 text-sidebar-primary/80 hover:text-primary transition-colors underline-offset-2 hover:underline"
-                            title={isActiveTransponder ? "Click to change transponder" : "Click to change RFID tag"}
-                          >
-                            <Tag size={14} />
-                            <span className="font-mono">{tagVal}</span>
-                          </button>
-                        ) : !needsRental && !needsTrackr && (
-                          <button
-                            onClick={() => setRfidInputOpenId(rfidInputOpenId === checkin.riderId ? null : checkin.riderId)}
-                            className="flex items-center gap-1 text-amber-600 hover:text-amber-700 transition-colors underline-offset-2 hover:underline"
-                            title={isActiveTransponder ? "Click to assign transponder" : "Click to assign RFID tag"}
-                          >
-                            <Tag size={14} /> {isActiveTransponder ? "No Transponder — Assign" : "No RFID — Assign"}
-                          </button>
-                        )}
+                        {([
+                          // Also when the event asks for or rents transponders, or the rider has one.
+                          (tags.transponder || !!held.transponder || !!(event as any)?.requireTransponder || transponderRentalEnabled)
+                            && { kind: "transponder" as const, name: "Transponder", value: held.transponder, invalid: transponderInvalid,
+                            // A rental or purchase still to hand out has its own notice below.
+                            hideMissing: needsRental || needsTrackr },
+                          (tags.rfid || !!held.rfid) && { kind: "rfid" as const, name: "RFID", value: held.rfid, invalid: rfidInvalid, hideMissing: false },
+                        ].filter(Boolean) as Array<{ kind: TagKind; name: string; value: string | null; invalid: boolean; hideMissing: boolean }>).map(t => (
+                          t.invalid ? (
+                            <button
+                              key={t.kind}
+                              onClick={() => toggleTagInput(t.kind)}
+                              className="flex items-center gap-1 text-destructive hover:text-destructive/80 transition-colors"
+                              title={`${t.name} number is invalid — click to fix`}
+                            >
+                              <AlertCircle size={14} />
+                              <span className="font-mono">{t.value}</span>
+                              <span className="font-bold">— {t.name} invalid</span>
+                            </button>
+                          ) : t.value ? (
+                            <button
+                              key={t.kind}
+                              onClick={() => toggleTagInput(t.kind)}
+                              className="flex items-center gap-1 text-sidebar-primary/80 hover:text-primary transition-colors underline-offset-2 hover:underline"
+                              title={`${t.name}: click to change`}
+                            >
+                              <Tag size={14} />
+                              <span className="text-[10px] font-bold uppercase text-muted-foreground">{t.name}</span>
+                              <span className="font-mono">{t.value}</span>
+                            </button>
+                          ) : !t.hideMissing && (
+                            <button
+                              key={t.kind}
+                              onClick={() => toggleTagInput(t.kind)}
+                              className="flex items-center gap-1 text-amber-600 hover:text-amber-700 transition-colors underline-offset-2 hover:underline"
+                              title={`Click to assign ${t.kind === "transponder" ? "a transponder" : "an RFID tag"}`}
+                            >
+                              <Tag size={14} /> No {t.name} — Assign
+                            </button>
+                          )
+                        ))}
                       </div>
 
                       {/* Notice: the rider rented or bought a transponder at registration and needs one handed out */}
@@ -1078,22 +1118,23 @@ export default function Checkin() {
                         <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                           <AlertCircle size={14} className="shrink-0" />
                           <span className="flex-1 min-w-[12rem]"><strong>Bought an {RM_TRACKR_NAME}.</strong> Hand them a new one and assign its number.</span>
-                          {rfidInputOpenId !== checkin.riderId && (
-                            <Button size="sm" className="h-7 text-xs bg-amber-600 hover:bg-amber-700" onClick={() => setRfidInputOpenId(checkin.riderId)}>
+                          {!(tagInput?.riderId === checkin.riderId && tagInput.kind === "transponder") && (
+                            <Button size="sm" className="h-7 text-xs bg-amber-600 hover:bg-amber-700" onClick={() => setTagInput({ riderId: checkin.riderId, kind: "transponder" })}>
                               Assign transponder
                             </Button>
                           )}
                         </div>
                       )}
 
-                      {/* Inline RFID assignment — available whether or not one is already linked */}
-                      {rfidInputOpenId === checkin.riderId && (
+                      {/* Inline tag assignment — available whether or not one is already linked */}
+                      {tagInput?.riderId === checkin.riderId && (
                         <RfidInput
+                          key={tagInput.kind}
                           riderId={checkin.riderId}
                           eventId={eventId}
-                          onDone={() => setRfidInputOpenId(null)}
-                          isActiveTransponder={isActiveTransponder}
-                          currentTag={checkin.rfidNumber ?? undefined}
+                          onDone={() => setTagInput(null)}
+                          isActiveTransponder={tagInput.kind === "transponder"}
+                          currentTag={(tagInput.kind === "transponder" ? held.transponder : held.rfid) ?? undefined}
                         />
                       )}
                       {/* Inline rental transponder assignment */}
@@ -1115,12 +1156,14 @@ export default function Checkin() {
                       isBibDuplicate={isBibDuplicate}
                       onCheckin={(bibToSave) => {
                         if (isTagInvalid) {
+                          const kind: TagKind = transponderInvalid ? "transponder" : "rfid";
+                          const name = kind === "transponder" ? "Transponder" : "RFID";
                           toast({
-                            title: isActiveTransponder ? "Transponder invalid" : "RFID invalid",
-                            description: `Please assign a valid ${isActiveTransponder ? "transponder" : "RFID"} number before checking in.`,
+                            title: `${name} invalid`,
+                            description: `Please assign a valid ${name} number before checking in.`,
                             variant: "destructive",
                           });
-                          setRfidInputOpenId(checkin.riderId);
+                          setTagInput({ riderId: checkin.riderId, kind });
                           return;
                         }
                         if (requireLiabilityWaiver && !(checkin as any).waiverSigned) {
@@ -1128,12 +1171,12 @@ export default function Checkin() {
                             riderId: checkin.riderId,
                             riderName: checkin.riderName,
                             email: checkin.email ?? "",
-                            rfidNumber: checkin.rfidNumber,
+                            rfidNumber: held.rfid,
                             bibToSave,
                           });
                           return;
                         }
-                        handleCheckin(checkin.riderId, checkin.rfidNumber, bibToSave);
+                        handleCheckin(checkin.riderId, held.rfid, bibToSave);
                       }}
                     />
                   </div>

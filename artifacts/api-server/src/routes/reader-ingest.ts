@@ -30,7 +30,7 @@ import {
   motosTable,
   registrationsTable,
 } from "@workspace/db/schema";
-import { eq, and, count, ilike, or, desc } from "drizzle-orm";
+import { eq, and, count, ilike, or, desc, isNotNull } from "drizzle-orm";
 import { processCrossing, handleFacilityCrossing, handlePing, buildLeaderboard, sseBroadcast, withMotoLock, motoForRider, RiderMotoFinishedError, EnduroCrossingRejected } from "./timing";
 import { recordSplitCrossing, splitForReader } from "../lib/sectors";
 import { broadcastPracticeBoard, processPracticeCrossing } from "./practice";
@@ -375,22 +375,36 @@ router.post("/timing/readers/:token/crossing", express.text({ type: "text/*" }),
         return res.json({ ok: true, message: "Practice crossing recorded" });
       }
 
-      // RM Connect intentionally forwards physical F2000 reads even when a
-      // WebSocket start command was missed, so a live practice can still time.
-      // Outside a practice, however, an unarmed active-reader tag must not fall
-      // through to a scheduled race/checkpoint and start it accidentally. New
-      // connectors include eventId whenever they have received start_moto.
-      if (isActiveTransponderReader) {
-        return res.status(409).json({
-          ok: false,
-          message: "No active practice or moto is accepting active-transponder crossings",
-        });
-      }
-
       const activeEvents = await db
         .select({ id: eventsTable.id })
         .from(eventsTable)
         .where(and(eq(eventsTable.clubId, reader.clubId), eq(eventsTable.status, "race_day")));
+
+      // RM Connect intentionally forwards physical F2000 reads even when a
+      // WebSocket start command was missed, so a live practice can still time.
+      // Outside a practice, however, an unarmed active-reader tag must not fall
+      // through to a scheduled race and start it accidentally. New connectors
+      // include eventId whenever they have received start_moto. The exception
+      // is a reader the organizer placed as an enduro test gate or time check on
+      // today's event: riders start those tests themselves, as with RFID gates.
+      if (isActiveTransponderReader) {
+        const gate = activeEvents.length === 1
+          ? (await db.select({ id: eventReaderAssignmentsTable.id }).from(eventReaderAssignmentsTable)
+              .where(and(
+                eq(eventReaderAssignmentsTable.eventId, activeEvents[0].id),
+                eq(eventReaderAssignmentsTable.readerId, reader.id),
+                or(isNotNull(eventReaderAssignmentsTable.motoId), eq(eventReaderAssignmentsTable.role, "time_check")),
+              ))
+              .limit(1))[0]
+          : undefined;
+        if (!gate) {
+          return res.status(409).json({
+            ok: false,
+            message: "No active practice or moto is accepting active-transponder crossings",
+          });
+        }
+      }
+
       if (activeEvents.length === 0) {
         return res.status(422).json({ ok: false, message: "No active race_day event or practice session for this club" });
       }

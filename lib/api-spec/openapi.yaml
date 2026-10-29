@@ -3621,6 +3621,15 @@ components:
           type: string
           enum: [rfid, active_transponder]
           default: rfid
+          description: Legacy. Events no longer pick a timing technology; see timingTags.
+        timingTags:
+          type: object
+          description: Which kinds of tag the event's readers use (its course map, else its track's, else the club's readers). fromReaders is false when no readers are set up, so either kind may be used.
+          properties:
+            transponder: { type: boolean, description: RM TrackR active transponder }
+            rfid: { type: boolean, description: Passive RFID sticker }
+            fromReaders: { type: boolean }
+          required: [transponder, rfid, fromReaders]
         transponderRentalEnabled:
           type: boolean
         transponderRentalFee:

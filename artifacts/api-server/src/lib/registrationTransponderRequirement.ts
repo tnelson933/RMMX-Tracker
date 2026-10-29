@@ -1,5 +1,4 @@
 export interface RegistrationTransponderRequirement {
-  timingTechnology: string | null | undefined;
   requireTransponder: boolean | null | undefined;
   transponderRentalEnabled: boolean | null | undefined;
 }
@@ -15,9 +14,9 @@ export function isRegistrationTransponderRequirementSatisfied(
   event: RegistrationTransponderRequirement,
   selection: RegistrationTransponderSelection,
 ): boolean {
-  const usesActiveTiming = event.timingTechnology === "active_transponder";
-
-  if (!usesActiveTiming || !event.requireTransponder) return true;
+  // Events don't pick a timing technology; the organizer turns this on when
+  // their readers include an RM TrackR loop.
+  if (!event.requireTransponder) return true;
 
   const hasPersonalTransponder = Boolean(selection.transponderNumber?.trim());
   const hasAvailableRental = Boolean(

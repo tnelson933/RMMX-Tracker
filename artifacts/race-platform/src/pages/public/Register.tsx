@@ -3,6 +3,7 @@ import { localDateString } from "@/lib/eventDates";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { StateSelect } from "@/components/ui/StateSelect";
 import { RM_TRACKR_OPTION_ID } from "@/lib/rmTrackr";
+import { eventTimingTags, type TimingTags } from "@/components/organizer/timingTags";
 import { useRoute, Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@/lib/zodResolver";
@@ -203,6 +204,8 @@ interface EventInfo {
   registrationOpen: string | null;
   registrationClose: string | null;
   timingTechnology: string;
+  /** Which kinds of tag the event's readers use (RM TrackR, RFID or both). */
+  timingTags?: TimingTags;
   transponderRentalEnabled: boolean;
   transponderRentalFee: number | null;
   rfidStickerFee: number | null;
@@ -538,7 +541,11 @@ export default function Register() {
   // RM TrackR events: a rider without a transponder can rent or buy one instead.
   const trackrOption = (event?.purchaseOptions ?? []).find(o => o.id === RM_TRACKR_OPTION_ID) ?? null;
   const offersRental = !!event?.transponderRentalEnabled;
-  const addOnOptions = (event?.purchaseOptions ?? []).filter(o => !(o.id === RM_TRACKR_OPTION_ID && event?.timingTechnology === "active_transponder"));
+  // The transponder section shows when the event's readers include an RM TrackR
+  // loop, or the event asks for (or rents, or sells) transponders.
+  const showTransponderSection = !!event && (eventTimingTags(event).transponder || event.requireTransponder
+    || offersRental || !!trackrOption);
+  const addOnOptions = (event?.purchaseOptions ?? []).filter(o => !(o.id === RM_TRACKR_OPTION_ID && showTransponderSection));
   const buyingTrackr = (watchedPurchaseOptions ?? []).includes(RM_TRACKR_OPTION_ID);
   const gettingTransponder = !!watchedRentTransponder || buyingTrackr;
   const chooseTransponder = (choice: "rent" | "buy" | null) => {
@@ -557,7 +564,7 @@ export default function Register() {
   const rentalTotal = (watchedRentTransponder && event?.transponderRentalEnabled && event?.transponderRentalFee != null)
     ? Number(event.transponderRentalFee)
     : 0;
-  const rfidStickerTotal = (watchedPurchaseRfidSticker && event?.timingTechnology === "rfid" && event?.rfidStickerFee != null)
+  const rfidStickerTotal = (watchedPurchaseRfidSticker && event?.rfidStickerFee != null)
     ? Number(event.rfidStickerFee)
     : 0;
   // Early-bird pricing ends by the track's local date (same rule as the server).
@@ -770,7 +777,7 @@ export default function Register() {
       form.setError("clubIdNumber", { message: "Club ID # is required for this event" });
       return;
     }
-    if (event?.timingTechnology === "active_transponder" && event.requireTransponder
+    if (event?.requireTransponder
       && !data.myLapsTransponderNumber?.trim() && !data.rentTransponder && !data.selectedPurchaseOptions.includes(RM_TRACKR_OPTION_ID)) {
       const canGetOne = !!event.transponderRentalEnabled || (event.purchaseOptions ?? []).some(o => o.id === RM_TRACKR_OPTION_ID);
       form.setError("myLapsTransponderNumber", {
@@ -1390,7 +1397,7 @@ export default function Register() {
                   </CardContent>
                 </Card>
 
-                {event.timingTechnology === "active_transponder" && (
+                {showTransponderSection && (
                   <Card>
                     <SectionHeader>RM TrackR Transponder</SectionHeader>
                     <CardContent className="p-6 space-y-4">
@@ -1484,7 +1491,7 @@ export default function Register() {
                 )}
 
                 {/* RFID Sticker */}
-                {event.timingTechnology === "rfid" && event.rfidStickerFee != null && (
+                {event.rfidStickerFee != null && (
                   <Card>
                     <SectionHeader>RFID Sticker</SectionHeader>
                     <CardContent className="p-6">
