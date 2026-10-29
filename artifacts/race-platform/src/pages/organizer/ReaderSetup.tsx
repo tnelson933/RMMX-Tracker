@@ -19,6 +19,7 @@ import {
 } from "@workspace/api-client-react";
 import { ConnectionModeChooser } from "@/components/organizer/OfflineHardwareSetup";
 import { ConnectLaptop } from "@/components/organizer/ConnectLaptop";
+import { HandScanners } from "@/components/organizer/HandScanners";
 
 const BASE_URL = window.location.origin;
 const PING_ENDPOINT_BASE = `${BASE_URL}/api/timing/ping`;
@@ -480,9 +481,11 @@ export default function ReaderSetup() {
   // ── Registered readers ──
   // ── Identify mode: poll the readers list so lastSeenAt refreshes ──
   const [identifying, setIdentifying] = useState(false);
-  const { data: readers = [] } = useListReaders({
+  const { data: allReaders = [] } = useListReaders({
     query: { refetchInterval: identifying ? 1500 : 10_000 } as any,
   });
+  // Hand scanners have their own section (HandScanners); everything here runs through RM Connect.
+  const readers = (allReaders as any[]).filter(r => r.connection !== "hand_scanner");
   // The timing URL card shows the URL of one RFID reader (the first by default).
   const rfidReaders = (readers as any[]).filter(r => r.type === "rfid");
   const [urlReaderId, setUrlReaderId] = useState<number | null>(null);
@@ -1295,6 +1298,9 @@ export default function ReaderSetup() {
           </p>
         )}
       </div>
+
+      {/* Hand scanners post over their own cellular or Wi-Fi, to the cloud */}
+      {!isDesktop && <HandScanners />}
 
       {/* ── Advanced: what most clubs never need ── */}
       <details className="rounded-xl border bg-card overflow-hidden">

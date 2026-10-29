@@ -58,6 +58,8 @@ export const PUBLIC_RULES: PublicRule[] = [
   // Timing hardware ingest. Not yet authenticated: tracked separately (audit S11).
   { pattern: /^\/timing\/(crossing|impinj-crossing|zebra-crossing|active\/crossing|ping)$/, methods: ["POST"], reason: "reader ingest (S11 pending)" },
   { pattern: /^\/timing\/readers\/[^/]+\/(crossing|active\/crossing|ping)$/, methods: ["POST"], reason: "per-reader token ingest (token checked in handler)" },
+  { pattern: /^\/timing\/readers\/[^/]+\/scanner$/, methods: READ, reason: "hand scanner page: name, placement, server clock (token checked in handler)" },
+  { pattern: /^\/scanner\/pair$/, methods: ["POST"], reason: "hand scanner pairing (6-digit code checked in handler)" },
   { pattern: /^\/practice\/(\d+|active)\/crossing$/, methods: ["POST"], reason: "practice reader ingest (S11 pending)" },
 ];
 

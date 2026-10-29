@@ -18,6 +18,7 @@
  * so all routing/parity logic stays in one place.
  */
 import { WebSocketServer, WebSocket } from "ws";
+import { liveMotoForClub } from "./liveSession";
 import type { IncomingMessage, Server } from "http";
 import { db } from "@workspace/db";
 import { readersTable, motosTable, eventsTable, practiceSessionsTable } from "@workspace/db/schema";
@@ -222,25 +223,9 @@ export function attachConnectorWebSocket(httpServer: Server): void {
           (async () => {
             try {
               // Check for an active moto first
-              const activeMoto = await db
-                .select({
-                  id: motosTable.id,
-                  name: motosTable.name,
-                  type: motosTable.type,
-                  eventId: motosTable.eventId,
-                })
-                .from(motosTable)
-                .innerJoin(eventsTable, eq(motosTable.eventId, eventsTable.id))
-                .where(
-                  and(
-                    eq(eventsTable.clubId, reader.clubId),
-                    eq(motosTable.status, "in_progress"),
-                  ),
-                )
-                .limit(1);
-
-              if (activeMoto.length > 0) {
-                const m = activeMoto[0];
+              // (only a live one: a forgotten in-progress moto must not arm the reader)
+              const m = await liveMotoForClub(reader.clubId);
+              if (m) {
                 ws.send(JSON.stringify({
                   type: "start_moto",
                   motoId: m.id,

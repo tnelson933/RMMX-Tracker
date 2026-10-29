@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { activePracticeForClub, liveMotoForClub } from "../lib/liveSession";
 import { db } from "@workspace/db";
 import {
   lapCrossingsTable,
@@ -1180,14 +1181,11 @@ async function getActiveMotoForEvent(eventId: number) {
 // ── Helper: find the in-progress moto across ALL events for a club ─────────────
 // Used by the stable "facility endpoint" so hardware never needs reconfiguring.
 async function getActiveMotoForClub(clubId: number) {
-  const rows = await db
-    .select({ moto: motosTable })
-    .from(motosTable)
-    .innerJoin(eventsTable, eq(motosTable.eventId, eventsTable.id))
-    .where(and(eq(eventsTable.clubId, clubId), eq(motosTable.status, "in_progress")))
-    .orderBy(desc(motosTable.startedAt))
-    .limit(1);
-  if (rows[0]) return rows[0].moto;
+  // A forgotten in-progress moto, or one started before the running practice,
+  // must not take the practice's reads (lib/liveSession.ts).
+  const live = await liveMotoForClub(clubId);
+  if (live) return live;
+  if (await activePracticeForClub(clubId)) return null;
   // Enduro fallback: enduro tests have no Start button, so none may be in_progress
   // yet. Route a facility-endpoint crossing to the next scheduled test (lowest
   // motoNumber); _processCrossing activates it atomically inside the moto lock.

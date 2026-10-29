@@ -16,7 +16,7 @@
  *                    (expecting a finish toggle)
  *   time_check     → records an arrival note (split time) against the check
  */
-import { Router } from "express";
+import express, { Router } from "express";
 import { db } from "@workspace/db";
 import {
   readersTable,
@@ -38,6 +38,7 @@ import { recomputeEnduroPositionsForEvent } from "./enduro-scoring";
 import { recordTagSeen } from "../lib/recentTags";
 import { canonicalizeCrossingTimestamp, parseTrustworthyReceivedAt } from "../lib/crossingTimestamp";
 import { findReaderByToken } from "../lib/ingestAuth";
+import { activePracticeForClub, liveMotoForClub } from "../lib/liveSession";
 
 const router = Router();
 
@@ -154,14 +155,7 @@ router.post("/timing/readers/:token/active/crossing", async (req, res) => {
   const reader = await findReaderByToken(req.params.token);
   if (!reader) return res.status(404).json({ ok: false, message: "Unknown reader token" });
   markReaderSeen(reader.id);
-  const [activeMoto] = await db
-    .select({ moto: motosTable })
-    .from(motosTable)
-    .innerJoin(eventsTable, eq(motosTable.eventId, eventsTable.id))
-    .where(and(eq(eventsTable.clubId, reader.clubId), eq(motosTable.status, "in_progress")))
-    .orderBy(desc(motosTable.startedAt))
-    .limit(1);
-  const moto = activeMoto?.moto;
+  const moto = await liveMotoForClub(reader.clubId);
   const split = moto && moto.type !== "enduro_test" ? await splitForReader(moto.eventId, reader.id) : null;
   if (!split) {
     // A split reader with no motocross moto running must not score practice laps.
@@ -194,7 +188,38 @@ router.post("/timing/readers/:token/ping", async (req, res) => {
   return handlePing(req, res, reader.clubId);
 });
 
-router.post("/timing/readers/:token/crossing", async (req, res) => {
+const TAG_FIELDS = ["rfidNumber", "epc", "EPC", "tag", "tagId", "tag_id", "tagID", "uid", "data", "barcode"];
+const TIME_FIELDS = ["crossingTime", "scanTime", "readTime", "time", "timestamp"];
+
+/**
+ * Hand scanner apps name the tag field differently and post JSON, forms, query
+ * strings or plain text. Map the common shapes onto { rfidNumber, crossingTime }.
+ */
+export function normalizeScanBody(body: unknown, query: Record<string, unknown> = {}): Record<string, unknown> {
+  const src: Record<string, unknown> = typeof body === "string"
+    ? { rfidNumber: body.trim().split(/[\r\n,;]/)[0] }
+    : body && typeof body === "object" && !Array.isArray(body) ? { ...(body as Record<string, unknown>) } : {};
+  const pick = (fields: string[]) => {
+    for (const k of fields) {
+      const v = src[k] ?? query[k];
+      if (typeof v === "string" && v.trim()) return v.trim();
+      if (typeof v === "number") return String(v);
+    }
+    return undefined;
+  };
+  const tag = pick(TAG_FIELDS);
+  if (tag) src.rfidNumber = tag.replace(/\s+/g, "");
+  if (src.crossingTime == null) {
+    const time = pick(TIME_FIELDS);
+    if (time) src.crossingTime = /^\d{12,}$/.test(time) ? new Date(Number(time)).toISOString() : time;
+  }
+  return src;
+}
+
+router.post("/timing/readers/:token/crossing", express.text({ type: "text/*" }), (req, _res, next) => {
+  req.body = normalizeScanBody(req.body, req.query as Record<string, unknown>);
+  next();
+}, async (req, res) => {
   const { token } = req.params;
   const body = req.body as {
     rfidNumber?: string;
@@ -262,16 +287,15 @@ router.post("/timing/readers/:token/crossing", async (req, res) => {
   }
 
   let eventId = body.eventId ?? null;
+  // RM Connect tags reads with the event of the last start_moto it heard. If
+  // that moto isn't live any more and a practice is running, the read is a
+  // practice lap.
+  if (eventId) {
+    const live = await liveMotoForClub(reader.clubId);
+    if (live?.eventId !== Number(eventId) && (await activePracticeForClub(reader.clubId))) eventId = null;
+  }
   if (!eventId) {
-    const [activeMoto] = await db
-      .select({ id: motosTable.id, eventId: motosTable.eventId })
-      .from(motosTable)
-      .innerJoin(eventsTable, eq(motosTable.eventId, eventsTable.id))
-      .where(and(
-        eq(eventsTable.clubId, reader.clubId),
-        eq(motosTable.status, "in_progress"),
-      ))
-      .limit(1);
+    const activeMoto = await liveMotoForClub(reader.clubId);
 
     if (activeMoto) {
       eventId = activeMoto.eventId;

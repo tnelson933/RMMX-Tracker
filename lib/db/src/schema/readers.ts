@@ -17,6 +17,8 @@ export const readersTable = pgTable("readers", {
   type: text("type", { enum: ["rfid", "active_transponder"] }).notNull().default("rfid"),
   token: text("token").notNull().unique(),
   hardwareAddress: text("hardware_address"),
+  /** How reads arrive: null = RM Connect / direct reader, "hand_scanner" = a handheld posting over cellular or Wi-Fi. */
+  connection: text("connection"),
   /** Race-critical F2000 configuration managed by the organizer portal. */
   activeTimingConfig: jsonb("active_timing_config").$type<ActiveTimingConfig | null>(),
   lastSeenAt: timestamp("last_seen_at"),

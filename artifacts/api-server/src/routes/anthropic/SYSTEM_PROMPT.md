@@ -628,6 +628,16 @@ Optional — the defaults of channel 0, power 100 and both loops on suit most tr
 - **Desktop-only RM TrackR diagnostic** (desktop app): connect directly, see the machine ID, last heartbeat, power/battery, Loop 1 / Loop 2 status and read count, then run **Start System Test** and walk an RM TrackR Transponder over the loop.
 - **USB / Serial Reader** (desktop app only) — for an RFID reader plugged into the laptop by USB or serial port. Click **Open Serial Port Settings** (also in the desktop menu as **Serial / RFID Settings…**).
 
+### Hand scanners (cellular or Wi-Fi)
+For checkpoints out on the course (enduro sections, time checks) where no laptop sits. On Reader Setup open **Add a cellular or Wi-Fi hand scanner**:
+1. Name the scanner after where it will be (e.g. "Section 4 check") → **Add scanner**. A connect panel opens with a QR code and a 6-digit code (15 minutes).
+2. On the handheld: **with a camera**, scan the QR code; **without a camera**, open `rmroost.com/scan` in its browser and type the code. The RM Roost scanner page opens with the scanner's name and Course Map spot.
+3. Scan any tag. The scanner turns green on Reader Setup ("… is sending reads").
+4. Place each scanner on the event's **Course Map** so its reads count at the right spot. Until then the scanner page warns "Not on a Course Map yet".
+- Most handhelds type each tag into the page's field and press Enter (keyboard output); typing a tag by hand works too. Each scan is timed on the scanner the moment it's read, on RM Roost's clock, and is held on the scanner while there's no signal, then sent in order.
+- Scanners whose own app can upload: enter the scanner's upload address from the connect panel (POST; tag as `epc`, `tag` or `rfidNumber`; JSON, form or plain text; include the scan time if the app uploads later).
+- Use **Connect** again for a new code (e.g. a replacement handheld); the trash icon removes a scanner. Hand scanners need signal to reach the cloud; they don't use RM Connect or the desktop app.
+
 ### Course Map tab (several readers per event)
 
 The event's **Course Map** tab places readers on the course. Readers come from Reader Setup (added with **Find readers** in RM Connect); the tab shows each reader's live dot (green ready, amber starting up, grey RM Connect not running). Drag a reader chip onto a slot, or pick it from the slot's list (works on phones and tablets). Click **Save course map**; readers route to their places right away.
@@ -666,7 +676,8 @@ Every reader is registered to your club (RM Connect does this when you add it). 
 - **"The RM TrackR at … refused the connection"** → wrong IP, or the RM TrackR isn't in TCP mode on port 55555. On the RM TrackR: **Config → Network** (TCP mode) and check its IP under **Config → About**.
 - **"Cannot reach the RM TrackR…" / connection timed out** → the laptop and reader aren't on the same network, or the reader is off. "address … was not found" → the IP or hostname is wrong.
 - **"RM TrackR heartbeat stopped"** → the reader lost power or network; check cables, battery, and Wi-Fi.
-- **Connected but "waiting for the loops" / not ready** → wait for the loops to report working; RM Roost retries automatically. Check that the loops are enabled in Advanced RM TrackR settings.
+- **Connected but "waiting for the loops" / not ready** → pass an RM TrackR Transponder over the loop: the first pass turns the reader green (some RM TrackR firmware never reports loop status, so a pass is the proof). If only one loop is installed, turn the other loop off in the RM TrackR settings.
+- **Reads show in RM Connect / the tag scanner but practice or a race gets none** → check that no old moto was left running: a moto still marked in progress takes reads until it is finished. RM Roost now ignores motos started more than 12 hours ago, and a practice started after a moto takes the reads, but finish any moto left running on its Race Day page.
 - **Reads arrive but nothing is timed / "No moto in progress for this club"** → start a moto or practice first (Race Day Management tab or Practice page). To check tags without a moto, use **Test** on the reader in RM Connect, or the Live Tag Scanner.
 - **Crossings rejected after issuing a new token** → in RM Connect remove the reader and add it again with Find readers; reprogram a reader that posts directly with its new URL.
 - **Sync reader clock fails** → connect the RM TrackR and wait for its machine ID first.

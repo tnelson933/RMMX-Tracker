@@ -840,3 +840,42 @@ test("loop status counts 1 and words like working as running", () => {
   for (const value of ["1", "true", "working", "Running", "open"]) assert.equal(isLoopWorking(value), true, value);
   for (const value of ["0", "", "stopped", "closed"]) assert.equal(isLoopWorking(value), false, value);
 });
+
+test("a transponder pass shows the loop running when the reader sends no loop status", async () => {
+  const messages = [];
+  let peer;
+  const server = net.createServer(connection => {
+    peer = connection;
+    connection.on("data", chunk => messages.push(chunk.toString("utf8")));
+    connection.on("error", () => {});
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const client = new ActiveTransponderClient();
+  client.configure({ channel: 0, power: 100, loop1Enabled: true, loop2Enabled: false });
+  try {
+    await client.connect(`127.0.0.1:${server.address().port}`);
+    client.startReading();
+    // Firmware that reports battery but no loop telemetry.
+    peer.write("unit-1@heartBeat@0001@;unit-1@machineState@0002@batteryPercent=80;");
+    await waitFor(() => client.getStatus().heartbeatFresh);
+    assert.equal(client.getStatus().ready, false);
+    assert.doesNotMatch(client.getStatus().diagnosis, /cables/);
+
+    const now = new Date();
+    const pad = (n, w = 2) => String(n).padStart(w, "0");
+    const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}.000`;
+    peer.write(`unit-1@heartBeat@0003@;unit-1@epc@0004@${stamp},ABC123;`);
+    await waitFor(() => client.getStatus().ready);
+    assert.equal(client.getStatus().diagnosis, "Reading transponders.");
+
+    // No more "open the loops" retries once reads prove they run.
+    const opensAfter = commandsFromWire(messages).filter(c => c === "readerOpen").length;
+    await new Promise(resolve => setTimeout(resolve, 2_300));
+    assert.equal(commandsFromWire(messages).filter(c => c === "readerOpen").length, opensAfter);
+  } finally {
+    client.disconnect();
+    peer?.destroy();
+    await new Promise(resolve => server.close(resolve));
+  }
+});

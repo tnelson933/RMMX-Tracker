@@ -54,6 +54,7 @@ import RiderHistory from "@/pages/rider/RiderHistory";
 import RiderCreateProfile from "@/pages/rider/RiderCreateProfile";
 import RmCash from "@/pages/rider/RmCash";
 import WatchLive from "@/pages/public/WatchLive";
+import HandScanner from "@/pages/public/HandScanner";
 import EventWidget from "@/pages/public/EventWidget";
 import SeriesWidget from "@/pages/public/SeriesWidget";
 import PrivacyPolicy from "@/pages/public/PrivacyPolicy";
@@ -205,6 +206,9 @@ function Router() {
       </Route>
       <Route path="/watch/:eventId">
         <WatchLive />
+      </Route>
+      <Route path="/scan">
+        <HandScanner />
       </Route>
       <Route path="/widget/series/:seriesId">
         <SeriesWidget />

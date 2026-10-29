@@ -76,7 +76,14 @@ export function isLoopWorking(value: string): boolean {
  * Explains which enabled loop isn't reporting. The usual cause is a loop that
  * is turned on but not installed (many tracks run one loop), so say how to fix it.
  */
-function silentLoopMessage(loopsOk: boolean[], retries: number): string {
+function silentLoopMessage(loopsOk: boolean[], retries: number, telemetry: boolean): string {
+  // Some RM TrackR firmware never reports loop status. A transponder pass is
+  // the proof then, so say that instead of blaming the cables.
+  if (!telemetry) {
+    return retries >= 3
+      ? "Loops are on. Pass a transponder over the loop to confirm it's reading; the light turns green on the first pass."
+      : "Starting the loops…";
+  }
   const silent = loopsOk.map((ok, i) => (ok ? null : i + 1)).filter((n): n is number => n !== null);
   const which = silent.length === 1 ? `Loop ${silent[0]} isn't` : "The loops aren't";
   const hint = silent.length === 1 && silent.length < loopsOk.length
@@ -162,6 +169,9 @@ export class ActiveTransponderClient extends EventEmitter {
   private lastError: string | null = null;
   private lastPassingAt: string | null = null;
   private passingCount = 0;
+  // A transponder pass since the loops were last (re)opened proves they run,
+  // whatever the loop telemetry says (some firmware never reports it).
+  private loopsProvenByReads = false;
   private lastHeartbeatAt: string | null = null;
   private machineState: Record<string, string> = {};
   private activeSystemState: string | null = null;
@@ -185,7 +195,9 @@ export class ActiveTransponderClient extends EventEmitter {
     const heartbeatAge = this.lastHeartbeatAt ? Date.now() - new Date(this.lastHeartbeatAt).getTime() : null;
     const heartbeatFresh = heartbeatAge !== null && heartbeatAge <= HEARTBEAT_STALE_MS;
     const state = this.machineState;
-    const enabledLoops = this.loopEnabled.map((enabled, index) => !enabled || isLoopWorking(state[`reader${index + 1}Working`] ?? ""));
+    const enabledLoops = this.loopEnabled.map((enabled, index) =>
+      !enabled || this.loopsProvenByReads || isLoopWorking(state[`reader${index + 1}Working`] ?? ""));
+    const hasLoopTelemetry = state.reader1Working !== undefined || state.reader2Working !== undefined;
     const readersWorking = enabledLoops.every(Boolean);
     const ready = connected && heartbeatFresh && this.desiredReading && this.configurationApplied
       && this.readerCommandMachineId === this.machineId && readersWorking;
@@ -195,8 +207,12 @@ export class ActiveTransponderClient extends EventEmitter {
       .filter((key) => state[key] !== undefined)
       .map((key) => `${key.replace("Percent", "")}: ${state[key]}`)
       .join(", ");
+    // Without loop telemetry, show what the reader does report, so support can see it.
+    const rawState = !hasLoopTelemetry
+      ? Object.entries(state).filter(([key]) => key !== "batteryPercent").map(([k, v]) => `${k}=${v}`).join(", ").slice(0, 120)
+      : "";
     const detail = this.machineId
-      ? `${this.machineId}${this.activeSystemState ? ` · ${this.activeSystemState}` : ""}${machineSummary ? ` · ${machineSummary}` : ""}`
+      ? `${this.machineId}${this.activeSystemState ? ` · ${this.activeSystemState}` : ""}${machineSummary ? ` · ${machineSummary}` : ""}${rawState ? ` · reports ${rawState}` : ""}`
       : connected ? "Connected — waiting for RM TrackR machine identification" : null;
     const heartbeatError = connected && heartbeatAge !== null && !heartbeatFresh
       ? "RM TrackR heartbeat stopped — check the reader and network connection."
@@ -208,8 +224,10 @@ export class ActiveTransponderClient extends EventEmitter {
         : !heartbeatFresh
           ? "Waiting for a fresh RM TrackR heartbeat."
           : this.desiredReading && !readersWorking
-            ? silentLoopMessage(enabledLoops, this.readerOpenRetryCount)
-            : "RM TrackR transport, heartbeat, and machine identification are ready.");
+            ? silentLoopMessage(enabledLoops, this.readerOpenRetryCount, hasLoopTelemetry)
+            : this.desiredReading
+              ? "Reading transponders."
+              : "RM TrackR transport, heartbeat, and machine identification are ready.");
     return {
       connected, host: this.host, port: this.port, machineId: this.machineId,
       error: this.lastError ?? heartbeatError, lastPassingAt: this.lastPassingAt,
@@ -229,6 +247,8 @@ export class ActiveTransponderClient extends EventEmitter {
     this.channel = input.channel;
     this.power = input.power;
     this.loopEnabled = [input.loop1Enabled, input.loop2Enabled];
+    // New loop settings need a fresh pass (or telemetry) to show as running.
+    this.loopsProvenByReads = false;
     this.configurationApplied = false;
     this.applyConfiguration(true);
     if (this.desiredReading) this.requestReaderOpen(true);
@@ -257,6 +277,7 @@ export class ActiveTransponderClient extends EventEmitter {
     this.lastReaderOpenRequestAt = 0;
     this.readerOpenRetryCount = 0;
     this.lastReaderOpenRetryAt = null;
+    this.loopsProvenByReads = false;
     this.receiveBuffer = "";
 
     return new Promise((resolve, reject) => {
@@ -311,6 +332,7 @@ export class ActiveTransponderClient extends EventEmitter {
     this.lastReaderOpenRequestAt = 0;
     this.readerOpenRetryCount = 0;
     this.lastReaderOpenRetryAt = null;
+    this.loopsProvenByReads = false;
   }
 
   startReading(): void {
@@ -329,6 +351,7 @@ export class ActiveTransponderClient extends EventEmitter {
     this.lastReaderOpenRequestAt = 0;
     this.readerOpenRetryCount = 0;
     this.lastReaderOpenRetryAt = null;
+    this.loopsProvenByReads = false;
     this.emit("status");
   }
 
@@ -353,6 +376,7 @@ export class ActiveTransponderClient extends EventEmitter {
     this.machineId = machineId;
     this.lastError = null;
     if (requiresInitialization) {
+      this.loopsProvenByReads = false;
       this.configurationApplied = false;
       this.readerCommandMachineId = null;
       this.lastReaderOpenRequestAt = 0;
@@ -376,6 +400,12 @@ export class ActiveTransponderClient extends EventEmitter {
         if (tag && time) {
           this.lastPassingAt = time.toISOString();
           this.passingCount++;
+          if (this.desiredReading && !this.loopsProvenByReads) {
+            // Reading works: stop re-opening and re-configuring the loops,
+            // which can briefly interrupt them.
+            this.loopsProvenByReads = true;
+            this.clearReaderOpenRetry();
+          }
           this.emit("tag", tag, time, {
             receivedAt,
             deviceTimezone: getHostTimezone(),
@@ -401,6 +431,7 @@ export class ActiveTransponderClient extends EventEmitter {
   }
 
   private enabledLoopsAreRunning(): boolean {
+    if (this.loopsProvenByReads) return true;
     return this.loopEnabled.every(
       (enabled, index) => !enabled || isLoopWorking(this.machineState[`reader${index + 1}Working`] ?? ""),
     );

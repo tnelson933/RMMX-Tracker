@@ -76,9 +76,10 @@ async function requireLaptop(req: Request, res: Response) {
 router.post("/readers/pairing-codes", async (req, res) => {
   const caller = await callerClub(req);
   if (!caller) return res.status(401).json({ error: "Unauthorized" });
-  // Any unused code for this club is replaced, so only the newest one works.
+  // Any unused laptop code for this club is replaced, so only the newest one
+  // works. Hand scanner codes (readerId set) are separate and stay valid.
   await db.update(connectorPairingCodesTable).set({ usedAt: new Date() })
-    .where(and(eq(connectorPairingCodesTable.clubId, caller.clubId), isNull(connectorPairingCodesTable.usedAt)));
+    .where(and(eq(connectorPairingCodesTable.clubId, caller.clubId), isNull(connectorPairingCodesTable.usedAt), isNull(connectorPairingCodesTable.readerId)));
   // Unique among live codes, so a code can only ever pair with one club.
   let code = "";
   for (let attempt = 0; attempt < 10 && !code; attempt++) {
@@ -136,6 +137,8 @@ router.post("/connector/pair", async (req, res) => {
       eq(connectorPairingCodesTable.code, code),
       isNull(connectorPairingCodesTable.usedAt),
       gt(connectorPairingCodesTable.expiresAt, new Date()),
+      // A hand scanner's code can't pair a laptop.
+      isNull(connectorPairingCodesTable.readerId),
     )).limit(1)
     : [];
   if (!match) {
@@ -175,7 +178,8 @@ router.get("/connector/laptop/readers", async (req, res) => {
   const laptop = await requireLaptop(req, res);
   if (!laptop) return;
   const rows = await db.select().from(readersTable).where(eq(readersTable.clubId, laptop.clubId)).orderBy(asc(readersTable.name));
-  return res.json(rows.map(publicReader));
+  // Hand scanners send their own reads; a laptop never runs them.
+  return res.json(rows.filter(r => r.connection !== "hand_scanner").map(publicReader));
 });
 
 router.post("/connector/laptop/readers", async (req, res) => {

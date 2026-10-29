@@ -107,6 +107,9 @@ let lastHeartbeatAt: string | null = null;
 let batteryPercent: number | null = null;
 let totalTagsRead: number | null = null;
 let differentTagsRead: number | null = null;
+// A transponder pass after the loops were opened proves they run, whatever the
+// loop telemetry says (some RM TrackR firmware never reports it).
+let loopsProvenByReads = false;
 let reader1Working: string | null = null;
 let reader2Working: string | null = null;
 let eventId: string | null = null;
@@ -373,6 +376,7 @@ function clearDeviceSessionState(): void {
   machineId = null; lastPassingAt = null; passingCount = 0; lastHeartbeatAt = null;
   batteryPercent = null; totalTagsRead = null; differentTagsRead = null; reader1Working = null; reader2Working = null;
   eventId = null; recvBuffer = ""; commandSerialNumber = 0; reader1State = "unknown"; reader2State = "unknown"; configApplied = false; lastReaderOpenRequestAt = 0;
+  loopsProvenByReads = false;
 }
 
 function processPackets(onPassing: ActiveTransponderPassingCallback | undefined, receivedAt: Date): void {
@@ -410,6 +414,8 @@ function processEpc(parameters: string, onPassing: ActiveTransponderPassingCallb
   const epc = parameters.slice(commaIndex + 1).trim();
   if (!timestamp || !epc) return;
   lastPassingAt = timestamp.toISOString(); passingCount++; connectError = null;
+  // Reading works: stop re-sending readerOpen, which can briefly interrupt loops.
+  if (reader1State === "open" || reader2State === "open") loopsProvenByReads = true;
   onPassing?.(epc, timestamp, {
     receivedAtUtc: receivedAt.toISOString(),
     deviceTimezone: getHostIanaTimezone(),
@@ -462,6 +468,9 @@ function openReaders(): void {
   const needsReader1 = configuration.loopEnabled[0] && (reader1State !== "open" || !isWorking(reader1Working));
   const needsReader2 = configuration.loopEnabled[1] && (reader2State !== "open" || !isWorking(reader2Working));
   if (!needsReader1 && !needsReader2) return;
+  if (loopsProvenByReads
+    && (!configuration.loopEnabled[0] || reader1State === "open")
+    && (!configuration.loopEnabled[1] || reader2State === "open")) return;
   if (!shouldRetry && reader1State === "open" && reader2State === "open") return;
   if (needsReader1) {
     sendReaderCommand("readerOpen", 1); reader1State = "open";
@@ -496,6 +505,7 @@ function applyConfiguration(): void {
   sendCommand(configuration.loopEnabled[0] ? "loopEnable" : "loopDisable", "1");
   sendCommand(configuration.loopEnabled[1] ? "loopEnable" : "loopDisable", "2");
   configApplied = true;
+  loopsProvenByReads = false;
   reader1State = "closed";
   reader2State = "closed";
   lastReaderOpenRequestAt = 0;
@@ -516,6 +526,7 @@ function isWorking(value: string | null): boolean {
   return value !== null && ["1", "true", "working", "open", "enabled"].includes(value.toLowerCase());
 }
 function areEnabledLoopsTelemetryReady(): boolean {
+  if (loopsProvenByReads) return true;
   return (!configuration.loopEnabled[0] || (reader1State === "open" && isWorking(reader1Working))) &&
     (!configuration.loopEnabled[1] || (reader2State === "open" && isWorking(reader2Working)));
 }
