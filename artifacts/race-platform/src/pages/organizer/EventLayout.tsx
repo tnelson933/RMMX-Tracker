@@ -45,11 +45,15 @@ import Checkin from "./Checkin";
 import EventSchedule from "./EventSchedule";
 import CourseMap from "./CourseMap";
 import Motos from "./Motos";
-import EnterResults from "./EnterResults";
 import Report from "./Report";
 import TransponderRentals from "./TransponderRentals";
 import Cancellations from "./Cancellations";
 import { useListEventCancellations } from "@workspace/api-client-react";
+
+function ResultsRedirect() {
+  const [, params] = useRoute("/events/:eventId/results");
+  return <Redirect to={`/events/${params?.eventId ?? ""}/motos`} />;
+}
 
 function PracticeRedirect() {
   const [, params] = useRoute("/events/:eventId/practice");
@@ -94,7 +98,6 @@ export default function EventLayout() {
           <NavLink href={`${basePath}/schedule`} icon={<CalendarDays size={16} />}>Schedule</NavLink>
           <NavLink href={`${basePath}/course`} icon={<RouteIcon size={16} />}>Course Map</NavLink>
           <NavLink href={`${basePath}/motos`} icon={<Flag size={16} />}>Race Day Management</NavLink>
-          <NavLink href={`${basePath}/results`} icon={<Activity size={16} />}>Enter Results</NavLink>
           <NavLink href={`${basePath}/report`} icon={<FileText size={16} />}>Report</NavLink>
           <NavLink href={`${basePath}/cancellations`} icon={<XCircle size={16} />} badge={unverifiedCount > 0 ? unverifiedCount : undefined}>Cancellations</NavLink>
           {(event as any).transponderRentalEnabled && (
@@ -113,7 +116,8 @@ export default function EventLayout() {
             <Route path="/events/:eventId/practice" component={PracticeRedirect} />
             <Route path="/events/:eventId/course" component={CourseMap} />
             <Route path="/events/:eventId/motos" component={Motos} />
-            <Route path="/events/:eventId/results" component={EnterResults} />
+            {/* Results are reviewed and finalized on Race Day Management now. */}
+            <Route path="/events/:eventId/results" component={ResultsRedirect} />
             <Route path="/events/:eventId/report" component={Report} />
             <Route path="/events/:eventId/cancellations" component={Cancellations} />
             <Route path="/events/:eventId/transponder-rentals" component={TransponderRentals} />

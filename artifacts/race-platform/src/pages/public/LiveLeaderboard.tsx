@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, type ReactNode } from "react";
+import { OfficialResultsBadge } from "@/components/OfficialResultsBadge";
 import { useRoute, Link } from "wouter";
 import {
   Flag, Clock, WifiOff, ChevronLeft, Radio, AlertTriangle, TrendingUp,
@@ -674,6 +675,7 @@ export function LiveRaceViews({
           {data.status === "completed" && (
             <span className="flex items-center gap-1.5 text-sm text-white/50">
               <Flag size={13} /> Race finished
+              <OfficialResultsBadge compact className="ml-1 bg-white/90" official={!!(data as any).resultsOfficial} />
             </span>
           )}
         </div>
@@ -923,6 +925,7 @@ function LegacyLiveLeaderboard() {
               {data.status === "completed" && (
                 <span className="text-white/50 text-sm flex items-center gap-1.5">
                   <Flag size={13} /> Race finished
+                  <OfficialResultsBadge compact className="ml-1 bg-white/90" official={!!(data as any).resultsOfficial} />
                 </span>
               )}
             </div>

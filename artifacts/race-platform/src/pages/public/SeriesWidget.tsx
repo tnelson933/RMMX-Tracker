@@ -327,6 +327,11 @@ export default function SeriesWidget() {
                 </div>
               )}
 
+              {classStandings.length > 0 && (
+                <div style={{ marginBottom: 8, fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: classStandings.every(s => (s as any).official !== false) ? "#15803d" : "#b45309" }}>
+                  {classStandings.every(s => (s as any).official !== false) ? "✓ Official results" : "Unofficial results"}
+                </div>
+              )}
               {/* Standings table */}
               {classStandings.length === 0 ? (
                 <div style={{ padding: "40px 20px", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>

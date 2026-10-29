@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { OfficialResultsBadge } from "@/components/OfficialResultsBadge";
 import { useParams, Link } from "wouter";
 import {
   useGetEvent, useListResults, useListMotos, useGetEnduroPenaltySummary, RaceResult, Moto,
@@ -522,7 +523,7 @@ export default function EventResults() {
                 )}
                 {event.status === "completed" && (
                   <Badge variant="outline" className="bg-secondary/20 text-white border-secondary/50 font-heading uppercase tracking-wider px-3 py-1 text-sm flex items-center gap-1.5">
-                    <Flag size={14} /> Official Results
+                    <Flag size={14} /> Event Complete
                   </Badge>
                 )}
                 {event.status === "registration_open" && (
@@ -540,6 +541,9 @@ export default function EventResults() {
               <h1 className="text-4xl md:text-5xl font-heading font-bold uppercase tracking-tight leading-none mb-4 text-white">
                 {event.name}
               </h1>
+              {(results ?? []).length > 0 && (
+                <OfficialResultsBadge className="mb-4 bg-white/90" official={(results ?? []).every(r => (r as any).official)} />
+              )}
               <div className="flex flex-wrap gap-x-8 gap-y-3 text-sidebar-foreground/80">
                 <div className="flex items-center gap-2">
                   <Calendar size={18} className="text-white/70" />
@@ -696,6 +700,7 @@ export default function EventResults() {
                               <div key={motoName} className="space-y-4">
                                 <div className="flex items-center gap-3">
                                   <h3 className="text-xl font-heading font-bold uppercase px-2 py-1 bg-muted inline-block rounded">{motoName}</h3>
+                                  {isComplete && <OfficialResultsBadge official={motoResults.every(r => (r as any).official)} />}
                                   {isComplete && (
                                     <Badge className="bg-green-600/90 hover:bg-green-600/90 text-white border-0 font-heading uppercase tracking-wider px-3 py-1 text-xs flex items-center gap-1.5">
                                       <CheckCircle size={13} /> Race Complete
@@ -820,7 +825,10 @@ export default function EventResults() {
                                 .sort((a, b) => a.position - b.position);
                               return (
                                 <div key={motoName} className="space-y-4">
-                                  <h3 className="text-xl font-heading font-bold uppercase px-2 py-1 bg-muted inline-block rounded">{motoName}</h3>
+                                  <div className="flex items-center gap-3 flex-wrap">
+                                    <h3 className="text-xl font-heading font-bold uppercase px-2 py-1 bg-muted inline-block rounded">{motoName}</h3>
+                                    <OfficialResultsBadge official={motoResults.every(r => (r as any).official)} />
+                                  </div>
                                   <ResultTable results={motoResults} onRiderClick={setSelectedResult} penaltyMap={penaltyMap} />
                                 </div>
                               );

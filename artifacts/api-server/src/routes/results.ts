@@ -1,8 +1,9 @@
 import { Router } from "express";
+import { syncEventPublication } from "../lib/resultsVisibility";
 import { lapTimeToMs } from "../lib/lapScoring";
 import { db } from "@workspace/db";
 import { raceResultsTable, motosTable, ridersTable, eventPublicationTable, registrationsTable, eventsTable, pointsTablesTable, clubsTable, seriesTable, seriesPointsTable } from "@workspace/db";
-import { eq, and, inArray, ne } from "drizzle-orm";
+import { eq, and, inArray, ne, isNull, isNotNull } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { formulaPoints } from "../lib/safeFormula";
 import { notifyFollowersOfResults } from "../lib/riderCareer";
@@ -310,13 +311,9 @@ async function checkEventOwnership(eventId: number, staffCId: number | null, res
 router.get("/events/:eventId/results", async (req, res) => {
   const eventId = Number(req.params.eventId);
 
-  // Unpublished results are only shown to the club that owns the event (or a super admin).
-  // Everyone else, signed in or not (widgets, public pages, other clubs), sees published events only.
-  if (!await callerOwnsEvent(eventId, res)) {
-    const [pub] = await db.select({ published: eventPublicationTable.published })
-      .from(eventPublicationTable).where(eq(eventPublicationTable.eventId, eventId));
-    if (!pub?.published) return res.json([]);
-  }
+  // Everyone sees finished motos' results, each marked official (finalized by
+  // the organizer) or unofficial. The owning club also sees motos in progress.
+  const ownerView = await callerOwnsEvent(eventId, res);
 
   if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
 
@@ -336,6 +333,9 @@ router.get("/events/:eventId/results", async (req, res) => {
     motoName: motosTable.name,
     lapCount: motosTable.lapCount,
     timeLimitMs: motosTable.timeLimitMs,
+    motoStatus: motosTable.status,
+    motoType: motosTable.type,
+    resultsFinalizedAt: motosTable.resultsFinalizedAt,
     firstName: ridersTable.firstName,
     lastName: ridersTable.lastName,
   }).from(raceResultsTable)
@@ -345,10 +345,12 @@ router.get("/events/:eventId/results", async (req, res) => {
     .orderBy(raceResultsTable.position);
   const regDetails = await registrationDetailsLookup(eventId);
 
-  return res.json(results.map(r => ({
+  return res.json(results.filter(r => ownerView || r.motoStatus === "completed").map(r => ({
     id: r.id,
     eventId: r.eventId,
     motoId: r.motoId,
+    // Practice isn't finalized; everything else is unofficial until it is.
+    official: r.resultsFinalizedAt != null || r.motoType === "practice",
     motoName: r.motoName || "",
     riderId: r.riderId,
     riderName: `${r.firstName} ${r.lastName}`,
@@ -603,18 +605,18 @@ router.post("/events/:eventId/results/publish", async (req, res) => {
   if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
   const { published } = req.body;
 
-  const existing = await db.select().from(eventPublicationTable).where(eq(eventPublicationTable.eventId, eventId));
-  const newlyPublished = published === true && !existing[0]?.published;
-  if (existing[0]) {
-    await db.update(eventPublicationTable).set({
-      published,
-      publishedAt: published ? new Date() : null,
-      updatedAt: new Date(),
-    }).where(eq(eventPublicationTable.eventId, eventId));
-  } else {
-    await db.insert(eventPublicationTable).values({ eventId, published, publishedAt: published ? new Date() : null });
-  }
-  // Tell followers their riders' results are in (only on the first publish, not re-saves).
+  // Results are finalized moto by moto now; this switch (older pages and the
+  // desktop app) finalizes, or reopens, every finished moto at once.
+  await db.update(motosTable)
+    .set({ resultsFinalizedAt: published === true ? new Date() : null })
+    .where(and(
+      eq(motosTable.eventId, eventId),
+      eq(motosTable.status, "completed"),
+      ne(motosTable.type, "practice"),
+      published === true ? isNull(motosTable.resultsFinalizedAt) : isNotNull(motosTable.resultsFinalizedAt),
+    ));
+  const newlyPublished = await syncEventPublication(eventId);
+  // Tell followers their riders' results are in (only when the event first becomes official).
   if (newlyPublished) void notifyFollowersOfResults(eventId);
 
   return res.json({ ok: true, published });

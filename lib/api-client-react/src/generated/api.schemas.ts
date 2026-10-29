@@ -1512,6 +1512,8 @@ export interface RecentResultItem {
   clubName?: string;
   location?: string;
   trackName?: string;
+  /** True once the organizer has finalized every finished race; otherwise results are unofficial. Absent when the event has no results. */
+  official?: boolean;
 }
 
 export type EventReportData = { [key: string]: unknown };

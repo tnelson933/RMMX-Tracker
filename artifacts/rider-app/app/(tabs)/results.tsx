@@ -668,6 +668,11 @@ function PublicMotoSheet({
                 {moto.raceClass}
               </Text>
             )}
+            {moto.status === "completed" && detail && (
+              <Text style={{ fontSize: 10, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.6, marginTop: 4, color: (detail as any).resultsOfficial ? "#15803d" : "#b45309" }}>
+                {(detail as any).resultsOfficial ? "✓ Official results" : "Unofficial results"}
+              </Text>
+            )}
           </View>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingTop: 2 }}>
             <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: chip.color + "22" }}>

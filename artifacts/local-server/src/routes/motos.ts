@@ -58,8 +58,54 @@ function serializeMoto(m: any, groupMembersMap?: Map<number, number[]>) {
     staggeredGroupId: groupId,
     staggeredGroupMembers: groupId != null && groupMembersMap ? (groupMembersMap.get(groupId) ?? null) : null,
     countdownSeconds: m.countdown_seconds ?? null,
+    resultsFinalizedAt: m.results_finalized_at ?? null,
     createdAt: m.created_at,
   };
+}
+
+/**
+ * Keep event_publication in step with the motos, as the cloud does:
+ * published means every finished race has been finalized (official results).
+ */
+export function syncEventPublication(eventId: number) {
+  const db = getDb();
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS total, SUM(CASE WHEN results_finalized_at IS NOT NULL THEN 1 ELSE 0 END) AS finalized
+       FROM motos WHERE event_id = ? AND status = 'completed' AND type != 'practice'`,
+    )
+    .get(eventId) as { total: number; finalized: number | null };
+  const published = row.total > 0 && (row.finalized ?? 0) === row.total;
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT INTO event_publication (event_id, published, published_at, updated_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(event_id) DO UPDATE SET
+       published = excluded.published,
+       published_at = CASE WHEN excluded.published = 1 THEN COALESCE(event_publication.published_at, excluded.published_at) ELSE NULL END,
+       updated_at = excluded.updated_at`,
+  ).run(eventId, published ? 1 : 0, published ? now : null, now);
+}
+
+// POST /motos/:motoId/finalize | /unfinalize — make a finished race's results
+// official, or reopen them as unofficial (they stay public either way).
+for (const action of ["finalize", "unfinalize"] as const) {
+  router.post(`/motos/:motoId/${action}`, (req, res) => {
+    const session = req.session as any;
+    if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+    const db = getDb();
+    const motoId = Number(req.params.motoId);
+    const moto = db.prepare("SELECT id, event_id, status FROM motos WHERE id = ?").get(motoId) as any;
+    if (!moto) return res.status(404).json({ error: "Moto not found" });
+    if (action === "finalize" && moto.status !== "completed") {
+      return res.status(409).json({ error: "Finish the race before finalizing its results" });
+    }
+    db.prepare("UPDATE motos SET results_finalized_at = ? WHERE id = ?")
+      .run(action === "finalize" ? new Date().toISOString() : null, motoId);
+    syncEventPublication(moto.event_id);
+    const updated = db.prepare("SELECT * FROM motos WHERE id = ?").get(motoId);
+    return res.json({ ok: true, moto: serializeMoto(updated) });
+  });
 }
 
 // GET /events/:eventId/motos

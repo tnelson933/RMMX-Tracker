@@ -8311,7 +8311,7 @@ export const getListRecentResultsUrl = (params?: ListRecentResultsParams,) => {
 }
 
 /**
- * @summary Recent published race results across all events (public feed)
+ * @summary Recent race results across all events (public feed), flagged official or unofficial
  */
 export const listRecentResults = async (params?: ListRecentResultsParams, options?: RequestInit): Promise<RecentResultItem[]> => {
 
@@ -8358,7 +8358,7 @@ export type ListRecentResultsQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Recent published race results across all events (public feed)
+ * @summary Recent race results across all events (public feed), flagged official or unofficial
  */
 
 export function useListRecentResults<TData = Awaited<ReturnType<typeof listRecentResults>>, TError = ErrorType<unknown>>(

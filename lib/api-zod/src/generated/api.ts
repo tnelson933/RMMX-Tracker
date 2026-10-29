@@ -2773,7 +2773,7 @@ export const ListUpcomingEventsResponse = zod.array(ListUpcomingEventsResponseIt
 
 
 /**
- * @summary Recent published race results across all events (public feed)
+ * @summary Recent race results across all events (public feed), flagged official or unofficial
  */
 export const ListRecentResultsQueryParams = zod.object({
   "state": zod.coerce.string().optional(),
@@ -2789,7 +2789,8 @@ export const ListRecentResultsResponseItem = zod.object({
   "raceClass": zod.string(),
   "clubName": zod.string().optional(),
   "location": zod.string().optional(),
-  "trackName": zod.string().optional()
+  "trackName": zod.string().optional(),
+  "official": zod.boolean().optional().describe('True once the organizer has finalized every finished race; otherwise results are unofficial. Absent when the event has no results.')
 })
 export const ListRecentResultsResponse = zod.array(ListRecentResultsResponseItem)
 

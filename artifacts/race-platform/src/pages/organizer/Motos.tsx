@@ -20,7 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search, Clock, LayoutList, LayoutGrid, Trophy, Printer, ChevronLeft, ChevronRight, Wand2, Link2, Pencil, X, Pause } from "lucide-react";
+import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search, Clock, LayoutList, LayoutGrid, Trophy, Printer, ChevronLeft, ChevronRight, Wand2, Link2, Pencil, X, Pause, BadgeCheck } from "lucide-react";
 import {
   DndContext, DragOverlay, useDraggable, useDroppable,
   PointerSensor, useSensor, useSensors,
@@ -29,6 +29,7 @@ import {
 } from "@dnd-kit/core";
 import { useToast } from "@/hooks/use-toast";
 import { LiveBroadcast } from "./LiveBroadcast";
+import { MotoResultsReview } from "@/components/organizer/MotoResults";
 import { ActiveTransponderConnectionStatus } from "@/components/organizer/ActiveTransponderConnectionStatus";
 import { format } from "date-fns";
 import {
@@ -1211,6 +1212,8 @@ export default function Motos() {
   const getMotoSort = (id: number): LineupSort => lineupSorts[id] ?? "gate";
   const setMotoSort = (id: number, s: LineupSort) => setLineupSorts(p => ({ ...p, [id]: s }));
   const [manualLapCooldown, setManualLapCooldown] = useState<Set<string>>(new Set());
+  // Finished moto whose results are open for review & finalize.
+  const [reviewMotoId, setReviewMotoId] = useState<number | null>(null);
   const [bibInputs, setBibInputs] = useState<Record<number, string>>({});
   const [viewMode, setViewMode] = useState<"grid" | "run-order">("grid");
   const [conflictDialog, setConflictDialog] = useState<{
@@ -3258,6 +3261,19 @@ export default function Motos() {
                         : moto.status === "completed" ? "Completed"
                         : "Scheduled"}
                     </span>
+                    {/* Results: unofficial until the organizer finalizes them */}
+                    {moto.status === "completed" && moto.type !== "practice" && (
+                      <button
+                        type="button"
+                        onClick={() => setReviewMotoId(moto.id)}
+                        className={`text-xs px-2 py-0.5 rounded border flex items-center gap-1 font-semibold ${(moto as any).resultsFinalizedAt
+                          ? "bg-green-500/15 text-green-300 border-green-500/30"
+                          : "bg-amber-500/15 text-amber-300 border-amber-500/30 hover:bg-amber-500/25"}`}
+                        title={(moto as any).resultsFinalizedAt ? "Official results — click to review" : "Unofficial results — click to review and finalize"}
+                      >
+                        <BadgeCheck size={10} /> {(moto as any).resultsFinalizedAt ? "Official" : "Unofficial"}
+                      </button>
+                    )}
                     {/* Rider count */}
                     <span className="text-xs text-sidebar-foreground/60 flex items-center gap-1">
                       <Flag size={11} /> {Array.isArray(moto.lineup) ? (moto.lineup as LineupEntry[]).filter(e => e.checkedIn !== false).length : 0} riders
@@ -3293,6 +3309,12 @@ export default function Motos() {
 
                 {/* Actions: primary status action + icon buttons */}
                 <div className="flex items-center gap-1 shrink-0">
+                  {moto.status === "completed" && moto.type !== "practice" && (
+                    <Button size="sm" variant={(moto as any).resultsFinalizedAt ? "ghost" : "default"} onClick={() => setReviewMotoId(moto.id)}
+                      className={`font-heading uppercase text-xs h-7 px-2.5 gap-1 ${(moto as any).resultsFinalizedAt ? "text-sidebar-foreground/70 hover:text-white" : "bg-green-700 hover:bg-green-800 text-white"}`}>
+                      <BadgeCheck size={12} /> {(moto as any).resultsFinalizedAt ? "Results" : "Review & finalize"}
+                    </Button>
+                  )}
                   {/* Start/Finish/Restart — compact pill in header */}
                   {moto.status === "scheduled" && moto.type !== "enduro_test" && (
                     <Button size="sm" onClick={() => handleStartMoto(moto)} className="font-heading uppercase text-xs h-7 px-2.5 gap-1">
@@ -4143,6 +4165,22 @@ export default function Motos() {
 
       {/* Delete confirmation dialog */}
       {/* ── Restart Moto confirmation ───────────────────────────────────── */}
+      {/* Review & finalize a finished moto's results */}
+      <Dialog open={reviewMotoId != null} onOpenChange={open => { if (!open) setReviewMotoId(null); }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-heading uppercase tracking-wider">Review results</DialogTitle>
+            <DialogDescription>
+              Fix positions, total time, laps, DNF or DNS, then finalize. Until then riders and spectators see these as unofficial results.
+            </DialogDescription>
+          </DialogHeader>
+          {(() => {
+            const reviewMoto = (motos ?? []).find(m => m.id === reviewMotoId);
+            return reviewMoto ? <MotoResultsReview key={reviewMoto.id} eventId={eventId} moto={reviewMoto} onFinalized={() => setReviewMotoId(null)} /> : null;
+          })()}
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={restartDialog.open} onOpenChange={open => !open && setRestartDialog({ open: false, motoId: null, motoName: "" })}>
         <DialogContent className="max-w-md">
           <DialogHeader>

@@ -101,7 +101,7 @@ router.get("/rider/riders/search", requireRiderAuth, async (req, res) => {
   return res.json({ riders: riders.map(r => ({ ...r, following: followed.has(r.id) })) });
 });
 
-/** Public view of any rider: published results only. */
+/** Public view of any rider: results of finished races (unofficial until finalized). */
 router.get("/rider/riders/:riderId/public", requireRiderAuth, async (req, res) => {
   const account = await currentAccount(req);
   if (!account) return res.status(401).json({ error: "Not authenticated" });
@@ -145,7 +145,7 @@ router.delete("/rider/follows/:riderId", requireRiderAuth, async (req, res) => {
   return res.json({ ok: true, following: false });
 });
 
-/** Home feed: published results for followed riders and your own/managed profiles. */
+/** Home feed: finished-race results for followed riders and your own/managed profiles. */
 router.get("/rider/feed", requireRiderAuth, async (req, res) => {
   const account = await currentAccount(req);
   if (!account) return res.status(401).json({ error: "Not authenticated" });

@@ -836,6 +836,7 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
       dnf: raceResultsTable.dnf,
       dns: raceResultsTable.dns,
       bibNumber: raceResultsTable.bibNumber,
+      resultsFinalizedAt: motosTable.resultsFinalizedAt,
     })
     .from(raceResultsTable)
     .leftJoin(motosTable, eq(raceResultsTable.motoId, motosTable.id))
@@ -928,6 +929,8 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
       dnf: boolean;
       dns: boolean;
       bibNumber: string | null;
+      /** Finalized by the organizer; otherwise these are unofficial results. */
+      official: boolean;
     }>;
   }>();
 
@@ -964,6 +967,7 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
       dnf: row.dnf,
       dns: row.dns,
       bibNumber: row.bibNumber,
+      official: row.resultsFinalizedAt != null || row.motoType === "practice",
     });
   }
 

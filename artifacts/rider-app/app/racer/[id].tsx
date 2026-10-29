@@ -13,9 +13,9 @@ import { useTheme } from "@/context/ThemeContext";
 import { goBack } from "@/lib/navigation";
 import { ResultCard } from "@/components/RaceCards";
 
-interface Recent { eventId: number; eventName: string; eventDate: string; raceClass: string; bestPosition: number | null; motos: Array<{ motoName: string; position: number | null; dnf: boolean; dns: boolean }> }
+interface Recent { eventId: number; eventName: string; eventDate: string; raceClass: string; bestPosition: number | null; official?: boolean; motos: Array<{ motoName: string; position: number | null; dnf: boolean; dns: boolean }> }
 
-/** Another rider's public profile: published results only. */
+/** Another rider's public profile: results of finished races (unofficial until finalized). */
 export default function RacerScreen() {
   const colors = useColors();
   const isDark = useTheme().resolvedScheme === "dark";
@@ -30,7 +30,7 @@ export default function RacerScreen() {
     setError(null);
     try {
       const r = await riderFetch(`/api/rider/riders/${id}/public`);
-      if (!r.ok) { setError(r.status === 404 ? "This rider has no published results yet." : `Couldn't load this rider (error ${r.status}).`); return; }
+      if (!r.ok) { setError(r.status === 404 ? "This rider has no results yet." : `Couldn't load this rider (error ${r.status}).`); return; }
       setData(await r.json());
     } catch {
       setError(NETWORK_ERROR_MESSAGE);
@@ -98,6 +98,7 @@ export default function RacerScreen() {
                 dateIso={r.eventDate}
                 raceClass={r.raceClass}
                 motos={r.motos}
+                official={r.official}
                 onPress={() => router.push(`/event/${r.eventId}` as any)}
               />
             </View>

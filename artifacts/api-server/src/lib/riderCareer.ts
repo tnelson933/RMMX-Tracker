@@ -16,7 +16,7 @@ const FINISH_SENTINEL = 999;
  */
 export async function loadCareerStats(riderId: number, publishedOnly: boolean): Promise<CareerStats> {
   const where = publishedOnly
-    ? and(eq(raceResultsTable.riderId, riderId), eq(eventPublicationTable.published, true))
+    ? and(eq(raceResultsTable.riderId, riderId), eq(motosTable.status, "completed"))
     : eq(raceResultsTable.riderId, riderId);
   const rows = await db
     .select({
@@ -58,6 +58,8 @@ export interface FeedItem {
   eventDate: string;
   raceClass: string;
   publishedAt: string | null;
+  /** Every race in this item finalized by the organizer; otherwise unofficial results. */
+  official: boolean;
   bestPosition: number | null;
   motos: Array<{ motoName: string; position: number | null; dnf: boolean; dns: boolean }>;
 }
@@ -72,13 +74,14 @@ export async function loadResultsFeed(riderIds: number[], limit = 30): Promise<F
       raceClass: raceResultsTable.raceClass, publishedAt: eventPublicationTable.publishedAt,
       motoName: motosTable.name, motoNumber: motosTable.motoNumber, motoType: motosTable.type,
       position: raceResultsTable.position, dnf: raceResultsTable.dnf, dns: raceResultsTable.dns,
+      resultsFinalizedAt: motosTable.resultsFinalizedAt,
     })
     .from(raceResultsTable)
-    .innerJoin(eventPublicationTable, and(eq(eventPublicationTable.eventId, raceResultsTable.eventId), eq(eventPublicationTable.published, true)))
+    .leftJoin(eventPublicationTable, eq(eventPublicationTable.eventId, raceResultsTable.eventId))
     .innerJoin(ridersTable, eq(ridersTable.id, raceResultsTable.riderId))
     .leftJoin(eventsTable, eq(eventsTable.id, raceResultsTable.eventId))
     .leftJoin(motosTable, eq(motosTable.id, raceResultsTable.motoId))
-    .where(inArray(raceResultsTable.riderId, riderIds))
+    .where(and(inArray(raceResultsTable.riderId, riderIds), eq(motosTable.status, "completed")))
     .orderBy(desc(eventsTable.date), motosTable.motoNumber);
 
   const items = new Map<string, FeedItem>();
@@ -91,10 +94,11 @@ export async function loadResultsFeed(riderIds: number[], limit = 30): Promise<F
         riderId: r.riderId, riderName: `${r.firstName} ${r.lastName}`.trim(), eventId: r.eventId,
         eventName: r.eventName ?? `Event ${r.eventId}`, eventDate: String(r.eventDate ?? "").slice(0, 10),
         raceClass: r.raceClass, publishedAt: r.publishedAt ? r.publishedAt.toISOString() : null,
-        bestPosition: null, motos: [],
+        official: true, bestPosition: null, motos: [],
       });
     }
     const item = items.get(key)!;
+    if (r.resultsFinalizedAt == null) item.official = false;
     const finished = !r.dnf && !r.dns && r.position > 0 && r.position < FINISH_SENTINEL;
     item.motos.push({ motoName: r.motoName ?? "Moto", position: finished ? r.position : null, dnf: r.dnf, dns: r.dns });
     if (finished && (item.bestPosition == null || r.position < item.bestPosition)) item.bestPosition = r.position;
@@ -102,7 +106,7 @@ export async function loadResultsFeed(riderIds: number[], limit = 30): Promise<F
   return [...items.values()];
 }
 
-/** Riders who have at least one published result, matched by name, for "find riders to follow". */
+/** Riders who have at least one finished-race result, matched by name, for "find riders to follow". */
 export async function searchPublicRiders(q: string, limit = 20) {
   const term = `%${q.trim().toLowerCase()}%`;
   const rows = await db
@@ -113,7 +117,8 @@ export async function searchPublicRiders(q: string, limit = 20) {
     })
     .from(ridersTable)
     .innerJoin(raceResultsTable, eq(raceResultsTable.riderId, ridersTable.id))
-    .innerJoin(eventPublicationTable, and(eq(eventPublicationTable.eventId, raceResultsTable.eventId), eq(eventPublicationTable.published, true)))
+    // Results are public once the race is finished (unofficial until finalized).
+    .innerJoin(motosTable, and(eq(motosTable.id, raceResultsTable.motoId), eq(motosTable.status, "completed")))
     .innerJoin(eventsTable, eq(eventsTable.id, raceResultsTable.eventId))
     .leftJoin(clubsTable, eq(clubsTable.id, eventsTable.clubId))
     .where(sql`lower(${ridersTable.firstName} || ' ' || ${ridersTable.lastName}) like ${term}`)

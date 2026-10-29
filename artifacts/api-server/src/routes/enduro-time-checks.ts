@@ -8,6 +8,7 @@ import {
   enduroCheckpointArrivalsTable,
   registrationsTable,
   eventPublicationTable,
+  motosTable,
   eventReaderAssignmentsTable,
   type TimeCheckTarget,
   type EnduroPenaltyConfig,
@@ -275,12 +276,10 @@ router.get("/events/:eventId/penalty-summary", async (req, res) => {
   const [owner] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
   if (!owner) return res.status(404).json({ error: "Event not found" });
   if (!callerOwnsClub(res, owner.clubId)) {
-    // Require results that are actively published (published=true).
-    const [pub] = await db
-      .select({ published: eventPublicationTable.published })
-      .from(eventPublicationTable)
-      .where(eq(eventPublicationTable.eventId, eventId));
-    if (!pub?.published) return res.status(403).json({ error: "Results not published" });
+    // Public once a test has finished (marked unofficial until finalized).
+    const [finished] = await db.select({ id: motosTable.id }).from(motosTable)
+      .where(and(eq(motosTable.eventId, eventId), eq(motosTable.status, "completed"))).limit(1);
+    if (!finished) return res.status(403).json({ error: "No results yet" });
   }
 
   const [event] = await db

@@ -716,6 +716,8 @@ export function initDb() {
     ["motos", "countdown_seconds      INTEGER"],
     ["motos", "staggered_order        INTEGER"],
     ["motos", "staggered_group_id     INTEGER"],
+    // Set when the organizer finalizes the race: results become official.
+    ["motos", "results_finalized_at   TEXT"],
     // race_results
     ["race_results", "event_id   INTEGER"],
     ["race_results", "race_class TEXT"],

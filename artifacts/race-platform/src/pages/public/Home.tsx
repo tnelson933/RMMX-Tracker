@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { OfficialResultsBadge } from "@/components/OfficialResultsBadge";
 import { Link, useLocation } from "wouter";
 import {
   useListStates,
@@ -255,8 +256,9 @@ function PastCard({ result }: { result: RecentResultItem }) {
             </div>
           </div>
           <div className="p-4">
-            <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1 font-semibold">
+            <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1 font-semibold flex items-center gap-2 flex-wrap">
               Top Result · {result.raceClass}
+              {result.official != null && <OfficialResultsBadge official={result.official} compact />}
             </div>
             <div className="flex items-center justify-between">
               <div className="font-bold text-base">{result.topRider}</div>

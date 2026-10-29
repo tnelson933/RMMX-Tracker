@@ -65,6 +65,8 @@ export interface MotoResult {
   dnf: boolean;
   dns: boolean;
   bibNumber: string | null;
+  /** Finalized by the organizer; otherwise unofficial results. */
+  official?: boolean;
 }
 
 export interface EventHistory {

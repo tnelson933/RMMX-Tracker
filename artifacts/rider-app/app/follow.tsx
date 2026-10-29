@@ -99,14 +99,14 @@ export default function FollowScreen() {
             style={s.searchInput} autoCorrect={false} autoFocus returnKeyType="search" />
           {searching && <ActivityIndicator size="small" color={colors.mutedForeground} />}
         </View>
-        <Text style={s.muted}>Follow friends, teammates or rivals. Their results show on your home screen, and you get a notification when their results are published.</Text>
+        <Text style={s.muted}>Follow friends, teammates or rivals. Their results show on your home screen, and you get a notification when their results are official.</Text>
 
         {results.map(r => (
           <RiderRow key={r.id} title={r.name} subtitle={[r.clubName, r.lastRaced && `Last raced ${r.lastRaced}`].filter(Boolean).join(" · ")}
             following={r.following} onToggle={() => toggle(r.id, !r.following)} onOpen={() => router.push(`/racer/${r.id}` as any)} colors={colors} />
         ))}
         {searchError && q.trim().length >= 2 && !searching && <Text style={[s.muted, { color: "#DC2626" }]}>{searchError}</Text>}
-        {q.trim().length >= 2 && !searching && !searchError && results.length === 0 && <Text style={s.muted}>No riders with published results match "{q.trim()}".</Text>}
+        {q.trim().length >= 2 && !searching && !searchError && results.length === 0 && <Text style={s.muted}>No riders with results match "{q.trim()}".</Text>}
 
         {(following.length > 0 || followingError) && <Text style={s.section}>Following</Text>}
         {followingError && (

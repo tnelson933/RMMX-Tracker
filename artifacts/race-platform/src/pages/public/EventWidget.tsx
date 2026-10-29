@@ -213,6 +213,11 @@ export default function EventWidget() {
             <div style={{ fontSize: 20, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.03em", lineHeight: 1.2, color: "#0f172a", marginBottom: 4 }}>
               {event.name}
             </div>
+            {(results ?? []).length > 0 && (
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4, color: (results ?? []).every(r => (r as any).official) ? "#15803d" : "#b45309" }}>
+                {(results ?? []).every(r => (r as any).official) ? "✓ Official results" : "Unofficial results"}
+              </div>
+            )}
             <div style={{ fontSize: 12, color: "#64748b", display: "flex", gap: 12, flexWrap: "wrap" }}>
               {event.date && (
                 <span>📅 {formatEventDates(event.date, (event as any).endDate)}</span>

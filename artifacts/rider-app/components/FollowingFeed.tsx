@@ -10,11 +10,11 @@ import { ResultCard } from "@/components/RaceCards";
 
 interface FeedItem {
   riderId: number; riderName: string; eventId: number; eventName: string; eventDate: string;
-  raceClass: string; bestPosition: number | null; isMine: boolean;
+  raceClass: string; bestPosition: number | null; isMine: boolean; official?: boolean;
   motos: Array<{ motoName: string; position: number | null; dnf: boolean; dns: boolean }>;
 }
 
-/** Home-screen "Following" section: published results of riders you follow. */
+/** Home-screen "Following" section: results of riders you follow (unofficial until finalized). */
 export function FollowingFeed({ refreshKey }: { refreshKey: number }) {
   const colors = useColors();
   const router = useRouter();
@@ -56,6 +56,7 @@ export function FollowingFeed({ refreshKey }: { refreshKey: number }) {
             dateIso={i.eventDate}
             raceClass={i.raceClass}
             motos={i.motos}
+            official={i.official}
             onPress={() => router.push(`/racer/${i.riderId}` as any)}
           />
         ))

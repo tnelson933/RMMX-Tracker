@@ -91,6 +91,8 @@ function RecentResultCard({ result, colors, onPress }: { result: EventHistory; c
       raceClass={result.raceClass}
       points={result.totalPoints}
       motos={result.motos}
+      official={(result.motos as Array<{ official?: boolean }>).some(m => m.official != null)
+        ? (result.motos as Array<{ official?: boolean }>).every(m => m.official) : undefined}
       onPress={onPress}
     />
   );

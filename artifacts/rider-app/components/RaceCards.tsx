@@ -46,7 +46,7 @@ function shortDate(iso: string | null | undefined): string {
  * date/class/place chips, per-moto finishes and points.
  */
 export function ResultCard({
-  position, dnf, kicker, title, dateIso, raceClass, place, points, motos, onPress, footer,
+  position, dnf, kicker, title, dateIso, raceClass, place, points, motos, onPress, footer, official,
 }: {
   position: number | null | undefined;
   dnf?: boolean;
@@ -59,6 +59,8 @@ export function ResultCard({
   motos?: { position: number | null | undefined; dnf?: boolean; dns?: boolean }[];
   onPress?: () => void;
   footer?: React.ReactNode;
+  /** Results finalized by the organizer; undefined hides the label. */
+  official?: boolean;
 }) {
   const colors = useColors();
   const edge = podiumColor(position) ?? (position != null ? colors.primary : colors.border);
@@ -92,6 +94,11 @@ export function ResultCard({
             {raceClass ? <MetaChip icon="flag" label={raceClass} accent /> : null}
             {place ? <MetaChip icon="map-pin" label={place} /> : null}
           </View>
+          {official != null ? (
+            <Text style={{ fontSize: 10, fontFamily: "Inter_700Bold", letterSpacing: 0.6, textTransform: "uppercase", color: official ? "#15803d" : "#b45309" }}>
+              {official ? "✓ Official results" : "Unofficial results"}
+            </Text>
+          ) : null}
           {motos && motos.length > 1 && (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
               {motos.map((m, i) => (

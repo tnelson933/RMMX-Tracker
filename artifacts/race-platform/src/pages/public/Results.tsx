@@ -31,9 +31,9 @@ export default function Results() {
     <div>
       <TitleBand
         containerClassName="max-w-5xl"
-        eyebrow="Official results"
+        eyebrow="Race results"
         title="Race Results"
-        subtitle="Browse completed events and official race results."
+        subtitle="Browse completed events. Results are marked unofficial until the organizer finalizes them."
       >
         <div className="w-full md:w-64">
           <Select value={stateFilter} onValueChange={setStateFilter}>
@@ -135,8 +135,8 @@ export default function Results() {
             <h3 className="text-2xl font-heading font-bold mb-2">No Results Found</h3>
             <p className="text-muted-foreground max-w-md">
               {stateFilter !== "all" 
-                ? `There are currently no published results for events in ${stateFilter}.` 
-                : "There are currently no published results available."}
+                ? `There are currently no results for events in ${stateFilter}.`
+                : "There are currently no results available."}
             </p>
             {stateFilter !== "all" && (
               <Button 

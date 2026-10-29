@@ -53,6 +53,8 @@ interface MotoResult {
   totalTime: string | null;
   lapTimes: string[];
   bibNumber: string | null;
+  /** Finalized by the organizer; otherwise unofficial results. */
+  official?: boolean;
 }
 
 interface EventResult {
@@ -248,6 +250,11 @@ export default function ResultDetailScreen() {
                         ) : null}
                         {moto.points != null && moto.points > 0 ? (
                           <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>{moto.points} pts</Text>
+                        ) : null}
+                        {moto.official != null && moto.motoType !== "practice" ? (
+                          <Text style={{ fontSize: 10, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.6, color: moto.official ? "#15803d" : "#b45309" }}>
+                            {moto.official ? "✓ Official results" : "Unofficial results"}
+                          </Text>
                         ) : null}
                       </View>
                     </View>

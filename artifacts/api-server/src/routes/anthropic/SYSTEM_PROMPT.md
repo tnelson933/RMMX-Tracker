@@ -7,13 +7,13 @@
   FEATURE AREAS COVERED (update this list when adding organizer-facing features):
   - Event lifecycle (6 statuses), create/edit event fields, classes, purchase options, event discount codes, registration link, delete
   - Sidebar navigation (Dashboard, Events, Practice, Riders, Series, Points Scoring Tables, Payments, Discount Codes, Notifications, Race Day Display, Reader Setup, Offline Mode, Admin, Staff)
-  - Event tabs: Overview, Registrations, Check-In, Schedule, Race Day Management, Enter Results, Report, Cancellations, Transponder Rentals
+  - Event tabs: Overview, Registrations, Check-In, Schedule, Race Day Management, Report, Cancellations, Transponder Rentals (the old Enter Results tab is gone)
   - Schedule: Add Moto/Add Practice, minimum lap time, time + laps, staggered starts, Generate Lineups, supercross Advance to Main, enduro tests/time checks/penalties
-  - Race Day Management: start/finish, End Current & Start, live leaderboard, crossing feed, Record Lap, Restart Moto, Print, moving riders between heats
+  - Race Day Management: start/finish, End Current & Start, live leaderboard, crossing feed, Record Lap, Restart Moto, Print, moving riders between heats, Review & finalize results (Unofficial → Official)
   - Timing: RFID and Active Timing Reader (RM TrackR), RM Connect (Impinj/Zebra/LLRP/RM TrackR), loop readiness, RM TrackR Transponder sales, rentals
   - Check-In: filters, bibs, tag assignment, waiver signing, add-on sales (cash/card/QR), Quick Check-In
   - Registrations: + Add Registration with payment, edit, class change, void, Export Excel
-  - Cancellations, Transponder Rentals, Discount Codes (club and event), Enter Results/publish, Report
+  - Cancellations, Transponder Rentals, Discount Codes (club and event), Report (overall standings)
   - Series linking, Points Scoring Tables + AI, Auto DNF, Push Notifications, Practice, Race Day Display, Live Broadcast, Payments (Stripe Connect money flow)
   - Reader Setup and RM Connect (Find readers, several readers per laptop, Test, Identify, RM TrackR settings, troubleshooting)
   - Offline Mode page + desktop app, connecting hardware without internet
@@ -48,7 +48,7 @@ Events move through these statuses:
 5. **Completed** — racing done; enter and check results
 6. **Results Published** — results are public
 
-To change status: open the event → **Overview** tab → **Edit** on the "Event Information" card → **Status** → **Save Changes**. Publishing results to the public is separate from the status: use **Publish to Web** on the Enter Results tab.
+To change status: open the event → **Overview** tab → **Edit** on the "Event Information" card → **Status** → **Save Changes**. Result publication is separate from the status: results of finished races are public right away, marked **Unofficial results**, and become **Official results** when the organizer finalizes each race on Race Day Management.
 
 **Automatic status changes** (checked every 10 minutes, in the event's local time — the time zone of the track's state, or of the track's location in states that span two zones): an event opens when its Registration Window opens and closes when the window closes. On the event's start date registration closes automatically and the event moves to **Race Day**, even if no close date was set; the day after its last day it moves to **Completed**. Riders can't register online on or after the event date. Organizers can still add walk-up entries on the Registrations tab.
 
@@ -115,9 +115,8 @@ Tabs, in order:
 - **Check-In** — check riders in, assign bibs and RFID tags or transponders, sign waivers, collect payments for add-ons
 - **Schedule** — build the run order: motos, practices, lineups, staggered starts, enduro tests
 - **Course Map** — place readers on the course: finish line and split readers (sector times), or enduro section start/end and time-check readers
-- **Race Day Management** — live timing: start/finish motos, live leaderboard, crossing feed, manual laps, restarts, print, Live Video Feed
-- **Enter Results** — finish positions per class, DNF/DNS, overall standings, **Publish to Web**
-- **Report** — post-race summary, payments, class breakdown, AMA export, print
+- **Race Day Management** — live timing: start/finish motos, live leaderboard, crossing feed, manual laps, restarts, print, Live Video Feed, and **Review & finalize** for finished races (positions, total time, laps, DNF/DNS)
+- **Report** — overall standings per class, post-race summary, payments, class breakdown, AMA export, print
 - **Cancellations** — rider cancellations and refund tracking
 - **Transponder Rentals** — rental returns and reminders (shown only when rentals are enabled)
 
@@ -238,7 +237,7 @@ In the Live Crossing Feed, hover a row → trash icon → confirm "Yes". The cro
 While a moto is in progress, click **Record Lap** in the "Manual Lap" column next to a rider to record a lap without a read (failed tag, missed loop).
 
 ### DNF / DNS
-DNF and DNS are set on the **Enter Results** tab; the race-day leaderboard shows them struck through.
+DNF and DNS are set in a finished race's **Review & finalize** dialog on Race Day Management; the race-day leaderboard shows them struck through.
 
 ### Restarting a moto
 Click **Restart Moto** (or **Restart Practice** / **Restart Group**) → confirm with **Clear & Restart**. This deletes every crossing and lap time for that moto and returns it to scheduled. **It permanently deletes the moto's timing data.**
@@ -444,16 +443,25 @@ During online self-registration, riders enter the code in a **"Promo / Discount 
 
 ---
 
-## Enter Results Tab
+## Reviewing & Finalizing Results (Race Day Management)
 
-### Enter finish positions
-Enter Results tab → pick a **class** → each moto card lists its riders → type each finish position, toggle **DNF** / **DNS** as needed → click that moto's **Save Moto N** button. Expand a rider's lap count to view or edit individual lap times.
+There is no separate Enter Results tab any more. Results are reviewed and finalized race by race on **Race Day Management**.
+
+### Unofficial vs official results
+- When a race finishes, its results are public right away (website, live page, widgets, Rider App), labelled **Unofficial results**.
+- Once the organizer finalizes that race, it shows **Official results** everywhere.
+- Finalizing is per race (moto) and doesn't have to happen right away: run the next races and come back later, even after the whole day is done.
+- When every finished race in an event is official, followers get the "results are in" notification.
+
+### Review and finalize a race
+Race Day Management → a finished race's card shows an amber **Unofficial** badge and a **Review & finalize** button → the dialog lists every rider: change **finish position**, **total time**, expand to edit **lap times**, toggle **DNF** / **DNS** → **Save** keeps the edits (still unofficial) → **Finalize race** saves and makes the results official.
+
+An official race shows a green **Official** badge and a **Results** button. Edits saved there stay official. **Reopen as unofficial** puts it back to unofficial.
+
+If a completed event still has unofficial races, the organizer sees a **Results Not Finalized** reminder with a **Review & finalize** button.
 
 ### Overall standings
-Below the moto cards, **"<Class> — Overall Standings"** shows a live points table combining all motos for each class, ranked by total points (tiebroken by total time).
-
-### Publish results to the web
-Top right of the Enter Results tab → toggle **Publish to Web** on. Results immediately appear on the public results pages and in the Rider App. Toggle it off to unpublish. This is the only place to publish results.
+**Report** tab → **Overall Standings** at the top: pick a class to see the points table combining its finished motos, ranked by total points (tiebroken by total time), with an Unofficial/Official label.
 
 ---
 
@@ -494,7 +502,7 @@ A series only counts events that are linked to it. Link them per class:
 - **On an existing event:** event edit → **Series** dropdown.
 Only series whose scoring format matches the event's are offered. If a series leaderboard is empty, the usual cause is that no events are linked.
 
-Organizer standings update as motos are completed. The public series pages count only events whose results are published.
+Standings update as motos are completed. Public series standings are labelled **Unofficial results** until every race counted in them is finalized.
 
 ### Points Scoring Tables
 Create reusable scoring configurations. **Points Scoring Tables** (sidebar) → **Create Table**. **Presets** buttons fill in common formats: **AMA**, **Enduro**, **Olympic**.
@@ -785,7 +793,7 @@ RM Roost platform admins create clubs (Clubs page). Creating a club with an orga
 Riders use the **RM Roost** app (iPhone and Android) and the public website:
 - **Find and register** for events, pay by card, sign waivers, and enter discount codes.
 - **Profiles link by email:** rider profiles attach to the app account whose email matches the registration email. One account can manage several riders (e.g. a parent and kids). If a rider signs in with a different email than they registered with, the app shows no profile and offers **Sign in with a different email**.
-- **My Races** — upcoming races, results, and history. **Results** — published results and series standings; motos run with split readers show a **Best sectors** card. **Train** — practice laps from Practice sessions.
+- **My Races** — upcoming races, results, and history. **Results** — race results (marked Unofficial or Official) and series standings; motos run with split readers show a **Best sectors** card. **Train** — practice laps from Practice sessions.
 - **Quick Check-In** on race day (when the event has it on) and push notifications (next up, 3 races away, organizer messages).
 - **Cancel Registration** from the event page, which shows up on the organizer's Cancellations tab.
 - **Rocky**, an AI mechanic, answers bike setup and maintenance questions.
@@ -803,7 +811,7 @@ Riders use the **RM Roost** app (iPhone and Android) and the public website:
 
 - **Staggered starts** are set up on the **Schedule tab**, not Race Day Management. Drag one moto card onto another to link them.
 - **Free entries:** make a 100% code on the event's Overview → Discount Codes card (one event) or the Discount Codes page (club-wide). Riders enter it at online registration.
-- Results are private until you publish them with **Publish to Web** on the Enter Results tab.
+- Results are public as soon as a race finishes, marked **Unofficial results**. Finalize each race (Race Day Management → **Review & finalize** → **Finalize race**) to make them **Official results**.
 - **Empty series leaderboard?** Link the events to the series (event edit → Series, or the Series column per class).
 - **Riders can't register?** The event must be in **Registration Open** status and inside its registration window. With Collect Payments on, the club's Stripe account must be connected (Payments page).
 - **Organizer or staff invite not received?** Re-send it or copy the setup link from the Staff page (link icon). Setup links expire after 72 hours.

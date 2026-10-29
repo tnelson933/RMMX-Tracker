@@ -1,4 +1,6 @@
 import { eventToday } from "@workspace/api-zod";
+import { syncEventPublication } from "../lib/resultsVisibility";
+import { notifyFollowersOfResults } from "../lib/riderCareer";
 import { Router, type Response } from "express";
 import { db } from "@workspace/db";
 import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, pointsTablesTable, clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable, eventPublicationTable, lapCrossingsTable, splitCrossingsTable, registrationsTable, seriesTable, seriesPointsTable, riderAccountsTable, riderPushTokensTable } from "@workspace/db";
@@ -244,13 +246,14 @@ router.get("/events/:eventId/motos", async (req, res) => {
   // Callers outside the owning club (anonymous, or another club's organizer/staff on this
   // public route): only published events and active race-day events (gate page).
   if (!callerOwnsClub(res, await getEventClubId(eventId))) {
-    const [[pub], [evt]] = await Promise.all([
-      db.select({ published: eventPublicationTable.published })
-        .from(eventPublicationTable).where(eq(eventPublicationTable.eventId, eventId)),
+    // Finished motos' results are public (marked unofficial until finalized).
+    const [[finished], [evt]] = await Promise.all([
+      db.select({ id: motosTable.id }).from(motosTable)
+        .where(and(eq(motosTable.eventId, eventId), eq(motosTable.status, "completed"))).limit(1),
       db.select({ status: eventsTable.status })
         .from(eventsTable).where(eq(eventsTable.id, eventId)),
     ]);
-    if (!pub?.published && evt?.status !== "race_day") return res.json([]);
+    if (!finished && evt?.status !== "race_day") return res.json([]);
   }
 
   // Staff club scoping: reject if event belongs to a different club
@@ -459,6 +462,34 @@ export async function afterMotoCompleted(moto: typeof motosTable.$inferSelect): 
       await autoAdvanceToMain(moto.eventId, moto.raceClass, topPerHeat);
     }).catch(() => {});
   }
+}
+
+// POST /motos/:motoId/finalize — the organizer reviewed this finished moto:
+// its results become "Official results" (they're public as "Unofficial" before).
+// POST /motos/:motoId/unfinalize — back to unofficial to make more changes.
+for (const action of ["finalize", "unfinalize"] as const) {
+  router.post(`/motos/:motoId/${action}`, async (req, res) => {
+    const id = Number(req.params.motoId);
+    const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, id));
+    if (!moto) return res.status(404).json({ error: "Not found" });
+    if (!callerOwnsClub(res, await getEventClubId(moto.eventId))) return res.status(403).json({ error: "Forbidden" });
+    if (action === "finalize" && moto.status !== "completed") {
+      return res.status(409).json({ error: "Finish the race before finalizing its results." });
+    }
+    const [updated] = await db.update(motosTable)
+      .set({ resultsFinalizedAt: action === "finalize" ? (moto.resultsFinalizedAt ?? new Date()) : null })
+      .where(eq(motosTable.id, id))
+      .returning();
+    if (action === "finalize") {
+      const { scoreMotoPoints } = await import("./results");
+      await scoreMotoPoints(id).catch(() => {});
+    }
+    const nowOfficial = await syncEventPublication(moto.eventId);
+    // Followers hear about a rider's results once the whole event is official.
+    if (nowOfficial) void notifyFollowersOfResults(moto.eventId);
+    buildLeaderboard(id).then(snapshot => { if (snapshot) sseBroadcast(id, snapshot); }).catch(() => {});
+    return res.json({ ok: true, motoId: id, resultsFinalizedAt: updated.resultsFinalizedAt?.toISOString() ?? null });
+  });
 }
 
 // POST /motos/:motoId/restart — wipe all crossings and restart the clock

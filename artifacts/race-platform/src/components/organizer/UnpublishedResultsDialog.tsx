@@ -54,7 +54,7 @@ export function UnpublishedResultsDialog({ clubId }: UnpublishedResultsDialogPro
 
   const handleGoToEvent = (eventId: number) => {
     handleDismiss();
-    navigate(`/events/${eventId}/results`);
+    navigate(`/events/${eventId}/motos`);
   };
 
   if (!open || events.length === 0) return null;
@@ -68,14 +68,14 @@ export function UnpublishedResultsDialog({ clubId }: UnpublishedResultsDialogPro
               <Upload size={20} className="text-blue-600" />
             </div>
             <DialogTitle className="font-heading text-xl uppercase tracking-tight">
-              Results Not Published
+              Results Not Finalized
             </DialogTitle>
           </div>
           <DialogDescription className="text-sm text-muted-foreground">
             {events.length === 1
-              ? "1 completed event has results that haven't been published yet."
-              : `${events.length} completed events have results that haven't been published yet.`}
-            {" "}Riders and spectators won't see results until you publish them.
+              ? "1 completed event has races whose results aren't finalized yet."
+              : `${events.length} completed events have races whose results aren't finalized yet.`}
+            {" "}Riders and spectators see them marked "Unofficial results" until you finalize each race on Race Day Management.
           </DialogDescription>
         </DialogHeader>
 
@@ -108,7 +108,7 @@ export function UnpublishedResultsDialog({ clubId }: UnpublishedResultsDialogPro
                 onClick={() => handleGoToEvent(event.id)}
               >
                 <Upload size={14} className="mr-2" />
-                Go to Enter Results &amp; Publish
+                Review &amp; finalize
               </Button>
             </div>
           ))}

@@ -417,8 +417,11 @@ router.get("/public/recent-results", async (req, res) => {
     location: eventsTable.location,
     trackName: eventsTable.trackName,
     clubName: clubsTable.name,
+    // Official once every finished race is finalized (kept in step by syncEventPublication).
+    official: eventPublicationTable.published,
   }).from(eventsTable)
     .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
+    .leftJoin(eventPublicationTable, eq(eventPublicationTable.eventId, eventsTable.id))
     .where(state ? and(baseCondition, eq(eventsTable.state, String(state))) : baseCondition)
     .orderBy(desc(eventsTable.date))
     .limit(Number(limit));
@@ -445,6 +448,8 @@ router.get("/public/recent-results", async (req, res) => {
       clubName: e.clubName || "",
       topRider: topResult[0] ? `${topResult[0].firstName} ${topResult[0].lastName}` : "TBD",
       raceClass: topResult[0]?.raceClass || "All Classes",
+      // No label when the event has no results yet.
+      ...(topResult[0] ? { official: e.official === true } : {}),
     });
   }
 

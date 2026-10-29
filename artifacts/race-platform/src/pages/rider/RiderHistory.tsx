@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
+import { OfficialResultsBadge } from "@/components/OfficialResultsBadge";
 import { formatEventDates } from "@/lib/eventDates";
 import { useRoute, useLocation, useSearch } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -577,6 +578,7 @@ function MotoRow({ moto, raceStyle }: { moto: MotoResult; raceStyle?: string | n
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium text-sm">{moto.motoName}</span>
             <Badge variant="outline" className="text-xs capitalize">{moto.motoType}</Badge>
+            {moto.official != null && <OfficialResultsBadge official={moto.official} compact />}
           </div>
         </div>
 

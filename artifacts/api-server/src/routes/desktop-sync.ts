@@ -35,6 +35,8 @@ import { resolveSyncUser, canReceivePasswordHashes, type SyncUser } from "../lib
 import { clubSettingsTable, readersTable } from "@workspace/db";
 import { sendLiabilityWaiverConfirmation } from "../lib/email";
 import { recomputeEnduroPositionsForEvent } from "./enduro-scoring";
+import { syncEventPublication } from "../lib/resultsVisibility";
+import { notifyFollowersOfResults } from "../lib/riderCareer";
 
 const router = Router();
 
@@ -78,6 +80,8 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
   let total = 0;
   const affectedMotoIds = new Set<number>();
   const startedMotoIds = new Set<number>();
+  // Events whose motos were finalized or reopened on the desktop.
+  const finalizeEventIds = new Set<number>();
   const eventIdRemaps: Array<{ localId: number; cloudId: number }> = [];
   const motoIdRemaps: Array<{ localId: number; cloudId: number }> = [];
   // Desktop ids that had to be replaced in the cloud (id collision with another
@@ -374,6 +378,8 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       staggeredGroupId?: unknown;
       staggered_order?: unknown;
       staggeredOrder?: unknown;
+      results_finalized_at?: unknown;
+      resultsFinalizedAt?: unknown;
     }>;
 
     let motosUpserted = 0;
@@ -399,6 +405,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       const rawStaggeredOrder = firstDefined(rawMoto, "staggered_order", "staggeredOrder");
       const rawPausedAt = firstDefined(rawMoto, "paused_at", "pausedAt");
       const rawTotalPausedMs = firstDefined(rawMoto, "total_paused_ms", "totalPausedMs");
+      const rawResultsFinalizedAt = firstDefined(rawMoto, "results_finalized_at", "resultsFinalizedAt");
       const requestedLapCount = rawLapCount === undefined ? undefined : (rawLapCount === null ? null : Number(rawLapCount));
       const requestedTimeLimitMs = rawTimeLimitMs === undefined ? undefined : (rawTimeLimitMs === null ? null : Number(rawTimeLimitMs));
       const requestedPlusLaps = rawPlusLaps === undefined ? undefined : (rawPlusLaps === null ? null : Number(rawPlusLaps));
@@ -542,6 +549,11 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
         if (rawTotalPausedMs != null && Number.isFinite(Number(rawTotalPausedMs))) {
           updateSet.totalPausedMs = Math.max(0, Math.round(Number(rawTotalPausedMs)));
         }
+        // Finalized on the desktop (official results) or reopened there.
+        if (rawResultsFinalizedAt !== undefined) {
+          updateSet.resultsFinalizedAt = rawResultsFinalizedAt === null ? null : toDate(rawResultsFinalizedAt);
+          finalizeEventIds.add(eventId);
+        }
         if (Object.keys(updateSet).length > 0) {
           await tx
             .update(motosTable)
@@ -578,7 +590,9 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
           pausedAt:         rawPausedAt == null ? null : toDate(rawPausedAt),
           totalPausedMs:    rawTotalPausedMs != null && Number.isFinite(Number(rawTotalPausedMs))
             ? Math.max(0, Math.round(Number(rawTotalPausedMs))) : 0,
+          resultsFinalizedAt: rawResultsFinalizedAt == null ? null : toDate(rawResultsFinalizedAt),
         }).returning({ id: motosTable.id });
+        if (rawResultsFinalizedAt != null) finalizeEventIds.add(eventId);
         if (clientId) explicitIdTables.add("motos");
         if (inserted) {
           affectedMotoIds.add(inserted.id);
@@ -1429,6 +1443,21 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
   // Recalculate positions from actual performance data and broadcast leaderboards.
   // Runs after the transaction commits so readers see the committed rows.
   // Fire-and-forget: don't let errors fail the push response.
+  // Official vs unofficial results follow the desktop's finalize state.
+  if (finalizeEventIds.size > 0) {
+    setImmediate(() => {
+      void (async () => {
+        for (const eventId of finalizeEventIds) {
+          try {
+            if (await syncEventPublication(eventId)) void notifyFollowersOfResults(eventId);
+          } catch (err) {
+            req.log.warn({ err, eventId }, "desktop-push: results publication sync failed");
+          }
+        }
+      })();
+    });
+  }
+
   if (affectedMotoIds.size > 0) {
     setImmediate(() => {
       void (async () => {

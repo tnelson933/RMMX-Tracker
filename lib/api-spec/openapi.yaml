@@ -2571,7 +2571,7 @@ paths:
     get:
       operationId: listRecentResults
       tags: [dashboard]
-      summary: Recent published race results across all events (public feed)
+      summary: Recent race results across all events (public feed), flagged official or unofficial
       parameters:
         - name: state
           in: query
@@ -5142,6 +5142,9 @@ components:
           type: string
         trackName:
           type: string
+        official:
+          type: boolean
+          description: True once the organizer has finalized every finished race; otherwise results are unofficial. Absent when the event has no results.
 
     EventReport:
       type: object

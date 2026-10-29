@@ -71,7 +71,7 @@ router.get("/events/:eventId/results", (req, res) => {
   const results = db
     .prepare(
       `SELECT rr.*, r.first_name, r.last_name, r.bib_number AS rider_bib,
-              m.name AS moto_name, m.type AS moto_type
+              m.name AS moto_name, m.type AS moto_type, m.results_finalized_at
        FROM race_results rr
        LEFT JOIN riders r ON rr.rider_id = r.id
        LEFT JOIN motos m ON rr.moto_id = m.id
@@ -99,6 +99,7 @@ router.get("/events/:eventId/results", (req, res) => {
       points: r.points ?? null,
       dnf: r.dnf === 1,
       dns: r.dns === 1,
+      official: r.results_finalized_at != null || r.moto_type === "practice",
     })),
   );
 });
@@ -385,6 +386,13 @@ router.post("/events/:eventId/results/publish", (req, res) => {
   const { published } = req.body;
   const publishedBool = !!published;
   const now = new Date().toISOString();
+
+  // Publishing finalizes every finished race; unpublishing reopens them.
+  db.prepare(
+    publishedBool
+      ? "UPDATE motos SET results_finalized_at = ? WHERE event_id = ? AND status = 'completed' AND type != 'practice' AND results_finalized_at IS NULL"
+      : "UPDATE motos SET results_finalized_at = NULL WHERE event_id = ? AND results_finalized_at IS NOT NULL",
+  ).run(...(publishedBool ? [now, eventId] : [eventId]));
 
   db.prepare(
     `INSERT INTO event_publication (event_id, published, published_at, updated_at)

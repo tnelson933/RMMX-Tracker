@@ -5,7 +5,7 @@ import { eventToday } from "@workspace/api-zod";
 import { Router, type Response } from "express";
 import { db } from "@workspace/db";
 import { eventsTable, clubsTable, registrationsTable, ridersTable, raceResultsTable, motosTable, eventPublicationTable, discountCategoriesTable, checkinsTable, rfidAssignmentsTable, lapCrossingsTable, splitCrossingsTable, compCodesTable, enduroTimeChecksTable, enduroCheckpointArrivalsTable, eventReaderAssignmentsTable, liabilityWaiverSignaturesTable } from "@workspace/db";
-import { eq, and, sql, inArray } from "drizzle-orm";
+import { eq, and, sql, inArray, isNull, ne } from "drizzle-orm";
 import { normalizeEventPurchaseOptions } from "../lib/rmTrackr";
 import { sendStatsEmail } from "../lib/email";
 import { normalizeState } from "../utils/normalizeState";
@@ -540,19 +540,19 @@ router.get("/clubs/:clubId/unpublished-completed-events", async (req, res) => {
 
   if (completedEvents.length === 0) return res.json([]);
 
+  // Events with finished motos whose results aren't finalized (official) yet.
   const eventIds = completedEvents.map(e => e.id);
-  const published = await db
-    .select({ eventId: eventPublicationTable.eventId })
-    .from(eventPublicationTable)
-    .where(
-      and(
-        inArray(eventPublicationTable.eventId, eventIds),
-        eq(eventPublicationTable.published, true),
-      )
-    );
-
-  const publishedSet = new Set(published.map(p => p.eventId));
-  const unpublished = completedEvents.filter(e => !publishedSet.has(e.id));
+  const pending = await db
+    .select({ eventId: motosTable.eventId })
+    .from(motosTable)
+    .where(and(
+      inArray(motosTable.eventId, eventIds),
+      eq(motosTable.status, "completed"),
+      ne(motosTable.type, "practice"),
+      isNull(motosTable.resultsFinalizedAt),
+    ));
+  const pendingSet = new Set(pending.map(p => p.eventId));
+  const unpublished = completedEvents.filter(e => pendingSet.has(e.id));
 
   return res.json(unpublished.map(e => ({
     ...e,

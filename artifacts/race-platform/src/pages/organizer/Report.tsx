@@ -1,4 +1,5 @@
 import { useRoute } from "wouter";
+import { OverallStandings } from "@/components/organizer/OverallStandings";
 import { useGetEventReport, useGetRaceDaySummary } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,7 @@ export default function Report() {
 
   return (
     <div className="p-8 max-w-5xl mx-auto space-y-8">
+      <OverallStandings eventId={eventId} />
       <div className="flex justify-between items-center print:hidden">
         <div>
           <h2 className="text-2xl font-heading font-bold uppercase tracking-tight flex items-center gap-2">

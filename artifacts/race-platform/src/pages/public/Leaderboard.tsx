@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { OfficialResultsBadge } from "@/components/OfficialResultsBadge";
 import { useListSeriesStates, useListPublicSeries, useGetSeriesLeaderboard } from "@workspace/api-client-react";
 import { TitleBand } from "@/components/TitleBand";
 import { Card, CardContent } from "@/components/ui/card";
@@ -144,6 +145,9 @@ export default function Leaderboard() {
             <div className="mb-6 flex items-baseline gap-3">
               <h2 className="text-2xl font-heading font-bold uppercase tracking-tight">{selectedSeries?.name}</h2>
               <span className="text-muted-foreground text-sm">{selectedSeries?.season} season · {selectedSeries?.clubName}</span>
+              {(standings ?? []).length > 0 && (
+                <OfficialResultsBadge official={(standings ?? []).every(s => (s as any).official !== false)} />
+              )}
             </div>
             <div className="space-y-10">
               {classes.map(raceClass => {

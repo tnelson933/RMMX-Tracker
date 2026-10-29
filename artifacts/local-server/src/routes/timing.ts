@@ -251,6 +251,7 @@ export function buildLeaderboard(motoId: number) {
     completedAt: moto.completed_at ?? null,
     pausedAt: moto.paused_at ?? null,
     totalPausedMs: moto.total_paused_ms ?? 0,
+    resultsOfficial: moto.results_finalized_at != null || moto.type === "practice",
     leaderboard: withGaps,
     updatedAt: new Date().toISOString(),
   };

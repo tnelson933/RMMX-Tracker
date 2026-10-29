@@ -697,6 +697,7 @@ export async function buildLeaderboard(motoId: number) {
     announcerLastExtraLap: moto.announcerLastExtraLap ?? 0,
     announcerSequence: moto.announcerSequence ?? 0,
     announcerFinishedAt: moto.announcerFinishedAt?.toISOString() ?? null,
+    resultsOfficial: moto.resultsFinalizedAt != null || moto.type === "practice",
     leaderboard: withSectors,
     sectorNames: sectors?.names ?? null,
     analytics,

@@ -104,14 +104,9 @@ router.get("/series/:seriesId/leaderboard", async (req, res) => {
     : [];
   const canSeeUnpublished = !!viewer && (viewer.role === "super_admin" || viewer.clubId === series.clubId);
 
-  let eventIds = series.eventIds as number[];
-  if (!canSeeUnpublished && eventIds.length > 0) {
-    const publishedRows = await db.select({ eventId: eventPublicationTable.eventId })
-      .from(eventPublicationTable)
-      .where(and(inArray(eventPublicationTable.eventId, eventIds), eq(eventPublicationTable.published, true)));
-    const publishedIds = new Set(publishedRows.map(r => r.eventId));
-    eventIds = eventIds.filter(id => publishedIds.has(id));
-  }
+  // Finished motos are public (marked unofficial until finalized).
+  const eventIds = series.eventIds as number[];
+  void canSeeUnpublished;
   if (eventIds.length === 0) return res.json([]);
 
   const events = await db.select({ id: eventsTable.id, name: eventsTable.name })
@@ -238,7 +233,9 @@ router.get("/series/:seriesId/leaderboard", async (req, res) => {
     standings.push(...classRows);
   }
 
-  return res.json(standings);
+  // Official only when every finished moto counted has been finalized.
+  const official = allMotos.every(m => m.resultsFinalizedAt != null || m.type === "practice");
+  return res.json(standings.map((row: Record<string, unknown>) => ({ ...row, official })));
 });
 
 router.post("/series/:seriesId/recalculate", async (req, res) => {
@@ -290,17 +287,8 @@ router.get("/public/series/:seriesId", async (req, res) => {
 
   const allEventIds = series.eventIds as number[];
 
-  // Only expose events that have been published
-  const publishedRows = allEventIds.length > 0
-    ? await db.select({ eventId: eventPublicationTable.eventId })
-        .from(eventPublicationTable)
-        .where(and(
-          inArray(eventPublicationTable.eventId, allEventIds),
-          eq(eventPublicationTable.published, true),
-        ))
-    : [];
-  const publishedIds = new Set(publishedRows.map(r => r.eventId));
-  const eventIds = allEventIds.filter(id => publishedIds.has(id));
+  // Every event in the series is listed; results inside are marked official or not.
+  const eventIds = allEventIds;
 
   const eventsData = eventIds.length > 0
     ? await db.select({
@@ -335,16 +323,8 @@ router.get("/public/series/:seriesId/standings", async (req, res) => {
   const allEventIds = series.eventIds as number[];
   if (allEventIds.length === 0) return res.json([]);
 
-  // Only include events that have been published
-  const publishedRows = await db.select({ eventId: eventPublicationTable.eventId })
-    .from(eventPublicationTable)
-    .where(and(
-      inArray(eventPublicationTable.eventId, allEventIds),
-      eq(eventPublicationTable.published, true),
-    ));
-  const publishedIds = new Set(publishedRows.map(r => r.eventId));
-  const eventIds = allEventIds.filter(id => publishedIds.has(id));
-  if (eventIds.length === 0) return res.json([]);
+  // Finished motos count (official or not); see the official flag on each row.
+  const eventIds = allEventIds;
 
   const events = await db.select({ id: eventsTable.id, name: eventsTable.name })
     .from(eventsTable).where(inArray(eventsTable.id, eventIds));
@@ -458,7 +438,9 @@ router.get("/public/series/:seriesId/standings", async (req, res) => {
     }
   }
 
-  return res.json(standings);
+  // Official only when every finished moto counted has been finalized.
+  const official = allMotos.every(m => m.resultsFinalizedAt != null || m.type === "practice");
+  return res.json(standings.map((row: Record<string, unknown>) => ({ ...row, official })));
 });
 
 export default router;

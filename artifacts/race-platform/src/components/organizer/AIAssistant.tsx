@@ -80,7 +80,7 @@ function renderInline(text: string): React.ReactNode {
 const QUICK_PROMPTS = [
   "How do I create a new event?",
   "How do I open registration for an event?",
-  "How do I publish results?",
+  "How do I finalize results?",
   "How do I set up RFID timing?",
   "How do I create a championship series?",
   "How do I check in riders on race day?",
