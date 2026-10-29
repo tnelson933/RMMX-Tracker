@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { compareOverall, olympicPenalty, overallPositions } from "./overallOrder";
+import { AMA_POINTS, compareOverall, countFinishes, olympicPenalty, overallPositions } from "./overallOrder";
 
 // The offline server and the website keep copies of the overall-order rules.
 test("the desktop and website copies of the overall-order rules match the cloud's", () => {
@@ -31,4 +31,26 @@ test("Olympic overall: lowest total wins, ties go to the better last-moto finish
   assert.deepEqual(overallPositions(sorted, true), [1, 2, 3, 4]);
   const points = [{ total: 47, finishedAny: true, lastMotoFinish: 1 }, { total: 50, finishedAny: true, lastMotoFinish: 2 }];
   assert.deepEqual([...points].sort((a, b) => compareOverall(a, b, false)).map(r => r.total), [50, 47]);
+});
+
+test("AMA scale (Pro Motocross and Supercross since 2024)", () => {
+  assert.deepEqual(AMA_POINTS.slice(0, 7), [25, 22, 20, 18, 17, 16, 15]);
+  assert.equal(AMA_POINTS.length, 21);
+  assert.equal(AMA_POINTS[20], 1);   // 21st
+  assert.equal(AMA_POINTS[21], undefined); // 22nd scores nothing
+});
+
+test("points ties: event overall goes to the last moto; series count-back goes to most wins first", () => {
+  // Event overall: 1-3 vs 3-1, both 45 points: the better last moto wins.
+  const a = { total: 45, finishedAny: true, lastMotoFinish: 3 };
+  const b = { total: 45, finishedAny: true, lastMotoFinish: 1 };
+  assert.ok(compareOverall(b, a, false) < 0);
+  // Series: equal totals, one rider has more wins even with a worse last moto.
+  const wins2 = { total: 100, finishedAny: true, lastMotoFinish: 5, finishCounts: countFinishes([1, 1, 5, 5]) };
+  const wins1 = { total: 100, finishedAny: true, lastMotoFinish: 1, finishCounts: countFinishes([2, 2, 2, 1]) };
+  assert.ok(compareOverall(wins2, wins1, false) < 0);
+  // Same wins: more 2nds.
+  const s1 = { total: 90, finishedAny: true, lastMotoFinish: 4, finishCounts: countFinishes([1, 2, 2, 4]) };
+  const s2 = { total: 90, finishedAny: true, lastMotoFinish: 2, finishCounts: countFinishes([1, 3, 3, 2]) };
+  assert.ok(compareOverall(s1, s2, false) < 0); // one win each; s1 has two 2nds to s2's one
 });

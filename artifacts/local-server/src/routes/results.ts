@@ -1,11 +1,12 @@
 import { Router } from "express";
 import { getDb } from "../db";
 import { formulaPoints } from "../lib/safeFormula";
-import { isLowerBetter, olympicPenalty } from "../lib/overallOrder";
+import { AMA_POINTS, isLowerBetter, olympicPenalty } from "../lib/overallOrder";
 
 const router = Router();
 
-const FALLBACK_POINTS = [25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+/** No scoring table: the current AMA scale, as in the cloud. */
+const FALLBACK_POINTS = AMA_POINTS;
 
 function calcPoints(opts: {
   position: number;
@@ -129,7 +130,7 @@ router.post("/events/:eventId/results", (req, res) => {
     .prepare("SELECT scoring_table_id, club_id FROM events WHERE id = ?")
     .get(eventId) as any;
 
-  // No table: the same default as the cloud (25, 22, 20, ... 1).
+  // No table: the same default as the cloud (the AMA scale, 25, 22, 20, ... 1).
   let scoringMethod = "fallback";
   let pointsScale: number[] = [];
   let scoringFormula: string | null = null;

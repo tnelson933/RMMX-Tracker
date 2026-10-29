@@ -76,21 +76,13 @@ export function OverallStandings({ eventId }: { eventId: number }) {
       }, 0);
       return { riderId, riderName: data.riderName, motoPoints, total, totalTimeSeconds };
     })
-    .sort((a, b) => lowerIsBetter
-      ? (rankByRider.get(a.riderId)?.position ?? 999) - (rankByRider.get(b.riderId)?.position ?? 999)
-      : b.total - a.total || a.totalTimeSeconds - b.totalTimeSeconds);
+    // Same order as the public pages: ties go to the better last-moto finish (AMA).
+    .sort((a, b) => (rankByRider.get(a.riderId)?.position ?? 999) - (rankByRider.get(b.riderId)?.position ?? 999));
 
   const standingsWithPos: Array<(typeof overallStandings)[0] & { overallPos: number; totalTimeDisplay: string }> = [];
   for (let idx = 0; idx < overallStandings.length; idx++) {
     const row = overallStandings[idx];
-    let overallPos = lowerIsBetter ? rankByRider.get(row.riderId)?.position ?? idx + 1 : idx + 1;
-    if (!lowerIsBetter &&
-      idx > 0 &&
-      row.total === overallStandings[idx - 1].total &&
-      row.totalTimeSeconds === overallStandings[idx - 1].totalTimeSeconds
-    ) {
-      overallPos = standingsWithPos[idx - 1]?.overallPos ?? idx + 1;
-    }
+    const overallPos = rankByRider.get(row.riderId)?.position ?? idx + 1;
     standingsWithPos.push({ ...row, overallPos, totalTimeDisplay: formatSeconds(row.totalTimeSeconds) });
   }
 

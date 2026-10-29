@@ -509,7 +509,14 @@ Only series whose scoring format matches the event's are offered. If a series le
 Standings update as motos are completed. Public series standings are labelled **Unofficial results** until every race counted in them is finalized.
 
 ### Points Scoring Tables
-Create reusable scoring configurations. **Points Scoring Tables** (sidebar) → **Create Table**. **Presets** buttons fill in common formats: **AMA**, **Enduro**, **Olympic**.
+Create reusable scoring configurations. **Points Scoring Tables** (sidebar) → **Create Table**. **Presets** buttons fill in common formats:
+- **AMA MX** — the current AMA Pro Motocross scale, every moto scores: 25, 22, 20, 18, 17, 16, then one point less per place down to 21st = 1 (22nd and lower score 0). Supercross and Pro Motocross have used this same scale since 2024.
+- **Supercross** — the same scale with **Main Event Only** on: heats and LCQs don't score.
+- **Enduro** — 25, 22, 20, 18, 16, 15 … 20th = 1.
+- **Olympic** — lowest total wins (see below).
+Events with no scoring table use the AMA MX scale.
+
+**Ties on points tables** follow AMA Pro rules: an event overall goes to the better finish in the **last moto**; a **series** goes to the most moto wins, then most 2nds, 3rds and so on, then the final moto of the last round.
 
 **Olympic (Lowest Positions) scoring** follows the AMA amateur rules (as used at Loretta Lynn's): each moto scores the finishing position (or the table's value for it); **DNF** scores the number of riders in the class, never less than 20; **DNS** — and a moto the rider missed — scores riders + 30; the **lowest total wins**; a tie goes to the **better finish in the last moto**; a rider who finished no moto is placed after everyone who did. Event overall standings (Report tab, public results, widgets), series standings and the rider app all rank this way when the table is Olympic.
 

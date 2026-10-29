@@ -2,7 +2,7 @@ import { db } from "@workspace/db";
 import { eventsTable, motosTable, raceResultsTable, ridersTable, seriesTable } from "@workspace/db";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { calcPoints, loadSeriesScoring } from "./scoringTables";
-import { compareOverall, isLowerBetter, olympicPenalty, overallPositions, type OverallRow } from "./overallOrder";
+import { compareOverall, countFinishes, isLowerBetter, olympicPenalty, overallPositions, type OverallRow } from "./overallOrder";
 
 type Series = typeof seriesTable.$inferSelect;
 
@@ -200,8 +200,9 @@ export async function computeSeriesStandings(series: Series): Promise<{ standing
       const finishes = breakdown.flatMap(e => e.finishPositions);
       rows.push({
         position: 0, riderId, riderName, raceClass, totalScore, eventsEntered, official, lowerIsBetter, events: breakdown,
-        // For ordering: a tie goes to the better finish in the class's last moto.
-        _order: { total: totalScore, finishedAny: finishes.some(f => f != null), lastMotoFinish: finishes[finishes.length - 1] ?? null },
+        // For ordering: ties go to the count-back of moto finishes (points tables),
+        // then the better finish in the class's last moto.
+        _order: { total: totalScore, finishedAny: finishes.some(f => f != null), lastMotoFinish: finishes[finishes.length - 1] ?? null, finishCounts: countFinishes(finishes) },
       } as SeriesStandingRow & { _order: OverallRow });
     }
 

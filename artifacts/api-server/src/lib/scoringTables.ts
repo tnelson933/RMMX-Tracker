@@ -1,7 +1,7 @@
 import { db, pointsTablesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { formulaPoints } from "./safeFormula";
-import { isLowerBetter, olympicPenalty } from "./overallOrder";
+import { AMA_POINTS, isLowerBetter, olympicPenalty } from "./overallOrder";
 
 export const SCORING_METHODS = ["highest_points", "lowest_positions", "per_rider", "formula"] as const;
 
@@ -32,7 +32,8 @@ export function scoringMethodError(method: unknown): string | null {
     : `scoringMethod must be one of: ${SCORING_METHODS.join(", ")}`;
 }
 
-export const FALLBACK_POINTS = [25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+/** No scoring table: the current AMA scale (see lib/overallOrder.ts). */
+export const FALLBACK_POINTS = AMA_POINTS;
 
 /** Points for one result under a scoring table (shared by event and series scoring). */
 export function calcPoints(opts: {

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { AMA_POINTS } from "@/lib/overallOrder";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListPointsTables,
@@ -52,7 +53,8 @@ function unavailableMessage(err: unknown): string | undefined {
   return typeof e.data?.error === "string" ? e.data.error : undefined;
 }
 
-const SUPERCROSS_SCALE = [25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+// AMA Pro Motocross motos and Supercross main events (same scale since 2024).
+const AMA_SCALE = AMA_POINTS;
 const OLYMPIC_SCALE = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
 const ENDURO_SCALE = [25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
 
@@ -106,7 +108,7 @@ const defaultForm: FormState = {
   description: "",
   scoringMethod: "highest_points",
   mainEventOnly: false,
-  scaleText: scaleToText(SUPERCROSS_SCALE),
+  scaleText: scaleToText(AMA_SCALE),
   scoringFormula: "",
 };
 
@@ -292,6 +294,7 @@ function AiResultExplanation({ form }: { form: FormState }) {
           <div className="text-xs text-muted-foreground space-y-1">
             <p><span className="font-semibold text-foreground">Fixed Scale:</span> Each finishing position earns a predetermined number of points regardless of field size. {scale[0]} points for 1st, {scale[1] ?? "—"} for 2nd, {scale[2] ?? "—"} for 3rd, and so on.</p>
             {scale.length < 10 && <p className="text-amber-600">⚠ Only {scale.length} positions are scored — riders finishing outside the top {scale.length} earn <strong>0 points</strong>.</p>}
+            <p className="text-muted-foreground/70">Ties are broken like AMA Pro racing: an event overall goes to the better finish in the last moto; a series goes to the most wins, then most 2nds, 3rds…, then the final moto.</p>
           </div>
         )}
         {form.mainEventOnly && (
@@ -831,15 +834,26 @@ function TableFormDialog({
 
                 <div className="space-y-2">
                   <Label>Presets</Label>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
                       className="flex-1 text-xs"
-                      onClick={() => setForm((f) => ({ ...f, scoringMethod: "highest_points", scaleText: scaleToText(SUPERCROSS_SCALE) }))}
+                      onClick={() => setForm((f) => ({ ...f, scoringMethod: "highest_points", mainEventOnly: false, scaleText: scaleToText(AMA_SCALE) }))}
+                      title="AMA Pro Motocross: every moto scores 25, 22, 20, 18, 17, 16 … 21st = 1"
                     >
-                      AMA
+                      AMA MX
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 text-xs"
+                      onClick={() => setForm((f) => ({ ...f, scoringMethod: "highest_points", mainEventOnly: true, scaleText: scaleToText(AMA_SCALE) }))}
+                      title="AMA Supercross: only the main event scores, 25, 22, 20, 18, 17, 16 … 21st = 1"
+                    >
+                      Supercross
                     </Button>
                     <Button
                       type="button"
@@ -855,7 +869,7 @@ function TableFormDialog({
                       variant="outline"
                       size="sm"
                       className="flex-1 text-xs"
-                      onClick={() => setForm((f) => ({ ...f, scoringMethod: "lowest_positions", scaleText: scaleToText(OLYMPIC_SCALE) }))}
+                      onClick={() => setForm((f) => ({ ...f, scoringMethod: "lowest_positions", mainEventOnly: false, scaleText: scaleToText(OLYMPIC_SCALE) }))}
                     >
                       Olympic
                     </Button>

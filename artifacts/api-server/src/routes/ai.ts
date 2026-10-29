@@ -28,7 +28,8 @@ Rules:
 - scoringMethod "formula": use a custom JS expression. pointsScale = []. scoringFormula = the expression string. Variables available: position (1-based integer), riders (total starters integer). Use Math functions freely. Result is clamped to >= 0 and rounded. Use this when the user describes any custom math that doesn't fit the other methods.
 - mainEventOnly = true means only the final/main event moto counts for championship points (Supercross style). Use this when the user describes heats as qualifiers or mentions a "main event".
 - mainEventOnly = false means all motos/divisions count toward the championship total (AMA/Olympic multi-moto style).
-- If user says "like AMA" or "standard MX" → highest_points, mainEventOnly false, scale like 25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1
+- If user says "like AMA", "pro motocross" or "standard MX" → highest_points, mainEventOnly false, the current AMA scale (Pro Motocross and Supercross since 2024): 25, 22, 20, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1
+- If user says "supercross" or "SX" → the same AMA scale with mainEventOnly true (only the main event scores; heats and LCQs don't)
 - If user says "like Supercross" or "main event only" → highest_points, mainEventOnly true, same scale
 - If user says "enduro", "special test", "sprint enduro", or "cross country" → highest_points, mainEventOnly false, scale like 25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1 (race-day winner is decided by total accumulated time; championship points are awarded by finishing position on this scale and every result counts)
 - If user says "Olympic" or "lowest position" or "fewest points" → lowest_positions, mainEventOnly false, scale 1-20
