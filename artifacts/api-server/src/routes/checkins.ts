@@ -4,6 +4,7 @@ import { checkinsTable, ridersTable, rfidAssignmentsTable, registrationsTable, e
 import { eq, and, ne, asc, isNull } from "drizzle-orm";
 import { fulfillRmTrackr } from "../lib/rmTrackr";
 import { splitRegistrationTag } from "../lib/eventTimingTags";
+import { paidAddonsByRegistration } from "../lib/addonPayments";
 
 const router = Router();
 
@@ -79,6 +80,17 @@ router.get("/events/:eventId/checkins", async (req, res) => {
   const stickerByRider = new Map<number, string>();
   for (const a of stickerRows) stickerByRider.set(a.riderId, a.rfidNumber);
 
+  // Add-ons paid at check-in (rental, RM TrackR, RFID tag), per rider: the
+  // tile shows them paid instead of due.
+  const paidByReg = await paidAddonsByRegistration(regs.map(r => r.registrationId));
+  const paidByRider = new Map<number, Set<string>>();
+  for (const r of regs) {
+    const items = paidByReg.get(r.registrationId);
+    if (!items) continue;
+    if (!paidByRider.has(r.riderId)) paidByRider.set(r.riderId, new Set());
+    for (const i of items) paidByRider.get(r.riderId)!.add(i);
+  }
+
   return res.json(regs.map(r => {
     const c = checkinByRider.get(r.riderId);
     const riderEmail = r.email?.toLowerCase() ?? null;
@@ -108,6 +120,7 @@ router.get("/events/:eventId/checkins", async (req, res) => {
       rmTrackrFulfilledAt: r.rmTrackrFulfilledAt?.toISOString() ?? null,
       rmTrackrTransponder: r.rmTrackrTransponder ?? null,
       paymentStatus: r.paymentStatus ?? null,
+      addonsPaid: [...(paidByRider.get(r.riderId) ?? [])],
       checkedIn: c?.checkedIn ?? false,
       checkedInAt: c?.checkedInAt?.toISOString() ?? null,
       rfidNumber: timingNumber,

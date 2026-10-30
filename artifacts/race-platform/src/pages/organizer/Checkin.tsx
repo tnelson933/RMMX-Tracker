@@ -1018,10 +1018,15 @@ export default function Checkin() {
                             {rentalNumber
                               ? <>Rental <span className="font-mono">#{rentalNumber.toUpperCase()}</span>{(checkin as any).transponderReturned ? " · returned" : ""}</>
                               : "Rented — Assign Unit"}
-                            {/* Pay-at-gate events: the rental fee is collected here with the entry. */}
-                            {!(event as any)?.paymentEnabled && transponderRentalFee != null && (checkin as any).paymentStatus !== "paid" && (
-                              <span className="ml-1 text-amber-800 font-bold">· ${Number(transponderRentalFee).toFixed(2)} due</span>
-                            )}
+                            {/* Paid at check-in, or (pay-at-gate events) with the entry; otherwise still due at the gate. */}
+                            {transponderRentalFee != null && (() => {
+                              const paidHere = ((checkin as any).addonsPaid ?? []).includes("transponder_rental");
+                              const gate = !(event as any)?.paymentEnabled;
+                              if (paidHere || (gate && (checkin as any).paymentStatus === "paid")) {
+                                return <span className="ml-1 text-emerald-700 font-bold">· ${Number(transponderRentalFee).toFixed(2)} paid</span>;
+                              }
+                              return gate ? <span className="ml-1 text-amber-800 font-bold">· ${Number(transponderRentalFee).toFixed(2)} due</span> : null;
+                            })()}
                           </button>
                         ) : transponderRentalEnabled && transponderRentalFee != null && !(checkin as any).rmTrackrPurchased && (
                             <button
@@ -1045,10 +1050,14 @@ export default function Checkin() {
                               title={`Rider bought an ${RM_TRACKR_NAME}. Hand it over and assign its number to mark it fulfilled.`}
                             >
                               <Tag size={12} /> {RM_TRACKR_NAME} Purchased — Assign
-                              {/* Pay-at-gate events: the transponder is paid for here. */}
-                              {!(event as any)?.paymentEnabled && (checkin as any).paymentStatus !== "paid" && (
-                                <span className="ml-1 font-bold">· ${(trackrPrice ?? RM_TRACKR_PRICE).toFixed(2)} due</span>
-                              )}
+                              {/* Paid at check-in, or (pay-at-gate events) with the entry; otherwise still due at the gate. */}
+                              {(() => {
+                                const price = (trackrPrice ?? RM_TRACKR_PRICE).toFixed(2);
+                                const paidHere = ((checkin as any).addonsPaid ?? []).includes("rm_trackr");
+                                const gate = !(event as any)?.paymentEnabled;
+                                if (paidHere || (gate && (checkin as any).paymentStatus === "paid")) return <span className="ml-1 font-bold text-emerald-700">· ${price} paid</span>;
+                                return gate ? <span className="ml-1 font-bold">· ${price} due</span> : null;
+                              })()}
                             </button>
                           )
                         ) : null}

@@ -20,6 +20,7 @@ import { RM_TRACKR_NAME } from "@workspace/db";
 import { canManageRider } from "../lib/riderAccess";
 import { riderMobileTokensTable } from "@workspace/db";
 import { reminderAvailability, reminderStatusText, rentalReplacementCharge, sendRentalReminders, unreturnedRentals, type ReminderStatus } from "../lib/rentalReminders";
+import { confirmAddonPayment, recordCardAddonPending, recordCashAddon } from "../lib/addonPayments";
 
 /** Payment-check failures: an unknown/invalid Stripe session is the caller's error (404), anything else a 500 without Stripe's internals. */
 function sendPaymentCheckError(res: any, err: any) {
@@ -780,6 +781,7 @@ router.post("/events/:eventId/registrations/:regId/add-transponder-rental", asyn
     await db.update(registrationsTable)
       .set({ transponderRental: true })
       .where(eq(registrationsTable.id, regId));
+    await recordCashAddon(eventId, regId, "transponder_rental", rentalFee);
     return res.json({ success: true, rentalFee });
   }
 
@@ -813,6 +815,7 @@ router.post("/events/:eventId/registrations/:regId/add-transponder-rental", asyn
         cancel_url: `${appUrl}/events/${eventId}/checkin`,
       });
 
+      await recordCardAddonPending(eventId, regId, "transponder_rental", rentalFee, session.id);
       return res.json({ checkoutUrl: session.url, sessionId: session.id, rentalFee });
     } catch (err: any) {
       req.log?.error({ err: err?.message }, "[add-transponder-rental] Error");
@@ -846,6 +849,7 @@ router.post("/events/:eventId/registrations/:regId/add-rfid-sticker", async (req
     await db.update(registrationsTable)
       .set({ rfidStickerPurchased: true })
       .where(and(eq(registrationsTable.eventId, eventId), eq(registrationsTable.riderId, reg.riderId)));
+    await recordCashAddon(eventId, regId, "rfid_sticker", stickerFee);
     return res.json({ success: true, stickerFee });
   }
 
@@ -879,6 +883,7 @@ router.post("/events/:eventId/registrations/:regId/add-rfid-sticker", async (req
         cancel_url: `${appUrl}/events/${eventId}/checkin`,
       });
 
+      await recordCardAddonPending(eventId, regId, "rfid_sticker", stickerFee, session.id);
       return res.json({ checkoutUrl: session.url, sessionId: session.id, stickerFee });
     } catch (err: any) {
       req.log?.error({ err: err?.message }, "[add-rfid-sticker] Error");
@@ -922,6 +927,7 @@ router.post("/events/:eventId/registrations/:regId/add-rm-trackr", async (req, r
 
   if (paymentMethod === "cash") {
     await markRmTrackrPurchased(eventId, reg.riderId);
+    await recordCashAddon(eventId, regId, "rm_trackr", price);
     return res.json({ success: true, price });
   }
 
@@ -955,6 +961,7 @@ router.post("/events/:eventId/registrations/:regId/add-rm-trackr", async (req, r
         cancel_url: `${appUrl}/events/${eventId}/checkin`,
       });
 
+      await recordCardAddonPending(eventId, regId, "rm_trackr", price, session.id);
       return res.json({ checkoutUrl: session.url, sessionId: session.id, price });
     } catch (err: any) {
       req.log?.error({ err: err?.message }, "[add-rm-trackr] Error");
@@ -987,6 +994,7 @@ router.post("/public/registrations/:id/verify-rm-trackr", async (req, res) => {
     if (!reg) return res.status(404).json({ error: "This registration couldn't be found. It may have been cancelled. Refresh the page and try again." });
 
     await markRmTrackrPurchased(reg.eventId, reg.riderId);
+    await confirmAddonPayment(session as any, reg.eventId);
     return res.json({ paid: true });
   } catch (err: any) {
     req.log?.error({ err: err?.message }, "[verify-rm-trackr] Error");
@@ -1018,6 +1026,7 @@ router.post("/public/registrations/:id/verify-rfid-sticker", async (req, res) =>
     await db.update(registrationsTable)
       .set({ rfidStickerPurchased: true })
       .where(and(eq(registrationsTable.eventId, reg.eventId), eq(registrationsTable.riderId, reg.riderId)));
+    await confirmAddonPayment(session as any, reg.eventId);
 
     return res.json({ paid: true });
   } catch (err: any) {
@@ -1049,6 +1058,7 @@ router.post("/public/registrations/:id/verify-transponder-rental", async (req, r
       .returning();
 
     if (!reg) return res.status(404).json({ error: "This registration couldn't be found. It may have been cancelled. Refresh the page and try again." });
+    await confirmAddonPayment(session as any, reg.eventId);
 
     return res.json({ paid: true });
   } catch (err: any) {
@@ -1056,6 +1066,30 @@ router.post("/public/registrations/:id/verify-transponder-rental", async (req, r
     return sendPaymentCheckError(res, err);
   }
 });
+
+/**
+ * A paid check-in add-on checkout reported by Stripe's webhook (the check-in
+ * page may confirm it too): give the rider the add-on and mark it paid.
+ */
+export async function confirmAddonSession(
+  session: { id: string; payment_status: string | null; amount_total: number | null; metadata?: Record<string, string> | null },
+): Promise<boolean> {
+  const type = session.metadata?.type;
+  const registrationId = Number(session.metadata?.registrationId);
+  if (session.payment_status !== "paid" || !registrationId || !["transponder_rental", "rm_trackr", "rfid_sticker"].includes(type ?? "")) return false;
+  const [reg] = await db.select({ riderId: registrationsTable.riderId, eventId: registrationsTable.eventId })
+    .from(registrationsTable).where(eq(registrationsTable.id, registrationId));
+  if (!reg) return false;
+  if (type === "transponder_rental") {
+    await db.update(registrationsTable).set({ transponderRental: true }).where(eq(registrationsTable.id, registrationId));
+  } else if (type === "rm_trackr") {
+    await markRmTrackrPurchased(reg.eventId, reg.riderId);
+  } else {
+    await db.update(registrationsTable).set({ rfidStickerPurchased: true })
+      .where(and(eq(registrationsTable.eventId, reg.eventId), eq(registrationsTable.riderId, reg.riderId)));
+  }
+  return confirmAddonPayment(session, reg.eventId);
+}
 
 // ── Organizer: waiver acknowledgment history for a rider ──────────────────────
 router.get("/clubs/:clubId/riders/:riderId/waiver-acknowledgments", async (req, res) => {

@@ -21,9 +21,11 @@ export class WebhookHandlers {
         // Re-read the session from Stripe rather than trusting the payload.
         const stripe = await getUncachableStripeClient();
         const session = await stripe.checkout.sessions.retrieve(sessionId);
-        const { confirmRegistrationSession } = await import("./routes/registrations");
+        const { confirmRegistrationSession, confirmAddonSession } = await import("./routes/registrations");
         const confirmed = await confirmRegistrationSession(session);
         if (confirmed.length) logger.info({ sessionId, entries: confirmed.length }, "Registration paid (Stripe webhook)");
+        // Rentals and transponder or tag sales paid by card at check-in.
+        if (await confirmAddonSession(session as any)) logger.info({ sessionId }, "Check-in add-on paid (Stripe webhook)");
       }
     } catch (err) {
       // The background payment check picks it up if this fails.

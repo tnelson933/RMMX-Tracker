@@ -5,6 +5,7 @@ import { db } from "@workspace/db";
 import { clubsTable, eventsTable, ridersTable, registrationsTable, checkinsTable, motosTable, raceResultsTable, eventPublicationTable, lapCrossingsTable, liabilityWaiverSignaturesTable } from "@workspace/db";
 import { eq, and, ne, count, countDistinct, sql, inArray, desc, asc, gt, lte } from "drizzle-orm";
 import { buildLeaderboard } from "./timing";
+import { addonCollected, eventAddonSales } from "../lib/addonPayments";
 
 const router = Router();
 
@@ -338,6 +339,20 @@ router.get("/events/:eventId/raceday-summary", async (req, res) => {
       cashCount,
     },
   });
+});
+
+// Event report: transponder rentals and RM TrackR / RFID tag sales, with
+// what was collected by cash and card (paid at check-in or with the entry).
+router.get("/events/:eventId/addon-sales", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  const [event] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
+  if (!event) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
+  const staffCId = res.locals.staffClubId;
+  if (typeof staffCId === "number" && event.clubId !== staffCId) {
+    return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
+  }
+  const [sales, atCheckin] = await Promise.all([eventAddonSales(eventId), addonCollected(eventId)]);
+  return res.json({ ...sales, collectedAtCheckin: atCheckin });
 });
 
 router.get("/public/states", async (req, res) => {

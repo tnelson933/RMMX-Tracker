@@ -1,6 +1,7 @@
 import { useRoute } from "wouter";
 import { OverallStandings } from "@/components/organizer/OverallStandings";
 import { ContingencyReport } from "@/components/organizer/ContingencyReport";
+import { AddonSalesSection, useAddonSales } from "@/components/organizer/AddonSales";
 import { useGetEventReport, useGetRaceDaySummary } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,8 @@ export default function Report() {
     query: { enabled: !!eventId } as any,
   });
 
+  // Rentals and transponder or tag sales paid at check-in count in the totals too.
+  const { data: addons } = useAddonSales(eventId);
   const loading = summaryLoading || reportLoading;
 
   if (loading) return <div className="p-8">Loading report data...</div>;
@@ -43,7 +46,11 @@ export default function Report() {
     cardCount: number; cashCount: number;
   } | undefined;
 
-  const hasPayments = ps && (ps.cardCount > 0 || ps.cashCount > 0);
+  const extraCard = addons?.collectedAtCheckin.card.total ?? 0;
+  const extraCash = addons?.collectedAtCheckin.cash.total ?? 0;
+  const cardTotal = (ps?.cardTotal ?? 0) + extraCard;
+  const cashTotal = (ps?.cashTotal ?? 0) + extraCash;
+  const hasPayments = (ps && (ps.cardCount > 0 || ps.cashCount > 0)) || extraCard + extraCash > 0;
 
   return (
     <div className="p-8 max-w-5xl mx-auto space-y-8">
@@ -146,10 +153,11 @@ export default function Report() {
                 <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Total Collected</p>
               </div>
               <h2 className="text-4xl font-heading font-bold text-primary">
-                ${ps ? ps.totalCollected.toFixed(2) : "0.00"}
+                ${(cardTotal + cashTotal).toFixed(2)}
               </h2>
               <p className="text-xs text-muted-foreground mt-2">
                 {ps ? ps.cardCount + ps.cashCount : 0} paid registration{(ps?.cardCount ?? 0) + (ps?.cashCount ?? 0) !== 1 ? "s" : ""}
+                {extraCard + extraCash > 0 && <> + ${(extraCard + extraCash).toFixed(2)} in check-in rentals and sales</>}
               </p>
             </CardContent>
           </Card>
@@ -161,7 +169,7 @@ export default function Report() {
                 <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Card (Stripe)</p>
               </div>
               <h2 className="text-4xl font-heading font-bold text-blue-600">
-                ${ps ? ps.cardTotal.toFixed(2) : "0.00"}
+                ${cardTotal.toFixed(2)}
               </h2>
               <p className="text-xs text-muted-foreground mt-2">
                 {ps?.cardCount ?? 0} rider{(ps?.cardCount ?? 0) !== 1 ? "s" : ""}
@@ -177,7 +185,7 @@ export default function Report() {
                 <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Cash</p>
               </div>
               <h2 className="text-4xl font-heading font-bold text-green-600">
-                ${ps ? ps.cashTotal.toFixed(2) : "0.00"}
+                ${cashTotal.toFixed(2)}
               </h2>
               <p className="text-xs text-muted-foreground mt-2">
                 {ps?.cashCount ?? 0} rider{(ps?.cashCount ?? 0) !== 1 ? "s" : ""}
@@ -187,6 +195,8 @@ export default function Report() {
           </Card>
         </div>
       </div>
+
+      <AddonSalesSection eventId={eventId} />
 
       <div className="space-y-6">
         <h3 className="text-xl font-heading font-bold uppercase border-b pb-2 print:border-black">Class Breakdown</h3>
