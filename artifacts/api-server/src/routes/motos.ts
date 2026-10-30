@@ -1,10 +1,10 @@
-import { eventToday } from "@workspace/api-zod";
+import { eventToday, practiceInsertNumber } from "@workspace/api-zod";
 import { syncEventPublication } from "../lib/resultsVisibility";
 import { notifyFollowersOfResults } from "../lib/riderCareer";
 import { Router, type Response } from "express";
 import { db } from "@workspace/db";
 import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, pointsTablesTable, clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable, eventPublicationTable, lapCrossingsTable, splitCrossingsTable, registrationsTable, seriesTable, seriesPointsTable, riderAccountsTable, riderPushTokensTable } from "@workspace/db";
-import { eq, and, inArray, min, ne, gt, asc } from "drizzle-orm";
+import { eq, and, inArray, min, ne, gt, gte, asc, sql } from "drizzle-orm";
 import { sseBroadcast, buildLeaderboard, publishTimingSnapshot, resetSharedAnnouncer, withMotoLock } from "./timing";
 import { shouldPublishAnnouncerSnapshotForMotoPatch } from "../lib/announcerLifecycle";
 import { sendPushNotifications } from "../lib/push";
@@ -295,6 +295,21 @@ router.get("/events/:eventId/motos", async (req, res) => {
   })));
 });
 
+/**
+ * Make room for `count` new practices just before the next race moto that
+ * hasn't been raced (later motos move down); returns the first moto number
+ * the practices take. With nothing left to race they go at the end.
+ */
+async function makeRoomForPractices(eventId: number, count: number): Promise<number> {
+  const existing = await db.select({ motoNumber: motosTable.motoNumber, type: motosTable.type, status: motosTable.status })
+    .from(motosTable).where(eq(motosTable.eventId, eventId));
+  const start = practiceInsertNumber(existing);
+  await db.update(motosTable)
+    .set({ motoNumber: sql`${motosTable.motoNumber} + ${count}` })
+    .where(and(eq(motosTable.eventId, eventId), gte(motosTable.motoNumber, start)));
+  return start;
+}
+
 router.post("/events/:eventId/motos", async (req, res) => {
   const eventId = Number(req.params.eventId);
 
@@ -313,11 +328,14 @@ router.post("/events/:eventId/motos", async (req, res) => {
   const timing = normalizeMotoTiming(lapCount, timeLimitMs, plusLaps);
   if ("error" in timing) return res.status(400).json({ error: timing.error });
 
+  // A practice runs before the racing still to come, not after it.
+  const runNumber = type === "practice" ? await makeRoomForPractices(eventId, 1) : motoNumber;
+
   const [moto] = await db.insert(motosTable).values({
     eventId, name, type,
     raceClass: resolvedRaceClass,
     raceClasses: Array.isArray(raceClasses) && raceClasses.length > 0 ? raceClasses : null,
-    motoNumber, scheduledTime, lineup: lineup || [], status: "scheduled",
+    motoNumber: runNumber, scheduledTime, lineup: lineup || [], status: "scheduled",
     lapCount: timing.lapCount,
     timeLimitMs: timing.timeLimitMs,
     plusLaps: timing.plusLaps,
@@ -1400,15 +1418,12 @@ router.post("/events/:eventId/generate-practice-sessions", async (req, res) => {
     return res.status(400).json({ error: "No riders are checked in for these classes yet. Check riders in first, then generate motos." });
   }
 
-  const existingMotos = await db.select({ motoNumber: motosTable.motoNumber })
-    .from(motosTable).where(eq(motosTable.eventId, eventId));
-  const maxMotoNumber = existingMotos.reduce((mx, m) => Math.max(mx, m.motoNumber ?? 0), 0);
-  let nextMotoNumber = maxMotoNumber + 1;
-
   type LineupEntry = { position: number; riderId: number; riderName: string; bibNumber: string | null; rfidNumber: string | null };
 
   const sessionCount = Math.ceil(checkins.length / max);
   const created = [];
+  // The sessions run before the racing still to come, in order.
+  let nextMotoNumber = await makeRoomForPractices(eventId, sessionCount);
 
   for (let i = 0; i < checkins.length; i += max) {
     const group = checkins.slice(i, i + max);

@@ -156,7 +156,7 @@ Moto types:
 - **Main** — the feature race
 - **Moto** — generic round (used for simple two-moto-format events)
 
-**Add Practice** creates practice sessions for several classes at once: Name, Classes, Mode (Lap Count or Duration), and Max Riders Per Session.
+**Add Practice** creates practice sessions for several classes at once: Name, Classes, Mode (Lap Count or Duration), and Max Riders Per Session. A new practice is placed before the first race moto that hasn't been raced yet (after any practices already waiting), and the motos after it move down; with nothing left to race it goes at the end. Drag it to change the order.
 
 **Minimum Lap Time** is one event-wide setting on the Schedule tab. Crossings faster than it are flagged as likely false reads.
 

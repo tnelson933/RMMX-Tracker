@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { practiceInsertNumber } from "@workspace/api-zod";
 import { getDb, parseJsonArr } from "../db";
 import { sseBroadcast, buildLeaderboard } from "./timing";
 
@@ -133,6 +134,18 @@ router.get("/events/:eventId/motos", (req, res) => {
   return res.json(motos.map((m: any) => serializeMoto(m, groupMembersMap)));
 });
 
+/**
+ * Make room for `count` new practices just before the next race moto that
+ * hasn't been raced (later motos move down); returns the first moto number
+ * the practices take. Same rule as the cloud API.
+ */
+function makeRoomForPractices(db: ReturnType<typeof getDb>, eventId: number, count: number): number {
+  const existing = db.prepare("SELECT moto_number, type, status FROM motos WHERE event_id = ?").all(eventId) as any[];
+  const start = practiceInsertNumber(existing.map(m => ({ motoNumber: m.moto_number ?? null, type: m.type, status: m.status })));
+  db.prepare("UPDATE motos SET moto_number = moto_number + ? WHERE event_id = ? AND moto_number >= ?").run(count, eventId, start);
+  return start;
+}
+
 // POST /events/:eventId/motos
 router.post("/events/:eventId/motos", (req, res) => {
   const session = req.session as any;
@@ -148,6 +161,8 @@ router.post("/events/:eventId/motos", (req, res) => {
   }
   const timing = normalizeMotoTiming(lapCount, timeLimitMs, plusLaps);
   if ("error" in timing) return res.status(400).json({ error: timing.error });
+  // A practice runs before the racing still to come, not after it.
+  const runNumber = type === "practice" ? makeRoomForPractices(db, eventId, 1) : Number(motoNumber);
   const result = db
     .prepare(
       `INSERT INTO motos (event_id, name, type, race_class, race_classes, moto_number, scheduled_time, lineup, lap_count, time_limit_ms, plus_laps, countdown_seconds, status, created_at)
@@ -159,7 +174,7 @@ router.post("/events/:eventId/motos", (req, res) => {
       type,
       raceClass,
       JSON.stringify(raceClasses ?? []),
-      Number(motoNumber),
+      runNumber,
       scheduledTime ?? null,
       JSON.stringify(lineup ?? []),
       timing.lapCount,
@@ -1384,13 +1399,9 @@ router.post("/events/:eventId/generate-practice-sessions", (req, res) => {
     return res.status(400).json({ error: "No checked-in riders found for the selected class(es)" });
   }
 
-  const existingMotos = db.prepare(
-    "SELECT moto_number FROM motos WHERE event_id = ?",
-  ).all(eventId) as any[];
-  const maxMotoNumber = existingMotos.reduce((mx: number, m: any) => Math.max(mx, m.moto_number ?? 0), 0);
-  let nextMotoNumber = maxMotoNumber + 1;
-
   const sessionCount = Math.ceil(checkinRows.length / max);
+  // The sessions run before the racing still to come, in order.
+  let nextMotoNumber = makeRoomForPractices(db, eventId, sessionCount);
   const created: any[] = [];
 
   const insert = db.prepare(
