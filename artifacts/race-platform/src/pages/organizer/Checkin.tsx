@@ -278,7 +278,8 @@ export default function Checkin() {
 
   // Transponder rental modal state
   type RentalStep = "method" | "card" | "done";
-  interface RentalTarget { registrationId: number; riderName: string; }
+  /** collect: the rider chose it at registration and still owes for it. */
+  interface RentalTarget { registrationId: number; riderName: string; collect?: boolean }
   interface RentalCard { checkoutUrl: string; sessionId: string; regId: number; rentalFee: number; }
   const [rentalTarget, setRentalTarget] = useState<RentalTarget | null>(null);
   const [rentalStep, setRentalStep] = useState<RentalStep>("method");
@@ -300,7 +301,7 @@ export default function Checkin() {
 
   // RM TrackR sale (POS) modal state
   type TrackrStep = "method" | "card";
-  interface TrackrTarget { registrationId: number; riderName: string; }
+  interface TrackrTarget { registrationId: number; riderName: string; collect?: boolean }
   interface TrackrCard { checkoutUrl: string; sessionId: string; regId: number; price: number; }
   const [trackrTarget, setTrackrTarget] = useState<TrackrTarget | null>(null);
   const [trackrStep, setTrackrStep] = useState<TrackrStep>("method");
@@ -887,6 +888,13 @@ export default function Checkin() {
                 : null;
               const needsRental = !!(checkin as any).transponderRental && !rentalNumber;
               const needsTrackr = !!(checkin as any).rmTrackrPurchased && !(checkin as any).rmTrackrFulfilledAt;
+              // Chosen at registration but not paid yet (pay-at-gate events, or an unfinished online
+              // payment): staff collect it here before handing a transponder over.
+              const addonsPaid: string[] = (checkin as any).addonsPaid ?? [];
+              const entryPaid = (checkin as any).paymentStatus === "paid";
+              const rentalUnpaid = !!(checkin as any).transponderRental && transponderRentalFee != null
+                && !entryPaid && !addonsPaid.includes("transponder_rental") && !(checkin as any).transponderReturned;
+              const trackrUnpaid = !!(checkin as any).rmTrackrPurchased && !entryPaid && !addonsPaid.includes("rm_trackr");
               return (
               <Card key={checkin.riderId} className={`overflow-hidden transition-all ${checkin.checkedIn ? 'border-secondary bg-secondary/5' : pendingRiderIds.has(checkin.riderId) ? 'border-amber-500 bg-amber-500/5' : 'hover:border-primary/50'}`}>
                 <CardContent className="p-0 flex h-full">
@@ -1142,23 +1150,45 @@ export default function Checkin() {
                       </div>
 
                       {/* Notice: the rider rented or bought a transponder at registration and needs one handed out */}
-                      {needsRental && (
+                      {(needsRental || rentalUnpaid) && (
                         <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                           <AlertCircle size={14} className="shrink-0" />
-                          <span className="flex-1 min-w-[12rem]"><strong>Rented a transponder.</strong> Hand them a rental unit and record its number so you know which one comes back.</span>
-                          {rentalAssignInputId !== checkin.registrationId && (
-                            <Button size="sm" className="h-7 text-xs bg-amber-600 hover:bg-amber-700" onClick={() => setRentalAssignInputId(checkin.registrationId!)}>
+                          {rentalUnpaid ? (
+                            <span className="flex-1 min-w-[12rem]">
+                              <strong>Rented a transponder: ${Number(transponderRentalFee).toFixed(2)} not paid.</strong> Collect the rental fee, then {needsRental ? "hand them a rental unit and record its number." : "they're all set."}
+                            </span>
+                          ) : (
+                            <span className="flex-1 min-w-[12rem]"><strong>Rented a transponder.</strong> Hand them a rental unit and record its number so you know which one comes back.</span>
+                          )}
+                          {rentalUnpaid && !isOffline && (
+                            <Button size="sm" className="h-7 text-xs bg-red-600 hover:bg-red-700" onClick={() => setRentalTarget({ registrationId: checkin.registrationId!, riderName: checkin.riderName, collect: true })}>
+                              Collect ${Number(transponderRentalFee).toFixed(2)}
+                            </Button>
+                          )}
+                          {needsRental && rentalAssignInputId !== checkin.registrationId && (
+                            <Button size="sm" variant={rentalUnpaid ? "outline" : "default"} className={`h-7 text-xs ${rentalUnpaid ? "" : "bg-amber-600 hover:bg-amber-700"}`} onClick={() => setRentalAssignInputId(checkin.registrationId!)}>
                               Record rental unit
                             </Button>
                           )}
                         </div>
                       )}
-                      {needsTrackr && (
+                      {(needsTrackr || trackrUnpaid) && (
                         <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                           <AlertCircle size={14} className="shrink-0" />
-                          <span className="flex-1 min-w-[12rem]"><strong>Bought an {RM_TRACKR_NAME}.</strong> Hand them a new one and assign its number.</span>
-                          {!(tagInput?.riderId === checkin.riderId && tagInput.kind === "transponder") && (
-                            <Button size="sm" className="h-7 text-xs bg-amber-600 hover:bg-amber-700" onClick={() => setTagInput({ riderId: checkin.riderId, kind: "transponder" })}>
+                          {trackrUnpaid ? (
+                            <span className="flex-1 min-w-[12rem]">
+                              <strong>Chose an {RM_TRACKR_NAME}: ${(trackrPrice ?? RM_TRACKR_PRICE).toFixed(2)} not paid.</strong> Collect payment, then {needsTrackr ? "hand them a new one and assign its number." : "they're all set."}
+                            </span>
+                          ) : (
+                            <span className="flex-1 min-w-[12rem]"><strong>Bought an {RM_TRACKR_NAME}.</strong> Hand them a new one and assign its number.</span>
+                          )}
+                          {trackrUnpaid && !isOffline && (
+                            <Button size="sm" className="h-7 text-xs bg-red-600 hover:bg-red-700" onClick={() => setTrackrTarget({ registrationId: checkin.registrationId!, riderName: checkin.riderName, collect: true })}>
+                              Collect ${(trackrPrice ?? RM_TRACKR_PRICE).toFixed(2)}
+                            </Button>
+                          )}
+                          {needsTrackr && !(tagInput?.riderId === checkin.riderId && tagInput.kind === "transponder") && (
+                            <Button size="sm" variant={trackrUnpaid ? "outline" : "default"} className={`h-7 text-xs ${trackrUnpaid ? "" : "bg-amber-600 hover:bg-amber-700"}`} onClick={() => setTagInput({ riderId: checkin.riderId, kind: "transponder" })}>
                               Assign transponder
                             </Button>
                           )}
@@ -1437,7 +1467,7 @@ export default function Checkin() {
     <Dialog open={!!trackrTarget} onOpenChange={open => { if (!open) closeTrackrModal(); }}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle className="font-heading uppercase tracking-wide">Sell {RM_TRACKR_NAME}</DialogTitle>
+          <DialogTitle className="font-heading uppercase tracking-wide">{trackrTarget?.collect ? `Collect ${RM_TRACKR_NAME} payment` : `Sell ${RM_TRACKR_NAME}`}</DialogTitle>
         </DialogHeader>
 
         {trackrStep === "method" && (
@@ -1511,7 +1541,7 @@ export default function Checkin() {
     <Dialog open={!!rentalTarget} onOpenChange={open => { if (!open) closeRentalModal(); }}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle className="font-heading uppercase tracking-wide">Transponder Rental</DialogTitle>
+          <DialogTitle className="font-heading uppercase tracking-wide">{rentalTarget?.collect ? "Collect rental fee" : "Transponder Rental"}</DialogTitle>
         </DialogHeader>
 
         {rentalStep === "method" && (

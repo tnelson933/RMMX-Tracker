@@ -20,7 +20,7 @@ import { RM_TRACKR_NAME } from "@workspace/db";
 import { canManageRider } from "../lib/riderAccess";
 import { riderMobileTokensTable } from "@workspace/db";
 import { reminderAvailability, reminderStatusText, rentalReplacementCharge, sendRentalReminders, unreturnedRentals, type ReminderStatus } from "../lib/rentalReminders";
-import { confirmAddonPayment, recordCardAddonPending, recordCashAddon } from "../lib/addonPayments";
+import { addonIsPaid, confirmAddonPayment, recordCardAddonPending, recordCashAddon } from "../lib/addonPayments";
 
 /** Payment-check failures: an unknown/invalid Stripe session is the caller's error (404), anything else a 500 without Stripe's internals. */
 function sendPaymentCheckError(res: any, err: any) {
@@ -768,7 +768,10 @@ router.post("/events/:eventId/registrations/:regId/add-transponder-rental", asyn
   const [reg] = await db.select().from(registrationsTable).where(eq(registrationsTable.id, regId));
   if (!reg) return res.status(404).json({ error: "This registration couldn't be found. It may have been cancelled. Refresh the page and try again." });
   if (reg.eventId !== eventId) return res.status(403).json({ error: "This registration is for a different event. Refresh the page and try again." });
-  if (reg.transponderRental) return res.status(400).json({ error: "This rider already has a rental transponder for this event." });
+  // Rented at registration on a pay-at-gate event: collect the fee now.
+  if (reg.transponderRental && await addonIsPaid(reg, "transponder_rental")) {
+    return res.status(400).json({ error: "This rider's transponder rental is already paid." });
+  }
 
   const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
   if (!event?.transponderRentalEnabled || !event.transponderRentalFee) {
@@ -836,7 +839,9 @@ router.post("/events/:eventId/registrations/:regId/add-rfid-sticker", async (req
   const [reg] = await db.select().from(registrationsTable).where(eq(registrationsTable.id, regId));
   if (!reg) return res.status(404).json({ error: "This registration couldn't be found. It may have been cancelled. Refresh the page and try again." });
   if (reg.eventId !== eventId) return res.status(403).json({ error: "This registration is for a different event. Refresh the page and try again." });
-  if (reg.rfidStickerPurchased) return res.status(400).json({ error: "This rider already has an RFID sticker for this event." });
+  if (reg.rfidStickerPurchased && await addonIsPaid(reg, "rfid_sticker")) {
+    return res.status(400).json({ error: "This rider's RFID tag is already paid." });
+  }
 
   const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
   // The event's sticker fee, or the club's RFID Tag price (Admin → Sell Items).
@@ -917,7 +922,10 @@ router.post("/events/:eventId/registrations/:regId/add-rm-trackr", async (req, r
   if (!reg) return res.status(404).json({ error: "This registration couldn't be found. It may have been cancelled. Refresh the page and try again." });
   if (reg.eventId !== eventId) return res.status(403).json({ error: "This registration is for a different event. Refresh the page and try again." });
   if (reg.status === "void") return res.status(400).json({ error: "This registration was cancelled" });
-  if (reg.rmTrackrPurchased) return res.status(400).json({ error: `This rider already bought an ${RM_TRACKR_NAME} for this registration.` });
+  // Chosen at registration on a pay-at-gate event: collect the price now.
+  if (reg.rmTrackrPurchased && await addonIsPaid(reg, "rm_trackr")) {
+    return res.status(400).json({ error: `This rider's ${RM_TRACKR_NAME} is already paid.` });
+  }
 
   const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
   if (!event) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });

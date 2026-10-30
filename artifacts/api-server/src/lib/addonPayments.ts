@@ -60,6 +60,23 @@ export async function confirmAddonPayment(
   return true;
 }
 
+/**
+ * Has this add-on been paid for? Paid at check-in (for the rider's entries at
+ * the event: the RM TrackR and RFID tag cover them all), or with the entry's
+ * own payment. One chosen at registration on a pay-at-gate event isn't paid
+ * until it's collected at check-in.
+ */
+export async function addonIsPaid(reg: { id: number; eventId: number; riderId: number; paymentStatus: string | null }, item: AddonItem): Promise<boolean> {
+  if (reg.paymentStatus === "paid") return true;
+  const regIds = item === "transponder_rental"
+    ? [reg.id]
+    : (await db.select({ id: registrationsTable.id }).from(registrationsTable)
+        .where(and(eq(registrationsTable.eventId, reg.eventId), eq(registrationsTable.riderId, reg.riderId)))).map(r => r.id);
+  const [paid] = await db.select({ id: addonPaymentsTable.id }).from(addonPaymentsTable)
+    .where(and(inArray(addonPaymentsTable.registrationId, regIds), eq(addonPaymentsTable.item, item), eq(addonPaymentsTable.status, "paid")));
+  return !!paid;
+}
+
 /** Which add-ons each registration has paid for at check-in. */
 export async function paidAddonsByRegistration(registrationIds: number[]): Promise<Map<number, Set<AddonItem>>> {
   const map = new Map<number, Set<AddonItem>>();
