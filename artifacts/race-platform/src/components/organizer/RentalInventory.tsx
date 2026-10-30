@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { Radio, Plus, Trash2, Loader2, AlertTriangle, Archive, Search } from "lucide-react";
 import { responseErrorMessage } from "@/lib/friendlyErrors";
+import { RemindAllPanel, RenterDialog, ReminderMark, type ReminderStatus } from "./RentalReminders";
 
 export interface RentalUnit {
   id: number;
@@ -16,7 +17,11 @@ export interface RentalUnit {
   missing: boolean;
   retired: boolean;
   status: "available" | "out" | "missing" | "retired";
-  current: { registrationId: number; eventId: number; eventName: string; eventDate: string; riderName: string } | null;
+  current: {
+    registrationId: number; riderId: number; eventId: number; eventName: string; eventDate: string; riderName: string;
+    canNotify: boolean; notifyBlockedReason: string | null;
+    reminderStatus: ReminderStatus | null; reminderMessage: string | null;
+  } | null;
 }
 
 export const RENTAL_UNITS_KEY = ["/api/rental-transponders"];
@@ -55,6 +60,8 @@ export function RentalInventory() {
   const [adding, setAdding] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [filter, setFilter] = useState("");
+  // The rental whose renter panel is open.
+  const [renter, setRenter] = useState<{ eventId: number; registrationId: number } | null>(null);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: RENTAL_UNITS_KEY });
 
@@ -135,6 +142,13 @@ export function RentalInventory() {
         </div>
       </div>
 
+      <RemindAllPanel
+        url="/api/rental-transponders/remind-all"
+        outCount={units.filter(u => u.status === "out").length}
+        onDone={refresh}
+        onOpenRenter={r => setRenter({ eventId: r.eventId, registrationId: r.registrationId })}
+      />
+
       <div className="flex flex-wrap gap-2 text-xs">
         {(["available", "out", "missing", "retired"] as const).map(s => (
           <span key={s} className={`rounded-full border px-2.5 py-0.5 font-semibold ${STATUS_STYLE[s]}`}>{STATUS_LABEL[s]}: {counts[s]}</span>
@@ -184,8 +198,17 @@ export function RentalInventory() {
               />
               <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${STATUS_STYLE[u.status]}`}>{STATUS_LABEL[u.status]}</span>
               {u.current && (
-                <span className="text-xs text-muted-foreground">
-                  with {u.current.riderName} ·{" "}
+                <span className="inline-flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+                  with{" "}
+                  <button
+                    className="font-semibold text-primary underline-offset-2 hover:underline"
+                    onClick={() => setRenter({ eventId: u.current!.eventId, registrationId: u.current!.registrationId })}
+                    title="Contact info and return reminder"
+                  >
+                    {u.current.riderName}
+                  </button>
+                  {u.current.reminderStatus && <ReminderMark status={u.current.reminderStatus} message={u.current.reminderMessage} />}
+                  ·{" "}
                   <Link href={`/events/${u.current.eventId}/transponder-rentals`} className="underline">{u.current.eventName}</Link>
                   {" "}({u.current.eventDate})
                 </span>
@@ -213,6 +236,13 @@ export function RentalInventory() {
           ))}
         </div>
       )}
+
+      <RenterDialog
+        eventId={renter?.eventId ?? null}
+        registrationId={renter?.registrationId ?? null}
+        onClose={() => setRenter(null)}
+        onReminded={refresh}
+      />
     </div>
   );
 }

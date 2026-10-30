@@ -2,6 +2,7 @@ import { Router, type Response } from "express";
 import { db, eventsTable, registrationsTable, rentalTranspondersTable, ridersTable, usersTable } from "@workspace/db";
 import { and, desc, eq, ne, sql } from "drizzle-orm";
 import { normalizeActiveTransponderIdentifier } from "../lib/riderTimingIdentity";
+import { reminderAvailability, reminderStatusText, sendRentalReminders, unreturnedRentals, type ReminderStatus } from "../lib/rentalReminders";
 
 /**
  * A club's rental transponder inventory (Admin → Rental Transponders).
@@ -29,6 +30,8 @@ export async function rentalsOut(clubId: number) {
   const rows = await db.select({
     number: sql<string>`lower(trim(${registrationsTable.myLapsTransponderNumber}))`,
     registrationId: registrationsTable.id,
+    riderId: registrationsTable.riderId,
+    reminderStatus: registrationsTable.rentalReminderStatus,
     eventId: eventsTable.id,
     eventName: eventsTable.name,
     eventDate: eventsTable.date,
@@ -45,11 +48,17 @@ export async function rentalsOut(clubId: number) {
       sql`coalesce(trim(${registrationsTable.myLapsTransponderNumber}), '') <> ''`,
     ))
     .orderBy(desc(eventsTable.date), desc(registrationsTable.id));
-  const out = new Map<string, { registrationId: number; eventId: number; eventName: string; eventDate: string; riderName: string }>();
+  const out = new Map<string, {
+    registrationId: number; riderId: number; eventId: number; eventName: string; eventDate: string; riderName: string;
+    reminderStatus: ReminderStatus | null; reminderMessage: string | null;
+  }>();
   for (const r of rows) {
     if (out.has(r.number)) continue;
     out.set(r.number, {
       registrationId: r.registrationId,
+      riderId: r.riderId,
+      reminderStatus: (r.reminderStatus as ReminderStatus | null) ?? null,
+      reminderMessage: reminderStatusText((r.reminderStatus as ReminderStatus | null) ?? null),
       eventId: r.eventId,
       eventName: r.eventName,
       eventDate: String(r.eventDate).slice(0, 10),
@@ -68,8 +77,15 @@ router.get("/rental-transponders", async (req, res) => {
       .orderBy(rentalTranspondersTable.label, rentalTranspondersTable.transponderNumber),
     rentalsOut(clubId),
   ]);
+  const reach = await reminderAvailability([...out.values()].map(o => o.riderId));
   return res.json(units.map(u => {
-    const current = out.get(u.transponderNumber) ?? null;
+    const rental = out.get(u.transponderNumber) ?? null;
+    const canNotify = rental ? reach.get(rental.riderId) === "sent" : false;
+    const current = rental && {
+      ...rental,
+      canNotify,
+      notifyBlockedReason: canNotify ? null : reminderStatusText(reach.get(rental.riderId) ?? "no_app"),
+    };
     const status = u.retired ? "retired" : current ? "out" : u.missing ? "missing" : "available";
     return {
       id: u.id,
@@ -82,6 +98,14 @@ router.get("/rental-transponders", async (req, res) => {
       current,
     };
   }));
+});
+
+// POST /rental-transponders/remind-all — return reminder to every rider holding one of the club's transponders
+router.post("/rental-transponders/remind-all", async (req, res) => {
+  const clubId = await clubIdFor(req, res);
+  if (clubId == null) return;
+  const results = await sendRentalReminders(await unreturnedRentals({ clubId }));
+  return res.json({ sent: results.filter(r => r.status === "sent").length, results });
 });
 
 // POST /rental-transponders — add units (one or many numbers)

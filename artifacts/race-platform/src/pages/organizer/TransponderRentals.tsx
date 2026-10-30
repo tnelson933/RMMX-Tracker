@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Search, CheckCircle2, Clock, RefreshCw, Radio, Bell } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { RemindAllPanel, RenterDialog, ReminderMark, type ReminderStatus } from "@/components/organizer/RentalReminders";
 
 interface RentalRow {
   registrationId: number;
@@ -15,6 +16,10 @@ interface RentalRow {
   transponderReturned: boolean;
   raceClass: string;
   hasPushToken: boolean;
+  // Not sent by the desktop app's offline server.
+  notifyBlockedReason?: string | null;
+  reminderStatus?: ReminderStatus | null;
+  reminderMessage?: string | null;
 }
 
 export default function TransponderRentals() {
@@ -23,8 +28,8 @@ export default function TransponderRentals() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
-  const [remindingAll, setRemindingAll] = useState(false);
-  const [remindingRider, setRemindingRider] = useState<number | null>(null);
+  // The rental whose renter panel is open.
+  const [openRental, setOpenRental] = useState<number | null>(null);
 
   const { data: event } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
 
@@ -75,42 +80,6 @@ export default function TransponderRentals() {
     },
   });
 
-  const sendReminder = useCallback(async (row: RentalRow) => {
-    setRemindingRider(row.riderId);
-    try {
-      const res = await fetch(`/api/events/${eventId}/transponder-rentals/${row.riderId}/remind`, {
-        method: "POST",
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j.error || "Couldn't send");
-      toast({ title: "Reminder sent", description: `Notification sent to ${row.riderName}` });
-    } catch (e: any) {
-      toast({ title: "Couldn't send reminder", description: e.message, variant: "destructive" });
-    } finally {
-      setRemindingRider(null);
-    }
-  }, [eventId, toast]);
-
-  const sendRemindAll = useCallback(async () => {
-    setRemindingAll(true);
-    try {
-      const res = await fetch(`/api/events/${eventId}/transponder-rentals/remind-all`, {
-        method: "POST",
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j.error || "Couldn't send");
-      const count = j.sent ?? 0;
-      toast({
-        title: count > 0 ? `Reminders sent` : "No riders to remind",
-        description: count > 0 ? `Sent to ${count} device${count !== 1 ? "s" : ""}` : "No unreturned riders have the app",
-      });
-    } catch (e: any) {
-      toast({ title: "Couldn't send reminders", description: e.message, variant: "destructive" });
-    } finally {
-      setRemindingAll(false);
-    }
-  }, [eventId, toast]);
-
   const q = search.trim().toLowerCase();
   const filtered = rentals.filter(r => {
     if (!q) return true;
@@ -124,7 +93,8 @@ export default function TransponderRentals() {
   const totalRented = rentals.length;
   const totalReturned = rentals.filter(r => r.transponderReturned).length;
   const totalOut = totalRented - totalReturned;
-  const remindableCount = rentals.filter(r => !r.transponderReturned && r.hasPushToken).length;
+  // Riders holding a transponder: a unit was handed out and not returned.
+  const holdingCount = rentals.filter(r => !r.transponderReturned && r.transponderNumber).length;
 
   const handleToggle = useCallback((row: RentalRow) => {
     returnMutation.mutate({ regId: row.registrationId, returned: !row.transponderReturned });
@@ -159,19 +129,6 @@ export default function TransponderRentals() {
             <CheckCircle2 size={13} /> {totalReturned} Returned
           </div>
 
-          {/* Send Reminder to All */}
-          {totalOut > 0 && (
-            <button
-              onClick={sendRemindAll}
-              disabled={remindingAll || remindableCount === 0}
-              title={remindableCount === 0 ? "No unreturned riders have the app" : `Send reminder to ${remindableCount} rider${remindableCount !== 1 ? "s" : ""} with the app`}
-              className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-3 py-1.5 rounded-full text-xs font-semibold transition-colors"
-            >
-              <Bell size={13} className={remindingAll ? "animate-pulse" : ""} />
-              {remindingAll ? "Sending…" : "Send Reminder to All"}
-            </button>
-          )}
-
           <button
             onClick={() => refetch()}
             disabled={isFetching}
@@ -184,6 +141,18 @@ export default function TransponderRentals() {
       </div>
 
       <div className="px-4 md:px-8 py-4 md:py-6 max-w-4xl mx-auto">
+        {/* Remind everyone still holding a transponder; shows who was reached */}
+        {totalRented > 0 && (
+          <div className="mb-4">
+            <RemindAllPanel
+              url={`/api/events/${eventId}/transponder-rentals/remind-all`}
+              outCount={holdingCount}
+              onDone={() => refetch()}
+              onOpenRenter={r => setOpenRental(r.registrationId)}
+            />
+          </div>
+        )}
+
         {/* Search */}
         <div className="relative mb-4">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -214,7 +183,7 @@ export default function TransponderRentals() {
               <span className="text-center">Bib</span>
               <span className="text-center">Transponder #</span>
               <span className="text-center">Returned</span>
-              <span className="text-center">
+              <span className="text-center" title="Push notification sent">
                 <Bell size={12} className="mx-auto" />
               </span>
             </div>
@@ -228,7 +197,13 @@ export default function TransponderRentals() {
               >
                 {/* Rider name + class */}
                 <div className="min-w-0">
-                  <p className="font-semibold text-sm truncate">{row.riderName}</p>
+                  <button
+                    onClick={() => setOpenRental(row.registrationId)}
+                    className="block max-w-full font-semibold text-sm truncate text-left text-primary underline-offset-2 hover:underline"
+                    title="Contact info and return reminder"
+                  >
+                    {row.riderName}
+                  </button>
                   <p className="text-xs text-muted-foreground truncate">{row.raceClass}</p>
                 </div>
 
@@ -268,20 +243,9 @@ export default function TransponderRentals() {
                   </button>
                 </div>
 
-                {/* Send Reminder bell */}
+                {/* Last reminder: check mark sent, red X not sent */}
                 <div className="flex justify-center">
-                  {row.hasPushToken && !row.transponderReturned ? (
-                    <button
-                      onClick={() => sendReminder(row)}
-                      disabled={remindingRider === row.riderId}
-                      title="Send transponder return reminder"
-                      className="w-8 h-8 rounded-full border-2 border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-600 flex items-center justify-center transition-all disabled:opacity-50"
-                    >
-                      <Bell size={14} className={remindingRider === row.riderId ? "animate-pulse" : ""} />
-                    </button>
-                  ) : (
-                    <span className="w-8 h-8" />
-                  )}
+                  <ReminderMark status={row.reminderStatus ?? null} message={row.reminderMessage ?? null} />
                 </div>
               </div>
             ))}
@@ -304,6 +268,13 @@ export default function TransponderRentals() {
           </div>
         )}
       </div>
+
+      <RenterDialog
+        eventId={openRental != null ? eventId : null}
+        registrationId={openRental}
+        onClose={() => setOpenRental(null)}
+        onReminded={() => refetch()}
+      />
     </div>
   );
 }

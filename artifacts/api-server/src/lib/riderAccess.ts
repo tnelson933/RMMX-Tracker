@@ -50,6 +50,38 @@ export async function managedRiderWhere(account: Account): Promise<SQL> {
   return ids.length ? inArray(ridersTable.id, ids) : sql`false`;
 }
 
+/**
+ * Each rider's app accounts: the account with the rider's email, plus invited
+ * managers. Same matching as accountIdsForRiders, kept per rider (for
+ * reminders that report who was reached).
+ */
+export async function accountIdsByRider(riderIds: number[]): Promise<Map<number, number[]>> {
+  const result = new Map<number, number[]>(riderIds.map(id => [id, []]));
+  if (riderIds.length === 0) return result;
+  const riders = await db.select({ id: ridersTable.id, email: ridersTable.email }).from(ridersTable).where(inArray(ridersTable.id, riderIds));
+  const managers = await db.select({ riderId: riderProfileManagersTable.riderId, accountId: riderProfileManagersTable.riderAccountId, email: riderProfileManagersTable.invitedEmail })
+    .from(riderProfileManagersTable).where(inArray(riderProfileManagersTable.riderId, riderIds));
+  const emails = [...new Set([
+    ...riders.map(r => r.email?.trim().toLowerCase()).filter((e): e is string => !!e),
+    ...managers.map(m => m.email?.trim().toLowerCase()).filter((e): e is string => !!e),
+  ])];
+  const accounts = emails.length
+    ? await db.select({ id: riderAccountsTable.id, email: riderAccountsTable.email }).from(riderAccountsTable).where(inArray(sql`LOWER(${riderAccountsTable.email})`, emails))
+    : [];
+  const idByEmail = new Map(accounts.map(a => [a.email.trim().toLowerCase(), a.id]));
+  const add = (riderId: number, accountId: number | null | undefined) => {
+    if (accountId == null) return;
+    const list = result.get(riderId)!;
+    if (!list.includes(accountId)) list.push(accountId);
+  };
+  for (const r of riders) add(r.id, r.email ? idByEmail.get(r.email.trim().toLowerCase()) : undefined);
+  for (const m of managers) {
+    add(m.riderId, m.accountId);
+    add(m.riderId, m.email ? idByEmail.get(m.email.trim().toLowerCase()) : undefined);
+  }
+  return result;
+}
+
 /** Rider accounts that own or manage any of these riders (for race-day push alerts). */
 export async function accountIdsForRiders(riderIds: number[]): Promise<number[]> {
   if (riderIds.length === 0) return [];

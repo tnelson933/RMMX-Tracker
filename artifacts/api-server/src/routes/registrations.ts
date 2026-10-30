@@ -19,6 +19,7 @@ import { checkinSellPrices, listClubSellItems } from "../lib/sellItems";
 import { RM_TRACKR_NAME } from "@workspace/db";
 import { canManageRider } from "../lib/riderAccess";
 import { riderMobileTokensTable } from "@workspace/db";
+import { reminderAvailability, reminderStatusText, rentalReplacementCharge, sendRentalReminders, unreturnedRentals, type ReminderStatus } from "../lib/rentalReminders";
 
 /** Payment-check failures: an unknown/invalid Stripe session is the caller's error (404), anything else a 500 without Stripe's internals. */
 function sendPaymentCheckError(res: any, err: any) {
@@ -1816,131 +1817,115 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   });
 });
 
-// ── Transponder rental list for an event ───────────────────────────────────────
-router.get("/events/:eventId/transponder-rentals", async (req, res) => {
-  const eventId = Number(req.params.eventId);
-  if (!eventId) return res.status(400).json({ error: "Choose an event first." });
-  const staffCId = getStaffClubId(res);
-  if (!await checkEventOwnership(eventId, staffCId, res)) return;
-
-  // Deduplicate by rider: one row per rider (take the first registration's data)
-  const rows = await db
-    .selectDistinctOn([registrationsTable.riderId], {
-      registrationId: registrationsTable.id,
-      riderId: registrationsTable.riderId,
-      firstName: ridersTable.firstName,
-      lastName: ridersTable.lastName,
-      email: ridersTable.email,
-      bibNumber: registrationsTable.bibNumber,
-      transponderNumber: registrationsTable.myLapsTransponderNumber,
-      transponderReturned: registrationsTable.transponderReturned,
-      raceClass: registrationsTable.raceClass,
-      createdAt: registrationsTable.createdAt,
-    })
+// ── Transponder rentals for an event (Transponder Rentals page) ────────────────
+// One row per rental: renter contact info for calling or texting, whether they
+// can get a push reminder now, and the last reminder's outcome.
+async function rentalRows(eventId: number, registrationId?: number) {
+  const rows = await db.select({
+    registrationId: registrationsTable.id,
+    riderId: registrationsTable.riderId,
+    firstName: ridersTable.firstName,
+    lastName: ridersTable.lastName,
+    email: ridersTable.email,
+    phone: ridersTable.phone,
+    emergencyContact: ridersTable.emergencyContact,
+    emergencyPhone: ridersTable.emergencyPhone,
+    bibNumber: registrationsTable.bibNumber,
+    transponderNumber: registrationsTable.myLapsTransponderNumber,
+    transponderReturned: registrationsTable.transponderReturned,
+    raceClass: registrationsTable.raceClass,
+    reminderStatus: registrationsTable.rentalReminderStatus,
+    reminderAt: registrationsTable.rentalReminderAt,
+    eventName: eventsTable.name,
+    eventDate: eventsTable.date,
+  })
     .from(registrationsTable)
     .innerJoin(ridersTable, eq(registrationsTable.riderId, ridersTable.id))
-    .where(and(eq(registrationsTable.eventId, eventId), eq(registrationsTable.transponderRental, true)))
-    .orderBy(registrationsTable.riderId, registrationsTable.createdAt);
-
-  // Determine which riders have the app (push token registered).
-  const emails = rows.map(r => r.email).filter((e): e is string => !!e);
-  const emailsWithToken = new Set<string>();
-  if (emails.length > 0) {
-    const accounts = await db
-      .select({ id: riderAccountsTable.id, email: riderAccountsTable.email })
-      .from(riderAccountsTable)
-      .where(inArray(riderAccountsTable.email, emails));
-    if (accounts.length > 0) {
-      const accountIds = accounts.map(a => a.id);
-      const tokens = await db
-        .select({ riderAccountId: riderPushTokensTable.riderAccountId })
-        .from(riderPushTokensTable)
-        .where(inArray(riderPushTokensTable.riderAccountId, accountIds));
-      const accountIdsWithToken = new Set(tokens.map(t => t.riderAccountId));
-      for (const a of accounts) {
-        if (accountIdsWithToken.has(a.id)) emailsWithToken.add(a.email);
-      }
-    }
-  }
-
-  return res.json(rows.map(r => ({
-    registrationId: r.registrationId,
-    riderId: r.riderId,
-    riderName: `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim(),
-    bibNumber: r.bibNumber ?? null,
-    transponderNumber: r.transponderNumber ?? null,
-    transponderReturned: r.transponderReturned,
-    raceClass: r.raceClass,
-    hasPushToken: r.email ? emailsWithToken.has(r.email) : false,
-  })));
-});
-
-// ── Send transponder return reminder to a single rider ─────────────────────────
-router.post("/events/:eventId/transponder-rentals/:riderId/remind", async (req, res) => {
-  const eventId = Number(req.params.eventId);
-  const riderId = Number(req.params.riderId);
-  if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
-
-  const [rider] = await db.select({ email: ridersTable.email, firstName: ridersTable.firstName })
-    .from(ridersTable).where(eq(ridersTable.id, riderId));
-  if (!rider?.email) return res.status(404).json({ error: "This rider has no email address on file. Add one on the rider's profile, then try again." });
-
-  const [account] = await db.select({ id: riderAccountsTable.id })
-    .from(riderAccountsTable).where(eq(riderAccountsTable.email, rider.email));
-  if (!account) return res.status(404).json({ error: "This rider hasn't installed the RM Roost app, so they can't get notifications." });
-
-  const tokens = await db.select({ expoPushToken: riderPushTokensTable.expoPushToken })
-    .from(riderPushTokensTable).where(eq(riderPushTokensTable.riderAccountId, account.id));
-  if (tokens.length === 0) return res.status(404).json({ error: "This rider hasn't turned on notifications in the RM Roost app." });
-
-  await sendPushNotifications(tokens.map(t => ({
-    to: t.expoPushToken,
-    title: "Transponder Reminder",
-    body: "Please remember to turn in your rented active transponder.",
-  })));
-
-  return res.json({ sent: tokens.length });
-});
-
-// ── Send transponder return reminder to all riders who haven't returned yet ────
-router.post("/events/:eventId/transponder-rentals/remind-all", async (req, res) => {
-  const eventId = Number(req.params.eventId);
-  if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
-
-  // All riders with unreturned rentals for this event (one row per rider).
-  const unreturned = await db
-    .selectDistinctOn([registrationsTable.riderId], {
-      riderId: registrationsTable.riderId,
-      email: ridersTable.email,
-    })
-    .from(registrationsTable)
-    .innerJoin(ridersTable, eq(registrationsTable.riderId, ridersTable.id))
+    .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
     .where(and(
       eq(registrationsTable.eventId, eventId),
       eq(registrationsTable.transponderRental, true),
-      eq(registrationsTable.transponderReturned, false),
+      ne(registrationsTable.status, "void"),
+      ...(registrationId != null ? [eq(registrationsTable.id, registrationId)] : []),
     ))
-    .orderBy(registrationsTable.riderId, registrationsTable.createdAt);
+    .orderBy(ridersTable.lastName, ridersTable.firstName, registrationsTable.id);
+  const [availability, charge] = await Promise.all([
+    reminderAvailability(rows.map(r => r.riderId)),
+    rentalReplacementCharge(eventId),
+  ]);
+  return rows.map(r => {
+    const reach = availability.get(r.riderId) ?? "no_app";
+    return {
+      registrationId: r.registrationId,
+      riderId: r.riderId,
+      eventId,
+      eventName: r.eventName,
+      eventDate: String(r.eventDate).slice(0, 10),
+      riderName: `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim() || "Rider",
+      email: r.email ?? null,
+      phone: r.phone ?? null,
+      emergencyContact: r.emergencyContact ?? null,
+      emergencyPhone: r.emergencyPhone ?? null,
+      bibNumber: r.bibNumber ?? null,
+      transponderNumber: r.transponderNumber ?? null,
+      transponderReturned: r.transponderReturned,
+      raceClass: r.raceClass,
+      // Can a push reminder reach them now? If not, why (shown on the greyed-out button).
+      hasPushToken: reach === "sent",
+      notifyBlockedReason: reach === "sent" ? null : reminderStatusText(reach),
+      reminderStatus: (r.reminderStatus as ReminderStatus | null) ?? null,
+      reminderMessage: reminderStatusText((r.reminderStatus as ReminderStatus | null) ?? null),
+      reminderAt: r.reminderAt ? r.reminderAt.toISOString() : null,
+      replacementCharge: charge,
+    };
+  });
+}
 
-  const emails = unreturned.map(r => r.email).filter((e): e is string => !!e);
-  if (emails.length === 0) return res.json({ sent: 0 });
+router.get("/events/:eventId/transponder-rentals", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  if (!eventId) return res.status(400).json({ error: "Choose an event first." });
+  if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
+  return res.json(await rentalRows(eventId));
+});
 
-  const accounts = await db.select({ id: riderAccountsTable.id })
-    .from(riderAccountsTable).where(inArray(riderAccountsTable.email, emails));
-  if (accounts.length === 0) return res.json({ sent: 0 });
+// One rental, for the renter panel (also opened from Admin → Rentals).
+router.get("/events/:eventId/transponder-rentals/registrations/:registrationId", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
+  const [row] = await rentalRows(eventId, Number(req.params.registrationId));
+  if (!row) return res.status(404).json({ error: "That rental wasn't found. It may have been cancelled. Refresh the page and try again." });
+  return res.json(row);
+});
 
-  const tokens = await db.select({ expoPushToken: riderPushTokensTable.expoPushToken })
-    .from(riderPushTokensTable)
-    .where(inArray(riderPushTokensTable.riderAccountId, accounts.map(a => a.id)));
-  if (tokens.length === 0) return res.json({ sent: 0 });
+// ── Return reminder to one rental's rider ──────────────────────────────────────
+router.post("/events/:eventId/transponder-rentals/registrations/:registrationId/remind", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
+  const rentals = (await unreturnedRentals({ eventId })).filter(r => r.registrationId === Number(req.params.registrationId));
+  if (rentals.length === 0) return res.status(404).json({ error: "This transponder is already marked returned, or the rental was cancelled." });
+  const [result] = await sendRentalReminders(rentals);
+  if (result.status !== "sent") return res.status(409).json({ error: result.message, result });
+  return res.json({ result });
+});
 
-  await sendPushNotifications(tokens.map(t => ({
-    to: t.expoPushToken,
-    title: "Transponder Reminder",
-    body: "Please remember to turn in your rented active transponder.",
-  })));
+// Older clients address the reminder by rider.
+router.post("/events/:eventId/transponder-rentals/:riderId/remind", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
+  const rentals = (await unreturnedRentals({ eventId })).filter(r => r.riderId === Number(req.params.riderId));
+  if (rentals.length === 0) return res.status(404).json({ error: "This rider has no transponder still out at this event." });
+  const results = await sendRentalReminders(rentals);
+  const sent = results.filter(r => r.status === "sent").length;
+  if (sent === 0) return res.status(409).json({ error: results[0].message, results });
+  return res.json({ sent, results });
+});
 
-  return res.json({ sent: tokens.length });
+// ── Return reminder to everyone at the event with a transponder still out ──────
+router.post("/events/:eventId/transponder-rentals/remind-all", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
+  const results = await sendRentalReminders(await unreturnedRentals({ eventId }));
+  return res.json({ sent: results.filter(r => r.status === "sent").length, results });
 });
 
 // ── Assign transponder number to a rental registration (event-scoped, auto-expires 24h after event) ─

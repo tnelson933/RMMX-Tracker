@@ -40,6 +40,9 @@ export const registrationsTable = pgTable("registrations", {
   rmTrackrFulfilledAt: timestamp("rm_trackr_fulfilled_at"),
   rmTrackrTransponder: text("rm_trackr_transponder"),
   transponderReturned: boolean("transponder_returned").notNull().default(false),
+  /** Last rental return reminder: "sent" | "no_app" | "no_notifications" | "failed", and when. */
+  rentalReminderStatus: text("rental_reminder_status"),
+  rentalReminderAt: timestamp("rental_reminder_at", { withTimezone: true }),
   waiverAcknowledgedAt: timestamp("waiver_acknowledged_at"),
   waiverSnapshot: text("waiver_snapshot"),
   cancelledAt: timestamp("cancelled_at"),
