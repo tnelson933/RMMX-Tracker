@@ -192,7 +192,7 @@ function PublicFooter() {
 
       <div className="bg-white border-t-2 border-[#ECECEC]">
         <div className="container mx-auto px-4 py-5 text-center text-sm text-[#333]">
-          &copy; {new Date().getFullYear()}&nbsp;&nbsp;|&nbsp;&nbsp;RM Roost by Rocky Mountain ATV/MC. All rights reserved.
+          &copy; {new Date().getFullYear()}&nbsp;&nbsp;|&nbsp;&nbsp;RM Roost is owned and operated by Rocky Mountain ATV Inc. All rights reserved.
         </div>
       </div>
     </footer>
