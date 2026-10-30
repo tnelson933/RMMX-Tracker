@@ -102,6 +102,10 @@ const STAFF_RULES: RouteRule[] = [
   // ── Rental transponder inventory: check-in staff (events) pick from it ──────
   { pattern: /^\/rental-transponders(\/|$)/, permissions: ["events"] },
 
+  // ── Sell items: check-in staff (events) read prices; changing them is Payments ─
+  { pattern: /^\/sell-items(\/|$)/, permissions: ["events", "payments"], methods: ["GET", "HEAD"] },
+  { pattern: /^\/sell-items(\/|$)/, permissions: ["payments"] },
+
   // ── Payments / Stripe Connect ─────────────────────────────────────────────
   { pattern: /^\/stripe\/connect(\/|$)/, permissions: ["payments"] },
 

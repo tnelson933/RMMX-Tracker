@@ -9,18 +9,20 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { Settings, Plus, Trash2, RefreshCw, Flag, FileText, ListChecks, MapPin, Info, UploadCloud, X, ExternalLink, ShieldCheck, LayoutTemplate, Radio } from "lucide-react";
+import { Settings, Plus, Trash2, RefreshCw, Flag, FileText, ListChecks, MapPin, Info, UploadCloud, X, ExternalLink, ShieldCheck, LayoutTemplate, Radio, ShoppingBag } from "lucide-react";
 import { PdfFieldEditor, type WaiverField } from "@/components/PdfFieldEditor";
 import { StateSelect } from "@/components/ui/StateSelect";
 import { TrackCourseMap, type LibraryTrack } from "./CourseMap";
 import { RentalInventory } from "@/components/organizer/RentalInventory";
+import { SellItemsManager } from "@/components/organizer/SellItems";
 import { errorText } from "@/lib/friendlyErrors";
 
-type AdminTab = "forms" | "tracks" | "rentals" | "classes" | "brands";
+type AdminTab = "forms" | "tracks" | "rentals" | "sell" | "classes" | "brands";
 const ADMIN_TABS: Array<{ key: AdminTab; label: string; icon: typeof FileText }> = [
   { key: "forms", label: "Forms", icon: FileText },
   { key: "tracks", label: "Track Library", icon: MapPin },
   { key: "rentals", label: "Rentals", icon: Radio },
+  { key: "sell", label: "Sell Items", icon: ShoppingBag },
   { key: "classes", label: "Race Classes", icon: ListChecks },
   { key: "brands", label: "Brand Contingencies", icon: Flag },
 ];
@@ -826,6 +828,8 @@ export default function TeamPage() {
       </>)}
 
       {adminTab === "rentals" && <RentalInventory />}
+
+      {adminTab === "sell" && <SellItemsManager />}
 
       {adminTab === "classes" && (<>
       {/* Default Race Classes */}

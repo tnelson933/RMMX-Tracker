@@ -9,6 +9,7 @@ import { db } from "@workspace/db";
 import { eventsTable, clubsTable, registrationsTable, ridersTable, raceResultsTable, motosTable, eventPublicationTable, discountCategoriesTable, checkinsTable, rfidAssignmentsTable, lapCrossingsTable, splitCrossingsTable, compCodesTable, enduroTimeChecksTable, enduroCheckpointArrivalsTable, eventReaderAssignmentsTable, liabilityWaiverSignaturesTable } from "@workspace/db";
 import { eq, and, sql, inArray, isNull, ne } from "drizzle-orm";
 import { normalizeEventPurchaseOptions } from "../lib/rmTrackr";
+import { clubBuiltInPrice, eventTrackrPrice } from "../lib/sellItems";
 import { sendStatsEmail } from "../lib/email";
 import { normalizeState } from "../utils/normalizeState";
 import { quickCheckinRequirements } from "../lib/quickCheckinRequirements";
@@ -205,7 +206,7 @@ router.post("/events", async (req, res) => {
     transponderRentalEnabled: transponderRentalEnabled || false,
     transponderRentalFee: transponderRentalFee ? String(transponderRentalFee) : null,
     rfidStickerFee: rfidStickerFee ? String(rfidStickerFee) : null,
-    purchaseOptions: normalizeEventPurchaseOptions(purchaseOptions),
+    purchaseOptions: normalizeEventPurchaseOptions(purchaseOptions, await clubBuiltInPrice(clubId, "rm_trackr") ?? undefined),
     scoringTableId: scoringTableId ?? null,
     entryFeeCategoryId: entryFeeCat?.id ?? null,
     amaEventId: amaEventId ?? null,
@@ -333,7 +334,7 @@ router.patch("/events/:eventId", async (req, res) => {
   const id = Number(req.params.eventId);
 
   // Capture previous status before update; also check club ownership for staff.
-  const [before] = await db.select({ status: eventsTable.status, clubId: eventsTable.clubId, date: eventsTable.date, trackName: eventsTable.trackName, location: eventsTable.location, state: eventsTable.state, quickCheckinEnabled: eventsTable.quickCheckinEnabled, streetAddress: eventsTable.streetAddress, zip: eventsTable.zip }).from(eventsTable).where(eq(eventsTable.id, id));
+  const [before] = await db.select({ status: eventsTable.status, clubId: eventsTable.clubId, date: eventsTable.date, trackName: eventsTable.trackName, location: eventsTable.location, state: eventsTable.state, quickCheckinEnabled: eventsTable.quickCheckinEnabled, streetAddress: eventsTable.streetAddress, zip: eventsTable.zip, purchaseOptions: eventsTable.purchaseOptions }).from(eventsTable).where(eq(eventsTable.id, id));
   const previousStatus = before?.status;
   const staffCId = getStaffClubId(res);
   if (staffCId !== null) {
@@ -357,7 +358,11 @@ router.patch("/events/:eventId", async (req, res) => {
   if (updates.timingTechnology !== undefined) {
     updates.timingTechnology = normalizeTimingTechnology(updates.timingTechnology);
   }
-  if (updates.purchaseOptions !== undefined) updates.purchaseOptions = normalizeEventPurchaseOptions(updates.purchaseOptions);
+  if (updates.purchaseOptions !== undefined) {
+    // An event that already offers the RM TrackR keeps its price; newly added, it takes the club's.
+    const trackrPrice = eventTrackrPrice(before?.purchaseOptions) ?? (before ? await clubBuiltInPrice(before.clubId, "rm_trackr") : null);
+    updates.purchaseOptions = normalizeEventPurchaseOptions(updates.purchaseOptions, trackrPrice ?? undefined);
+  }
   if (req.body.quickCheckinRequirements !== undefined) {
     updates.quickCheckinRequirements = req.body.quickCheckinRequirements === null ? null : quickCheckinRequirements(req.body.quickCheckinRequirements);
   }

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { StateSelect } from "@/components/ui/StateSelect";
 import { useAuth } from "@/contexts/AuthContext";
 import { RM_TRACKR_OPTION_ID, RM_TRACKR_NAME, RM_TRACKR_PRICE } from "@/lib/rmTrackr";
+import { SellItemQuickAdd, useTrackrPurchaseOption } from "@/components/organizer/SellItems";
 import { useListEvents, useCreateEvent, useListClubs, useListSeries, useUpdateSeries, getListSeriesQueryKey, useListPointsTables, getListEventsQueryKey, useGetClubSettings, usePutClubSettings } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
@@ -370,6 +371,7 @@ export default function EventsList() {
 
   const { fields, append, remove } = useFieldArray({ control: form.control, name: "raceClasses" });
   const { fields: purchaseOptionFields, append: appendPurchaseOption, remove: removePurchaseOption } = useFieldArray({ control: form.control, name: "purchaseOptions" });
+  const trackrOption = useTrackrPurchaseOption();
 
   const watchPaymentEnabled = form.watch("paymentEnabled");
   const [qcReqOpen, setQcReqOpen] = useState(false);
@@ -945,7 +947,7 @@ export default function EventsList() {
                             rentalsOffered={!!watchTransponderRentalEnabled}
                             trackrOffered={form.watch("purchaseOptions").some(o => o.optionId === RM_TRACKR_OPTION_ID)}
                             onOfferRentals={() => form.setValue("transponderRentalEnabled", true, { shouldDirty: true })}
-                            onOfferTrackr={() => appendPurchaseOption({ optionId: RM_TRACKR_OPTION_ID, name: RM_TRACKR_NAME, amount: String(RM_TRACKR_PRICE) })}
+                            onOfferTrackr={() => appendPurchaseOption(trackrOption)}
                           />
                         )}
                         <FormMessage />
@@ -1390,21 +1392,13 @@ export default function EventsList() {
                           type="button"
                           variant="outline"
                           size="sm"
-                          disabled={form.watch("purchaseOptions").some(o => o.optionId === RM_TRACKR_OPTION_ID)}
-                          onClick={() => appendPurchaseOption({ optionId: RM_TRACKR_OPTION_ID, name: RM_TRACKR_NAME, amount: String(RM_TRACKR_PRICE) })}
-                        >
-                          <Plus size={13} className="mr-1" /> Add {RM_TRACKR_NAME} (${RM_TRACKR_PRICE})
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
                           onClick={() => appendPurchaseOption({ name: "", amount: "" })}
                         >
                           <Plus size={13} className="mr-1" /> Add Purchase Option
                         </Button>
                       </div>
                     </div>
+                    <SellItemQuickAdd options={form.watch("purchaseOptions")} onAdd={o => appendPurchaseOption(o as any)} />
                     {purchaseOptionFields.length === 0 ? (
                       <p className="text-xs text-muted-foreground">
                         Add optional items riders can purchase at registration — gate fees, pit passes, etc.

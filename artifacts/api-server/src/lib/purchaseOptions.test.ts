@@ -37,6 +37,8 @@ test("saving keeps only id, name and amount and fixes the RM TrackR", async () =
   assert.equal(out.length, 3);
   assert.ok(out[2].id.length > 0);
   assert.equal(out[2].name, "No id");
+  // The club's Sell Items price, or the price the event already had.
+  assert.equal(normalizeEventPurchaseOptions([{ id: "rm-trackr", amount: 1 }], 55)[0].amount, 55);
 });
 
 test("event purchase options need a name, a sane price and unique ids", async () => {

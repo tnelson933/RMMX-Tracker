@@ -86,7 +86,7 @@ To delete an event: Overview tab → **Delete Event** (top right).
 - **Race Day Display** — jumbotron / announcer display link
 - **Reader Setup** — RM Connect download and setup steps, your readers with live status, tag scanner
 - **Offline Mode** — download the RM Roost desktop app for race days without internet
-- **Admin** — club settings in tabs along the top: **Forms** (rider acknowledgement form, liability waiver), **Track Library** (tracks and their course maps), **Rentals** (rental transponder inventory), **Race Classes** (default classes), **Brand Contingencies**. The open tab is kept in the link (e.g. `/team?tab=tracks`).
+- **Admin** — club settings in tabs along the top: **Forms** (rider acknowledgement form, liability waiver), **Track Library** (tracks and their course maps), **Rentals** (rental transponder inventory), **Sell Items** (what the club sells; see below), **Race Classes** (default classes), **Brand Contingencies**. The open tab is kept in the link (e.g. `/team?tab=tracks`).
 - **Staff** — invite staff and choose which pages each can open; gate schedule link for staff
 
 Platform admins also see a separate section with Users, Clubs, and Notifications.
@@ -112,7 +112,9 @@ Main fields:
 
 **Classes:** in Edit, click Club Classes chips (or **Select All**) or **+ Add Class**, then set each class's Max Riders, Series, and details.
 
-**Purchase Options:** **+ Add Purchase Option** (a name and a price from $0 to $100,000) for gate fees, pit passes, camping, etc. Purchase options have no category. **Add RM TrackR Transponder ($40)** adds the RM TrackR transponder sale (see Timing Systems).
+**Purchase Options:** **+ Add Purchase Option** (a name and a price from $0 to $100,000) for gate fees, pit passes, camping, etc. Purchase options have no category. Under the heading, **Quick add** chips add the club's Sell Items in one click (for example "+ RM TrackR Transponder $40.00" or "+ Camping $20.00"); items the event already offers aren't shown, and **Edit items** opens Admin → Sell Items.
+
+**Admin → Sell Items** lists what the club sells. The **RM TrackR Transponder** (starts at $40) and **RFID Tag** (no price until the club sets one) are always there: their price can be changed and they can be hidden, not renamed or removed. **Add an item** adds anything else (camping, pit passes, wristbands) with a name and price; custom items can be renamed, hidden or removed. Hidden items aren't offered on event forms or at check-in. Changing a price doesn't change events that already offer the item: an event keeps the RM TrackR price it had, and a newly added RM TrackR takes the club's current price. The RFID Tag isn't a quick-add chip: it's sold at check-in (and through the event's RFID Sticker Fee). Staff need the Payments permission to change Sell Items.
 
 **Date and fee rules** (checked when saving): registration must close after it opens and no later than the last race day; the early sign-up period can't end after the race date; the Early Bird Fee must be less than the Entry Fee.
 
@@ -312,10 +314,10 @@ The header of the organizer portal shows an active timing chip: "Active Timing R
 ### Transponder rentals and RM TrackR Transponder sales
 - Transponder rental: if enabled in the event settings, riders can rent a transponder at registration; a rental fee is added to their total
 - On the registration form's RM TrackR Transponder section, a rider either enters their own number or, under "or, no transponder?", ticks **Rent one for this event** or **Buy your own RM TrackR Transponder** (one or the other). Either one makes the number optional, even when the event requires one; the organizer hands the transponder out at check-in.
-- RM TrackR Transponder sales: riders can buy their own RM TrackR Transponder for a standard $40.
-  - In the event's Purchase Options, click **Add RM TrackR Transponder ($40)**. Its name and price are fixed.
+- RM TrackR Transponder sales: riders can buy their own RM TrackR Transponder at the club's price (Admin → Sell Items; $40 unless the club changed it).
+  - In the event's Purchase Options, click the **RM TrackR Transponder** quick-add chip. Its name is fixed, and its price is the club's price when added.
   - Riders who buy one at registration show an amber **RM TrackR Transponder Purchased — Assign** flag on the Check-In tab. Assigning the transponder number marks it fulfilled and clears the flag.
-  - On Check-In, **+ Sell RM TrackR** appears for riders without a transponder (events timed with an RM TrackR loop, online only). Staff can collect cash or take a card. For a card, staff either type the card on their own device (Stripe checkout) or the rider scans the QR code to pay on their phone. The window closes by itself once payment goes through.
+  - On Check-In, **+ Sell RM TrackR or RFID** sells one to riders without a transponder (events timed with an RM TrackR loop, online only). Staff can collect cash or take a card. For a card, staff either type the card on their own device (Stripe checkout) or the rider scans the QR code to pay on their phone. The window closes by itself once payment goes through.
 
 ---
 
@@ -328,14 +330,14 @@ Check-In tab → search by name or bib. Filter chips: **Pending**, **Done**, and
 Click the bib area on the left of a rider card (before check-in) to edit it inline; Enter or click away saves. Duplicate bibs are flagged red. Once checked in, the bib is locked.
 
 ### Assign an RFID tag or transponder
-Each rider card shows a chip for each kind of tag the event uses. Click **"No Transponder — Assign"** or **"No RFID — Assign"** (or an assigned number, to change it) → type or scan the number → save. A rider can have both a transponder and an RFID sticker.
+Each rider card shows a chip for each kind of tag the event uses. Click **"No RM TrackR Transponder — Assign"** or **"No RFID Tag — Assign"** (or an assigned number, to change it) → type or scan the number → save. A rider can have both a transponder and an RFID sticker.
 
 ### Liability waivers at check-in
 Cards show **Waiver Signed** or **No Waiver**. If the event requires the e-signed waiver and the rider hasn't signed, checking them in opens **"Rider Has Not Signed Liability Waiver"** with the PDF; collect their name and email → **Sign & Check In**.
 
 ### Selling add-ons at check-in
-- **+ Purchase RFID** (the event's RFID sticker fee) and **+ Add Transponder Rental** (if rentals are on).
-- **+ Sell RM TrackR** for active timing riders without a transponder (online only).
+- **+ Sell RM TrackR or RFID** opens a short list of what this rider can still buy, with prices: the **RM TrackR Transponder** (riders without a transponder at events timed by an RM TrackR loop) and the **RFID Tag** (riders without an RFID tag at events with RFID readers). Pick one to open its sale. When only one applies, the button names it (**+ Sell RM TrackR** or **+ Sell RFID Tag**). Online only. Prices: the event's own price if it has one (its RM TrackR purchase option or RFID Sticker Fee), otherwise the club's Admin → Sell Items price. If the RFID Tag has no price anywhere, it isn't offered; set one in Admin → Sell Items.
+- **+ Add Transponder Rental** (if rentals are on).
 - Each offers **Collect Cash** or **Pay with Card** — staff type the card on their own device (Stripe checkout), or the rider scans a QR code to pay on their phone. The window closes by itself once payment goes through.
 - Riders who bought an RM TrackR Transponder online show an amber **RM TrackR Transponder Purchased — Assign** flag until the transponder number is assigned.
 - Riders who rented or bought a transponder at registration also get an amber notice on their card: "Rented a transponder" (**Record rental unit**) or "Bought an RM TrackR Transponder" (**Assign transponder**). Recording a rental stores that unit's number on the registration, and the card then shows **Rental #NUMBER**, so staff know which unit should come back. The Transponder Rentals tab and Admin → Rentals list which rider has which unit.

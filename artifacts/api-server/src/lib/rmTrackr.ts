@@ -12,10 +12,11 @@ export function includesRmTrackr(options: PurchaseOption[] | null | undefined): 
  * Normalize an event's configured purchase options before saving: keep only
  * `{ id, name, amount }` (the old per-option discount category is dropped), give
  * an option without an id a new one, and make the RM TrackR always carry its
- * fixed name and standard price, whatever the client sent, at most once.
+ * fixed name and the given price (the club's Sell Items price, or the price the
+ * event already had), whatever the client sent, at most once.
  * Run checkPurchaseOptions (validateInput) first to reject bad names and prices.
  */
-export function normalizeEventPurchaseOptions(options: unknown): PurchaseOption[] {
+export function normalizeEventPurchaseOptions(options: unknown, trackrPrice: number = RM_TRACKR_PRICE): PurchaseOption[] {
   if (!Array.isArray(options)) return [];
   let hasTrackr = false;
   const out: PurchaseOption[] = [];
@@ -24,7 +25,7 @@ export function normalizeEventPurchaseOptions(options: unknown): PurchaseOption[
     if (String(o.id) === RM_TRACKR_OPTION_ID) {
       if (hasTrackr) continue;
       hasTrackr = true;
-      out.push({ id: RM_TRACKR_OPTION_ID, name: RM_TRACKR_NAME, amount: RM_TRACKR_PRICE });
+      out.push({ id: RM_TRACKR_OPTION_ID, name: RM_TRACKR_NAME, amount: trackrPrice });
     } else {
       const id = o.id === undefined || o.id === null || String(o.id) === "" ? randomUUID() : String(o.id);
       out.push({ id, name: String(o.name ?? "").trim(), amount: Number(o.amount) });

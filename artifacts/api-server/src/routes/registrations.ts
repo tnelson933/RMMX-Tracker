@@ -15,7 +15,8 @@ import { resolvePurchaseOptions } from "../lib/purchaseOptions";
 import { includesRmTrackr, markRmTrackrPurchased, fulfillRmTrackr } from "../lib/rmTrackr";
 import { eventTimingTags } from "../lib/eventTimingTags";
 import { ORGANIZER_NO_STRIPE, organizerCardError, riderCardError } from "../lib/stripeErrors";
-import { RM_TRACKR_NAME, RM_TRACKR_PRICE } from "@workspace/db";
+import { checkinSellPrices, listClubSellItems } from "../lib/sellItems";
+import { RM_TRACKR_NAME } from "@workspace/db";
 import { canManageRider } from "../lib/riderAccess";
 import { riderMobileTokensTable } from "@workspace/db";
 
@@ -834,11 +835,11 @@ router.post("/events/:eventId/registrations/:regId/add-rfid-sticker", async (req
   if (reg.rfidStickerPurchased) return res.status(400).json({ error: "This rider already has an RFID sticker for this event." });
 
   const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
-  if (!event?.rfidStickerFee) {
-    return res.status(400).json({ error: "RFID stickers aren't turned on for this event. Turn them on in the event's settings first." });
+  // The event's sticker fee, or the club's RFID Tag price (Admin → Sell Items).
+  const stickerFee = event ? checkinSellPrices(event, await listClubSellItems(event.clubId)).rfidTag : null;
+  if (!event || stickerFee == null) {
+    return res.status(400).json({ error: "RFID tags have no price yet. Set one in Admin → Sell Items, or turn on RFID stickers in the event's settings." });
   }
-
-  const stickerFee = Number(event.rfidStickerFee);
 
   if (paymentMethod === "cash") {
     await db.update(registrationsTable)
@@ -863,7 +864,7 @@ router.post("/events/:eventId/registrations/:regId/add-rfid-sticker", async (req
         line_items: [{
           price_data: {
             currency: "usd",
-            product_data: { name: "RFID Sticker" },
+            product_data: { name: "RFID Tag" },
             unit_amount: Math.round(stickerFee * 100),
           },
           quantity: 1,
@@ -887,6 +888,15 @@ router.post("/events/:eventId/registrations/:regId/add-rfid-sticker", async (req
   return res.status(400).json({ error: "Choose Cash or Card, then try again." });
 });
 
+// ── Organizer: what check-in can sell at this event, and for how much ─────────
+router.get("/events/:eventId/sell-prices", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
+  const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
+  if (!event) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
+  return res.json(checkinSellPrices(event, await listClubSellItems(event.clubId)));
+});
+
 // ── Organizer: sell an RM TrackR at the check-in gate (POS) ────────────────────
 // Cash marks it purchased now; card returns a Stripe Checkout session the
 // employee opens on their device to key in the card, or shows as a QR code for
@@ -905,7 +915,9 @@ router.post("/events/:eventId/registrations/:regId/add-rm-trackr", async (req, r
 
   const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
   if (!event) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
-  const price = RM_TRACKR_PRICE;
+  // The event's RM TrackR price, or the club's (Admin → Sell Items).
+  const price = checkinSellPrices(event, await listClubSellItems(event.clubId)).rmTrackr;
+  if (price == null) return res.status(400).json({ error: `Your club has hidden the ${RM_TRACKR_NAME} in Admin → Sell Items. Show it there to sell it.` });
 
   if (paymentMethod === "cash") {
     await markRmTrackrPurchased(eventId, reg.riderId);

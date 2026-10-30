@@ -2,7 +2,8 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { RENTAL_UNITS_KEY, useRentalUnits } from "@/components/organizer/RentalInventory";
 import { useParams } from "wouter";
 import { useGetEvent, useListCheckins, useGetRaceDaySummary, useCheckinRider, useAssignRfid, useUpdateRegistration } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -339,10 +340,22 @@ export default function Checkin() {
 
   const transponderRentalEnabled = !!(event as any)?.transponderRentalEnabled;
   const transponderRentalFee: number | null = (event as any)?.transponderRentalFee ?? null;
-  const rfidStickerFee: number | null = (event as any)?.rfidStickerFee ?? null;
+  const { isOffline } = useOfflineStatus();
+  // What check-in sells and for how much: the event's own price, else the club's (Admin → Sell Items).
+  const { data: sellPrices } = useQuery<{ rmTrackr: number | null; rfidTag: number | null }>({
+    queryKey: ["/api/events", eventId, "sell-prices"],
+    enabled: !!eventId && !isOffline,
+    queryFn: async () => {
+      const res = await fetch(`/api/events/${eventId}/sell-prices`, { credentials: "include" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    },
+  });
+  const eventStickerFee: number | null = (event as any)?.rfidStickerFee != null && Number((event as any).rfidStickerFee) > 0 ? Number((event as any).rfidStickerFee) : null;
+  const rfidStickerFee: number | null = sellPrices?.rfidTag ?? eventStickerFee;
+  const trackrPrice: number | null = sellPrices ? sellPrices.rmTrackr : RM_TRACKR_PRICE;
   const requireLiabilityWaiver = !!(event as any)?.requireLiabilityWaiver;
 
-  const { isOffline } = useOfflineStatus();
   const { pendingRiderIds, pendingCount, isSyncing, syncError, queueCheckin } = useSyncQueue(eventId);
 
   // On desktop: flush sync immediately when the page mounts so we always
@@ -478,7 +491,7 @@ export default function Checkin() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Couldn't add sticker");
       queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
-      toast({ title: "RFID sticker added", description: `$${Number(json.stickerFee).toFixed(2)} collected` });
+      toast({ title: "RFID tag sold", description: `$${Number(json.stickerFee).toFixed(2)} collected in cash. Assign the tag to finish.` });
       closeStickerModal();
     } catch (e: any) {
       setStickerError(e.message);
@@ -1034,33 +1047,48 @@ export default function Checkin() {
                               <Tag size={12} /> {RM_TRACKR_NAME} Purchased — Assign
                               {/* Pay-at-gate events: the transponder is paid for here. */}
                               {!(event as any)?.paymentEnabled && (checkin as any).paymentStatus !== "paid" && (
-                                <span className="ml-1 font-bold">· ${RM_TRACKR_PRICE.toFixed(2)} due</span>
+                                <span className="ml-1 font-bold">· ${(trackrPrice ?? RM_TRACKR_PRICE).toFixed(2)} due</span>
                               )}
                             </button>
                           )
-                        ) : tags.transponder && !isOffline && !held.transponder && !(checkin as any).transponderRental && checkin.registrationId != null && (
-                          <button
-                            onClick={() => setTrackrTarget({ registrationId: checkin.registrationId!, riderName: checkin.riderName })}
-                            className="flex items-center gap-1 text-xs font-semibold text-primary bg-primary/5 border border-primary/30 px-2 py-0.5 rounded hover:bg-primary/10 transition-colors"
-                          >
-                            + Sell {RM_TRACKR_NAME}
-                          </button>
+                        ) : null}
+                        {(checkin as any).rfidStickerPurchased && tags.rfid && (
+                          <span className="flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-xs font-semibold">
+                            <CheckCircle2 size={12} /> RFID Tag Purchased
+                          </span>
                         )}
-                        {/* RFID sticker status */}
-                        {tags.rfid && rfidStickerFee != null && (
-                          (checkin as any).rfidStickerPurchased ? (
-                            <span className="flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-xs font-semibold">
-                              <CheckCircle2 size={12} /> RFID Tag Purchased
-                            </span>
-                          ) : (
-                            <button
-                              onClick={() => setStickerTarget({ registrationId: checkin.registrationId!, riderName: checkin.riderName })}
-                              className="flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded hover:bg-red-100 transition-colors"
-                            >
-                              + Purchase RFID
-                            </button>
-                          )
-                        )}
+                        {/* One button sells whichever of the RM TrackR and RFID tag this rider can still buy */}
+                        {(() => {
+                          if (isOffline || checkin.registrationId == null) return null;
+                          const regId = checkin.registrationId;
+                          const canSellTrackr = tags.transponder && trackrPrice != null && !held.transponder
+                            && !(checkin as any).transponderRental && !(checkin as any).rmTrackrPurchased;
+                          const canSellRfid = tags.rfid && rfidStickerFee != null && !held.rfid && !(checkin as any).rfidStickerPurchased;
+                          if (!canSellTrackr && !canSellRfid) return null;
+                          const label = canSellTrackr && canSellRfid ? "RM TrackR or RFID" : canSellTrackr ? "RM TrackR" : "RFID Tag";
+                          // Non-modal, and the dialog opens after the menu closes, so closing the menu doesn't dismiss it.
+                          return (
+                            <DropdownMenu modal={false}>
+                              <DropdownMenuTrigger asChild>
+                                <button className="flex items-center gap-1 text-xs font-semibold text-primary bg-primary/5 border border-primary/30 px-2 py-0.5 rounded hover:bg-primary/10 transition-colors">
+                                  + Sell {label}
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="start" onCloseAutoFocus={e => e.preventDefault()}>
+                                {canSellTrackr && (
+                                  <DropdownMenuItem onSelect={() => setTimeout(() => setTrackrTarget({ registrationId: regId, riderName: checkin.riderName }), 0)}>
+                                    {RM_TRACKR_NAME}<span className="ml-auto pl-4 text-muted-foreground">${trackrPrice!.toFixed(2)}</span>
+                                  </DropdownMenuItem>
+                                )}
+                                {canSellRfid && (
+                                  <DropdownMenuItem onSelect={() => setTimeout(() => setStickerTarget({ registrationId: regId, riderName: checkin.riderName }), 0)}>
+                                    RFID Tag<span className="ml-auto pl-4 text-muted-foreground">${rfidStickerFee!.toFixed(2)}</span>
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          );
+                        })()}
                         {([
                           // Also when the event asks for or rents transponders, or the rider has one.
                           (tags.transponder || !!held.transponder || !!(event as any)?.requireTransponder || transponderRentalEnabled)
@@ -1098,7 +1126,7 @@ export default function Checkin() {
                               className="flex items-center gap-1 text-amber-600 hover:text-amber-700 transition-colors underline-offset-2 hover:underline"
                               title={`Click to assign ${t.kind === "transponder" ? "a transponder" : "an RFID tag"}`}
                             >
-                              <Tag size={14} /> No {t.name} — Assign
+                              <Tag size={14} /> {t.kind === "transponder" ? `No ${RM_TRACKR_NAME}` : "No RFID Tag"} — Assign
                             </button>
                           )
                         ))}
@@ -1326,7 +1354,7 @@ export default function Checkin() {
     <Dialog open={!!stickerTarget} onOpenChange={open => { if (!open) closeStickerModal(); }}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle className="font-heading uppercase tracking-wide">RFID Sticker Purchase</DialogTitle>
+          <DialogTitle className="font-heading uppercase tracking-wide">Sell RFID Tag</DialogTitle>
         </DialogHeader>
 
         {stickerStep === "method" && (
@@ -1407,7 +1435,7 @@ export default function Checkin() {
           <div className="flex flex-col gap-4">
             <div className="text-center">
               <p className="text-muted-foreground text-sm">{trackrTarget?.riderName}</p>
-              <p className="text-3xl font-heading font-bold mt-1">${RM_TRACKR_PRICE.toFixed(2)}</p>
+              <p className="text-3xl font-heading font-bold mt-1">${(trackrPrice ?? RM_TRACKR_PRICE).toFixed(2)}</p>
             </div>
 
             {trackrError && (
