@@ -48,6 +48,9 @@ export const supportTicketsTable = pgTable("support_tickets", {
   fixTokenExpiresAt: timestamp("fix_token_expires_at", { withTimezone: true }),
   fixResult: text("fix_result"),
   fixPrUrl: text("fix_pr_url"),
+  /** One-time codes for replying YES/NO by text (SHA-256 hashes); they expire with the tokens above. */
+  approvalSmsCodeHash: text("approval_sms_code_hash"),
+  fixSmsCodeHash: text("fix_sms_code_hash"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [index("support_tickets_status_idx").on(t.status, t.createdAt), index("support_tickets_club_idx").on(t.clubId, t.createdAt)]);
 
@@ -65,3 +68,14 @@ export interface ProposedFix {
 }
 
 export type SupportTicket = typeof supportTicketsTable.$inferSelect;
+
+/**
+ * Support-alert phone numbers (SUPPORT_ALERT_PHONES): when each was sent the
+ * enrollment confirmation text, and whether it replied STOP.
+ */
+export const smsAlertEnrollmentsTable = pgTable("sms_alert_enrollments", {
+  phone: text("phone").primaryKey(),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  optedOutAt: timestamp("opted_out_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});

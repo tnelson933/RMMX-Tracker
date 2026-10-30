@@ -146,7 +146,7 @@ const COLUMNS: Array<[string, Array<[string, string]>]> = [
   ["Race Info", [["Upcoming races", "/"], ["Results", "/results"], ["Series leaderboard", "/leaderboard"]]],
   ["Riders", [["Rider login", "/rider/login"], ["Rider app", "/rider-app"]]],
   ["Clubs", [["Organizer login", "/login"]]],
-  ["Policies", [["Privacy policy", "/privacy"], ["Delete my account", "/delete-account"]]],
+  ["Policies", [["Privacy policy", "/privacy"], ["Terms and conditions", "/terms"], ["Delete my account", "/delete-account"]]],
 ];
 
 function PublicFooter() {

@@ -4,7 +4,9 @@ import { db, clubsTable, eventsTable, messages, supportTicketsTable, usersTable,
 import { and, eq, gte, sql } from "drizzle-orm";
 import { sendSupportTicketEmail } from "./email";
 import { logger } from "./logger";
-import { parsePhoneList, sendSms } from "./sms";
+import { sendSms } from "./sms";
+import { alertPhones, sendEnrollmentConfirmations } from "./smsAlerts";
+import { newReplyCode } from "./smsReplies";
 
 /**
  * Support tickets: problems Rocky couldn't solve, escalated to the RM Roost
@@ -97,6 +99,7 @@ export async function createSupportTicket(
   }
 
   const { token, hash, expiresAt } = newApprovalToken();
+  const smsCode = newReplyCode();
   const [ticket] = await db.insert(supportTicketsTable).values({
     clubId: ctx.clubId,
     userId: ctx.userId,
@@ -108,10 +111,11 @@ export async function createSupportTicket(
     diagnostics: diagnostics.slice(-10).map(d => ({ tool: d.tool, input: d.input, result: d.result.slice(0, 4000) })),
     approvalTokenHash: hash,
     approvalTokenExpiresAt: expiresAt,
+    approvalSmsCodeHash: smsCode.hash,
   }).returning();
 
   try {
-    await alertTeam(ticket, token, ctx.appUrl);
+    await alertTeam(ticket, token, smsCode.code, ctx.appUrl);
   } catch (err) {
     logger.error({ err, ticketId: ticket.id }, "support ticket alert failed");
   }
@@ -119,7 +123,7 @@ export async function createSupportTicket(
 }
 
 /** Email and text the RM Roost team, so a request isn't missed. */
-async function alertTeam(ticket: SupportTicket, token: string, appUrl: string): Promise<void> {
+async function alertTeam(ticket: SupportTicket, token: string, smsCode: string, appUrl: string): Promise<void> {
   const [club] = ticket.clubId != null
     ? await db.select({ name: clubsTable.name }).from(clubsTable).where(eq(clubsTable.id, ticket.clubId))
     : [];
@@ -136,10 +140,12 @@ async function alertTeam(ticket: SupportTicket, token: string, appUrl: string): 
   const decideUrl = (decision?: TicketDecision) =>
     `${appUrl}/support/decide?ticket=${ticket.id}&token=${encodeURIComponent(token)}${decision ? `&decision=${decision}` : ""}`;
 
-  // Texts: SUPPORT_ALERT_PHONES (comma-separated, +15551234567 format).
-  const phones = parsePhoneList(process.env.SUPPORT_ALERT_PHONES);
+  // Texts: SUPPORT_ALERT_PHONES (comma-separated, +15551234567 format), minus anyone who replied STOP.
+  // The wording matches the carrier (A2P 10DLC) registration; keep them in step.
+  await sendEnrollmentConfirmations();
+  const phones = await alertPhones();
   const text = `RM Roost support #${ticket.id}${ticket.urgency === "urgent" ? " URGENT" : ""}: ${ticket.summary.slice(0, 90)}`
-    + `${club?.name ? ` (${club.name.slice(0, 40)})` : ""}. Approve or decline: ${decideUrl()}`;
+    + `${club?.name ? ` (${club.name.slice(0, 40)})` : ""}. Reply YES ${ticket.id} ${smsCode} to investigate or NO ${ticket.id} ${smsCode} to decline. Details: ${decideUrl()}`;
   if (phones.length === 0) logger.warn({ ticketId: ticket.id }, "support ticket: no SUPPORT_ALERT_PHONES set, no text sent");
   for (const phone of phones) await sendSms(phone, text);
 
@@ -176,9 +182,10 @@ export async function decideTicket(ticketId: number, decision: TicketDecision, d
       status: decision === "approve" ? "approved" : "declined",
       decidedAt: new Date(),
       decidedByUserId,
-      // The emailed link works once.
+      // The emailed link and texted code work once.
       approvalTokenHash: null,
       approvalTokenExpiresAt: null,
+      approvalSmsCodeHash: null,
     })
     .where(and(eq(supportTicketsTable.id, ticketId), eq(supportTicketsTable.status, "open")))
     .returning();
@@ -200,6 +207,7 @@ export async function resolveTicket(ticketId: number, resolution: string, byUser
       decidedAt: sql`coalesce(${supportTicketsTable.decidedAt}, now())`,
       approvalTokenHash: null,
       approvalTokenExpiresAt: null,
+      approvalSmsCodeHash: null,
     })
     .where(eq(supportTicketsTable.id, ticketId))
     .returning();

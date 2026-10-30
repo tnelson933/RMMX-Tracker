@@ -4,7 +4,9 @@ import { db, pool, clubsTable, eventsTable, supportTicketsTable, usersTable, typ
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { sendSupportUpdateEmail } from "./email";
-import { parsePhoneList, sendSms } from "./sms";
+import { sendSms } from "./sms";
+import { alertPhones } from "./smsAlerts";
+import { newReplyCode } from "./smsReplies";
 import { checkApprovalToken, newApprovalToken, postTicketUpdate, resolveTicket } from "./supportTickets";
 import { checkFixFiles, checkFixStatement, checkReadQuery, MAX_READ_ROWS, redactRow } from "./supportSqlGuard";
 
@@ -261,7 +263,7 @@ export async function startInvestigation(ticketId: number, appUrl: string): Prom
     .set({
       investigationStatus: "running", investigationStartedAt: new Date(), investigationFinishedAt: null,
       investigationError: null, investigationReport: null, proposedFix: null,
-      fixStatus: null, fixTokenHash: null, fixTokenExpiresAt: null, fixResult: null, fixPrUrl: null,
+      fixStatus: null, fixTokenHash: null, fixTokenExpiresAt: null, fixSmsCodeHash: null, fixResult: null, fixPrUrl: null,
     })
     .where(and(
       eq(supportTicketsTable.id, ticketId),
@@ -344,6 +346,7 @@ async function runInvestigation(ticket: SupportTicket, appUrl: string): Promise<
 
   const actionable = fix && (fix.kind === "data" || fix.kind === "code");
   const token = actionable ? newApprovalToken() : null;
+  const smsCode = actionable ? newReplyCode() : null;
   const [saved] = await db.update(supportTicketsTable).set({
     investigationStatus: fix ? "done" : "failed",
     investigationFinishedAt: new Date(),
@@ -354,16 +357,17 @@ async function runInvestigation(ticket: SupportTicket, appUrl: string): Promise<
     fixStatus: actionable ? "awaiting_approval" : null,
     fixTokenHash: token?.hash ?? null,
     fixTokenExpiresAt: token?.expiresAt ?? null,
+    fixSmsCodeHash: smsCode?.hash ?? null,
   }).where(eq(supportTicketsTable.id, ticket.id)).returning();
 
   try {
-    await alertOwner(saved, token?.token ?? null, appUrl);
+    await alertOwner(saved, token?.token ?? null, smsCode?.code ?? null, appUrl);
   } catch (err) {
     logger.error({ err, ticketId: ticket.id }, "support investigation alert failed");
   }
 }
 
-async function alertOwner(t: SupportTicket, fixToken: string | null, appUrl: string): Promise<void> {
+async function alertOwner(t: SupportTicket, fixToken: string | null, smsCode: string | null, appUrl: string): Promise<void> {
   const fix = t.proposedFix;
   const ticketUrl = `${appUrl}/admin/support?ticket=${t.id}`;
   const decide = fixToken ? `${appUrl}/support/decide?ticket=${t.id}&stage=fix&token=${encodeURIComponent(fixToken)}` : null;
@@ -391,8 +395,10 @@ async function alertOwner(t: SupportTicket, fixToken: string | null, appUrl: str
       : "Nothing was changed.",
     ticketUrl,
   });
-  for (const phone of parsePhoneList(process.env.SUPPORT_ALERT_PHONES)) {
-    await sendSms(phone, `RM Roost support #${t.id}: ${heading}. ${(fix?.summary ?? "").slice(0, 90)} ${decide ?? ticketUrl}`);
+  // Wording matches the carrier (A2P 10DLC) registration; keep them in step.
+  const reply = decide && smsCode ? ` Reply YES ${t.id} ${smsCode} to apply or NO ${t.id} ${smsCode} to decline. Details:` : "";
+  for (const phone of await alertPhones()) {
+    await sendSms(phone, `RM Roost support #${t.id}: ${heading}. ${(fix?.summary ?? "").slice(0, 90)}${reply} ${decide ?? ticketUrl}`);
   }
 }
 
@@ -408,7 +414,7 @@ export function checkFixToken(t: SupportTicket, token: string | null | undefined
 export async function decideFix(ticketId: number, decision: "approve" | "decline", byUserId: number | null): Promise<{ ok: boolean; message: string; ticket?: SupportTicket }> {
   // Claim it first so a double tap can't apply it twice.
   const [t] = await db.update(supportTicketsTable)
-    .set({ fixStatus: decision === "approve" ? "applying" : "declined", fixTokenHash: null, fixTokenExpiresAt: null })
+    .set({ fixStatus: decision === "approve" ? "applying" : "declined", fixTokenHash: null, fixTokenExpiresAt: null, fixSmsCodeHash: null })
     .where(and(eq(supportTicketsTable.id, ticketId), eq(supportTicketsTable.fixStatus, "awaiting_approval")))
     .returning();
   if (!t) return { ok: false, message: "This fix was already handled." };

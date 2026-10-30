@@ -60,6 +60,7 @@ import HandScanner from "@/pages/public/HandScanner";
 import EventWidget from "@/pages/public/EventWidget";
 import SeriesWidget from "@/pages/public/SeriesWidget";
 import PrivacyPolicy from "@/pages/public/PrivacyPolicy";
+import TermsAndConditions from "@/pages/public/TermsAndConditions";
 import DeleteAccount from "@/pages/public/DeleteAccount";
 import ResetRiderPassword from "@/pages/rider/ResetRiderPassword";
 
@@ -172,6 +173,9 @@ function Router() {
       </Route>
       <Route path="/privacy">
         <PrivacyPolicy />
+      </Route>
+      <Route path="/terms">
+        <TermsAndConditions />
       </Route>
       <Route path="/delete-account">
         <DeleteAccount />

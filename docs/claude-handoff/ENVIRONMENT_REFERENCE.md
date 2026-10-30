@@ -34,6 +34,7 @@ process environment or add a reviewed development-only loader.
 | `TWILIO_ACCOUNT_SID` | Twilio account for support request texts |
 | `TWILIO_AUTH_TOKEN` | Twilio server credential |
 | `TWILIO_FROM_NUMBER` | Twilio sending number (or `TWILIO_MESSAGING_SERVICE_SID`) |
+| `TWILIO_SMS_WEBHOOK_URL` | Optional. The incoming-message webhook URL set on the Twilio number, if not `APP_URL` + `/api/twilio/sms` (replies are verified against the URL Twilio signed) |
 | `GITHUB_TOKEN` | Support investigation: code search, and pull requests for approved code fixes (contents + pull requests write) |
 | `SUPPORT_GITHUB_REPO` | Repository the support investigation reads (default `tnelson933/RMMX-Tracker`) |
 | `SUPPORT_GITHUB_BRANCH` | Branch it reads and opens pull requests against (default `claude/railway-deploy`) |

@@ -9,6 +9,7 @@ import { startEventStatusSweeper } from "./lib/eventStatus";
 import { startQuickCheckinNotifier } from "./lib/quickCheckinNotifier";
 import { startRaceClock } from "./lib/raceClock";
 import { startPaymentSweeper } from "./lib/paymentSweeper";
+import { sendEnrollmentConfirmations } from "./lib/smsAlerts";
 
 const rawPort = process.env["PORT"];
 
@@ -35,6 +36,8 @@ httpServer.listen(port, (err?: Error) => {
   }
 
   logger.info({ port }, "Server listening");
+  // Support-alert numbers added since the last start get their enrollment confirmation text.
+  sendEnrollmentConfirmations().catch(err => logger.error({ err }, "sms enrollment confirmations failed"));
   normalizeEventStates().catch(err => logger.error({ err }, "normalizeEventStates failed"));
   // Close registration and advance event statuses on schedule, not only when a page is opened.
   startEventStatusSweeper();
