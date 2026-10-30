@@ -20,6 +20,8 @@ import {
 } from "../lib/riderTimingIdentity";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { db } from "@workspace/db";
+import { sendEmail } from "../lib/email";
+import { brandedEmailHtml } from "../lib/emailLayout";
 import {
   riderAccountsTable,
   usersTable,
@@ -357,30 +359,16 @@ router.post("/rider/auth/forgot-password", async (req, res) => {
     riderResetTokens.set(token, { riderAccountId: account.id, expiresAt: new Date(Date.now() + 60 * 60 * 1000) });
 
     const resetUrl = `${getRiderAppUrl()}/rider/reset-password?token=${token}`;
-    const html = `
-      <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:40px 24px;background:#f9f9f9">
-        <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:40px">
-          <h1 style="margin:0 0 8px;font-size:22px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:#111">Reset Your Password</h1>
-          <p style="margin:0 0 24px;font-size:15px;color:#555;line-height:1.6">
-            We received a request to reset your RM Roost password. Click the button below to choose a new one.
-          </p>
-          <a href="${resetUrl}" style="display:inline-block;padding:14px 28px;background:#dc2626;color:#fff;text-decoration:none;font-weight:700;font-size:14px;text-transform:uppercase;letter-spacing:1px;border-radius:4px">
-            Reset Password
-          </a>
-          <p style="margin:28px 0 0;font-size:12px;color:#999;line-height:1.5">
-            This link expires in 1 hour. If you didn't request this, you can safely ignore this email.
-          </p>
-        </div>
-      </div>`;
-
-    const apiKey = process.env.RESEND_API_KEY;
-    if (apiKey) {
-      await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ from: process.env.EMAIL_FROM || "RM Roost <onboarding@resend.dev>", to: normalized, subject: "Reset your RM Roost password", html }),
-      });
-    }
+    const html = brandedEmailHtml({
+      appUrl: getRiderAppUrl(),
+      preheader: "Choose a new password for your RM Roost rider account.",
+      eyebrow: "Password reset",
+      heading: "Reset your password",
+      paragraphs: ["We received a request to reset your RM Roost password. Click the button below to choose a new one."],
+      button: { label: "Reset Password", url: resetUrl },
+      note: "This link expires in 1 hour. If you didn't ask to reset your password, you can ignore this email; your password won't change.",
+    });
+    await sendEmail(normalized, "Reset your RM Roost password", html);
   }
 
   // Always return success to prevent email enumeration
