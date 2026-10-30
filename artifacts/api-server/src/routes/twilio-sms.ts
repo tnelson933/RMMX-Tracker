@@ -49,7 +49,7 @@ router.post("/twilio/sms", async (req, res) => {
     return res.send(twiml());
   }
   if (reply.kind === "unknown") {
-    return res.send(twiml("To decide a ticket, reply YES or NO with its number and code, e.g. YES 123 K7Q2C. Open the link in the alert for details."));
+    return res.send(twiml("RM Roost support alerts: to decide a ticket, reply YES or NO with its number and code, e.g. YES 123 K7Q2C. Open the link in the alert for details."));
   }
 
   const [t] = await db.select().from(supportTicketsTable).where(eq(supportTicketsTable.id, reply.ticketId));
@@ -57,26 +57,26 @@ router.post("/twilio/sms", async (req, res) => {
 
   // The fix the investigation proposed.
   if (t?.fixStatus === "awaiting_approval" && replyCodeMatches(reply.code, t.fixSmsCodeHash)) {
-    if (!t.fixTokenExpiresAt || t.fixTokenExpiresAt.getTime() < now) return res.send(twiml(`Support #${t.id}: that code has expired. Open the ticket in RM Roost to decide.`));
+    if (!t.fixTokenExpiresAt || t.fixTokenExpiresAt.getTime() < now) return res.send(twiml(`RM Roost support #${t.id}: that code has expired. Open the ticket in RM Roost to decide.`));
     logger.info({ ticketId: t.id, decision: reply.decision, from: mask(from) }, "[sms] fix decided by text");
     const outcome = await decideFix(t.id, reply.decision, null);
-    return res.send(twiml(`Support #${t.id}: ${outcome.message}`.slice(0, 600)));
+    return res.send(twiml(`RM Roost support #${t.id}: ${outcome.message}`.slice(0, 600)));
   }
   // The ticket itself (approve = start the investigation).
   if (t?.status === "open" && replyCodeMatches(reply.code, t.approvalSmsCodeHash)) {
-    if (!t.approvalTokenExpiresAt || t.approvalTokenExpiresAt.getTime() < now) return res.send(twiml(`Support #${t.id}: that code has expired. Open the ticket in RM Roost to decide.`));
+    if (!t.approvalTokenExpiresAt || t.approvalTokenExpiresAt.getTime() < now) return res.send(twiml(`RM Roost support #${t.id}: that code has expired. Open the ticket in RM Roost to decide.`));
     logger.info({ ticketId: t.id, decision: reply.decision, from: mask(from) }, "[sms] ticket decided by text");
     const decided = await decideTicket(t.id, reply.decision, null);
-    if (!decided) return res.send(twiml(`Support #${t.id} was already handled.`));
+    if (!decided) return res.send(twiml(`RM Roost support #${t.id} was already handled.`));
     if (decided.status === "approved") {
       void startInvestigation(decided.id, getAppUrl()).catch(err => logger.error({ err, ticketId: decided.id }, "[sms] investigation failed to start"));
-      return res.send(twiml(`Support #${t.id} approved. Claude is investigating; you'll get a text when a fix is ready.`));
+      return res.send(twiml(`RM Roost support #${t.id} approved. Claude is investigating; you'll get a text when a fix is ready.`));
     }
-    return res.send(twiml(`Support #${t.id} declined. Nothing was changed.`));
+    return res.send(twiml(`RM Roost support #${t.id} declined. Nothing was changed.`));
   }
   // Wrong code, or the step it was for is already done.
-  if (t && (t.status !== "open" && t.fixStatus !== "awaiting_approval")) return res.send(twiml(`Support #${t.id} was already handled.`));
-  return res.send(twiml("That ticket number and code don't match an open request. Check the latest alert and try again."));
+  if (t && (t.status !== "open" && t.fixStatus !== "awaiting_approval")) return res.send(twiml(`RM Roost support #${t.id} was already handled.`));
+  return res.send(twiml("RM Roost support alerts: that ticket number and code don't match an open request. Check the latest alert and try again."));
 });
 
 export default router;
