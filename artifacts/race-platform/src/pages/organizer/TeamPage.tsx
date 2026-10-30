@@ -6,16 +6,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { Settings, Plus, Trash2, RefreshCw, Flag, FileText, ListChecks, MapPin, Info, UploadCloud, X, ExternalLink, ShieldCheck, LayoutTemplate, Radio, ShoppingBag } from "lucide-react";
+import { Settings, Plus, Trash2, RefreshCw, Flag, FileText, ListChecks, MapPin, Info, UploadCloud, X, ExternalLink, ShieldCheck, LayoutTemplate, Radio, ShoppingBag, Pencil } from "lucide-react";
 import { PdfFieldEditor, type WaiverField } from "@/components/PdfFieldEditor";
 import { StateSelect } from "@/components/ui/StateSelect";
 import { TrackCourseMap, type LibraryTrack } from "./CourseMap";
 import { RentalInventory } from "@/components/organizer/RentalInventory";
 import { SellItemsManager } from "@/components/organizer/SellItems";
-import { errorText } from "@/lib/friendlyErrors";
+import { errorText, responseErrorMessage } from "@/lib/friendlyErrors";
 
 type AdminTab = "forms" | "tracks" | "rentals" | "sell" | "classes" | "brands";
 const ADMIN_TABS: Array<{ key: AdminTab; label: string; icon: typeof FileText }> = [
@@ -44,11 +44,13 @@ function ClassDetailRow({
   isSaving,
 }: {
   cls: { id: string; name: string; details?: string };
-  onSave: (id: string, details: string) => void;
+  /** Returns false when the change was refused (e.g. a duplicate name), keeping the editor open. */
+  onSave: (id: string, changes: { name: string; details: string }) => boolean;
   onDelete: (id: string) => void;
   isSaving: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [localName, setLocalName] = useState(cls.name);
   const [localDetails, setLocalDetails] = useState(cls.details ?? "");
 
   return (
@@ -61,9 +63,11 @@ function ClassDetailRow({
         <Button
           size="sm"
           variant="ghost"
-          title={expanded ? "Hide details" : "Add / edit class rules"}
+          title={expanded ? "Hide details" : "Rename or edit class rules"}
+          aria-label={expanded ? `Hide ${cls.name} details` : `Edit ${cls.name}`}
           className={`h-7 w-7 p-0 ${expanded || cls.details ? "text-primary" : "text-muted-foreground hover:text-primary"}`}
           onClick={() => {
+            setLocalName(cls.name);
             setLocalDetails(cls.details ?? "");
             setExpanded(e => !e);
           }}
@@ -76,35 +80,47 @@ function ClassDetailRow({
           className="h-7 w-7 p-0 text-destructive hover:text-destructive"
           onClick={() => onDelete(cls.id)}
           disabled={isSaving}
+          title="Remove class"
+          aria-label={`Remove ${cls.name}`}
         >
           <Trash2 size={14} />
         </Button>
       </div>
       {expanded && (
         <div className="px-4 pb-3 space-y-2">
+          <Input
+            value={localName}
+            onChange={e => setLocalName(e.target.value)}
+            maxLength={80}
+            aria-label="Class name"
+            className="h-8 text-sm"
+          />
           <Textarea
             rows={3}
             placeholder="Class rules, eligibility requirements, bike specs, or any other details riders should know…"
             value={localDetails}
             onChange={e => setLocalDetails(e.target.value)}
+            maxLength={2000}
+            aria-label={`${cls.name} rules and details`}
             className="text-sm resize-none"
           />
+          <p className="text-[11px] text-muted-foreground">Renaming changes the template only. Events you already made keep their class names.</p>
           <div className="flex justify-end gap-2">
             <Button
               size="sm"
               variant="outline"
               className="h-7 text-xs"
-              onClick={() => { setLocalDetails(cls.details ?? ""); setExpanded(false); }}
+              onClick={() => { setLocalName(cls.name); setLocalDetails(cls.details ?? ""); setExpanded(false); }}
             >
               Cancel
             </Button>
             <Button
               size="sm"
               className="h-7 text-xs"
-              disabled={isSaving}
-              onClick={() => { onSave(cls.id, localDetails); setExpanded(false); }}
+              disabled={isSaving || !localName.trim()}
+              onClick={() => { if (onSave(cls.id, { name: localName, details: localDetails })) setExpanded(false); }}
             >
-              Save Details
+              Save
             </Button>
           </div>
         </div>
@@ -112,6 +128,9 @@ function ClassDetailRow({
     </div>
   );
 }
+
+/** Case- and spacing-insensitive name match, as the server dedupes. */
+const sameName = (a: string, b: string) => a.trim().replace(/\s+/g, " ").toLowerCase() === b.trim().replace(/\s+/g, " ").toLowerCase();
 
 export default function TeamPage() {
   const { toast } = useToast();
@@ -140,7 +159,11 @@ export default function TeamPage() {
   const [fieldsSaving, setFieldsSaving] = useState(false);
 
   // Track Library state
-  const [tracks, setTracks] = useState<{ id: number; name: string; address: string | null; city: string | null; state: string | null; zip: string | null; course?: LibraryTrack["course"] }[]>([]);
+  const [tracks, setTracks] = useState<{ id: number; name: string; address: string | null; city: string | null; state: string | null; zip: string | null; course?: LibraryTrack["course"]; eventCount?: number }[]>([]);
+  const [tracksError, setTracksError] = useState(false);
+  // Track being edited in place (name and address).
+  const [editTrack, setEditTrack] = useState<{ id: number; name: string; address: string; city: string; state: string; zip: string } | null>(null);
+  const [savingTrack, setSavingTrack] = useState(false);
   // Track whose course map (finish + split readers) is open for editing.
   const [courseTrackId, setCourseTrackId] = useState<number | null>(null);
   // Which Admin section is showing (kept in the URL, e.g. /team?tab=tracks).
@@ -170,9 +193,12 @@ export default function TeamPage() {
   const [brands, setBrands] = useState<string[]>([]);
   const [newBrandName, setNewBrandName] = useState("");
 
-  // Load settings on mount
+  // Load settings once. Saving one section refreshes the settings; reloading
+  // every section then would wipe what's typed but not yet saved in another.
+  const settingsLoaded = useRef(false);
   useEffect(() => {
-    if (settingsData) {
+    if (settingsData && !settingsLoaded.current) {
+      settingsLoaded.current = true;
       setAckText(settingsData.riderAcknowledgement ?? "");
       const pdfUrl = (settingsData as any).waiverPdfUrl ?? null;
       setWaiverPdfUrl(pdfUrl);
@@ -187,10 +213,14 @@ export default function TeamPage() {
   // Load track library
   const loadTracks = () => {
     fetch("/api/tracks", { credentials: "include" })
-      .then(r => r.ok ? r.json() : [])
-      .then(setTracks)
-      .catch(() => {});
+      .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+      .then(list => { setTracks(list); setTracksError(false); })
+      .catch(() => setTracksError(true));
   };
+
+  /** The server's plain-language error from a failed response. */
+  const responseError = async (res: Response) =>
+    new Error(responseErrorMessage(res.status, await res.json().catch(() => null)));
   useEffect(loadTracks, []);
 
   // Track Library functions
@@ -211,7 +241,7 @@ export default function TeamPage() {
           zip: newTrackZip.trim() || undefined,
         }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw await responseError(res);
       const track = await res.json();
       setTracks(prev => [...prev, track].sort((a, b) => a.name.localeCompare(b.name)));
       setNewTrackName("");
@@ -228,12 +258,43 @@ export default function TeamPage() {
   };
 
   const deleteTrack = async (id: number) => {
+    const track = tracks.find(t => t.id === id);
+    if (!track) return;
+    const used = track.eventCount ?? 0;
+    const warning = used > 0
+      ? `Remove ${track.name}? ${used} event${used === 1 ? " uses" : "s use"} it. ${used === 1 ? "It keeps its" : "They keep their"} course map, but won't get later changes to this track.`
+      : `Remove ${track.name} from your Track Library?`;
+    if (!window.confirm(warning)) return;
     try {
-      await fetch(`/api/tracks/${id}`, { method: "DELETE", credentials: "include" });
+      const res = await fetch(`/api/tracks/${id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok && res.status !== 404) throw await responseError(res);
       setTracks(prev => prev.filter(t => t.id !== id));
       toast({ title: "Track removed" });
     } catch (err) {
       toast({ title: "Couldn't remove track", description: errorText(err), variant: "destructive" });
+    }
+  };
+
+  const saveTrackEdit = async () => {
+    if (!editTrack || savingTrack) return;
+    setSavingTrack(true);
+    try {
+      const { id, ...fields } = editTrack;
+      const res = await fetch(`/api/tracks/${id}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fields),
+      });
+      if (!res.ok) throw await responseError(res);
+      const saved = await res.json();
+      setTracks(prev => prev.map(t => t.id === id ? { ...t, ...saved } : t).sort((a, b) => a.name.localeCompare(b.name)));
+      setEditTrack(null);
+      toast({ title: "Track saved" });
+    } catch (err) {
+      toast({ title: "Couldn't save track", description: errorText(err), variant: "destructive" });
+    } finally {
+      setSavingTrack(false);
     }
   };
 
@@ -273,6 +334,7 @@ export default function TeamPage() {
   // Remove liability waiver PDF
   const removeLiabilityWaiverPdf = () => {
     if (!clubId) return;
+    if (!window.confirm("Remove the liability waiver PDF and its signing fields? Waivers riders already signed are kept.")) return;
     setLiabilityWaiverPdfUrl(null);
     setLiabilityWaiverFields([]);
     putSettings.mutate(
@@ -356,6 +418,7 @@ export default function TeamPage() {
   // Remove waiver PDF
   const removeWaiverPdf = () => {
     if (!clubId) return;
+    if (!window.confirm("Remove the acknowledgement PDF? Riders won't see it at registration.")) return;
     setWaiverPdfUrl(null);
     putSettings.mutate(
       { clubId, data: { waiverPdfUrl: null } as any },
@@ -368,8 +431,12 @@ export default function TeamPage() {
 
   // Add a new default class and save immediately
   const addClass = () => {
-    const trimmed = newClassName.trim();
-    if (!trimmed || !clubId) return;
+    const trimmed = newClassName.trim().replace(/\s+/g, " ");
+    if (!trimmed || !clubId || putSettings.isPending) return;
+    if (classes.some(c => sameName(c.name, trimmed))) {
+      toast({ title: "Class already added", description: `${trimmed} is already one of your classes.`, variant: "destructive" });
+      return;
+    }
     const updated = [...classes, { id: crypto.randomUUID(), name: trimmed }];
     setClasses(updated);
     setNewClassName("");
@@ -401,28 +468,34 @@ export default function TeamPage() {
     );
   };
 
-  // Update class details and save immediately
-  const updateClassDetails = (id: string, details: string) => {
-    const updated = classes.map(c => c.id === id ? { ...c, details: details.trim() || undefined } : c);
+  // Rename a class or update its rules, and save immediately
+  const updateClass = (id: string, changes: { name: string; details: string }) => {
+    const name = changes.name.trim().replace(/\s+/g, " ");
+    if (!name || !clubId) return false;
+    if (classes.some(c => c.id !== id && sameName(c.name, name))) {
+      toast({ title: "Class already added", description: `${name} is already one of your classes.`, variant: "destructive" });
+      return false;
+    }
+    const updated = classes.map(c => c.id === id ? { ...c, name, details: changes.details.trim() || undefined } : c);
     setClasses(updated);
-    if (!clubId) return;
     putSettings.mutate(
       { clubId, data: { defaultClasses: updated } },
       {
-        onSuccess: () => toast({ title: "Details saved" }),
+        onSuccess: () => toast({ title: "Class saved" }),
         onError: (err: any) => {
           setClasses(classes);
           toast({ title: "Error", description: err?.data?.error ?? "Couldn't save", variant: "destructive" });
         },
       }
     );
+    return true;
   };
 
   // Add a new brand contingency and save immediately
   const addBrand = () => {
     const trimmed = newBrandName.trim();
     if (!trimmed || !clubId) return;
-    if (brands.includes(trimmed)) {
+    if (brands.some(b => sameName(b, trimmed))) {
       toast({ title: "Brand already exists", variant: "destructive" });
       return;
     }
@@ -732,18 +805,47 @@ export default function TeamPage() {
           </div>
         </div>
 
+        {tracksError && (
+          <p className="text-sm text-muted-foreground mb-4">
+            Couldn't load your tracks. <button className="underline" onClick={loadTracks}>Try again</button>
+          </p>
+        )}
+
         {/* Existing tracks */}
         {tracks.length > 0 && (
           <div className="space-y-2 mb-4">
             {tracks.map(track => {
               const addressLine = [track.address, track.city, track.state, track.zip].filter(Boolean).join(", ");
+              if (editTrack?.id === track.id) {
+                const set = (key: keyof typeof editTrack) => (value: string) => setEditTrack(prev => prev && { ...prev, [key]: value });
+                return (
+                  <div key={track.id} className="rounded-lg border bg-muted/30 px-4 py-3 space-y-2">
+                    <Input value={editTrack.name} onChange={e => set("name")(e.target.value)} maxLength={120} placeholder="Track / venue name *" aria-label="Track name" />
+                    <Input value={editTrack.address} onChange={e => set("address")(e.target.value)} maxLength={200} placeholder="Street address" aria-label="Street address" />
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input value={editTrack.city} onChange={e => set("city")(e.target.value)} maxLength={80} placeholder="City" aria-label="City" />
+                      <Input value={editTrack.zip} onChange={e => set("zip")(e.target.value)} maxLength={20} placeholder="ZIP" aria-label="ZIP" />
+                    </div>
+                    <StateSelect value={editTrack.state} onChange={set("state")} placeholder="Select state…" />
+                    <div className="flex justify-end gap-2">
+                      <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setEditTrack(null)} disabled={savingTrack}>Cancel</Button>
+                      <Button size="sm" className="h-8 text-xs" onClick={saveTrackEdit} disabled={savingTrack || !editTrack.name.trim()}>
+                        {savingTrack ? "Saving…" : "Save"}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              }
               return (
-                <div key={track.id} className="flex items-start gap-3 rounded-lg border bg-muted/30 px-4 py-3">
+                <div key={track.id} className="flex flex-wrap items-start gap-3 rounded-lg border bg-muted/30 px-4 py-3">
                   <MapPin size={13} className="text-muted-foreground shrink-0 mt-0.5" />
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-[10rem]">
                     <p className="text-sm font-medium">{track.name}</p>
                     {addressLine && <p className="text-xs text-muted-foreground mt-0.5">{addressLine}</p>}
-                    <p className="text-xs text-muted-foreground mt-0.5">{courseSummary(track.course)}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {courseSummary(track.course)}
+                      {(track.eventCount ?? 0) > 0 && ` · ${track.eventCount} event${track.eventCount === 1 ? "" : "s"}`}
+                    </p>
                   </div>
                   <Button size="sm" variant="outline" className="h-7 gap-1 text-xs shrink-0" onClick={() => setCourseTrackId(track.id)}>
                     <Flag size={12} /> Course map
@@ -751,9 +853,20 @@ export default function TeamPage() {
                   <Button
                     size="sm"
                     variant="ghost"
+                    className="h-7 w-7 p-0 text-muted-foreground hover:text-primary shrink-0"
+                    onClick={() => setEditTrack({ id: track.id, name: track.name, address: track.address ?? "", city: track.city ?? "", state: track.state ?? "", zip: track.zip ?? "" })}
+                    title="Edit name and address"
+                    aria-label={`Edit ${track.name}`}
+                  >
+                    <Pencil size={13} />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
                     className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive shrink-0"
                     onClick={() => deleteTrack(track.id)}
                     title="Remove track"
+                    aria-label={`Remove ${track.name}`}
                   >
                     <Trash2 size={13} />
                   </Button>
@@ -817,7 +930,7 @@ export default function TeamPage() {
             if (!track) return null;
             return (
               <div className="space-y-2">
-                <h3 className="font-heading font-bold uppercase tracking-wider text-lg">{track.name}: Course Map</h3>
+                <DialogTitle className="font-heading font-bold uppercase tracking-wider text-lg">{track.name}: Course Map</DialogTitle>
                 <TrackCourseMap key={track.id} track={track} onSaved={loadTracks} />
               </div>
             );
@@ -851,7 +964,7 @@ export default function TeamPage() {
               <ClassDetailRow
                 key={cls.id}
                 cls={cls}
-                onSave={updateClassDetails}
+                onSave={updateClass}
                 onDelete={deleteClass}
                 isSaving={putSettings.isPending}
               />
@@ -908,6 +1021,7 @@ export default function TeamPage() {
                   variant="ghost"
                   className="h-7 w-7 p-0 text-destructive hover:text-destructive"
                   onClick={() => deleteBrand(brand)}
+                  aria-label={`Remove ${brand}`}
                   disabled={putSettings.isPending}
                 >
                   <Trash2 size={14} />
@@ -946,6 +1060,7 @@ export default function TeamPage() {
     {/* ── Liability Waiver Field Editor ── */}
     <Dialog open={showFieldEditor} onOpenChange={(open) => { if (!open && !fieldsSaving) setShowFieldEditor(false); }}>
       <DialogContent className="max-w-[96vw] w-[96vw] h-[94vh] flex flex-col p-0 gap-0 overflow-hidden">
+        <DialogTitle className="sr-only">Place signing fields on the liability waiver</DialogTitle>
         {liabilityWaiverPdfUrl && (
           <PdfFieldEditor
             url={liabilityWaiverPdfUrl}

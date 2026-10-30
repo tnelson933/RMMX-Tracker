@@ -1,11 +1,20 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { tracksTable, trackCoursePointsTable } from "@workspace/db/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { tracksTable, trackCoursePointsTable, eventsTable, practiceSessionsTable } from "@workspace/db/schema";
+import { eq, and, inArray, count } from "drizzle-orm";
 import { normaliseCourse, propagateTrackCourse } from "../lib/trackCourse";
 import { usersTable } from "@workspace/db/schema";
 
 const router = Router();
+
+const LIMITS = { name: 120, address: 200, city: 80, state: 40, zip: 20 } as const;
+
+/** A trimmed text field (null when blank), or an error when it's too long. */
+function field(value: unknown, key: keyof typeof LIMITS): { value: string | null } | { error: string } {
+  const text = typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
+  if (text.length > LIMITS[key]) return { error: `Keep the ${key === "zip" ? "ZIP" : key} to ${LIMITS[key]} characters or fewer.` };
+  return { value: text || null };
+}
 
 async function getClubId(req: any): Promise<number | null> {
   const userId = (req.session as any)?.userId;
@@ -28,8 +37,13 @@ router.get("/tracks", async (req, res) => {
   // Each track's course map (finish + ordered splits).
   const points = tracks.length === 0 ? [] : await db.select().from(trackCoursePointsTable)
     .where(inArray(trackCoursePointsTable.trackId, tracks.map(t => t.id)));
+  // How many events use each track, so removing one can say what it affects.
+  const usage = tracks.length === 0 ? [] : await db.select({ trackId: eventsTable.trackId, n: count() }).from(eventsTable)
+    .where(and(eq(eventsTable.clubId, clubId), inArray(eventsTable.trackId, tracks.map(t => t.id))))
+    .groupBy(eventsTable.trackId);
   return res.json(tracks.map(t => ({
     ...t,
+    eventCount: usage.find(u => u.trackId === t.id)?.n ?? 0,
     course: points
       .filter(p => p.trackId === t.id)
       .sort((a, b) => (a.role === "finish" ? -1 : 0) - (b.role === "finish" ? -1 : 0) || (a.sequence ?? 0) - (b.sequence ?? 0))
@@ -42,25 +56,27 @@ router.post("/tracks", async (req, res) => {
   const clubId = await getClubId(req);
   if (!clubId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
-  const { name, address, city, state, zip } = req.body as { name?: string; address?: string; city?: string; state?: string; zip?: string };
-  if (!name?.trim()) return res.status(400).json({ error: "Enter a name." });
+  const values: Record<string, string | null> = {};
+  for (const key of Object.keys(LIMITS) as Array<keyof typeof LIMITS>) {
+    const checked = field(req.body?.[key], key);
+    if ("error" in checked) return res.status(400).json({ error: checked.error });
+    values[key] = checked.value;
+  }
+  if (!values.name) return res.status(400).json({ error: "Enter the track or venue name." });
+  const existing = await db.select({ name: tracksTable.name }).from(tracksTable).where(eq(tracksTable.clubId, clubId));
+  if (existing.some(t => t.name.toLowerCase() === values.name!.toLowerCase())) {
+    return res.status(409).json({ error: `${values.name} is already in your Track Library.` });
+  }
 
   const [track] = await db
     .insert(tracksTable)
-    .values({
-      clubId,
-      name: name.trim(),
-      address: address?.trim() || null,
-      city: city?.trim() || null,
-      state: state?.trim() || null,
-      zip: zip?.trim() || null,
-    })
+    .values({ clubId, name: values.name, address: values.address, city: values.city, state: values.state, zip: values.zip })
     .returning();
 
-  return res.status(201).json(track);
+  return res.status(201).json({ ...track, course: [], eventCount: 0 });
 });
 
-// PATCH /tracks/:id — update address/city/state/zip for an existing library track
+// PATCH /tracks/:id — rename a library track or update its address
 router.patch("/tracks/:id", async (req, res) => {
   const clubId = await getClubId(req);
   if (!clubId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
@@ -68,12 +84,20 @@ router.patch("/tracks/:id", async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
-  const { address, city, state, zip } = req.body as { address?: string | null; city?: string | null; state?: string | null; zip?: string | null };
   const updates: Record<string, unknown> = {};
-  if (address !== undefined) updates.address = address?.trim() || null;
-  if (city !== undefined) updates.city = city?.trim() || null;
-  if (state !== undefined) updates.state = state?.trim() || null;
-  if (zip !== undefined) updates.zip = zip?.trim() || null;
+  for (const key of Object.keys(LIMITS) as Array<keyof typeof LIMITS>) {
+    if (req.body?.[key] === undefined) continue;
+    const checked = field(req.body[key], key);
+    if ("error" in checked) return res.status(400).json({ error: checked.error });
+    updates[key] = checked.value;
+  }
+  if ("name" in updates) {
+    if (!updates.name) return res.status(400).json({ error: "Enter the track or venue name." });
+    const others = await db.select({ id: tracksTable.id, name: tracksTable.name }).from(tracksTable).where(eq(tracksTable.clubId, clubId));
+    if (others.some(t => t.id !== id && t.name.toLowerCase() === String(updates.name).toLowerCase())) {
+      return res.status(409).json({ error: `${updates.name} is already in your Track Library.` });
+    }
+  }
 
   if (Object.keys(updates).length === 0) return res.json({ ok: true });
 
@@ -118,10 +142,21 @@ router.delete("/tracks/:id", async (req, res) => {
   const id = Number(req.params.id);
   if (!id) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
-  const [deleted] = await db
-    .delete(tracksTable)
-    .where(and(eq(tracksTable.id, id), eq(tracksTable.clubId, clubId)))
-    .returning();
+  // Events and practice sessions there keep their own copy of the course map;
+  // they just stop following the track. Unlink them before the delete (the
+  // database's ON DELETE SET NULL would otherwise leave them marked as
+  // following a track).
+  const deleted = await db.transaction(async (tx) => {
+    const [row] = await tx.select({ id: tracksTable.id }).from(tracksTable)
+      .where(and(eq(tracksTable.id, id), eq(tracksTable.clubId, clubId)));
+    if (!row) return null;
+    await tx.update(eventsTable).set({ trackId: null, courseSource: "custom" })
+      .where(and(eq(eventsTable.trackId, id), eq(eventsTable.clubId, clubId)));
+    await tx.update(practiceSessionsTable).set({ trackId: null })
+      .where(and(eq(practiceSessionsTable.trackId, id), eq(practiceSessionsTable.clubId, clubId)));
+    await tx.delete(tracksTable).where(eq(tracksTable.id, id));
+    return row;
+  });
 
   if (!deleted) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   return res.json({ ok: true });

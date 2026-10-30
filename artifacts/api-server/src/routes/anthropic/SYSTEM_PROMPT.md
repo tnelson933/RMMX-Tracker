@@ -820,8 +820,8 @@ Organizers who used the older standalone offline server package can still upload
 
 ### Default Race Classes
 A library of race classes that pre-fill the class list on new events.
-- Type a name → **Add Class**; trash icon to delete.
-- Click the ℹ icon on a class to write its rules or details (eligibility, bike specs, ages) → **Save Details**. Riders see these during registration.
+- Type a name → **Add Class**; trash icon to delete. A name that's already on the list (ignoring capitals and spacing) isn't added twice.
+- Click the ℹ icon on a class to rename it or write its rules or details (eligibility, bike specs, ages) → **Save**. Riders see the rules during registration. Renaming changes the template only; events already made keep their class names.
 
 ### Brand Contingencies
 Sponsor or manufacturer brands that pay contingency at your events (e.g. Honda, Kawasaki, Fox Racing). Type the brand → **Add Brand**. When creating or editing an event, check which brands have contingency at that event. Riders see them at registration in a "Contingency at this event" box above the bike brand, which tells them to pick their bike brand, list gear or parts brands under Sponsors, register with the brand's program first and use the same name.
@@ -829,7 +829,7 @@ Sponsor or manufacturer brands that pay contingency at your events (e.g. Honda, 
 **Brand Contingency Report** (event → **Report** tab, below the overall standings): for each of the event's contingency brands, the finishers who ran it, matched by the bike brand they picked or a sponsor they listed (spelling and capitals don't matter; "Kawi" and "Husky" count; "Fox" is not "Fox Racing"). Each row has class, place and riders in class, legal first and last name, AMA #, bib, bike year/brand/model, and whether the brand is their bike or a sponsor. It's labelled Unofficial until the races are finalized. **CSV** downloads one brand; **All brands (CSV)** downloads all. Promoters email each brand its file or upload it to XTRM (the system several manufacturers use for contingency payouts); the brand applies its own rules for paying places, classes and model years. Riders usually aren't paid when results are sent late or their name doesn't match their contingency registration, so send files soon after results are official.
 
 ### Track Library
-Save your tracks once and reuse them. **Add New Track** → name, address, city, ZIP, state → **Add Track**. Saved tracks fill the track field on new events and are the track choices for Practice sessions.
+Save your tracks once and reuse them. **Add New Track** → name, address, city, ZIP, state → **Add Track** (each track name once per club). Saved tracks fill the track field on new events and are the track choices for Practice sessions. Each track shows its course map and how many events use it. The pencil icon renames a track or fixes its address. The trash icon removes it after a confirmation; events and practices that used it keep their own copy of the course map but stop getting later changes to the track.
 
 **Course map per track:** click a track's **Course map** button → drag the finish-line reader onto the flag, add split readers in course order and name them (e.g. "Whoops") → **Save course map**. Each track shows a summary such as "Finish line + 2 splits". Races at the track copy it (see Course Map tab), and practices started there record **segment times** from its split readers. Track course maps are set up online; the desktop app gets each event's copy when it syncs.
 

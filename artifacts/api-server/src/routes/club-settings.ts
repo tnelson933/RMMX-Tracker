@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { clubSettingsTable, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { checkAcknowledgement, checkBrands, checkDefaultClasses, checkPdfUrl, checkWaiverFields } from "../lib/clubSettingsInput";
 
 const router = Router();
 
@@ -52,14 +53,21 @@ router.put("/clubs/:clubId/settings", async (req, res) => {
   const { riderAcknowledgement, waiverPdfUrl, liabilityWaiverText, liabilityWaiverPdfUrl, liabilityWaiverFields, defaultClasses, brandContingencies, trackName } = req.body;
 
   const values: any = { clubId };
-  if (riderAcknowledgement !== undefined) values.riderAcknowledgement = riderAcknowledgement ?? null;
-  if (waiverPdfUrl !== undefined) values.waiverPdfUrl = waiverPdfUrl ?? null;
-  if (liabilityWaiverText !== undefined) values.liabilityWaiverText = liabilityWaiverText ?? null;
-  if (liabilityWaiverPdfUrl !== undefined) values.liabilityWaiverPdfUrl = liabilityWaiverPdfUrl ?? null;
-  if (liabilityWaiverFields !== undefined) values.liabilityWaiverFields = Array.isArray(liabilityWaiverFields) ? liabilityWaiverFields : null;
-  if (defaultClasses !== undefined) values.defaultClasses = Array.isArray(defaultClasses) ? defaultClasses : [];
-  if (brandContingencies !== undefined) values.brandContingencies = Array.isArray(brandContingencies) ? brandContingencies : [];
-  if (trackName !== undefined) values.trackName = trackName ?? null;
+  // Riders open the waiver links and read these texts at registration: check them first.
+  const checks = [
+    riderAcknowledgement !== undefined && ["riderAcknowledgement", checkAcknowledgement(riderAcknowledgement)],
+    waiverPdfUrl !== undefined && ["waiverPdfUrl", checkPdfUrl(waiverPdfUrl, "acknowledgement form")],
+    liabilityWaiverText !== undefined && ["liabilityWaiverText", checkAcknowledgement(liabilityWaiverText)],
+    liabilityWaiverPdfUrl !== undefined && ["liabilityWaiverPdfUrl", checkPdfUrl(liabilityWaiverPdfUrl, "liability waiver")],
+    liabilityWaiverFields !== undefined && ["liabilityWaiverFields", checkWaiverFields(liabilityWaiverFields)],
+    defaultClasses !== undefined && ["defaultClasses", checkDefaultClasses(defaultClasses)],
+    brandContingencies !== undefined && ["brandContingencies", checkBrands(brandContingencies)],
+  ].filter(Boolean) as Array<[string, { ok: true; value: unknown } | { ok: false; error: string }]>;
+  for (const [key, result] of checks) {
+    if (!result.ok) return res.status(400).json({ error: result.error });
+    values[key] = result.value;
+  }
+  if (trackName !== undefined) values.trackName = typeof trackName === "string" && trackName.trim() ? trackName.trim().slice(0, 120) : null;
 
   const [row] = await db
     .insert(clubSettingsTable)
