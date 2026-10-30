@@ -22,6 +22,7 @@ import { CreditCard, CheckCircle2, AlertCircle, ExternalLink, Loader2, ArrowRigh
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { responseErrorMessage } from "@/lib/friendlyErrors";
+import { CardReaders } from "@/components/payments/CardReaders";
 
 function LinkifiedStripeError({ message }: { message: string }) {
   const parts = message.split(/(https?:\/\/[^\s]+)/g);
@@ -435,6 +436,9 @@ export default function StripeConnect() {
       )}
 
       <Card className="bg-muted/30">
+        {/* In-person card payments at check-in (optional) */}
+        {status?.connected && status.onboardingComplete && !offline && canManage && <CardReaders />}
+
         <CardContent className="pt-6">
           <h3 className="font-heading font-semibold uppercase tracking-wide text-sm mb-3">How it works</h3>
           <div className="grid gap-3 sm:grid-cols-3 text-sm text-muted-foreground">

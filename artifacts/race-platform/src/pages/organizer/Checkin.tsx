@@ -25,6 +25,8 @@ function isInvalidRfid(val: string | null | undefined): boolean {
   return !/^[A-Za-z0-9\-]{1,32}$/.test(val.trim());
 }
 import { getListCheckinsQueryKey, getGetRaceDaySummaryQueryKey, getListRegistrationsQueryKey, getListRidersQueryKey } from "@workspace/api-client-react";
+import { CardPaymentPanel, type CardStarted, type CardStartOptions } from "@/components/payments/CardPaymentPanel";
+import { responseErrorMessage } from "@/lib/friendlyErrors";
 import { useToast } from "@/hooks/use-toast";
 
 type TagKind = "transponder" | "rfid";
@@ -280,7 +282,7 @@ export default function Checkin() {
   type RentalStep = "method" | "card" | "done";
   /** collect: the rider chose it at registration and still owes for it. */
   interface RentalTarget { registrationId: number; riderName: string; collect?: boolean }
-  interface RentalCard { checkoutUrl: string; sessionId: string; regId: number; rentalFee: number; }
+  interface RentalCard extends CardStarted { regId: number; rentalFee: number; }
   const [rentalTarget, setRentalTarget] = useState<RentalTarget | null>(null);
   const [rentalStep, setRentalStep] = useState<RentalStep>("method");
   const [rentalCard, setRentalCard] = useState<RentalCard | null>(null);
@@ -292,7 +294,7 @@ export default function Checkin() {
   // RFID sticker modal state
   type StickerStep = "method" | "card";
   interface StickerTarget { registrationId: number; riderName: string; }
-  interface StickerCard { checkoutUrl: string; sessionId: string; regId: number; stickerFee: number; }
+  interface StickerCard extends CardStarted { regId: number; stickerFee: number; }
   const [stickerTarget, setStickerTarget] = useState<StickerTarget | null>(null);
   const [stickerStep, setStickerStep] = useState<StickerStep>("method");
   const [stickerCard, setStickerCard] = useState<StickerCard | null>(null);
@@ -302,7 +304,7 @@ export default function Checkin() {
   // RM TrackR sale (POS) modal state
   type TrackrStep = "method" | "card";
   interface TrackrTarget { registrationId: number; riderName: string; collect?: boolean }
-  interface TrackrCard { checkoutUrl: string; sessionId: string; regId: number; price: number; }
+  interface TrackrCard extends CardStarted { regId: number; price: number; }
   const [trackrTarget, setTrackrTarget] = useState<TrackrTarget | null>(null);
   const [trackrStep, setTrackrStep] = useState<TrackrStep>("method");
   const [trackrCard, setTrackrCard] = useState<TrackrCard | null>(null);
@@ -502,25 +504,29 @@ export default function Checkin() {
   };
 
   // RFID sticker card handler — create Stripe session
-  const handleStickerCard = async () => {
+  // Card: open the payment panel; it starts the payment (in-page form, card reader or rider's phone).
+  const handleStickerCard = () => { setStickerError(null); setStickerCard(null); setStickerStep("card"); };
+  const startStickerCard = async (opts: CardStartOptions) => {
     if (!stickerTarget) return;
-    setStickerSubmitting(true);
-    setStickerError(null);
-    try {
-      const res = await fetch(`/api/events/${eventId}/registrations/${stickerTarget.registrationId}/add-rfid-sticker`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentMethod: "card" }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Couldn't create payment");
-      setStickerCard({ checkoutUrl: json.checkoutUrl, sessionId: json.sessionId, regId: stickerTarget.registrationId, stickerFee: json.stickerFee });
-      setStickerStep("card");
-    } catch (e: any) {
-      setStickerError(e.message);
-    } finally {
-      setStickerSubmitting(false);
-    }
+    const json = await startAddonCard("add-rfid-sticker", stickerTarget.registrationId, opts);
+    setStickerCard({ ...json, regId: stickerTarget.registrationId, stickerFee: Number(json.stickerFee ?? json.amount ?? rfidStickerFee ?? 0) });
+  };
+
+  /** Start a check-in add-on card payment: in-page form (embedded), card reader, or Stripe page for the rider's phone. */
+  const startAddonCard = async (action: string, registrationId: number, opts: CardStartOptions) => {
+    const res = await fetch(`/api/events/${eventId}/registrations/${registrationId}/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(opts.readerId ? { paymentMethod: "reader", readerId: opts.readerId } : { paymentMethod: "card", embedded: !!opts.embedded }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(responseErrorMessage(res.status, json));
+    return json as CardStarted & Record<string, any>;
+  };
+  const startTrackrCard = async (opts: CardStartOptions) => {
+    if (!trackrTarget) return;
+    const json = await startAddonCard("add-rm-trackr", trackrTarget.registrationId, opts);
+    setTrackrCard({ ...json, regId: trackrTarget.registrationId, price: Number(json.price ?? json.amount ?? trackrPrice ?? 0) });
   };
 
   // RM TrackR sale handlers
@@ -548,9 +554,6 @@ export default function Checkin() {
         queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
         toast({ title: `${RM_TRACKR_NAME} sold`, description: `$${Number(json.price).toFixed(2)} collected in cash. Assign the transponder to finish.` });
         closeTrackrModal();
-      } else {
-        setTrackrCard({ checkoutUrl: json.checkoutUrl, sessionId: json.sessionId, regId: trackrTarget.registrationId, price: json.price });
-        setTrackrStep("card");
       }
     } catch (e: any) {
       setTrackrError(e.message);
@@ -620,25 +623,11 @@ export default function Checkin() {
   };
 
   // Card rental handler — create Stripe session
-  const handleRentalCard = async () => {
+  const handleRentalCard = () => { setRentalError(null); setRentalCard(null); setRentalStep("card"); };
+  const startRentalCard = async (opts: CardStartOptions) => {
     if (!rentalTarget) return;
-    setRentalSubmitting(true);
-    setRentalError(null);
-    try {
-      const res = await fetch(`/api/events/${eventId}/registrations/${rentalTarget.registrationId}/add-transponder-rental`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentMethod: "card" }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Couldn't create payment");
-      setRentalCard({ checkoutUrl: json.checkoutUrl, sessionId: json.sessionId, regId: rentalTarget.registrationId, rentalFee: json.rentalFee });
-      setRentalStep("card");
-    } catch (e: any) {
-      setRentalError(e.message);
-    } finally {
-      setRentalSubmitting(false);
-    }
+    const json = await startAddonCard("add-transponder-rental", rentalTarget.registrationId, opts);
+    setRentalCard({ ...json, regId: rentalTarget.registrationId, rentalFee: Number(json.rentalFee ?? json.amount ?? transponderRentalFee ?? 0) });
   };
 
   // Poll Stripe session until paid (RFID sticker)
@@ -1391,7 +1380,7 @@ export default function Checkin() {
 
     {/* ── RFID Sticker Payment Modal ── */}
     <Dialog open={!!stickerTarget} onOpenChange={open => { if (!open) closeStickerModal(); }}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className={stickerStep === "card" ? "max-w-lg max-h-[92vh] overflow-y-auto" : "max-w-sm"}>
         <DialogHeader>
           <DialogTitle className="font-heading uppercase tracking-wide">Sell RFID Tag</DialogTitle>
         </DialogHeader>
@@ -1434,38 +1423,15 @@ export default function Checkin() {
           </div>
         )}
 
-        {stickerStep === "card" && stickerCard && (
-          <div className="flex flex-col items-center gap-4">
-            <p className="text-sm text-muted-foreground text-center">
-              Scan the QR code or tap the link to complete payment of&nbsp;
-              <strong>${Number(stickerCard.stickerFee).toFixed(2)}</strong>.
-            </p>
-            <div className="p-3 bg-white rounded-xl border shadow-sm">
-              <QRCodeSVG value={stickerCard.checkoutUrl} size={180} />
-            </div>
-            <a
-              href={stickerCard.checkoutUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-1.5 text-sm text-primary underline underline-offset-2"
-            >
-              <ExternalLink size={14} /> Open Stripe Checkout
-            </a>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Loader2 size={14} className="animate-spin" />
-              Waiting for payment…
-            </div>
-            <Button variant="ghost" size="sm" onClick={closeStickerModal} className="text-xs">
-              Cancel
-            </Button>
-          </div>
+        {stickerStep === "card" && (
+          <CardPaymentPanel eventId={eventId} amount={Number(rfidStickerFee ?? 0)} current={stickerCard} start={startStickerCard} onCancel={closeStickerModal} />
         )}
       </DialogContent>
     </Dialog>
 
     {/* ── RM TrackR Sale (POS) Modal ── */}
     <Dialog open={!!trackrTarget} onOpenChange={open => { if (!open) closeTrackrModal(); }}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className={trackrStep === "card" ? "max-w-lg max-h-[92vh] overflow-y-auto" : "max-w-sm"}>
         <DialogHeader>
           <DialogTitle className="font-heading uppercase tracking-wide">{trackrTarget?.collect ? `Collect ${RM_TRACKR_NAME} payment` : `Sell ${RM_TRACKR_NAME}`}</DialogTitle>
         </DialogHeader>
@@ -1496,7 +1462,7 @@ export default function Checkin() {
               </Button>
               <Button
                 className="h-16 flex flex-col gap-1"
-                onClick={() => sellTrackr("card")}
+                onClick={() => { setTrackrError(null); setTrackrCard(null); setTrackrStep("card"); }}
                 disabled={trackrSubmitting}
               >
                 {trackrSubmitting ? <Loader2 size={20} className="animate-spin" /> : <CreditCard size={20} />}
@@ -1506,40 +1472,15 @@ export default function Checkin() {
           </div>
         )}
 
-        {trackrStep === "card" && trackrCard && (
-          <div className="flex flex-col items-center gap-4">
-            <p className="text-sm text-muted-foreground text-center">
-              Collect <strong>${Number(trackrCard.price).toFixed(2)}</strong> one of two ways:
-            </p>
-            <Button asChild className="w-full h-12 gap-2">
-              <a href={trackrCard.checkoutUrl} target="_blank" rel="noreferrer">
-                <Keyboard size={18} /> Type card number on this device
-              </a>
-            </Button>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground w-full">
-              <span className="h-px bg-border flex-1" /> or <span className="h-px bg-border flex-1" />
-            </div>
-            <p className="text-sm text-center flex items-center gap-1.5">
-              <Smartphone size={16} /> Rider scans to pay on their phone
-            </p>
-            <div className="p-3 bg-white rounded-xl border shadow-sm">
-              <QRCodeSVG value={trackrCard.checkoutUrl} size={180} />
-            </div>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Loader2 size={14} className="animate-spin" />
-              Waiting for payment. This closes by itself once paid.
-            </div>
-            <Button variant="ghost" size="sm" onClick={closeTrackrModal} className="text-xs">
-              Cancel
-            </Button>
-          </div>
+        {trackrStep === "card" && (
+          <CardPaymentPanel eventId={eventId} amount={(trackrPrice ?? RM_TRACKR_PRICE)} current={trackrCard} start={startTrackrCard} onCancel={closeTrackrModal} />
         )}
       </DialogContent>
     </Dialog>
 
     {/* ── Transponder Rental Payment Modal ── */}
     <Dialog open={!!rentalTarget} onOpenChange={open => { if (!open) closeRentalModal(); }}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className={rentalStep === "card" ? "max-w-lg max-h-[92vh] overflow-y-auto" : "max-w-sm"}>
         <DialogHeader>
           <DialogTitle className="font-heading uppercase tracking-wide">{rentalTarget?.collect ? "Collect rental fee" : "Transponder Rental"}</DialogTitle>
         </DialogHeader>
@@ -1582,31 +1523,8 @@ export default function Checkin() {
           </div>
         )}
 
-        {rentalStep === "card" && rentalCard && (
-          <div className="flex flex-col items-center gap-4">
-            <p className="text-sm text-muted-foreground text-center">
-              Scan the QR code or tap the link to complete payment of&nbsp;
-              <strong>${Number(rentalCard.rentalFee).toFixed(2)}</strong>.
-            </p>
-            <div className="p-3 bg-white rounded-xl border shadow-sm">
-              <QRCodeSVG value={rentalCard.checkoutUrl} size={180} />
-            </div>
-            <a
-              href={rentalCard.checkoutUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-1.5 text-sm text-primary underline underline-offset-2"
-            >
-              <ExternalLink size={14} /> Open Stripe Checkout
-            </a>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Loader2 size={14} className="animate-spin" />
-              Waiting for payment…
-            </div>
-            <Button variant="ghost" size="sm" onClick={closeRentalModal} className="text-xs">
-              Cancel
-            </Button>
-          </div>
+        {rentalStep === "card" && (
+          <CardPaymentPanel eventId={eventId} amount={Number(transponderRentalFee ?? 0)} current={rentalCard} start={startRentalCard} onCancel={closeRentalModal} />
         )}
       </DialogContent>
     </Dialog>

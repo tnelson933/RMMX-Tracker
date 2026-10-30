@@ -50,6 +50,11 @@ async function getCredentials(): Promise<{ publishableKey: string; secretKey: st
 }
 
 /** Returns a fresh authenticated Stripe client. Never cache — tokens can rotate. */
+/** The publishable key (public, for Stripe's in-page payment form). Empty when not set. */
+export async function getStripePublishableKey(): Promise<string> {
+  return (await getCredentials()).publishableKey ?? "";
+}
+
 export async function getUncachableStripeClient(): Promise<Stripe> {
   const { secretKey } = await getCredentials();
   return new Stripe(secretKey, { apiVersion: "2025-08-27.basil" as any });

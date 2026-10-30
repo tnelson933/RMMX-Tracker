@@ -26,6 +26,7 @@ const STAFF_RULES: RouteRule[] = [
   { pattern: /^\/public(\/|$)/, permissions: [] },
   { pattern: /^\/rider(\/|$)/, permissions: [] },
   { pattern: /^\/stripe\/webhook/, permissions: [] },
+  { pattern: /^\/stripe\/config$/, permissions: [] },
 
   // ── Rider-level discount-code assignment (discount_codes, all methods) ────
   // Must come before the clubs read-only rule so POST/DELETE are not blocked.
@@ -57,6 +58,8 @@ const STAFF_RULES: RouteRule[] = [
   // Renter phone numbers and reminders; rental and sales money.
   { pattern: /^\/events\/\d+\/transponder-rentals/, permissions: ["events"] },
   { pattern: /^\/events\/\d+\/addon-sales/, permissions: ["events"] },
+  // Check-in card readers: list them, cancel or (test mode) simulate a charge.
+  { pattern: /^\/events\/\d+\/(card-readers|reader-payments)/, permissions: ["events"] },
 
   // ── Events list/detail: read-only for gate_schedule; writes need events ───
   // The event list alone is also readable with notifications (to pick an audience).

@@ -13,6 +13,8 @@ export const clubsTable = pgTable("clubs", {
   description: text("description"),
   stripeAccountId: text("stripe_account_id"),
   stripeOnboardingComplete: boolean("stripe_onboarding_complete").notNull().default(false),
+  /** Stripe Terminal location the club's card readers are registered to. */
+  stripeTerminalLocationId: text("stripe_terminal_location_id"),
   autoDnfEnabled: boolean("auto_dnf_enabled").notNull().default(false),
   autoDnfThreshold: integer("auto_dnf_threshold").notNull().default(75),
   active: boolean("active").notNull().default(true),

@@ -24,6 +24,7 @@ import { formatEventDatesFull } from "@/lib/eventDates";
 
 import { PdfSignedViewer } from "@/components/PdfSignedViewer";
 import { responseErrorMessage } from "@/lib/friendlyErrors";
+import { EmbeddedCardForm } from "@/components/payments/EmbeddedCardForm";
 
 // ─── PDF Scroll Viewer ───────────────────────────────────────────────────────
 // Renders each PDF page as a canvas inside a scrollable div so scroll-to-bottom
@@ -226,6 +227,8 @@ interface SuccessData {
 
 interface PendingPayment {
   checkoutUrl: string;
+  /** Stripe's form shown in this page (embedded checkout). */
+  clientSecret?: string | null;
   registrationId: number;
   sessionId: string | null;
   riderName: string;
@@ -806,6 +809,8 @@ export default function Register() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...rest,
+          // Show Stripe's payment form in this page instead of a new window.
+          embeddedCheckout: true,
           raceClasses: selectedClasses,
           selectedPurchaseOptions: (event?.purchaseOptions ?? []).filter(o => data.selectedPurchaseOptions.includes(o.id)),
           compCode: appliedComp?.code ?? null,
@@ -818,9 +823,10 @@ export default function Register() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || "Registration failed");
 
-      if (json.requiresPayment && json.checkoutUrl) {
+      if (json.requiresPayment && (json.checkoutUrl || json.clientSecret)) {
         setPendingPayment({
-          checkoutUrl: json.checkoutUrl,
+          checkoutUrl: json.checkoutUrl ?? "",
+          clientSecret: json.clientSecret ?? null,
           registrationId: json.registrationId,
           sessionId: json.sessionId ?? null,
           riderName: json.riderName,
@@ -828,8 +834,8 @@ export default function Register() {
           eventName: json.eventName,
           entryFee: Number(json.entryFee),
         });
-        // Open Stripe Checkout in a new tab
-        window.open(json.checkoutUrl, "_blank");
+        // Older servers only send Stripe's page: open it in a new tab.
+        if (!json.clientSecret && json.checkoutUrl) window.open(json.checkoutUrl, "_blank");
       } else {
         setSuccess({ ...json, amountPaid: json.amountPaid != null ? Number(json.amountPaid) : null });
       }
@@ -911,7 +917,7 @@ export default function Register() {
   }
 
   // Payment pending screen — shown after form submit when payment is required
-  if (pendingPayment && pendingPayment.checkoutUrl) {
+  if (pendingPayment && (pendingPayment.checkoutUrl || pendingPayment.clientSecret)) {
     return (
       <div className="flex items-center justify-center px-4 py-16">
         <div className="max-w-md w-full space-y-6">
@@ -964,6 +970,13 @@ export default function Register() {
             </CardContent>
           </Card>
 
+          {/* Stripe's payment form, in this page */}
+          {pendingPayment.clientSecret && (
+            <Card><CardContent className="p-2 sm:p-4">
+              <EmbeddedCardForm clientSecret={pendingPayment.clientSecret} onComplete={() => verifyPayment(pendingPayment.registrationId, pendingPayment.sessionId)} />
+            </CardContent></Card>
+          )}
+
           {/* Auto-poll status indicator */}
           <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
             <Loader2 size={14} className="animate-spin" />
@@ -978,13 +991,15 @@ export default function Register() {
           )}
 
           <div className="space-y-3">
-            <Button
-              className="w-full font-heading uppercase tracking-wider text-base h-12"
-              onClick={() => window.open(pendingPayment.checkoutUrl, "_blank")}
-            >
-              <ExternalLink size={18} className="mr-2" />
-              Reopen Stripe Checkout
-            </Button>
+            {!pendingPayment.clientSecret && (
+              <Button
+                className="w-full font-heading uppercase tracking-wider text-base h-12"
+                onClick={() => window.open(pendingPayment.checkoutUrl, "_blank")}
+              >
+                <ExternalLink size={18} className="mr-2" />
+                Reopen Stripe Checkout
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="sm"

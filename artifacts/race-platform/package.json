@@ -84,6 +84,8 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@imgly/background-removal": "^1.7.0",
+    "@stripe/react-stripe-js": "7.0.0",
+    "@stripe/stripe-js": "10.1.0",
     "@types/three": "^0.184.1",
     "dexie": "^4.4.3",
     "jspdf": "^4.2.1",

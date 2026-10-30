@@ -49,6 +49,7 @@ import riderCheckinFixesRouter from "./rider-checkin-fixes";
 import riderSocialRouter from "./rider-social";
 import supportRouter from "./support";
 import twilioSmsRouter from "./twilio-sms";
+import cardReadersRouter from "./card-readers";
 
 const router: IRouter = Router();
 
@@ -102,5 +103,6 @@ router.use(riderCheckinFixesRouter);
 router.use(riderSocialRouter);
 router.use(supportRouter);
 router.use(twilioSmsRouter);
+router.use(cardReadersRouter);
 
 export default router;

@@ -1,5 +1,6 @@
 import { getStripeSync, getUncachableStripeClient } from "./stripeClient";
 import { logger } from "./lib/logger";
+import { paymentIntentAsPaid } from "./lib/stripePayments";
 
 const PAID_CHECKOUT_EVENTS = new Set(["checkout.session.completed", "checkout.session.async_payment_succeeded"]);
 
@@ -17,6 +18,17 @@ export class WebhookHandlers {
     try {
       const event = JSON.parse(payload.toString("utf8")) as { type?: string; data?: { object?: { id?: string; object?: string } } };
       const sessionId = event.data?.object?.id;
+      // Card-reader payments (Stripe Terminal) arrive as PaymentIntents.
+      if (event.type === "payment_intent.succeeded" && sessionId && event.data?.object?.object === "payment_intent") {
+        const stripe = await getUncachableStripeClient();
+        const pi = paymentIntentAsPaid(await stripe.paymentIntents.retrieve(sessionId));
+        if (pi.metadata?.readerId) {
+          const { confirmRegistrationSession, confirmAddonSession } = await import("./routes/registrations");
+          const confirmed = await confirmRegistrationSession(pi);
+          if (confirmed.length) logger.info({ paymentIntentId: sessionId }, "Registration paid on card reader (Stripe webhook)");
+          if (await confirmAddonSession(pi)) logger.info({ paymentIntentId: sessionId }, "Check-in add-on paid on card reader (Stripe webhook)");
+        }
+      }
       if (event.type && PAID_CHECKOUT_EVENTS.has(event.type) && sessionId && event.data?.object?.object === "checkout.session") {
         // Re-read the session from Stripe rather than trusting the payload.
         const stripe = await getUncachableStripeClient();

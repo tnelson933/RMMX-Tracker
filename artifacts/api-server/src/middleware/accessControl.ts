@@ -37,6 +37,7 @@ export const PUBLIC_RULES: PublicRule[] = [
   { pattern: /^\/public(\/|$)/, reason: "public website and registration" },
   { pattern: /^\/account-deletion-request$/, methods: ["POST"], reason: "public account deletion request" },
   { pattern: /^\/stripe\/webhook$/, methods: ["POST"], reason: "Stripe webhook (signature checked)" },
+  { pattern: /^\/stripe\/config$/, methods: READ, reason: "Stripe publishable key for the in-page payment form (public by design)" },
   { pattern: /^\/stripe\/connect\/return$/, methods: READ, reason: "Stripe onboarding redirect" },
   { pattern: /^\/stripe\/clubs\/\d+\/status$/, methods: READ, reason: "club Stripe connected yes/no (desktop local server)" },
   { pattern: /^\/events\/\d+\/quick-checkin$/, methods: ["POST"], reason: "rider quick check-in (rider session checked in handler)" },

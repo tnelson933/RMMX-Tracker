@@ -28,6 +28,7 @@ import { format } from "date-fns";
 import { isInvalidAssignedActiveTransponderIdentifier } from "@/lib/activeTransponder";
 import { eventTimingTags, splitRegistrationTag } from "@/components/organizer/timingTags";
 import { responseErrorMessage } from "@/lib/friendlyErrors";
+import { CardPaymentPanel, type CardStarted, type CardStartOptions } from "@/components/payments/CardPaymentPanel";
 
 // RFID tags are alphanumeric + dashes, 1–32 characters.
 // Spaces, special chars, or extreme lengths are invalid.
@@ -130,10 +131,8 @@ interface RegSuccess {
   raceClass: string;
 }
 
-interface PendingCard {
+interface PendingCard extends CardStarted {
   regId: number;
-  checkoutUrl: string;
-  sessionId: string;
   entryFee: number;
   rentalFee: number;
   purchaseOptionsTotal: number;
@@ -578,26 +577,35 @@ export default function Registrations() {
     }
   };
 
+  /** Start (or switch) the card payment: in-page form, card reader, or Stripe page for the rider's phone. */
+  const startCardPayment = async (opts: CardStartOptions) => {
+    if (!regSuccess) return;
+    const res = await fetch(`/api/events/${eventId}/registrations/${regSuccess.id}/charge`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(opts.readerId ? { readerId: opts.readerId } : { embedded: !!opts.embedded }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(responseErrorMessage(res.status, json));
+    setPendingCard(prev => ({
+      regId: regSuccess.id,
+      sessionId: json.sessionId,
+      checkoutUrl: json.checkoutUrl ?? null,
+      clientSecret: json.clientSecret ?? null,
+      paymentIntentId: json.paymentIntentId ?? null,
+      entryFee: json.entryFee ?? prev?.entryFee ?? 0,
+      rentalFee: json.rentalFee ?? prev?.rentalFee ?? 0,
+      purchaseOptionsTotal: json.purchaseOptionsTotal ?? prev?.purchaseOptionsTotal ?? 0,
+    }));
+  };
+
   const handleStartCardPayment = async () => {
     if (!regSuccess) return;
     setSubmitting(true);
     setPaymentError(null);
     try {
-      const res = await fetch(`/api/events/${eventId}/registrations/${regSuccess.id}/charge`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Couldn't start card payment");
-
-      setPendingCard({
-        regId: regSuccess.id,
-        checkoutUrl: json.checkoutUrl,
-        sessionId: json.sessionId,
-        entryFee: json.entryFee,
-        rentalFee: json.rentalFee ?? 0,
-        purchaseOptionsTotal: json.purchaseOptionsTotal ?? 0,
-      });
+      setPendingCard(null);
+      await startCardPayment({ embedded: true });
       setStep("pay-card");
     } catch (e: any) {
       setPaymentError(e.message || "Could not start card payment.");
@@ -1435,9 +1443,9 @@ export default function Registrations() {
         <div className="py-4 space-y-5">
           {/* Header */}
           <div className="text-center space-y-1">
-            <h3 className="text-xl font-heading font-bold uppercase">Scan to Pay</h3>
+            <h3 className="text-xl font-heading font-bold uppercase">Card Payment</h3>
             <p className="text-muted-foreground text-sm">
-              Have the rider scan this QR code with their phone to complete checkout.
+              Type the card here, charge it on a card reader, or let the rider pay on their phone.
             </p>
           </div>
 
@@ -1465,22 +1473,13 @@ export default function Registrations() {
             </div>
           </div>
 
-          {/* QR code */}
-          <div className="flex justify-center">
-            <div className="rounded-2xl border-4 border-primary/20 bg-white p-4 shadow-md inline-flex">
-              <QRCodeSVG
-                value={pendingCard.checkoutUrl}
-                size={220}
-                level="M"
-                marginSize={1}
-              />
-            </div>
-          </div>
-
-          {/* Polling indicator */}
-          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Loader2 size={14} className="animate-spin" /> Waiting for payment confirmation…
-          </div>
+          <CardPaymentPanel
+            eventId={eventId}
+            amount={pendingCard.entryFee + pendingCard.rentalFee + pendingCard.purchaseOptionsTotal}
+            current={pendingCard}
+            start={startCardPayment}
+            onCancel={() => { setPaymentError(null); setStep("pay-method"); }}
+          />
 
           {paymentError && (
             <div className="bg-destructive/10 border border-destructive/30 text-destructive rounded-md px-3 py-2.5 text-sm flex items-center gap-2">
@@ -1492,11 +1491,6 @@ export default function Registrations() {
             {/* Manual verify */}
             <Button className="w-full font-heading uppercase" onClick={handleManualVerifyCard} disabled={submitting}>
               {submitting ? <><Loader2 size={16} className="mr-2 animate-spin" />Checking…</> : "Verify Payment Now"}
-            </Button>
-
-            {/* Manual entry fallback */}
-            <Button variant="outline" className="w-full font-heading uppercase" onClick={() => window.open(pendingCard.checkoutUrl, "_blank")}>
-              <Smartphone size={16} className="mr-2" /> Enter Information Manually
             </Button>
 
             <Button variant="ghost" size="sm" className="w-full text-muted-foreground" onClick={() => { setPaymentError(null); setStep("pay-method"); }}>
