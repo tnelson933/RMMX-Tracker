@@ -2,7 +2,7 @@ import { Router } from "express";
 import { createHmac } from "node:crypto";
 import { db, clubsTable, eventsTable, raceGasCreditsTable, raceGasSettingsTable, usersTable } from "@workspace/db";
 import { desc, eq, sql } from "drizzle-orm";
-import { gatherRaceGasCredits, raceGasCreditId, raceGasFileName, raceGasSettings, sendRaceGasCredits } from "../lib/raceGasCredits";
+import { gatherRaceGasCredits, raceGasCreditId, raceGasFileName, raceGasSettings, resolveUnconfirmedRaceGas, sendRaceGasCredits } from "../lib/raceGasCredits";
 
 // RM Roost admin only: Race Gas credits (Rocky Mountain ATV website credit for
 // every rider who races) and where they're sent.
@@ -87,6 +87,7 @@ router.get("/admin/race-gas/events", async (req, res) => {
     missing: sql<number>`count(*) filter (where ${raceGasCreditsTable.status} = 'missing_info')::int`,
     sent: sql<number>`count(*) filter (where ${raceGasCreditsTable.status} = 'sent')::int`,
     failed: sql<number>`count(*) filter (where ${raceGasCreditsTable.status} = 'failed')::int`,
+    unconfirmed: sql<number>`count(*) filter (where ${raceGasCreditsTable.status} in ('unconfirmed', 'sending'))::int`,
   }).from(raceGasCreditsTable)
     .innerJoin(eventsTable, eq(raceGasCreditsTable.eventId, eventsTable.id))
     .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
@@ -118,6 +119,15 @@ router.post("/admin/race-gas/events/:eventId/send", async (req, res) => {
   const gathered = await gatherRaceGasCredits(eventId);
   const result = await sendRaceGasCredits(eventId);
   return res.json({ gathered, ...result });
+});
+
+// After checking the CRM: unconfirmed credits are "sent" (it has them) or "resend" (it doesn't).
+router.post("/admin/race-gas/events/:eventId/unconfirmed", async (req, res) => {
+  if (!await requireSuperAdmin(req, res)) return;
+  const action = req.body?.action;
+  if (action !== "sent" && action !== "resend") return res.status(400).json({ error: "Choose Mark as sent or Send again." });
+  const count = await resolveUnconfirmedRaceGas(Number(req.params.eventId), action);
+  return res.json({ count });
 });
 
 export default router;

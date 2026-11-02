@@ -15,7 +15,7 @@ import { Download, Fuel, Loader2, Send, AlertCircle, CheckCircle2 } from "lucide
 // the CRM set here, or downloaded in the Race Gas template's format.
 
 interface Settings { enabled: boolean; endpointUrl: string | null; hasApiKey: boolean; amount: number; updatedAt: string }
-interface EventRow { eventId: number; eventName: string; eventDate: string; clubName: string | null; total: number; ready: number; missing: number; sent: number; failed: number; fileName: string }
+interface EventRow { eventId: number; eventName: string; eventDate: string; clubName: string | null; total: number; ready: number; missing: number; sent: number; failed: number; unconfirmed: number; fileName: string }
 interface Credit {
   id: number; creditId: string; riderId: number; amount: number; status: string; missingFields: string[] | null; lastError: string | null; sentAt: string | null;
   firstName: string | null; lastName: string | null; streetAddress: string | null; city: string | null; state: string | null; zip: string | null; email: string | null;
@@ -49,6 +49,8 @@ const STATUS: Record<string, { label: string; tone: string }> = {
   missing_info: { label: "Missing info", tone: "bg-amber-50 text-amber-800 border-amber-200" },
   sent: { label: "Sent", tone: "bg-emerald-50 text-emerald-700 border-emerald-200" },
   failed: { label: "Failed, will retry", tone: "bg-red-50 text-red-700 border-red-200" },
+  sending: { label: "Sending", tone: "bg-blue-50 text-blue-700 border-blue-200" },
+  unconfirmed: { label: "Unconfirmed", tone: "bg-orange-50 text-orange-800 border-orange-300" },
 };
 
 export default function RaceGasAdmin() {
@@ -112,6 +114,17 @@ export default function RaceGasAdmin() {
     finally { setBusyEvent(null); }
   };
 
+  const resolve = async (row: EventRow, action: "sent" | "resend") => {
+    setBusyEvent(row.eventId);
+    try {
+      const r = await getJson<{ count: number }>(`/api/admin/race-gas/events/${row.eventId}/unconfirmed`, { method: "POST", body: JSON.stringify({ action }) });
+      toast({ title: action === "sent" ? `${r.count} marked as sent` : `${r.count} sent again` });
+      qc.invalidateQueries({ queryKey: ["race-gas-events"] });
+      qc.invalidateQueries({ queryKey: ["race-gas-event", row.eventId] });
+    } catch (e: any) { toast({ title: "Couldn't update", description: e.message, variant: "destructive" }); }
+    finally { setBusyEvent(null); }
+  };
+
   const sendNow = async (row: EventRow) => {
     setBusyEvent(row.eventId);
     try {
@@ -127,7 +140,7 @@ export default function RaceGasAdmin() {
     <div className="space-y-6 max-w-5xl">
       <div>
         <h1 className="text-3xl font-heading font-bold uppercase tracking-tight flex items-center gap-2"><Fuel className="text-primary" /> Race Gas</h1>
-        <p className="text-muted-foreground mt-1">Every rider who races an event earns a Rocky Mountain ATV website credit. Riders are added as their races finish (not practice, not "did not start"), then sent to your CRM.</p>
+        <p className="text-muted-foreground mt-1">Every rider who races an event earns one Rocky Mountain ATV website credit for that event, however many races they run. Riders are added as their races finish (not practice, not "did not start") and each is sent to your CRM once.</p>
       </div>
 
       <Card>
@@ -211,12 +224,22 @@ creditId never changes for a rider and event: use it so a credit is never given 
                       {row.ready > 0 && <span className={`rounded border px-2 py-0.5 ${STATUS.ready.tone}`}>{row.ready} ready</span>}
                       {row.missing > 0 && <span className={`rounded border px-2 py-0.5 ${STATUS.missing_info.tone}`}>{row.missing} missing info</span>}
                       {row.failed > 0 && <span className={`rounded border px-2 py-0.5 ${STATUS.failed.tone}`}>{row.failed} failed</span>}
+                      {row.unconfirmed > 0 && <span className={`rounded border px-2 py-0.5 ${STATUS.unconfirmed.tone}`}>{row.unconfirmed} unconfirmed</span>}
                       <Button size="sm" variant="outline" className="h-7 gap-1" disabled={busyEvent === row.eventId} onClick={() => download(row)}><Download size={12} /> Excel</Button>
                       <Button size="sm" variant="outline" className="h-7 gap-1" disabled={busyEvent === row.eventId} onClick={() => sendNow(row)}>
                         {busyEvent === row.eventId ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Send now
                       </Button>
                     </div>
                   </div>
+                  {row.unconfirmed > 0 && (
+                    <div className="mt-3 rounded-md border border-orange-300 bg-orange-50 px-3 py-2 text-sm text-orange-900 dark:bg-orange-950/30 dark:text-orange-200">
+                      <p><strong>{row.unconfirmed} credit{row.unconfirmed === 1 ? "" : "s"} unconfirmed.</strong> The CRM may have received {row.unconfirmed === 1 ? "it" : "them"}, but its answer never came, so RM Roost won't send again on its own (that could credit riders twice). Check the CRM for this event, then:</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <Button size="sm" variant="outline" className="h-7" disabled={busyEvent === row.eventId} onClick={() => resolve(row, "sent")}>The CRM has them: mark as sent</Button>
+                        <Button size="sm" variant="outline" className="h-7" disabled={busyEvent === row.eventId} onClick={() => resolve(row, "resend")}>The CRM doesn't: send again</Button>
+                      </div>
+                    </div>
+                  )}
                   {openEvent === row.eventId && detail && (
                     <div className="mt-3 overflow-x-auto rounded-md border">
                       <table className="w-full text-xs">
@@ -232,7 +255,7 @@ creditId never changes for a rider and event: use it so a credit is never given 
                               <td className="px-2 py-1.5">
                                 <span className={`rounded border px-1.5 py-0.5 ${STATUS[c.status]?.tone ?? ""}`}>{STATUS[c.status]?.label ?? c.status}</span>
                                 {c.status === "missing_info" && c.missingFields?.length ? <span className="ml-1.5 text-amber-800">needs {c.missingFields.join(", ")}</span> : null}
-                                {c.status === "failed" && c.lastError ? <span className="ml-1.5 text-red-700">{c.lastError}</span> : null}
+                                {(c.status === "failed" || c.status === "unconfirmed") && c.lastError ? <span className="ml-1.5 text-red-700">{c.lastError}</span> : null}
                               </td>
                             </tr>
                           ))}
