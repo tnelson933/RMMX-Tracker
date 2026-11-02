@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRoute, Link } from "wouter";
-import { Radio, WifiOff, ChevronLeft, ExternalLink, Volume2, VolumeX, Flag, CheckCircle2, Eye } from "lucide-react";
+import { Radio, WifiOff, ChevronLeft, ExternalLink, Volume2, VolumeX, Flag, CheckCircle2, Eye, Plus, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useListMotos, useListResults } from "@workspace/api-client-react";
 import { SplitView360 } from "@/components/SplitView360";
 import { StackedSplitView } from "@/components/StackedSplitView";
-import { getPublicOrigin } from "@/lib/publicOrigin";
 import {
   isAnnouncementStale,
   queueAnnouncement,
@@ -19,11 +18,11 @@ import {
 } from "@/lib/sharedAnnouncer";
 import { LiveRaceViews, type LeaderboardData } from "./LiveLeaderboard";
 import { isPlaybackStalled, isVideoQueueOverLimit } from "@/lib/videoPlaybackPolicy";
+import { SideCameraPlayer, getWatchWsUrl, type LiveCamera } from "@/components/SideCameraPlayer";
 
 // "reconnecting": the camera's connection dropped and it may come back.
 // "unsupported": this browser has no MediaSource (older iPhones).
 type ViewerState = "connecting" | "buffering" | "playing" | "reconnecting" | "offline" | "ended" | "error" | "unsupported";
-type LiveCamera = { id: string; name: string; reconnecting?: boolean };
 
 // iPhones (iOS 17.1+) only offer ManagedMediaSource.
 const MediaSourceImpl: typeof MediaSource | undefined = typeof window === "undefined"
@@ -53,13 +52,8 @@ function WatchLiveCountdown({ startedAt, timeLimitMs, plusLaps }: { startedAt: s
   );
 }
 
-function getWsUrl(eventId: number, cameraId: string | null): string {
-  const origin = getPublicOrigin();
-  const proto = origin.startsWith("https:") ? "wss:" : "ws:";
-  const host = origin.replace(/^https?:\/\//, "");
-  // Without a camera the relay picks the event's first live camera.
-  return `${proto}//${host}/api/video/watch/${eventId}${cameraId ? `/${encodeURIComponent(cameraId)}` : ""}`;
-}
+/** Most cameras shown at once (main + side by side); each is its own stream. */
+const MAX_CAMERAS_AT_ONCE = 4;
 
 type LeaderboardEntry = LeaderboardData["leaderboard"][number];
 
@@ -76,6 +70,8 @@ export default function WatchLive() {
   // Every live camera of the event, and the one being watched.
   const [cameraList, setCameraList] = useState<LiveCamera[]>([]);
   const [currentCamera, setCurrentCamera] = useState<LiveCamera | null>(null);
+  // Cameras watched beside the main one (side by side), in the order added.
+  const [sideCameraIds, setSideCameraIds] = useState<string[]>([]);
   // The camera the viewer picked; null lets the relay choose.
   const selectedCameraRef = useRef<string | null>(null);
   // Delay before the next reconnect; set to 0 to switch cameras at once.
@@ -605,7 +601,7 @@ export default function WatchLive() {
     bytesRef.current = 0;
     eventLogRef.current = [];
     if (viewerStateRef.current !== "ended") setViewerStateSynced("connecting");
-    const ws = new WebSocket(getWsUrl(eventId, selectedCameraRef.current));
+    const ws = new WebSocket(getWatchWsUrl(eventId, selectedCameraRef.current));
     wsRef.current = ws;
     ws.binaryType = "arraybuffer";
 
@@ -810,8 +806,28 @@ export default function WatchLive() {
     };
   }
 
+  // Side cameras only while they're live, and never the one already on the main view.
+  useEffect(() => {
+    setSideCameraIds(ids => {
+      const next = ids.filter(id => id !== currentCamera?.id && cameraList.some(c => c.id === id));
+      return next.length === ids.length ? ids : next;
+    });
+  }, [cameraList, currentCamera?.id]);
+
+  function toggleSideCamera(id: string) {
+    setSideCameraIds(ids => ids.includes(id)
+      ? ids.filter(x => x !== id)
+      : ids.length + 1 < MAX_CAMERAS_AT_ONCE ? [...ids, id] : ids);
+  }
+
   function selectCamera(id: string) {
     if (id === currentCamera?.id) return;
+    // The camera leaving the main view stays on screen beside it.
+    const previous = currentCamera?.id;
+    setSideCameraIds(ids => {
+      const rest = ids.filter(x => x !== id);
+      return previous && ids.includes(id) && !rest.includes(previous) ? [...rest, previous] : rest;
+    });
     selectedCameraRef.current = id;
     // The next camera may be a different format; its init message says which.
     formatLockedRef.current = false;
@@ -1157,6 +1173,7 @@ export default function WatchLive() {
 
         {/* ── Video and live race views (right side) ── */}
         <div className="relative flex min-h-[34rem] min-w-0 flex-1 flex-col bg-black md:min-h-0">
+        <div className={sideCameraIds.length > 0 ? "grid flex-1 grid-cols-1 gap-1 md:grid-cols-2" : "contents"}>
         <div
           data-viewer-state={viewerState}
           className="relative flex min-h-[18rem] flex-1 items-center justify-center bg-black md:min-h-0"
@@ -1165,16 +1182,31 @@ export default function WatchLive() {
             <div className="absolute top-3 left-3 right-3 z-20 flex gap-1.5 overflow-x-auto pb-1">
               {cameraList.map(c => {
                 const active = c.id === currentCamera?.id;
+                const beside = sideCameraIds.includes(c.id);
+                const full = !beside && sideCameraIds.length + 1 >= MAX_CAMERAS_AT_ONCE;
                 return (
-                  <button
-                    key={c.id}
-                    onClick={() => selectCamera(c.id)}
-                    className={`shrink-0 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold font-heading uppercase tracking-wider border transition-colors ${active ? "bg-red-600 border-red-500 text-white" : "bg-black/60 border-white/20 text-white/70 hover:text-white hover:bg-black/80"}`}
-                    title={c.reconnecting ? `${c.name} (reconnecting)` : c.name}
-                  >
-                    <span className={`h-1.5 w-1.5 rounded-full ${c.reconnecting ? "bg-amber-400" : active ? "bg-white" : "bg-red-500"}`} />
-                    {c.name}
-                  </button>
+                  <div key={c.id} className={`shrink-0 flex items-center rounded-full border text-xs font-bold font-heading uppercase tracking-wider transition-colors ${active ? "bg-red-600 border-red-500 text-white" : beside ? "bg-white/15 border-white/40 text-white" : "bg-black/60 border-white/20 text-white/70"}`}>
+                    <button
+                      onClick={() => selectCamera(c.id)}
+                      className="flex items-center gap-1.5 py-1.5 pl-3 pr-2 hover:text-white"
+                      title={c.reconnecting ? `${c.name} (reconnecting)` : `Watch ${c.name} on the main view`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${c.reconnecting ? "bg-amber-400" : active ? "bg-white" : "bg-red-500"}`} />
+                      {c.name}
+                    </button>
+                    {!active && (
+                      <button
+                        onClick={() => toggleSideCamera(c.id)}
+                        disabled={full}
+                        className="mr-1 rounded-full p-1 hover:bg-white/15 disabled:opacity-30"
+                        title={beside ? `Stop watching ${c.name} side by side` : full ? `Up to ${MAX_CAMERAS_AT_ONCE} cameras at once` : `Watch ${c.name} side by side`}
+                        aria-label={beside ? `Stop watching ${c.name} side by side` : `Watch ${c.name} side by side`}
+                        aria-pressed={beside}
+                      >
+                        {beside ? <Check size={12} /> : <Plus size={12} />}
+                      </button>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -1339,6 +1371,19 @@ export default function WatchLive() {
           </div>
         )}
         </div>{/* end video panel */}
+        {sideCameraIds.map(id => {
+          const cam = cameraList.find(c => c.id === id);
+          return cam ? (
+            <SideCameraPlayer
+              key={id}
+              eventId={eventId}
+              camera={cam}
+              onRemove={() => toggleSideCamera(id)}
+              onMakeMain={() => selectCamera(id)}
+            />
+          ) : null;
+        })}
+        </div>{/* end camera grid */}
         {activeMoto?.status === "in_progress" && (
           <div className="h-64 shrink-0 border-t border-white/10 md:h-[19rem] md:max-h-[42vh]">
             <LiveRaceViews
