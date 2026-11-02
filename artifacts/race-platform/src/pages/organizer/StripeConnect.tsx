@@ -189,6 +189,8 @@ export default function StripeConnect() {
     dashboardMutation.mutate();
   };
 
+  // Unfinished card payments blocking a disconnect, with links to void them.
+  const [blockingCheckouts, setBlockingCheckouts] = useState<Array<{ eventId: number; eventName: string; raceClass: string; riderName: string }>>([]);
   const disconnectMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/stripe/connect", {
@@ -197,16 +199,18 @@ export default function StripeConnect() {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
+        setBlockingCheckouts(Array.isArray(body?.openCheckouts) ? body.openCheckouts : []);
         throw new Error(body?.error ?? "Couldn't disconnect");
       }
       return res.json();
     },
     onSuccess: () => {
+      setBlockingCheckouts([]);
       queryClient.invalidateQueries({ queryKey: ["stripe-connect-status"] });
       toast({ title: "Disconnected", description: "Your Stripe account has been disconnected." });
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: <LinkifiedStripeError message={err.message} />, variant: "destructive" });
+      toast({ title: "Can't disconnect yet", description: <LinkifiedStripeError message={err.message} />, variant: "destructive" });
     },
   });
 
@@ -418,6 +422,25 @@ export default function StripeConnect() {
                 Payment collection is active. On any event, open the edit form and check <strong>Collect Payments</strong> to charge riders an entry fee at registration.
                 {status.ownAccount && <> Payments go straight to your club's own Stripe account, and Stripe's fees are billed to it.</>}
               </p>
+            )}
+
+            {blockingCheckouts.length > 0 && (
+              <div className="rounded-md border border-amber-500/40 bg-amber-500/5 px-4 py-3 text-sm space-y-2">
+                <p className="font-semibold text-amber-800">Can't disconnect yet: unfinished card payments</p>
+                <p className="text-muted-foreground">
+                  These riders started paying by card in the last 24 hours and didn't finish. If it was a test, or the rider won't finish,
+                  open the event's Registrations tab, click the red <strong>X</strong> at the end of the rider's row (Void this registration) and confirm.
+                  Then click Disconnect again. Otherwise wait until they pay or the checkout expires (within 24 hours).
+                </p>
+                <ul className="space-y-1">
+                  {blockingCheckouts.map((c, i) => (
+                    <li key={i}>
+                      <strong>{c.riderName}</strong> ({c.raceClass}), {c.eventName}:{" "}
+                      <a href={`/events/${c.eventId}/registrations`} className="text-primary underline underline-offset-2">open Registrations</a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
 
             {/* Older connections: move to the club's own Stripe account (charged directly, own fees and dashboard). */}

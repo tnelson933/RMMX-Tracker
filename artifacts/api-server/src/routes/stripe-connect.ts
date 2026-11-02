@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { clubsTable, usersTable, registrationsTable, eventsTable } from "@workspace/db";
+import { clubsTable, usersTable, registrationsTable, eventsTable, ridersTable } from "@workspace/db";
 import { and, eq, gt, isNotNull, isNull, ne } from "drizzle-orm";
 import type Stripe from "stripe";
 import { getUncachableStripeClient } from "../stripeClient";
@@ -305,10 +305,18 @@ router.delete("/stripe/connect", async (req, res) => {
   if (!auth.clubId) return res.status(400).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
 
   // A rider may be paying right now: their money would go to the old account
-  // with nothing here to record it. Wait until open checkouts finish or expire.
-  const [openCheckout] = await db.select({ id: registrationsTable.id })
+  // with nothing here to record it. Wait until open checkouts finish or expire,
+  // or the organizer voids the entry (test payments, riders who gave up).
+  const openCheckouts = await db.select({
+    eventId: eventsTable.id,
+    eventName: eventsTable.name,
+    raceClass: registrationsTable.raceClass,
+    firstName: ridersTable.firstName,
+    lastName: ridersTable.lastName,
+  })
     .from(registrationsTable)
     .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
+    .leftJoin(ridersTable, eq(registrationsTable.riderId, ridersTable.id))
     .where(and(
       eq(eventsTable.clubId, auth.clubId),
       isNotNull(registrationsTable.stripeSessionId),
@@ -316,10 +324,20 @@ router.delete("/stripe/connect", async (req, res) => {
       ne(registrationsTable.status, "void"),
       gt(registrationsTable.createdAt, new Date(Date.now() - 24 * 60 * 60_000)),
     ))
-    .limit(1);
-  if (openCheckout) {
+    .limit(20);
+  if (openCheckouts.length > 0) {
+    const entries = openCheckouts.map(o => ({
+      eventId: o.eventId,
+      eventName: o.eventName,
+      raceClass: o.raceClass,
+      riderName: [o.firstName, o.lastName].filter(Boolean).join(" ") || "Rider",
+    }));
+    const list = entries.map(e => `${e.riderName} (${e.raceClass}) in ${e.eventName}`).join("; ");
     return res.status(409).json({
-      error: "A rider started a card payment in the last 24 hours that hasn't finished. You can disconnect once it's paid or has expired (checkouts expire within 24 hours).",
+      error: `You can't disconnect yet: ${entries.length === 1 ? "a rider has" : `${entries.length} riders have`} an unfinished card payment from the last 24 hours (${list}). `
+        + "If it was a test or the rider won't finish paying, open the event's Registrations tab, click the red X at the end of that rider's row (\"Void this registration\") and confirm, then disconnect again. "
+        + "Otherwise wait until they pay or the checkout expires (within 24 hours).",
+      openCheckouts: entries,
     });
   }
 
