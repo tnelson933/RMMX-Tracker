@@ -3,6 +3,7 @@ import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { brandedEmailHtml, esc } from "./emailLayout";
 import { sendEmail } from "./email";
 import { logger } from "./logger";
+import { computeMotoSectors, type MotoSectors } from "./sectors";
 
 /**
  * "Send me my race day stats" (a checkbox at online registration): once all of
@@ -21,6 +22,13 @@ export interface StatsRow {
   points: number | null;
   dnf: boolean;
   dns: boolean;
+  /** Split (sector) times per lap, when the course had split readers. */
+  sectors?: {
+    names: string[];
+    laps: Array<{ lapNumber: number; sectorsMs: Array<number | null> }>;
+    bestMs: Array<number | null>;
+    fieldBestMs: Array<number | null>;
+  } | null;
 }
 
 /** 28000 → "0:28.000"; 75250 → "1:15.250". */
@@ -51,13 +59,27 @@ export function statsTableHtml(rows: StatsRow[]): string {
     const lapHtml = laps.length
       ? laps.map((ms, i) => `<span style="display:inline-block;margin:2px 4px 2px 0;padding:2px 7px;border-radius:4px;font-size:12px;font-family:monospace;${ms === best ? "background:#B30000;color:#fff;" : "background:#f1f1f1;color:#444;"}">L${i + 1} ${formatLap(ms)}</span>`).join("")
       : `<span style="color:#aaa;font-size:13px">No lap times</span>`;
+    // Splits: one line per lap, purple = fastest in the race, green = the rider's best.
+    const sec = r.sectors;
+    const splitsHtml = sec && sec.laps.length
+      ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin-top:8px;font-size:12px;font-family:monospace;">
+          <tr><td style="padding:2px 10px 2px 0;color:#8c8c8c;font-family:Arial,sans-serif;font-size:11px;text-transform:uppercase;letter-spacing:.5px">Splits</td>${sec.names.map((_, i) => `<td style="padding:2px 10px 2px 0;color:#8c8c8c;font-family:Arial,sans-serif;font-size:11px">S${i + 1}</td>`).join("")}</tr>
+          ${sec.laps.map(l => `<tr><td style="padding:2px 10px 2px 0;color:#666">L${l.lapNumber}</td>${l.sectorsMs.map((ms, i) => {
+            const fastest = ms != null && sec.fieldBestMs[i] != null && ms <= sec.fieldBestMs[i]!;
+            const mine = ms != null && sec.bestMs[i] != null && ms <= sec.bestMs[i]!;
+            const style = fastest ? "color:#a21caf;font-weight:700;" : mine ? "color:#15803d;font-weight:700;" : "color:#444;";
+            return `<td style="padding:2px 10px 2px 0;${style}">${ms != null ? formatLap(ms) : "—"}</td>`;
+          }).join("")}</tr>`).join("")}
+        </table>
+        <div style="margin-top:4px;font-size:11px;color:#8c8c8c;font-family:Arial,sans-serif">${sec.names.map((n, i) => `S${i + 1} ${esc(n)}`).join(" · ")} · <span style="color:#a21caf;font-weight:700">purple</span> fastest in the race · <span style="color:#15803d;font-weight:700">green</span> your best</div>`
+      : "";
     return `<tr>
       <td style="${cell}"><div style="font-weight:700;font-size:14px;color:#1a1a1a">${esc(r.motoName)}</div><div style="font-size:11px;color:#8c8c8c;text-transform:uppercase;letter-spacing:.5px">${esc(r.raceClass)}</div></td>
       <td style="${cell}text-align:center"><span style="font-family:'Barlow Condensed',Arial,sans-serif;font-size:22px;font-weight:800;color:${color}">${finish}</span></td>
       <td style="${cell}text-align:center;font-family:monospace;font-size:13px;color:#333">${esc(r.totalTime ?? "—")}${best != null ? `<div style="font-size:11px;color:#8c8c8c;font-family:Arial,sans-serif">Best ${formatLap(best)}</div>` : ""}</td>
       <td style="${cell}text-align:center;font-weight:700;color:#B30000">${r.points ?? 0}</td>
     </tr>
-    <tr><td colspan="4" style="padding:0 8px 12px;border-bottom:1px solid #ececec">${lapHtml}</td></tr>`;
+    <tr><td colspan="4" style="padding:0 8px 12px;border-bottom:1px solid #ececec">${lapHtml}${splitsHtml}</td></tr>`;
   }).join("");
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin:4px 0 8px;">
     <tr><th align="left" style="${head}">Race</th><th style="${head}">Finish</th><th style="${head}">Time</th><th style="${head}">Pts</th></tr>
@@ -109,6 +131,7 @@ export async function sendRaceDayStats(eventId: number): Promise<number> {
 
   const results = await db.select({
     riderId: raceResultsTable.riderId,
+    motoId: raceResultsTable.motoId,
     motoName: motosTable.name,
     motoNumber: motosTable.motoNumber,
     raceClass: raceResultsTable.raceClass,
@@ -125,6 +148,18 @@ export async function sendRaceDayStats(eventId: number): Promise<number> {
       inArray(raceResultsTable.riderId, [...riders.keys()]),
       ne(motosTable.type, "practice"),
     ));
+
+  // Split times per race, worked out once (null for races without split readers).
+  const sectorsByMoto = new Map<number, MotoSectors | null>();
+  for (const motoId of new Set(results.map(r => r.motoId))) {
+    sectorsByMoto.set(motoId, await computeMotoSectors(motoId).catch(() => null));
+  }
+  const riderSectors = (motoId: number, riderId: number): StatsRow["sectors"] => {
+    const moto = sectorsByMoto.get(motoId);
+    const mine = moto?.byRider.get(riderId);
+    if (!moto || !mine) return null;
+    return { names: moto.names, laps: mine.laps.filter(l => l.complete).map(l => ({ lapNumber: l.lapNumber, sectorsMs: l.sectorsMs })), bestMs: mine.best, fieldBestMs: moto.fieldBest };
+  };
 
   const resultsUrl = `${appUrl()}/results/${eventId}`;
   const date = longDate(claimed.date);
@@ -143,6 +178,7 @@ export async function sendRaceDayStats(eventId: number): Promise<number> {
         points: r.points,
         dnf: r.dnf,
         dns: r.dns,
+        sectors: riderSectors(r.motoId, riderId),
       }));
     if (rows.length === 0) continue; // opted in but didn't race
     attempted++;
@@ -153,7 +189,7 @@ export async function sendRaceDayStats(eventId: number): Promise<number> {
       heading: claimed.name,
       paragraphs: [
         `Hi ${esc(rider.name || "rider")},`,
-        `Here are your official results from <strong>${esc(claimed.name)}</strong> on ${esc(date)}. Your best lap in each race is highlighted.`,
+        `Here are your official results from <strong>${esc(claimed.name)}</strong> on ${esc(date)}. Your best lap in each race is highlighted${rows.some(r => r.sectors) ? ", with your split times on each lap" : ""}.`,
       ],
       extraHtml: statsTableHtml(rows),
       button: { label: "View full event results", url: resultsUrl },

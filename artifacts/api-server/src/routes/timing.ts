@@ -22,7 +22,7 @@ import type { Request, Response } from "express";
 import { authorizeIngest, clubIdForEvent, clubIdForMoto } from "../lib/ingestAuth";
 import { textToSpeech, speakScript } from "@workspace/integrations-openai-ai-server/audio";
 import { processPracticeCrossing } from "./practice";
-import { computeMotoSectors } from "../lib/sectors";
+import { computeMotoSectors, latestSplitGaps } from "../lib/sectors";
 import { recordTagSeen } from "../lib/recentTags";
 import {
   canonicalizeCrossingTimestamp,
@@ -655,11 +655,17 @@ export async function buildLeaderboard(motoId: number) {
   const analytics = await buildRaceAnalytics(motoId, event?.raceStyle, withGaps);
   // Sector times when the event's course map has split readers (null otherwise).
   const sectors = await computeMotoSectors(motoId);
+  // Gap to the leader and the rider ahead at each rider's latest timing point.
+  const running = withGaps.filter((e: any) => e.riderId != null && !e.dnf && !e.dns).map((e: any) => e.riderId as number);
+  const splitGaps = sectors
+    ? latestSplitGaps(running, new Map([...sectors.byRider].map(([id, r]) => [id, r.points])))
+    : null;
   const withSectors = sectors
     ? withGaps.map((entry) => {
       const rider = entry.riderId != null ? sectors.byRider.get(entry.riderId) : undefined;
       const completed = rider?.laps.filter(l => l.complete) ?? [];
       const current = rider?.laps.find(l => !l.complete) ?? null;
+      const latest = entry.riderId != null ? splitGaps?.get(entry.riderId) ?? null : null;
       return {
         ...entry,
         sectors: {
@@ -667,6 +673,8 @@ export async function buildLeaderboard(motoId: number) {
           bestMs: rider?.best ?? null,
           currentLapMs: current?.sectorsMs ?? null,
           laps: rider?.laps ?? [],
+          // Last course point passed: its name, and the gaps there.
+          latest: latest ? { ...latest, pointName: sectors.pointNames[latest.point - 1] ?? null } : null,
         },
       };
     })
@@ -705,6 +713,8 @@ export async function buildLeaderboard(motoId: number) {
     resultsOfficial: moto.resultsFinalizedAt != null || moto.type === "practice",
     leaderboard: withSectors,
     sectorNames: sectors?.names ?? null,
+    // The race's fastest time in each sector (purple on the timing screens).
+    sectorFieldBestMs: sectors?.fieldBest ?? null,
     analytics,
     updatedAt: new Date().toISOString(),
   };

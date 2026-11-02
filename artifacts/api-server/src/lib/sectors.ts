@@ -94,9 +94,69 @@ export function bestSectors(laps: LapSectors[], sectorCount: number): Array<numb
   });
 }
 
+/** One pass of a course point: point 1..N are the splits, N + 1 is the finish. */
+export interface TimingPoint {
+  lap: number;
+  point: number;
+  /** Wall-clock time of the pass (ms since epoch). */
+  atMs: number;
+}
+
+/** A rider's passes of every course point, in course order. */
+export function riderTimingPoints(input: Pick<SectorInput, "splitCount" | "laps" | "splits">): TimingPoint[] {
+  const points: TimingPoint[] = [
+    ...input.splits.map(s => ({ lap: s.lapNumber, point: s.splitSequence, atMs: s.crossingTime.getTime() })),
+    ...input.laps.map(l => ({ lap: l.lapNumber, point: input.splitCount + 1, atMs: l.crossingTime.getTime() })),
+  ];
+  return points.sort((a, b) => a.lap - b.lap || a.point - b.point);
+}
+
+export interface SplitGap {
+  lap: number;
+  /** 1..N for the splits, N + 1 for the finish. */
+  point: number;
+  /** Behind the race leader at this same point and lap (null if the leader's pass there wasn't read). */
+  gapToLeaderMs: number | null;
+  /** Behind the rider one place ahead, at the same point and lap. */
+  gapToAheadMs: number | null;
+}
+
+/**
+ * Where each rider was last timed on the course and how far behind the leader
+ * and the rider ahead they were there, as pro timing screens show at each
+ * intermediate. `order` is the running order (leader first).
+ */
+export function latestSplitGaps(order: number[], pointsByRider: Map<number, TimingPoint[]>): Map<number, SplitGap> {
+  const at = (riderId: number | undefined, lap: number, point: number) =>
+    riderId == null ? undefined : pointsByRider.get(riderId)?.find(p => p.lap === lap && p.point === point)?.atMs;
+  const out = new Map<number, SplitGap>();
+  order.forEach((riderId, i) => {
+    const latest = pointsByRider.get(riderId)?.at(-1);
+    if (!latest) return;
+    const leader = at(order[0], latest.lap, latest.point);
+    const ahead = i > 0 ? at(order[i - 1], latest.lap, latest.point) : undefined;
+    out.set(riderId, {
+      lap: latest.lap,
+      point: latest.point,
+      gapToLeaderMs: i === 0 ? 0 : leader != null ? latest.atMs - leader : null,
+      gapToAheadMs: i === 0 ? null : ahead != null ? latest.atMs - ahead : null,
+    });
+  });
+  return out;
+}
+
+/** Fastest time in each sector across every rider and lap (the race's best). */
+export function fieldBestSectors(riders: Iterable<{ laps: LapSectors[] }>, sectorCount: number): Array<number | null> {
+  const all = [...riders].flatMap(r => r.laps);
+  return bestSectors(all, sectorCount);
+}
+
 export interface MotoSectors {
   names: string[];
-  byRider: Map<number, { laps: LapSectors[]; best: Array<number | null> }>;
+  /** Point names in course order: the splits, then "Finish". */
+  pointNames: string[];
+  byRider: Map<number, { laps: LapSectors[]; best: Array<number | null>; points: TimingPoint[] }>;
+  fieldBest: Array<number | null>;
 }
 
 /** Sector times for every rider in a moto, or null when the event has no splits. */
@@ -129,9 +189,19 @@ export async function computeMotoSectors(motoId: number): Promise<MotoSectors | 
       laps: laps.filter(l => l.riderId === riderId && l.lapNumber != null).map(l => ({ lapNumber: l.lapNumber!, crossingTime: l.crossingTime })),
       splits: splits.filter(s => s.riderId === riderId),
     });
-    byRider.set(riderId, { laps: riderLaps, best: bestSectors(riderLaps.filter(l => l.complete || l.sectorsMs.some(v => v != null)), sectorCount) });
+    const riderLapRows = laps.filter(l => l.riderId === riderId && l.lapNumber != null).map(l => ({ lapNumber: l.lapNumber!, crossingTime: l.crossingTime }));
+    byRider.set(riderId, {
+      laps: riderLaps,
+      best: bestSectors(riderLaps.filter(l => l.complete || l.sectorsMs.some(v => v != null)), sectorCount),
+      points: riderTimingPoints({ splitCount: course.splits.length, laps: riderLapRows, splits: splits.filter(s => s.riderId === riderId) }),
+    });
   }
-  return { names: sectorNames(course.splits), byRider };
+  return {
+    names: sectorNames(course.splits),
+    pointNames: [...course.splits.map(s => s.label), "Finish"],
+    byRider,
+    fieldBest: fieldBestSectors(byRider.values(), sectorCount),
+  };
 }
 
 /**

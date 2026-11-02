@@ -782,6 +782,11 @@ The event's **Course Map** tab places readers on the course. Readers come from R
 - **Segments** (the supercross term, as on AMA/SMX timing sheets; also called splits) — the page lists the segments the splits create, e.g. one split at Halfway gives **Seg 1 Finish → Halfway** and **Seg 2 Halfway → Finish**. Lap 1's first segment starts at the moto start.
 - Split reads never change laps, placings or results. A missed split read only leaves those segment times blank. Repeat reads in the same pass count once. A split read never becomes a lap: with no moto running it's ignored, or recorded as a practice split when a practice at a track with that split is live.
 - Readers not on the course keep timing laps the usual way, so an event with one reader needs no course map.
+- **Where riders and fans see splits** (motocross, supercross and desert/cross-country races with split readers):
+  - **Live timing** (`/live/:motoId`, wide screens): columns **S1, S2…** fill in as each rider runs the current lap (the last lap stays faded until the next split). **Purple** = fastest in the race for that sector, **green** = the rider's own best. **Split gap** shows how far behind the leader they were at their latest split (e.g. "+3.50 · L2 · Halfway · +1.20 ahead" = 1.20 s behind the rider in front there). The **Segments** tab still lists best or last-lap segments for everyone.
+  - **Rider app** (race history → a race): under each lap, that lap's split times with the same purple/green.
+  - **Race day stats email**: a splits table for each race (one line per lap).
+- **Enduro:** each special test is a section. The event results' **Overall** table (live on race day) shows every rider's time in each test, the fastest in the class in **purple**, and everyone else's time behind it (e.g. "+0:02.000"), plus penalties, total and gap.
 - Warnings show when splits exist without a finish line, a split has no reader, or a placed reader isn't connected.
 
 **Enduro:** each special test from the Schedule tab is a **Section** card with a **Start** and an **End** slot ("Starts and ends at the same reader" for a single gate), and each time check has a slot. Add, rename or reorder sections on the Schedule tab. Role enforcement still applies (a start reader only starts a rider; an end reader only finishes an open start).

@@ -251,6 +251,15 @@ export function EnduroOverallTable({ data, raceClass }: { data: EnduroOverallDat
   const tests = data.enduroTests ?? [];
   if (!cls || cls.riders.length === 0 || tests.length === 0) return null;
   const leader = cls.riders.find((r) => r.enduro?.status === "classified");
+  // Fastest complete time in each test (section) for this class: purple, and
+  // everyone else shows how far behind it they were there.
+  const fastestByTest = new Map(tests.map((t) => {
+    const times = cls.riders
+      .map((r) => r.enduro?.tests.find((x) => x.motoId === t.motoId))
+      .filter((c): c is EnduroCell => !!c && c.complete && !c.dnf && !c.dns && c.timeMs != null)
+      .map((c) => c.timeMs!);
+    return [t.motoId, times.length ? Math.min(...times) : null] as const;
+  }));
   return (
     <Table>
       <TableHeader className="bg-muted/50">
@@ -290,7 +299,18 @@ export function EnduroOverallTable({ data, raceClass }: { data: EnduroOverallDat
                       : c.dns ? <span className="text-muted-foreground">DNS</span>
                       : c.dnf ? <span className="text-destructive font-bold">DNF</span>
                       : c.timeMs == null ? <span className="text-muted-foreground">–</span>
-                      : <span className={c.complete ? "" : "text-amber-700"} title={`${c.runs}/${c.requiredRuns} runs`}>{formatEnduroMs(c.timeMs)}</span>}
+                      : (() => {
+                        const fastest = fastestByTest.get(t.motoId) ?? null;
+                        const isFastest = c.complete && fastest != null && c.timeMs <= fastest;
+                        return (
+                          <span className="inline-flex flex-col items-center leading-tight" title={`${c.runs}/${c.requiredRuns} runs`}>
+                            <span className={!c.complete ? "text-amber-700" : isFastest ? "font-bold text-fuchsia-600 dark:text-fuchsia-400" : ""}>{formatEnduroMs(c.timeMs)}</span>
+                            {c.complete && fastest != null && !isFastest && (
+                              <span className="text-[10px] text-muted-foreground">+{formatEnduroMs(c.timeMs - fastest)}</span>
+                            )}
+                          </span>
+                        );
+                      })()}
                   </TableCell>
                 );
               })}

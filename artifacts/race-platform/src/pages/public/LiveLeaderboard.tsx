@@ -22,6 +22,13 @@ export interface LeaderboardEntry {
   dns: boolean;
   bestLapMs: number | null;
   bestLap: string | null;
+  /** Present when the course has split readers. */
+  sectors?: {
+    lastLapMs: Array<number | null> | null;
+    bestMs: Array<number | null> | null;
+    currentLapMs: Array<number | null> | null;
+    latest?: { lap: number; point: number; pointName: string | null; gapToLeaderMs: number | null; gapToAheadMs: number | null } | null;
+  };
 }
 
 interface RiderIdentity {
@@ -71,6 +78,8 @@ export interface LeaderboardData {
   leaderboard: LeaderboardEntry[];
   /** Present when the event's course map has split readers. */
   sectorNames?: string[] | null;
+  /** The race's fastest time in each sector. */
+  sectorFieldBestMs?: Array<number | null> | null;
   updatedAt: string;
   correction?: boolean;
   analytics?: RaceAnalytics;
@@ -383,6 +392,33 @@ function FastestLapRanking({ data }: { data: LeaderboardData }) {
   );
 }
 
+/** Split / sector time: "28.41" or "1:02.37". */
+function fmtSplit(ms: number | null | undefined): string {
+  if (ms == null) return "—";
+  const cs = Math.round(ms / 10);
+  const minutes = Math.floor(cs / 6000);
+  const seconds = ((cs % 6000) / 100).toFixed(2);
+  return minutes > 0 ? `${minutes}:${seconds.padStart(5, "0")}` : seconds;
+}
+
+/**
+ * The sectors to show for a rider, as timing screens do: the lap in progress
+ * fills in sector by sector; before its first split, the last full lap stays up.
+ */
+function shownSectors(entry: LeaderboardEntry): { values: Array<number | null>; live: boolean } {
+  const current = entry.sectors?.currentLapMs;
+  if (current && current.some(v => v != null)) return { values: current, live: true };
+  return { values: entry.sectors?.lastLapMs ?? [], live: false };
+}
+
+/** Purple: fastest in the race. Green: the rider's own best. */
+function sectorTone(ms: number | null | undefined, fieldBest: number | null | undefined, personalBest: number | null | undefined): string {
+  if (ms == null) return "text-white/25";
+  if (fieldBest != null && ms <= fieldBest) return "font-bold text-fuchsia-400";
+  if (personalBest != null && ms <= personalBest) return "font-bold text-green-400";
+  return "text-white/80";
+}
+
 function LiveTimingTable({
   data,
   positionGains,
@@ -401,6 +437,8 @@ function LiveTimingTable({
     );
   }
 
+  const sectorCount = data.sectorNames?.length ?? 0;
+  const hasSplits = sectorCount > 0 && data.leaderboard.some(e => e.sectors);
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -412,6 +450,10 @@ function LiveTimingTable({
             <th className="w-16 px-2 py-3 text-center font-bold">Laps</th>
             <th className="px-3 py-3 text-right font-bold">Total</th>
             <th className="hidden px-3 py-3 text-right font-bold md:table-cell">Last Lap</th>
+            {hasSplits && data.sectorNames!.map((name, i) => (
+              <th key={`s${i}`} className="hidden px-2 py-3 text-right font-bold xl:table-cell" title={name}>S{i + 1}</th>
+            ))}
+            {hasSplits && <th className="hidden px-3 py-3 text-right font-bold lg:table-cell" title="Gap to the leader at the rider's last split (and to the rider ahead)">Split gap</th>}
             <th className="hidden w-24 px-3 py-3 text-right font-bold lg:table-cell">Gap</th>
           </tr>
         </thead>
@@ -482,6 +524,30 @@ function LiveTimingTable({
                   </td>
                   <td className="px-3 py-3 text-right font-mono text-sm tabular-nums">{entry.totalTime ?? "—"}</td>
                   <td className="hidden px-3 py-3 text-right font-mono text-sm tabular-nums text-white/50 md:table-cell">{entry.lastLap ?? "—"}</td>
+                  {hasSplits && (() => {
+                    const { values, live } = shownSectors(entry);
+                    return data.sectorNames!.map((name, i) => (
+                      <td key={`s${i}`} title={`${name}${live ? " (this lap)" : " (last lap)"}`}
+                        className={`hidden px-2 py-3 text-right font-mono text-sm tabular-nums xl:table-cell ${sectorTone(values[i], data.sectorFieldBestMs?.[i], entry.sectors?.bestMs?.[i])} ${!live && values[i] != null ? "opacity-60" : ""}`}>
+                        {fmtSplit(values[i])}
+                      </td>
+                    ));
+                  })()}
+                  {hasSplits && (
+                    <td className="hidden px-3 py-2 text-right lg:table-cell">
+                      {entry.sectors?.latest ? (
+                        <div className="leading-tight">
+                          <div className="font-mono text-sm tabular-nums text-white/80">
+                            {entry.sectors.latest.gapToLeaderMs === 0 ? "Leader" : entry.sectors.latest.gapToLeaderMs != null ? `+${fmtSplit(entry.sectors.latest.gapToLeaderMs)}` : "—"}
+                          </div>
+                          <div className="text-[10px] uppercase tracking-wider text-white/35">
+                            L{entry.sectors.latest.lap} · {entry.sectors.latest.pointName ?? `Split ${entry.sectors.latest.point}`}
+                            {entry.sectors.latest.gapToAheadMs != null && <> · +{fmtSplit(entry.sectors.latest.gapToAheadMs)} ahead</>}
+                          </div>
+                        </div>
+                      ) : <span className="text-white/25">—</span>}
+                    </td>
+                  )}
                   <td className="hidden px-3 py-3 text-right text-sm text-white/40 lg:table-cell">{entry.gap}</td>
                 </motion.tr>
               );
@@ -489,6 +555,14 @@ function LiveTimingTable({
           </AnimatePresence>
         </tbody>
       </table>
+      {hasSplits && (
+        <div className="hidden flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2 text-[11px] text-white/40 xl:flex">
+          {data.sectorNames!.map((name, i) => <span key={i}><strong className="text-white/60">S{i + 1}</strong> {name}</span>)}
+          <span><span className="font-bold text-fuchsia-400">Purple</span> fastest in the race</span>
+          <span><span className="font-bold text-green-400">Green</span> rider's best</span>
+          <span>Faded: last lap (this lap fills in as it's run)</span>
+        </div>
+      )}
     </div>
   );
 }

@@ -66,7 +66,27 @@ export interface MotoResult {
   lapTimes: string[];
   lapGaps?: Array<{ leader: number | null; ahead: number | null }>;
   bibNumber: string | null;
+  /** Split (sector) times per lap, when the course had split readers. */
+  sectors?: {
+    names: string[];
+    laps: Array<{ lapNumber: number; sectorsMs: Array<number | null> }>;
+    bestMs: Array<number | null>;
+    fieldBestMs: Array<number | null>;
+  } | null;
 }
+
+/** Split time: "28.41" or "1:02.37". */
+function fmtSplit(ms: number | null | undefined): string {
+  if (ms == null) return "—";
+  const cs = Math.round(ms / 10);
+  const minutes = Math.floor(cs / 6000);
+  const seconds = ((cs % 6000) / 100).toFixed(2);
+  return minutes > 0 ? `${minutes}:${seconds.padStart(5, "0")}` : seconds;
+}
+
+/** Purple: fastest in the race. Green: the rider's own best. */
+const SPLIT_FASTEST = "#c026d3";
+const SPLIT_PERSONAL_BEST = "#16a34a";
 
 export interface EventHistory {
   eventId: number;
@@ -323,13 +343,13 @@ export function EventDetailScreen({
                       <View
                         key={i}
                         style={{
-                          flexDirection: "row", alignItems: "center",
                           paddingHorizontal: 14, paddingVertical: 10,
                           borderBottomWidth: i < moto.lapTimes.length - 1 ? 1 : 0,
                           borderBottomColor: colors.border,
                           backgroundColor: isFastest ? primary + "0e" : "transparent",
                         }}
                       >
+                        <View style={{ flexDirection: "row", alignItems: "center" }}>
                         <Text style={{ width: 36, fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>
                           {i + 1}
                         </Text>
@@ -348,9 +368,38 @@ export function EventDetailScreen({
                             <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>{gapEl.text}</Text>
                           ) : null}
                         </View>
+                        </View>
+                        {(() => {
+                          // This lap's split times, under the lap (purple = fastest in the race, green = rider's best).
+                          const lap = moto.sectors?.laps.find((l) => l.lapNumber === i + 1);
+                          if (!moto.sectors || !lap) return null;
+                          return (
+                            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 4, marginLeft: 36 }}>
+                              {lap.sectorsMs.map((ms, s) => {
+                                const fastest = ms != null && moto.sectors!.fieldBestMs[s] != null && ms <= moto.sectors!.fieldBestMs[s]!;
+                                const personal = ms != null && moto.sectors!.bestMs[s] != null && ms <= moto.sectors!.bestMs[s]!;
+                                return (
+                                  <Text key={s} style={{ fontSize: 11, fontFamily: fastest || personal ? "Inter_700Bold" : "Inter_400Regular", color: fastest ? SPLIT_FASTEST : personal ? SPLIT_PERSONAL_BEST : colors.mutedForeground }}>
+                                    S{s + 1} {fmtSplit(ms)}
+                                  </Text>
+                                );
+                              })}
+                            </View>
+                          );
+                        })()}
                       </View>
                     );
                   })}
+                  {moto.sectors && (
+                    <View style={{ paddingHorizontal: 14, paddingVertical: 8, borderTopWidth: 1, borderTopColor: colors.border }}>
+                      {moto.sectors.names.map((name, s) => (
+                        <Text key={s} style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>S{s + 1}: {name}</Text>
+                      ))}
+                      <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
+                        <Text style={{ color: SPLIT_FASTEST, fontFamily: "Inter_700Bold" }}>Purple</Text> fastest in the race · <Text style={{ color: SPLIT_PERSONAL_BEST, fontFamily: "Inter_700Bold" }}>Green</Text> your best
+                      </Text>
+                    </View>
+                  )}
                 </View>
               ) : (
                 <View style={{ padding: 14 }}>

@@ -3,6 +3,15 @@ import { releaseCompCodeIfCheckoutInactive } from "./registrations";
 import { isLowerBetter } from "../lib/overallOrder";
 import { loadSeriesScoring } from "../lib/scoringTables";
 import { practiceSectors } from "../lib/practiceSplits";
+import { computeMotoSectors } from "../lib/sectors";
+
+/** One rider's sector times in one race (rider app history). */
+type RiderMotoSectors = {
+  names: string[];
+  laps: Array<{ lapNumber: number; sectorsMs: Array<number | null> }>;
+  bestMs: Array<number | null>;
+  fieldBestMs: Array<number | null>;
+};
 import { rejectIfThrottled, recordFailedLogin, clearFailedLogins } from "../lib/loginThrottle";
 import { eventDateReached } from "../lib/eventStatus";
 import { Router } from "express";
@@ -32,6 +41,7 @@ import {
   practiceCrossingsTable,
   practiceSessionsTable,
   practiceSplitCrossingsTable,
+  splitCrossingsTable,
   registrationsTable,
   lapCrossingsTable,
   checkinsTable,
@@ -953,8 +963,27 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
       bibNumber: string | null;
       /** Finalized by the organizer; otherwise these are unofficial results. */
       official: boolean;
+      /** This rider's sector (split) times per lap, when the course had split readers. */
+      sectors: RiderMotoSectors | null;
     }>;
   }>();
+
+  // Sector times only for the races where this rider was read at a split.
+  const splitMotoIds = motoIds.length
+    ? new Set((await db.selectDistinct({ motoId: splitCrossingsTable.motoId }).from(splitCrossingsTable)
+      .where(and(eq(splitCrossingsTable.riderId, riderId), inArray(splitCrossingsTable.motoId, motoIds)))).map(r => r.motoId))
+    : new Set<number>();
+  const sectorsByMoto = new Map<number, RiderMotoSectors | null>();
+  for (const motoId of splitMotoIds) {
+    const moto = await computeMotoSectors(motoId).catch(() => null);
+    const mine = moto?.byRider.get(riderId);
+    sectorsByMoto.set(motoId, moto && mine ? {
+      names: moto.names,
+      laps: mine.laps.filter(l => l.complete).map(l => ({ lapNumber: l.lapNumber, sectorsMs: l.sectorsMs })),
+      bestMs: mine.best,
+      fieldBestMs: moto.fieldBest,
+    } : null);
+  }
 
   for (const row of rows) {
     if (!eventMap.has(row.eventId)) {
@@ -990,6 +1019,7 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
       dns: row.dns,
       bibNumber: row.bibNumber,
       official: row.resultsFinalizedAt != null || row.motoType === "practice",
+      sectors: sectorsByMoto.get(row.motoId) ?? null,
     });
   }
 
