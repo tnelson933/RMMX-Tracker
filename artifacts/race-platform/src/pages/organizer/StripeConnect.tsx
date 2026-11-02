@@ -61,7 +61,7 @@ function useStripeConnectStatus() {
         const body = await res.json().catch(() => null);
         throw new Error(responseErrorMessage(res.status, body));
       }
-      return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean; needsReconnect?: boolean; ownAccount?: boolean; switchPending?: boolean; stripeNeeds?: string[]; stripeVerifying?: string[]; accountId: string | null; email?: string | null; source?: string }>;
+      return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean; needsReconnect?: boolean; ownAccount?: boolean; switchPending?: boolean; stripeNeeds?: string[]; stripeNeedItems?: Array<{ label: string; hint: string }>; stripeVerifying?: string[]; accountId: string | null; email?: string | null; source?: string }>;
     },
     // Stripe onboarding opens in another tab (or, in RM Roost, the system
     // browser), so re-check whenever the organizer comes back to this window.
@@ -88,6 +88,10 @@ export default function StripeConnect() {
   const { toast } = useToast();
   const { user } = useAuth();
   const [justConnected, setJustConnected] = useState(false);
+  // Stripe sent the organizer straight back (expired link, or signed in to Stripe as someone else).
+  const [bouncedBack, setBouncedBack] = useState(false);
+  // Which "Click here to complete" link is opening Stripe.
+  const [completing, setCompleting] = useState<string | null>(null);
   const [stripeEmail, setStripeEmail] = useState("");
   // Opened synchronously on the tap so phones don't block it as a popup.
   const dashboardWindow = useRef<Window | null>(null);
@@ -105,6 +109,8 @@ export default function StripeConnect() {
       window.history.replaceState({}, "", window.location.pathname);
     }
     if (params.get("refresh") === "1") {
+      setBouncedBack(true);
+      refetch();
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
@@ -118,12 +124,13 @@ export default function StripeConnect() {
 
   const startMutation = useMutation({
     // switchAccount: move an older Express connection to the club's own Stripe account.
-    mutationFn: async (opts?: { switchAccount?: boolean }) => {
+    // onlyMissing: Stripe's form opens at what it still needs ("Click here to complete").
+    mutationFn: async (opts?: { switchAccount?: boolean; onlyMissing?: boolean }) => {
       const res = await fetch("/api/stripe/connect/start", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: stripeEmail.trim() || undefined, switchAccount: opts?.switchAccount === true }),
+        body: JSON.stringify({ email: stripeEmail.trim() || undefined, switchAccount: opts?.switchAccount === true, onlyMissing: opts?.onlyMissing === true }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -137,6 +144,7 @@ export default function StripeConnect() {
       window.location.assign(data.url);
     },
     onError: (err: Error) => {
+      setCompleting(null);
       const isConnectNotEnabled = err.message?.toLowerCase().includes("signed up for connect");
       toast({
         title: isConnectNotEnabled ? "Stripe Connect not enabled" : "Could not start Stripe Connect",
@@ -406,6 +414,22 @@ export default function StripeConnect() {
               )}
             </div>
 
+            {bouncedBack && !status?.onboardingComplete && (
+              <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                <AlertCircle size={15} className="mt-0.5 shrink-0" />
+                <span className="space-y-1">
+                  <span className="block font-semibold">Stripe sent you back before setup finished.</span>
+                  <span className="block">
+                    Setup links work once and expire after a few minutes, so click <strong>Click here to complete</strong> again.
+                    If it brings you straight back again, your browser is signed in to Stripe as someone else:
+                    open <a href="https://dashboard.stripe.com" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">Stripe</a> and sign out from the account menu at the top right (or use a private window),
+                    then try again and sign in{status?.email ? <> as <strong>{status.email}</strong></> : " with your club's Stripe login"}.
+                    If that email isn't your club's, disconnect below and connect again with the club's own email.
+                  </span>
+                </span>
+              </div>
+            )}
+
             {!status?.onboardingComplete && (
               <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-700">
                 <AlertCircle size={15} className="mt-0.5 shrink-0" />
@@ -416,7 +440,39 @@ export default function StripeConnect() {
                       : canManage ? <><button onClick={() => startMutation.mutate(status.switchPending ? { switchAccount: true } : undefined)} className="underline underline-offset-2 font-medium hover:opacity-80">Finish setup</button> to take payments and receive payouts.</>
                       : "Ask your club organizer to finish setup."}
                   </span>
-                  {(status.stripeNeeds?.length ?? 0) > 0 && (
+                  {(status.stripeNeedItems?.length ?? 0) > 0 ? (
+                    <span className="block">
+                      <strong>Stripe still needs:</strong>
+                      <span className="mt-1.5 block space-y-1.5">
+                        {status.stripeNeedItems!.map(item => (
+                          <span key={item.label} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 rounded border border-amber-500/20 bg-background/60 px-3 py-2">
+                            <span className="min-w-0">
+                              <span className="block font-medium text-foreground">{item.label}</span>
+                              <span className="block text-xs text-muted-foreground">{item.hint}</span>
+                            </span>
+                            {!offline && canManage && (
+                              <button
+                                disabled={startMutation.isPending}
+                                onClick={() => {
+                                  setCompleting(item.label);
+                                  startMutation.mutate({ switchAccount: status.switchPending, onlyMissing: true });
+                                }}
+                                className="shrink-0 inline-flex items-center gap-1 font-semibold text-primary underline underline-offset-2 hover:opacity-80 disabled:opacity-60"
+                              >
+                                {completing === item.label && startMutation.isPending && <Loader2 size={12} className="animate-spin" />}
+                                Click here to complete
+                              </button>
+                            )}
+                          </span>
+                        ))}
+                      </span>
+                      {!offline && canManage && (
+                        <span className="mt-1.5 block text-xs text-muted-foreground">
+                          Each link opens Stripe's secure form at what's still missing. Stripe doesn't let RM Roost open one item on its own, so you may see the others there too.
+                        </span>
+                      )}
+                    </span>
+                  ) : (status.stripeNeeds?.length ?? 0) > 0 && (
                     <span className="block"><strong>Stripe still needs:</strong> {status.stripeNeeds!.join(", ")}.</span>
                   )}
                   {(status.stripeVerifying?.length ?? 0) > 0 && (

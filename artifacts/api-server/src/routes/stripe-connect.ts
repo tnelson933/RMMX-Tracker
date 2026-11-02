@@ -37,6 +37,8 @@ async function syncOnboardingState(clubId: number, account: { charges_enabled?: 
  * none of the club's money passes through RM Roost's account.
  */
 async function createOwnAccount(stripe: Stripe, clubId: number, clubName: string, email: string | undefined, key: string) {
+  // The email is part of the key: the same request twice (a double tap) gets one
+  // account, but reconnecting with a different email makes a new one.
   return stripe.accounts.create({
     email,
     // Checkout needs a business name; the club can change it during setup.
@@ -49,7 +51,7 @@ async function createOwnAccount(stripe: Stripe, clubId: number, clubName: string
     },
     capabilities: { card_payments: { requested: true }, transfers: { requested: true } },
     metadata: { clubId: String(clubId) },
-  }, { idempotencyKey: `club-${clubId}-own-account-${key}` });
+  }, { idempotencyKey: `club-${clubId}-own-account-${key}-${(email ?? "").trim().toLowerCase()}` });
 }
 
 /**
@@ -108,7 +110,7 @@ router.get("/stripe/connect/status", async (req, res) => {
   let ownAccount = !!club.stripeDirectCharges;
   let switchPending = !!club.stripePendingAccountId;
   // What Stripe still needs (from the account being set up: the new one while switching).
-  let needs: StripeNeeds = { needs: [], verifying: [] };
+  let needs: StripeNeeds = { needs: [], needItems: [], verifying: [] };
   if (club.stripePendingAccountId) {
     try {
       const stripe = await getUncachableStripeClient();
@@ -150,6 +152,7 @@ router.get("/stripe/connect/status", async (req, res) => {
     switchPending,
     // Plain-language list of what Stripe still needs, and what it's checking.
     stripeNeeds: needs.needs,
+    stripeNeedItems: needs.needItems,
     stripeVerifying: needs.verifying,
     accountId: club.stripeAccountId ?? null,
     email: accountEmail,
@@ -184,6 +187,10 @@ router.post("/stripe/connect/start", async (req, res) => {
   if (!auth.clubId) return res.status(400).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
 
   const appUrl = getAppUrl();
+  // From a "Click here to complete" link: Stripe's form opens at what's still missing.
+  const onlyMissing = req.body?.onlyMissing === true
+    ? { collection_options: { fields: "currently_due" as const } }
+    : {};
 
   try {
     const stripe = await getUncachableStripeClient();
@@ -238,6 +245,7 @@ router.post("/stripe/connect/start", async (req, res) => {
         refresh_url: `${appUrl}/payments?refresh=1`,
         return_url: `${appUrl}/api/stripe/connect/return`,
         type: "account_onboarding",
+        ...onlyMissing,
       });
       return res.json({ url: link.url });
     }
@@ -266,6 +274,7 @@ router.post("/stripe/connect/start", async (req, res) => {
       refresh_url: `${appUrl}/payments?refresh=1`,
       return_url: `${appUrl}/api/stripe/connect/return`,
       type: "account_onboarding",
+      ...onlyMissing,
     });
 
     return res.json({ url: accountLink.url });
