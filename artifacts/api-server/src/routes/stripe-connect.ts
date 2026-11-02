@@ -5,6 +5,7 @@ import { and, eq, gt, isNotNull, isNull, ne } from "drizzle-orm";
 import type Stripe from "stripe";
 import { getUncachableStripeClient } from "../stripeClient";
 import { isStripeAccountUnreachable } from "../lib/stripeErrors";
+import { stripeNeeds, type StripeNeeds } from "../lib/stripeRequirements";
 
 const router = Router();
 
@@ -106,9 +107,12 @@ router.get("/stripe/connect/status", async (req, res) => {
   let onboardingComplete = club.stripeOnboardingComplete ?? false;
   let ownAccount = !!club.stripeDirectCharges;
   let switchPending = !!club.stripePendingAccountId;
+  // What Stripe still needs (from the account being set up: the new one while switching).
+  let needs: StripeNeeds = { needs: [], verifying: [] };
   if (club.stripePendingAccountId) {
     try {
       const stripe = await getUncachableStripeClient();
+      needs = stripeNeeds(await stripe.accounts.retrieve(club.stripePendingAccountId));
       if (await finishSwitch(stripe, auth.clubId, club.stripePendingAccountId)) {
         club.stripeAccountId = club.stripePendingAccountId;
         ownAccount = true;
@@ -126,6 +130,7 @@ router.get("/stripe/connect/status", async (req, res) => {
       const stripe = await getUncachableStripeClient();
       const account = await stripe.accounts.retrieve(club.stripeAccountId);
       accountEmail = account.email ?? null;
+      if (!club.stripePendingAccountId) needs = stripeNeeds(account);
 
       // Keep the stored state in step with Stripe, in both directions.
       onboardingComplete = await syncOnboardingState(auth.clubId, account, onboardingComplete);
@@ -143,6 +148,9 @@ router.get("/stripe/connect/status", async (req, res) => {
     ownAccount,
     // Switching from an older Express account: the new one's setup isn't finished yet.
     switchPending,
+    // Plain-language list of what Stripe still needs, and what it's checking.
+    stripeNeeds: needs.needs,
+    stripeVerifying: needs.verifying,
     accountId: club.stripeAccountId ?? null,
     email: accountEmail,
   });
@@ -201,6 +209,18 @@ router.post("/stripe/connect/start", async (req, res) => {
     const emailOverride = typeof req.body?.email === "string" && req.body.email.trim()
       ? req.body.email.trim()
       : undefined;
+    // The email becomes the club's Stripe login: RM Roost's own Stripe login would
+    // tangle the two accounts (setup signs in as RM Roost and goes nowhere).
+    const newAccountEmail = (emailOverride ?? club.contactEmail ?? "").trim().toLowerCase();
+    if (newAccountEmail && (!accountId || req.body?.switchAccount === true) && !club.stripePendingAccountId) {
+      // RM Roost's own logins: its Stripe account's email and the platform admins'.
+      const platform = await stripe.accounts.retrieve().catch(() => null);
+      const admins = await db.select({ email: usersTable.email }).from(usersTable).where(eq(usersTable.role, "super_admin"));
+      const reserved = new Set([platform?.email, ...admins.map(a => a.email)].filter((e): e is string => !!e).map(e => e.trim().toLowerCase()));
+      if (reserved.has(newAccountEmail)) {
+        return res.status(400).json({ error: "That email belongs to RM Roost's own team. Enter your club's email instead: it becomes your club's Stripe login." });
+      }
+    }
 
     // An older Express club switching to its own account: set the new one up
     // while the old one keeps taking payments; it takes over once it's ready.

@@ -61,7 +61,7 @@ function useStripeConnectStatus() {
         const body = await res.json().catch(() => null);
         throw new Error(responseErrorMessage(res.status, body));
       }
-      return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean; needsReconnect?: boolean; ownAccount?: boolean; switchPending?: boolean; accountId: string | null; email?: string | null; source?: string }>;
+      return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean; needsReconnect?: boolean; ownAccount?: boolean; switchPending?: boolean; stripeNeeds?: string[]; stripeVerifying?: string[]; accountId: string | null; email?: string | null; source?: string }>;
     },
     // Stripe onboarding opens in another tab (or, in RM Roost, the system
     // browser), so re-check whenever the organizer comes back to this window.
@@ -325,7 +325,8 @@ export default function StripeConnect() {
                 className="max-w-sm"
               />
               <p className="text-xs text-muted-foreground">
-                Stripe will use this to set up or link your payout account.
+                This becomes your club's Stripe login, so use your club's own email (not someone else's Stripe login).
+                If it already has a Stripe account, you'll be asked to sign in to it.
               </p>
             </div>
             <Button
@@ -408,11 +409,19 @@ export default function StripeConnect() {
             {!status?.onboardingComplete && (
               <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-700">
                 <AlertCircle size={15} className="mt-0.5 shrink-0" />
-                <span>
-                  Your Stripe account setup isn't fully complete.{" "}
-                  {offline ? "Finish setup on the RM Roost website to take payments and receive payouts."
-                    : canManage ? <><button onClick={() => startMutation.mutate(status.switchPending ? { switchAccount: true } : undefined)} className="underline underline-offset-2 font-medium hover:opacity-80">Finish setup</button> to take payments and receive payouts.</>
-                    : "Ask your club organizer to finish setup."}
+                <span className="space-y-1">
+                  <span className="block">
+                    Your Stripe account setup isn't fully complete.{" "}
+                    {offline ? "Finish setup on the RM Roost website to take payments and receive payouts."
+                      : canManage ? <><button onClick={() => startMutation.mutate(status.switchPending ? { switchAccount: true } : undefined)} className="underline underline-offset-2 font-medium hover:opacity-80">Finish setup</button> to take payments and receive payouts.</>
+                      : "Ask your club organizer to finish setup."}
+                  </span>
+                  {(status.stripeNeeds?.length ?? 0) > 0 && (
+                    <span className="block"><strong>Stripe still needs:</strong> {status.stripeNeeds!.join(", ")}.</span>
+                  )}
+                  {(status.stripeVerifying?.length ?? 0) > 0 && (
+                    <span className="block"><strong>Stripe is checking:</strong> {status.stripeVerifying!.join(", ")}. This usually takes a few minutes; nothing to do.</span>
+                  )}
                 </span>
               </div>
             )}
@@ -451,10 +460,17 @@ export default function StripeConnect() {
                   <p className="font-semibold">{status.switchPending ? "Finish switching to your own Stripe account" : "Switch to your own Stripe account"}</p>
                   <p className="text-muted-foreground">
                     {status.switchPending
-                      ? "Your new account's setup isn't finished. Until it is, payments keep going to your current account."
+                      ? `Your new account's setup isn't finished.${(status.stripeNeeds?.length ?? 0) > 0 ? ` Stripe still needs: ${status.stripeNeeds!.join(", ")}.` : ""}${(status.stripeVerifying?.length ?? 0) > 0 ? ` Stripe is checking: ${status.stripeVerifying!.join(", ")}.` : ""} Until it's done, payments keep going to your current account.`
                       : "Your club gets its own full Stripe account: payments go straight to it, with its own dashboard and fees. Needed for card readers. Your current account keeps working until the new one is set up."}
                   </p>
                 </div>
+                {!status.switchPending && (
+                  <div className="w-full space-y-1">
+                    <Label htmlFor="switch-email" className="text-xs font-medium">Club's Stripe login email</Label>
+                    <Input id="switch-email" type="email" value={stripeEmail} onChange={e => setStripeEmail(e.target.value)} className="h-8 max-w-sm bg-background" placeholder="club@example.com" />
+                    <p className="text-xs text-muted-foreground">Use your club's own email. It becomes the new account's Stripe login.</p>
+                  </div>
+                )}
                 <Button size="sm" onClick={() => startMutation.mutate({ switchAccount: true })} disabled={startMutation.isPending} className="font-heading uppercase tracking-wider">
                   {startMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : status.switchPending ? "Finish setup" : "Switch account"}
                 </Button>
