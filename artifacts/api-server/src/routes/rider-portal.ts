@@ -1778,8 +1778,12 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
 
   const familyRiderIds = familyRiders.map(r => r.id);
   const familyRiderMap = new Map(familyRiders.map(r => [r.id, `${r.firstName} ${r.lastName}`]));
+  if (!familyRiderMap.has(riderId)) familyRiderMap.set(riderId, `${rider.firstName} ${rider.lastName}`);
+  // Every rider on the account: the app asks with its first selected profile and shows
+  // the whole family's races (each registration carries the rider's name).
+  const scheduleRiderIds = [...new Set([riderId, ...familyRiderIds])];
 
-  // Only confirmed registrations for the SPECIFIC requested rider
+  // Confirmed registrations of the account's riders
   const regs = await db
     .select({
       id: registrationsTable.id,
@@ -1790,7 +1794,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
     })
     .from(registrationsTable)
     .where(and(
-      eq(registrationsTable.riderId, riderId),
+      inArray(registrationsTable.riderId, scheduleRiderIds),
       eq(registrationsTable.status, "confirmed"),
     ));
 
@@ -1852,12 +1856,12 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
     ))
     .orderBy(asc(motosTable.motoNumber));
 
-  // Fetch checkins to know if this specific rider is checked into each event
+  // Fetch checkins to know if one of these riders is checked into each event
   const familyCheckins = await db
     .select({ riderId: checkinsTable.riderId, eventId: checkinsTable.eventId })
     .from(checkinsTable)
     .where(and(
-      eq(checkinsTable.riderId, riderId),
+      inArray(checkinsTable.riderId, [...new Set(regs.map(r => r.riderId))]),
       inArray(checkinsTable.eventId, eventIds),
       eq(checkinsTable.checkedIn, true),
     ));
@@ -1911,7 +1915,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
         const motoLineup = (Array.isArray(moto.lineup) ? moto.lineup : []) as Array<{
           position: number; riderId: number; riderName: string; bibNumber?: string | null;
         }>;
-        const familyInLineup = motoLineup.filter(e => e.riderId === riderId);
+        const familyInLineup = motoLineup.filter(e => scheduleRiderIds.includes(e.riderId));
         // If the moto has an assigned lineup, only this rider IN the lineup sees it as "their" moto
         const hasAssignedLineup = motoLineup.length > 0;
         const isAnyFamilyMemberInMoto = hasAssignedLineup ? familyInLineup.length > 0 : isCheckedIn;
@@ -1996,7 +2000,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
               riderId: e.riderId,
               riderName: e.riderName,
               bibNumber: e.bibNumber ?? null,
-              isFamilyMember: e.riderId === riderId,
+              isFamilyMember: scheduleRiderIds.includes(e.riderId),
             })),
           practiceLaps,
           practiceLeaderboard,
