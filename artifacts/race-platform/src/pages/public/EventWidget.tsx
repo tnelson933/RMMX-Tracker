@@ -4,6 +4,7 @@ import { useParams } from "wouter";
 import { useGetEvent, useListResults, useListMotos, RaceResult } from "@workspace/api-client-react";
 import { formatEventDates } from "@/lib/eventDates";
 import rmLogo from "@assets/rm-logo.png";
+import { useEnduroOverall } from "@/components/organizer/OverallStandings";
 
 const BRAND_COLORS: Record<string, { bg: string; text: string }> = {
   "KTM":      { bg: "#FF6600", text: "#ffffff" },
@@ -15,6 +16,14 @@ const BRAND_COLORS: Record<string, { bg: string; text: string }> = {
   "Suzuki":   { bg: "#FFDE00", text: "#1a1a1a" },
   "Beta":     { bg: "#E8220D", text: "#ffffff" },
 };
+
+/** Brand badge colors, matched however the rider typed the brand ("yamaha", "GASGAS"). */
+function brandBadge(brand: string | null | undefined): { label: string; bg: string; text: string } | null {
+  if (!brand) return null;
+  const norm = (b: string) => b.toLowerCase().replace(/[^a-z]/g, "");
+  const key = Object.keys(BRAND_COLORS).find(k => norm(k) === norm(brand));
+  return key ? { label: key, ...BRAND_COLORS[key] } : null;
+}
 
 /**
  * Parse a totalTime value that may be:
@@ -109,6 +118,14 @@ export default function EventWidget() {
     query: { enabled: !!eventId, refetchInterval: isLive ? 30_000 : false } as any,
   });
 
+  // Practice doesn't count toward standings, lap counts or best laps.
+  const practiceMotoIds = new Set((motos ?? []).filter(m => (m as any).type === "practice").map(m => m.id));
+  const raceResults = (results ?? []).filter(r => !practiceMotoIds.has(r.motoId));
+
+  // Enduro: the overall is total test time plus penalties (lowest wins), from the server.
+  const isEnduro = event?.raceStyle === "enduro" || (motos ?? []).some(m => (m as any).type === "enduro_test");
+  const { data: enduroOverall } = useEnduroOverall(eventId, isEnduro, isLive ? 30_000 : false);
+
   useEffect(() => {
     if (!activeClass && event?.raceClasses?.length) {
       setActiveClass(event.raceClasses[0]);
@@ -120,8 +137,11 @@ export default function EventWidget() {
     : Array.from(new Set((results ?? []).map(r => r.raceClass))).filter(Boolean) as string[];
 
   const filteredResults: RaceResult[] = search.trim()
-    ? (results ?? []).filter(r => r.riderName.toLowerCase().includes(search.toLowerCase()))
-    : (results ?? []).filter(r => r.raceClass === activeClass);
+    ? raceResults.filter(r => r.riderName.toLowerCase().includes(search.toLowerCase()))
+    : raceResults.filter(r => r.raceClass === activeClass);
+  const enduroClass = isEnduro && !search.trim()
+    ? enduroOverall?.classes.find(c => c.raceClass === activeClass)
+    : undefined;
 
   /**
    * For a class with a completed "main" moto (supercross format),
@@ -146,20 +166,28 @@ export default function EventWidget() {
       ).sort((a, b) => (a.position ?? 999) - (b.position ?? 999));
     }
 
+    if (enduroClass) {
+      return enduroClass.riders.flatMap(er => {
+        const row = raceResults.find(r => r.riderId === er.riderId && r.raceClass === activeClass);
+        return row ? [{ ...row, position: er.position }] : [];
+      });
+    }
+
     if (mainMotoForClass) {
       // Supercross / main-event format: definitive ranking comes from the main moto only
-      return (results ?? [])
+      return raceResults
         .filter(r => r.raceClass === activeClass && r.motoId === mainMotoForClass.id)
         .sort((a, b) => (a.position ?? 999) - (b.position ?? 999));
     }
 
     // Traditional multi-heat: total across all motos (Olympic: lowest wins).
-    const classRows = (results ?? []).filter(r => r.raceClass === activeClass);
+    const classRows = raceResults.filter(r => r.raceClass === activeClass);
     const lowerIsBetter = classRows.some(r => (r as any).lowerIsBetter);
     return rankClassOverall(classRows, lowerIsBetter)
       .map(entry => ({ ...entry.result, position: entry.position }));
   })();
 
+  // All of a rider's sessions in a class, practice included (shown in the lap history).
   const riderMotoResults = (riderId: number, raceClass: string) =>
     (results ?? [])
       .filter(r => r.riderId === riderId && r.raceClass === raceClass)
@@ -186,8 +214,14 @@ export default function EventWidget() {
 
   const isEventToday = !!event.date && event.date.substring(0, 10) === new Date().toLocaleDateString("en-CA");
   const isRaceDayStatus = event.status === "race_day" || (isEventToday && event.status !== "completed" && event.status !== "draft");
-  const statusLabel = isRaceDayStatus ? "LIVE" : event.status === "completed" ? "Final Results" : event.status.replace(/_/g, " ");
-  const statusColor = isRaceDayStatus ? "#dc2626" : event.status === "completed" ? "#16a34a" : "#6b7280";
+  // Official/unofficial for what's on screen: the open class, or everything while searching.
+  const shownRows = search.trim() ? raceResults : raceResults.filter(r => r.raceClass === activeClass);
+  const allOfficial = raceResults.length > 0 && raceResults.every(r => (r as any).official);
+  const shownOfficial = shownRows.length > 0 && shownRows.every(r => (r as any).official);
+  const statusLabel = isRaceDayStatus ? "LIVE"
+    : event.status === "completed" ? (allOfficial ? "Final Results" : "Results")
+    : event.status.replace(/_/g, " ");
+  const statusColor = isRaceDayStatus ? "#dc2626" : event.status === "completed" && allOfficial ? "#16a34a" : "#6b7280";
 
   return (
     <div style={{ fontFamily: "system-ui, -apple-system, sans-serif", background: "#ffffff", minHeight: "100vh", color: "#0f172a" }}>
@@ -205,16 +239,16 @@ export default function EventWidget() {
             <div style={{ fontSize: 20, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.03em", lineHeight: 1.2, color: "#0f172a", marginBottom: 4 }}>
               {event.name}
             </div>
-            {(results ?? []).length > 0 && (
-              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4, color: (results ?? []).every(r => (r as any).official) ? "#15803d" : "#b45309" }}>
-                {(results ?? []).every(r => (r as any).official) ? "✓ Official results" : "Unofficial results"}
+            {shownRows.length > 0 && (
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4, color: shownOfficial ? "#15803d" : "#b45309" }}>
+                {shownOfficial ? "✓ Official results" : "Unofficial results"}
               </div>
             )}
             <div style={{ fontSize: 12, color: "#64748b", display: "flex", gap: 12, flexWrap: "wrap" }}>
               {event.date && (
                 <span>📅 {formatEventDates(event.date, (event as any).endDate)}</span>
               )}
-              {event.location && <span>📍 {event.location}{event.state ? `, ${event.state}` : ""}</span>}
+              {event.location && <span>📍 {event.location}{event.state && !event.location.trim().toUpperCase().endsWith(event.state.toUpperCase()) ? `, ${event.state}` : ""}</span>}
               {event.clubName && <span>🏆 {event.clubName}</span>}
             </div>
           </div>
@@ -264,26 +298,29 @@ export default function EventWidget() {
       <div style={{ paddingBottom: 80 }}>
         {uniqueRiders.length === 0 ? (
           <div style={{ padding: "48px 20px", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
-            {search.trim() ? "No riders found matching that name." : "No results recorded yet."}
+            {search.trim() ? "No riders found matching that name."
+              : event.status === "completed" || isRaceDayStatus ? "No results in this class yet."
+              : "Results will appear here once racing starts."}
           </div>
         ) : (
           <>
             {/* Header row */}
-            <div style={{ display: "grid", gridTemplateColumns: "42px 1fr 54px 80px 80px", padding: "8px 20px", borderBottom: "1px solid #e2e8f0", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#94a3b8" }}>
+            <div className="ew-row" style={{ display: "grid", gridTemplateColumns: "42px 1fr 54px 80px 80px", padding: "8px 20px", borderBottom: "1px solid #e2e8f0", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#94a3b8" }}>
               <span>Pos</span>
               <span>Rider</span>
               <span style={{ textAlign: "center" }}>Laps</span>
               <span style={{ textAlign: "right" }}>Best</span>
-              <span style={{ textAlign: "right" }}>{mainMotoForClass ? "Total" : "Pts"}</span>
+              <span style={{ textAlign: "right" }}>{enduroClass || mainMotoForClass ? "Total" : "Pts"}</span>
             </div>
 
             {uniqueRiders.map(rider => {
               const motoResults = riderMotoResults(rider.riderId, rider.raceClass ?? "");
-              const allLaps = motoResults.flatMap(m => toLapNums(m.lapTimes as unknown[] | undefined));
+              const racedMotos = motoResults.filter(m => !practiceMotoIds.has(m.motoId));
+              const allLaps = racedMotos.flatMap(m => toLapNums(m.lapTimes as unknown[] | undefined));
               const directLaps = toLapNums(rider.lapTimes as unknown[] | undefined);
               const lapsToShow = allLaps.length > 0 ? allLaps : directLaps;
-              const eligibleLaps = motoResults.length > 0
-                 ? motoResults.flatMap(m => eligibleLapNums(m.lapTimes as unknown[] | undefined, event.raceStyle))
+              const eligibleLaps = racedMotos.length > 0
+                 ? racedMotos.flatMap(m => eligibleLapNums(m.lapTimes as unknown[] | undefined, event.raceStyle))
                  : eligibleLapNums(rider.lapTimes as unknown[] | undefined, event.raceStyle);
               const bl = bestLapMs(eligibleLaps);
               const totalMs = parseTotalTimeMs(rider.totalTime);
@@ -291,8 +328,10 @@ export default function EventWidget() {
 
               // For multi-heat: compute total points for this rider
               const totalPts = !mainMotoForClass
-                ? motoResults.reduce((sum, r) => sum + (r.points ?? 0), 0)
+                ? racedMotos.reduce((sum, r) => sum + (r.points ?? 0), 0)
                 : null;
+              const enduro = enduroClass?.riders.find(er => er.riderId === rider.riderId)?.enduro;
+              const brand = brandBadge((rider as any).bikeBrand);
 
               return (
                 <div key={rider.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
@@ -302,7 +341,7 @@ export default function EventWidget() {
                     tabIndex={0}
                     onClick={() => setExpanded(isExpanded ? null : rider.riderId)}
                     onKeyDown={e => e.key === "Enter" && setExpanded(isExpanded ? null : rider.riderId)}
-                    style={{ display: "grid", gridTemplateColumns: "42px 1fr 54px 80px 80px", padding: "10px 20px", cursor: "pointer", background: isExpanded ? "#f8fafc" : "transparent" }}
+                    className="ew-row" style={{ display: "grid", gridTemplateColumns: "42px 1fr 54px 80px 80px", padding: "10px 20px", cursor: "pointer", background: isExpanded ? "#f8fafc" : "transparent" }}
                   >
                     {/* Position */}
                     <div style={{ display: "flex", alignItems: "center" }}>
@@ -319,11 +358,19 @@ export default function EventWidget() {
                         {search.trim() && <span style={{ background: "#f1f5f9", borderRadius: 3, padding: "1px 5px" }}>{rider.raceClass}</span>}
                         {rider.bibNumber && <span>#{rider.bibNumber}</span>}
                         {(rider as any).amaNumber && <span style={{ color: "#64748b" }}>AMA# {(rider as any).amaNumber}</span>}
-                        {(rider as any).bikeBrand && BRAND_COLORS[(rider as any).bikeBrand] && (
-                          <span style={{ display: "inline-block", background: BRAND_COLORS[(rider as any).bikeBrand].bg, color: BRAND_COLORS[(rider as any).bikeBrand].text, fontSize: 9, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em", borderRadius: 3, padding: "1px 6px" }}>
-                            {(rider as any).bikeBrand}
+                        {brand ? (
+                          <span style={{ display: "inline-block", background: brand.bg, color: brand.text, fontSize: 9, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em", borderRadius: 3, padding: "1px 6px" }}>
+                            {brand.label}
+                          </span>
+                        ) : (rider as any).bikeBrand ? <span>{(rider as any).bikeBrand}</span> : null}
+                        {!enduroClass && !mainMotoForClass && racedMotos.length > 1 && (
+                          <span title="Finish in each moto" style={{ color: "#64748b" }}>
+                            {racedMotos.map(m => m.dnf ? "DNF" : m.dns ? "DNS" : (m.position ?? "–")).join("-")}
                           </span>
                         )}
+                        {enduro && enduro.penaltyMs > 0 && <span style={{ color: "#b45309" }}>+{fmtMs(enduro.penaltyMs)} penalty</span>}
+                        {enduro && enduro.status === "incomplete" && <span style={{ color: "#b45309" }}>{enduro.completedRuns}/{enduro.requiredRuns} runs</span>}
+                        {enduro && enduro.status === "dq" && <span style={{ color: "#dc2626" }}>DQ</span>}
                         {rider.dnf && <span style={{ color: "#dc2626" }}>DNF</span>}
                         {rider.dns && <span style={{ color: "#94a3b8" }}>DNS</span>}
                       </div>
@@ -337,8 +384,10 @@ export default function EventWidget() {
                       {fmtMs(bl)}
                     </div>
                     {/* Total time (main format) OR total points (multi-heat) */}
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", fontSize: 12, fontVariantNumeric: "tabular-nums", color: mainMotoForClass ? "#64748b" : "#dc2626", fontWeight: mainMotoForClass ? 400 : 700 }}>
-                      {mainMotoForClass
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", fontSize: 12, fontVariantNumeric: "tabular-nums", color: enduroClass || mainMotoForClass ? "#64748b" : "#dc2626", fontWeight: enduroClass || mainMotoForClass ? 400 : 700 }}>
+                      {enduro
+                        ? (enduro.status === "dq" ? "DQ" : fmtMs(enduro.totalMs))
+                        : mainMotoForClass
                         ? fmtMs(totalMs)
                         : (totalPts != null && totalPts > 0 ? `${totalPts}` : "—")}
                     </div>
@@ -363,6 +412,9 @@ export default function EventWidget() {
                                 <span style={{ textTransform: "uppercase", letterSpacing: "0.05em" }}>
                                   {motoInfo?.name ?? moto.motoName ?? `Moto`}
                                 </span>
+                                {practiceMotoIds.has(moto.motoId) && (
+                                  <span style={{ fontSize: 9, color: "#64748b", background: "#e2e8f0", borderRadius: 3, padding: "1px 5px", textTransform: "uppercase" }}>Practice · not scored</span>
+                                )}
                                 {moto.position != null && (
                                   <span style={{ fontSize: 10, color: "#64748b" }}>P{moto.position}</span>
                                 )}
@@ -432,9 +484,9 @@ export default function EventWidget() {
           </div>
           {isLive && <span style={{ fontSize: 10, color: "#94a3b8", marginLeft: 4 }}>· auto-updates every 30s</span>}
         </div>
-        {(results?.length ?? 0) > 0 && (
+        {raceResults.length > 0 && (
           <div style={{ fontSize: 11, color: "#94a3b8" }}>
-            {new Set(results?.map(r => r.riderId)).size} riders
+            {new Set(raceResults.map(r => r.riderId)).size} riders
           </div>
         )}
       </div>
@@ -447,6 +499,8 @@ export default function EventWidget() {
         ::-webkit-scrollbar-track { background: #f1f5f9; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
         div[role=button]:focus-visible { outline: 2px solid #dc2626; outline-offset: -2px; }
+        /* Phones: narrower number columns so rider names fit. */
+        @media (max-width: 440px) { .ew-row { grid-template-columns: 32px minmax(0, 1fr) 34px 66px 44px !important; padding-left: 12px !important; padding-right: 12px !important; } }
       `}</style>
     </div>
   );
