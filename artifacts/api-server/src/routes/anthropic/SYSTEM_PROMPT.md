@@ -101,7 +101,19 @@ Platform admins also see a separate section with Users, Clubs, and Notifications
 
 ## Creating and Editing an Event
 
-**Events** → **New Event** (also on the Dashboard). On an existing event: Overview → **Edit** on the "Event Information" card → **Save Changes**.
+**Events** → **Create Event** (or **New Event** on the Dashboard). On an existing event: Overview → **Edit** on the "Event Information" card → **Save Changes**.
+
+**Create Event is a step-by-step dialog**, one section at a time, with a progress bar at the top ("Step 2 of 6"):
+1. **Event Basics** — Race Style, Name, Race Date (and End Date for multi-day), Track, City, State, Event Image
+2. **Registration & Rules** — Registration Opens / Closes, rider requirements, Scoring Format, AMA Event ID
+3. **Classes & Series** — race classes, Apply Series to All Classes, Brand Contingencies
+4. **Fees & Add-Ons** — Collect Payments, Entry Fee, early sign-up price, RFID Sticker Fee, transponder rentals, Purchase Options
+5. **Timing & Check-In** — Require transponder number?, Quick Check-In
+6. **Review & Create** — a summary card for each section, then **Create Event**
+
+Required questions have a red **\***, and each step says "\* Required. Everything else is optional." (or "Everything on this step is optional."). Optional fields are labeled **(optional)**. Required: Race Style, Event Name, Race Date, State, and (for a super admin) Club. Each class added needs a name, and each purchase option added needs a name and price.
+
+**Next** checks the current step first (for example a missing name or state, a blank class name, or registration closing after race day) and stays put, with the problem highlighted, until it's fixed. **Back** goes to the previous step without losing anything, and finished steps in the progress bar can be clicked to jump back. On Review, **Edit** on a card opens that step; the button then reads **Back to Review**. Only **Create Event** on the Review step creates the event. If something is still wrong at that point, the dialog opens the step that needs fixing.
 
 Main fields:
 - **Race Style** — Motocross/Supercross, Enduro, or Cross Country/Desert
@@ -116,15 +128,15 @@ Main fields:
 - **Quick Check-In** on/off; turning it on opens **Quick Check-In requirements** (see Quick Check-In below), and **Edit requirements** reopens it
 - **Event image** — upload or remove on the Overview card
 
-**Classes:** in Edit, click Club Classes chips (or **Select All**) or **+ Add Class**, then set each class's Max Riders, Series, and details.
+**Classes:** in Edit (or the Create Event dialog's Classes & Series step), click Club Classes chips (or **Select All**) or **+ Add Class**, then set each class's Max Riders, Series, and details.
 
 **Purchase Options:** **+ Add Purchase Option** (a name and a price from $0 to $100,000) for gate fees, pit passes, camping, etc. Purchase options have no category. Under the heading, **Quick add** chips add the club's Sell Items in one click (for example "+ RM TrackR Transponder $40.00" or "+ Camping $20.00"); items the event already offers aren't shown, and **Edit items** opens Admin → Sell Items.
 
 **Admin → Sell Items** lists what the club sells. The **RM TrackR Transponder** (starts at $40) and **RFID Tag** (no price until the club sets one) are always there: their price can be changed and they can be hidden, not renamed or removed. **Add an item** adds anything else (camping, pit passes, wristbands) with a name and price; custom items can be renamed, hidden or removed. Hidden items aren't offered on event forms or at check-in. Changing a price doesn't change events that already offer the item: an event keeps the RM TrackR price it had, and a newly added RM TrackR takes the club's current price. The RFID Tag isn't a quick-add chip: it's sold at check-in (and through the event's RFID Sticker Fee). Staff need the Payments permission to change Sell Items.
 
-**Date and fee rules** (checked when saving): registration must close after it opens and no later than the last race day; the early sign-up period can't end after the race date; the Early Bird Fee must be less than the Entry Fee.
+**Date and fee rules** (checked on Next in Create Event, and when saving): registration must close after it opens and no later than the last race day; the early sign-up period can't end after the race date; the Early Bird Fee must be less than the Entry Fee.
 
-**Save as Draft** (New Event dialog) needs only a name and keeps everything else filled in; a draft with no date gets today's date and can be finished later.
+**Save as Draft** (on every step of the Create Event dialog) needs only a name and keeps everything else filled in; a draft with no date gets today's date and can be finished later.
 
 **Registration Link:** the Overview tab has a card with the public registration link and a copy button. Riders can only register while the status is Registration Open.
 

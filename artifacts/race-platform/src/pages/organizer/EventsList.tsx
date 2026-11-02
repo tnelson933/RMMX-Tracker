@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, type FormEvent, type ReactNode } from "react";
 import { StateSelect } from "@/components/ui/StateSelect";
 import { useAuth } from "@/contexts/AuthContext";
 import { RM_TRACKR_OPTION_ID, RM_TRACKR_NAME, RM_TRACKR_PRICE } from "@/lib/rmTrackr";
@@ -14,7 +14,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Calendar, MapPin, Plus, ChevronRight, Info, Flag, Trash2, Upload, ImageIcon, Loader2, Sparkles, X, RefreshCw, Check, ChevronsUpDown, Search, Pencil } from "lucide-react";
+import { Calendar, MapPin, Plus, ChevronRight, ChevronLeft, Info, Flag, Trash2, Upload, ImageIcon, Loader2, Sparkles, X, RefreshCw, Check, ChevronsUpDown, Search, Pencil } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format, parseISO } from "date-fns";
 import { Link, useLocation, useSearch } from "wouter";
@@ -137,6 +137,48 @@ const createEventSchema = z.object({
 
 type CreateEventValues = z.infer<typeof createEventSchema>;
 
+/** The Create Event dialog walks through these steps; each one checks its own fields before Next. */
+const CREATE_STEPS = [
+  { id: "basics", label: "Event Basics", short: "Basics", hasRequired: true, hint: "Name the event, set the date and tell riders where it is." },
+  { id: "registration", label: "Registration & Rules", short: "Registration", hasRequired: false, hint: "When riders can sign up and what they need to provide." },
+  { id: "classes", label: "Classes & Series", short: "Classes", hasRequired: true, hint: "Pick the classes riders can enter and link any series." },
+  { id: "fees", label: "Fees & Add-Ons", short: "Fees", hasRequired: true, hint: "Entry fees, early sign-up pricing and extras riders can buy." },
+  { id: "timing", label: "Timing & Check-In", short: "Timing", hasRequired: false, hint: "Transponder rules and rider self check-in on race day." },
+  { id: "review", label: "Review & Create", short: "Review", hasRequired: false, hint: "Check each section. Use Edit to change one, then create the event." },
+] as const;
+type CreateStepId = typeof CREATE_STEPS[number]["id"];
+
+const CREATE_STEP_FIELDS: Record<CreateStepId, (keyof CreateEventValues)[]> = {
+  basics: ["raceStyle", "clubId", "name", "date", "multiDay", "endDate", "state", "location", "trackName"],
+  registration: ["registrationOpen", "registrationClose", "requireAma", "requireClubId", "noDuplicateBibs", "requireWaiver", "requireLiabilityWaiver", "scoringTableId", "amaEventId"],
+  classes: ["raceClasses"],
+  fees: ["paymentEnabled", "entryFee", "earlyBirdEnabled", "earlyBirdFee", "earlyBirdEndsAt", "rfidStickerFee", "transponderRentalEnabled", "transponderRentalFee", "purchaseOptions"],
+  timing: ["requireTransponder", "quickCheckinEnabled", "quickCheckinRequirements"],
+  review: [],
+};
+
+/** One section of the Review & Create step: label/value rows and an Edit link back to its step. */
+function ReviewSection({ title, onEdit, rows }: { title: string; onEdit: () => void; rows: [string, ReactNode][] }) {
+  return (
+    <section className="rounded-lg border bg-card">
+      <div className="flex items-center justify-between gap-2 border-b px-4 py-2">
+        <h4 className="font-heading font-bold uppercase tracking-wider text-sm">{title}</h4>
+        <Button type="button" variant="ghost" size="sm" onClick={onEdit} aria-label={`Edit ${title}`} className="text-primary hover:text-primary">
+          <Pencil size={13} /> Edit
+        </Button>
+      </div>
+      <dl className="divide-y">
+        {rows.map(([label, value]) => (
+          <div key={label} className="grid grid-cols-[minmax(0,8rem)_1fr] sm:grid-cols-[minmax(0,11rem)_1fr] gap-3 px-4 py-2 text-sm">
+            <dt className="text-muted-foreground">{label}</dt>
+            <dd className="min-w-0 break-words">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
 /**
  * Registration window, early sign-up period and fee checks (the server applies
  * the same rules in validateEventInput). Registration times are the picker's
@@ -187,6 +229,14 @@ export default function EventsList() {
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   // One flag for both Create and Save as Draft so the event is never created twice.
   const [isCreateBusy, setIsCreateBusy] = useState(false);
+  // Create Event wizard: the step on screen, the furthest step reached (earlier
+  // steps can be revisited from the progress bar), and whether the organizer came
+  // from Review via Edit (Next then returns straight to Review).
+  const [createStep, setCreateStep] = useState<CreateStepId>("basics");
+  const [createMaxStep, setCreateMaxStep] = useState(0);
+  const [editingFromReview, setEditingFromReview] = useState(false);
+  const [createStepChecked, setCreateStepChecked] = useState(false);
+  const createDialogRef = useRef<HTMLDivElement>(null);
 
   // Track library state
   const [trackLibrary, setTrackLibrary] = useState<{ id: number; name: string; address: string | null; city: string | null; state: string | null; zip: string | null }[]>([]);
@@ -393,7 +443,95 @@ export default function EventsList() {
     setImgValidationError(null);
     setCreateImgState("idle");
     setRemoveBgOnCreate(false);
+    setCreateStep("basics");
+    setCreateMaxStep(0);
+    setEditingFromReview(false);
     form.reset();
+  };
+
+  const createStepIndex = CREATE_STEPS.findIndex(s => s.id === createStep);
+  const currentCreateStep = CREATE_STEPS[createStepIndex];
+
+  useEffect(() => {
+    createDialogRef.current?.scrollTo({ top: 0 });
+    setCreateStepChecked(false);
+  }, [createStep]);
+
+  // Once Next has flagged problems, re-check the step as fields change so fixed errors clear.
+  useEffect(() => {
+    if (!createStepChecked) return;
+    const sub = form.watch((_, { name }) => { if (name) void form.trigger(CREATE_STEP_FIELDS[createStep]); });
+    return () => sub.unsubscribe();
+  }, [createStepChecked, createStep]);
+
+  const goToCreateStep = (id: CreateStepId) => {
+    const idx = CREATE_STEPS.findIndex(s => s.id === id);
+    setCreateStep(id);
+    setCreateMaxStep(prev => Math.max(prev, idx));
+  };
+
+  /** Checks the current step's fields, then moves on (or back to Review after an Edit). */
+  const goToNextCreateStep = async () => {
+    const names = CREATE_STEP_FIELDS[createStep];
+    if (names.length > 0 && !(await form.trigger(names))) {
+      setCreateStepChecked(true);
+      // Class and purchase-option rows nest their errors, so look inside for the first message.
+      const firstMessage = (err: unknown): string | undefined => {
+        if (!err || typeof err !== "object") return undefined;
+        const { message } = err as { message?: unknown };
+        if (typeof message === "string" && message) return message;
+        for (const [key, child] of Object.entries(err)) {
+          if (key === "ref") continue; // the field's DOM element
+          const found = firstMessage(child);
+          if (found) return found;
+        }
+        return undefined;
+      };
+      const description = names.map(n => firstMessage(form.getFieldState(n).error)).find(Boolean);
+      toast({
+        title: "Check this step",
+        description: description ?? "Some fields on this step need attention.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (editingFromReview) {
+      setEditingFromReview(false);
+      goToCreateStep("review");
+    } else {
+      goToCreateStep(CREATE_STEPS[createStepIndex + 1].id);
+    }
+  };
+
+  const goToPreviousCreateStep = () => {
+    setEditingFromReview(false);
+    setCreateStep(CREATE_STEPS[Math.max(0, createStepIndex - 1)].id);
+  };
+
+  const editFromReview = (id: CreateStepId) => {
+    setEditingFromReview(true);
+    setCreateStep(id);
+  };
+
+  /** Final create found a problem: open the step that holds the first bad field. */
+  const onCreateInvalid = (errors: Partial<Record<keyof CreateEventValues, unknown>>) => {
+    const badStep = CREATE_STEPS.find(s => CREATE_STEP_FIELDS[s.id].some(n => n in errors));
+    if (badStep) {
+      setEditingFromReview(true);
+      setCreateStep(badStep.id);
+    }
+    toast({ title: "Check the event details", description: badStep ? `Fix the highlighted fields in ${badStep.label}.` : undefined, variant: "destructive" });
+  };
+
+  // Only the Review step has a submit button. If the form is submitted on any other
+  // step, check that step and move on instead of creating the event.
+  const onCreateFormSubmit = (e: FormEvent<HTMLFormElement>) => {
+    if (createStep === "review") {
+      void form.handleSubmit(onSubmit, onCreateInvalid)(e);
+      return;
+    }
+    e.preventDefault();
+    void goToNextCreateStep();
   };
 
   /**
@@ -638,6 +776,103 @@ export default function EventsList() {
     }
   };
 
+  /** The Review & Create step: what will be saved, one card per step. */
+  const renderCreateReview = () => {
+    const v = form.getValues();
+    const notSet = (text = "Not set") => <span className="text-muted-foreground">{text}</span>;
+    const fmt = (s: string | undefined, pattern: string) => {
+      if (!s) return null;
+      try { return format(parseISO(s), pattern); } catch { return s; }
+    };
+    const money = (s: string | undefined) => (s !== undefined && s !== "" ? `$${Number(s).toFixed(2)}` : null);
+    const list = (items: string[]) => (items.length > 0 ? items.join(", ") : notSet("None"));
+    const paid = stripeReady && !!v.paymentEnabled;
+    const raceStyleLabel = { motocross: "Motocross / Supercross", enduro: "Enduro", cross_country: "Cross Country / Desert" }[v.raceStyle];
+    const raceDate = fmt(v.date, "EEE, MMM d, yyyy");
+    const endDate = v.multiDay ? fmt(v.endDate, "EEE, MMM d, yyyy") : null;
+    const classes = (v.raceClasses ?? []).filter(c => c.name?.trim());
+    const seriesName = (id: number) => clubSeriesList.find(s => s.id === id)?.name ?? `Series #${id}`;
+    const options = (v.purchaseOptions ?? []).filter(o => o.optionId === RM_TRACKR_OPTION_ID || (o.name?.trim() && o.amount !== ""));
+
+    const basics: [string, ReactNode][] = [
+      ["Race style", raceStyleLabel],
+      ...(isSuperAdmin ? [["Club", clubs?.find(c => c.id === v.clubId)?.name ?? notSet()] as [string, ReactNode]] : []),
+      ["Event name", v.name.trim() || notSet()],
+      ["Race date", raceDate ? (endDate ? `${raceDate} – ${endDate}` : raceDate) : notSet()],
+      ["Track", v.trackName?.trim()
+        ? <>{v.trackName.trim()}{(manualTrackAddress.trim() || manualTrackZip.trim()) && <span className="block text-muted-foreground">{[manualTrackAddress.trim(), manualTrackZip.trim()].filter(Boolean).join(", ")}</span>}</>
+        : notSet()],
+      ["City / state", [v.location?.trim(), v.state].filter(Boolean).join(", ") || notSet()],
+      ["Event image", pendingImageFile ? `${pendingImageFile.name}${removeBgOnCreate ? " (background removed)" : ""}` : notSet("None")],
+    ];
+    const registration: [string, ReactNode][] = [
+      ["Registration opens", fmt(v.registrationOpen, "MMM d, yyyy 'at' h:mm a") ?? notSet()],
+      ["Registration closes", fmt(v.registrationClose, "MMM d, yyyy 'at' h:mm a") ?? notSet()],
+      ["Riders must provide", list([
+        v.requireAma && "AMA #",
+        v.requireClubId && "Club ID #",
+        v.requireWaiver && "Rider acknowledgement form",
+        v.requireLiabilityWaiver && "Liability waiver e-signature",
+      ].filter((x): x is string => !!x))],
+      ["Race numbers", v.noDuplicateBibs ? "No duplicates allowed" : "Duplicates allowed"],
+      ["Scoring format", pointsTables?.find(t => t.id === v.scoringTableId)?.name ?? notSet("None")],
+      ["AMA Event ID", v.amaEventId?.trim() || notSet()],
+    ];
+    const classRows: [string, ReactNode][] = [
+      ["Classes", classes.length === 0 ? notSet("None yet. You can add classes later.") : (
+        <ul className="space-y-1.5">
+          {classes.map((c, i) => {
+            const max = c.maxRiders === "" || c.maxRiders == null ? null : Number(c.maxRiders);
+            return (
+              <li key={i}>
+                <span className="font-semibold">{c.name.trim()}</span>
+                <span className="text-muted-foreground">
+                  {" · "}{max ? `max ${max} riders` : "unlimited"}
+                  {(c.seriesIds ?? []).length > 0 && ` · ${c.seriesIds.map(seriesName).join(", ")}`}
+                </span>
+                {c.details?.trim() && <span className="block text-xs text-muted-foreground line-clamp-2">{c.details.trim()}</span>}
+              </li>
+            );
+          })}
+        </ul>
+      )],
+      ...(filteredSeriesList.length > 0 ? [["Series for all classes", list(createSeriesIds.map(seriesName))] as [string, ReactNode]] : []),
+      ...(!isSuperAdmin ? [["Brand contingencies", list(createContingencyBrands)] as [string, ReactNode]] : []),
+    ];
+    const fees: [string, ReactNode][] = [
+      ["Online payments", paid ? "On" : isSuperAdmin || stripeReady ? "Off" : "Off (Stripe isn't connected)"],
+      ...(paid ? [
+        ["Entry fee", money(v.entryFee) ?? notSet()],
+        ["Early sign-up price", v.earlyBirdEnabled
+          ? `${money(v.earlyBirdFee) ?? "No fee set"}${v.earlyBirdEndsAt ? ` through ${fmt(v.earlyBirdEndsAt, "MMM d, yyyy")}` : ""}`
+          : notSet("None")],
+        ["RFID sticker fee", money(v.rfidStickerFee) ?? notSet("Free")],
+      ] as [string, ReactNode][] : []),
+      ["Transponder rentals", v.transponderRentalEnabled
+        ? `${money(v.transponderRentalFee) ?? "No fee set"} each${paid ? "" : ", paid at the gate"}`
+        : notSet("Not offered")],
+      ["Purchase options", options.length === 0 ? notSet("None") : (
+        <ul className="space-y-0.5">
+          {options.map((o, i) => <li key={i}>{o.name.trim()} <span className="text-muted-foreground">· {money(o.amount)}</span></li>)}
+        </ul>
+      )],
+    ];
+    const timing: [string, ReactNode][] = [
+      ["Transponder number", v.requireTransponder ? "Required to register" : "Optional"],
+      ["Quick Check-In", v.quickCheckinEnabled ? `On. ${quickCheckinRequirementsSummary(v.quickCheckinRequirements)}` : "Off (staff check riders in at the gate)"],
+    ];
+
+    return (
+      <div className="space-y-3">
+        <ReviewSection title="Event Basics" onEdit={() => editFromReview("basics")} rows={basics} />
+        <ReviewSection title="Registration & Rules" onEdit={() => editFromReview("registration")} rows={registration} />
+        <ReviewSection title="Classes & Series" onEdit={() => editFromReview("classes")} rows={classRows} />
+        <ReviewSection title="Fees & Add-Ons" onEdit={() => editFromReview("fees")} rows={fees} />
+        <ReviewSection title="Timing & Check-In" onEdit={() => editFromReview("timing")} rows={timing} />
+      </div>
+    );
+  };
+
   const todayStr = format(new Date(), "yyyy-MM-dd");
 
   // A race_day event whose effective end date has already passed is "past but
@@ -710,710 +945,577 @@ export default function EventsList() {
               <Plus size={16} className="mr-2" /> Create Event
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent ref={createDialogRef} className="sm:max-w-2xl max-h-[90vh] overflow-y-auto top-[5vh] translate-y-0">
             <DialogHeader>
               <DialogTitle className="font-heading uppercase text-xl">Create New Event</DialogTitle>
             </DialogHeader>
             <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-
-                <FormField
-                  control={form.control}
-                  name="raceStyle"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Race Style</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select race style" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="motocross">Motocross / Supercross</SelectItem>
-                          <SelectItem value="enduro">Enduro</SelectItem>
-                          <SelectItem value="cross_country">Cross Country / Desert</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                {isSuperAdmin && (
-                  <FormField
-                    control={form.control}
-                    name="clubId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Club <span className="text-destructive">*</span></FormLabel>
-                        <Select
-                          onValueChange={(v) => field.onChange(Number(v))}
-                          value={field.value ? String(field.value) : ""}
+              <form onSubmit={onCreateFormSubmit} className="space-y-4">
+                {/* Progress: steps already reached can be reopened */}
+                <ol className="flex items-center gap-1.5" aria-label="Create event steps">
+                  {CREATE_STEPS.map((s, i) => {
+                    const done = i < createStepIndex;
+                    const current = i === createStepIndex;
+                    const reachable = !current && i <= createMaxStep && !isCreateBusy;
+                    return (
+                      <li key={s.id} className={`flex items-center gap-1.5 min-w-0 ${i < CREATE_STEPS.length - 1 ? "flex-auto" : ""}`}>
+                        <button
+                          type="button"
+                          disabled={!reachable}
+                          onClick={() => { setEditingFromReview(false); setCreateStep(s.id); }}
+                          aria-current={current ? "step" : undefined}
+                          aria-label={`Step ${i + 1}: ${s.label}`}
+                          className="flex items-center gap-1.5 min-w-0 shrink-0 disabled:cursor-default enabled:hover:opacity-80"
                         >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select a club" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {clubs?.map(c => (
-                              <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
-
-                <FormField
-                  control={form.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Event Name <span className="text-destructive">*</span></FormLabel>
-                      <FormControl><Input placeholder="Spring Classic" {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
+                          <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                            current ? "bg-primary text-primary-foreground"
+                              : done || i <= createMaxStep ? "bg-foreground text-background"
+                              : "border-2 border-input text-muted-foreground"
+                          }`}>
+                            {done ? <Check size={12} /> : i + 1}
+                          </span>
+                          <span className={`hidden lg:inline text-[11px] font-heading font-bold uppercase tracking-wider truncate ${current ? "text-foreground" : "text-muted-foreground"}`}>{s.short}</span>
+                        </button>
+                        {i < CREATE_STEPS.length - 1 && <span aria-hidden className={`h-0.5 min-w-3 flex-1 rounded-full ${done ? "bg-foreground" : "bg-border"}`} />}
+                      </li>
+                    );
+                  })}
+                </ol>
+                <div className="border-b pb-3">
+                  <p className="text-xs font-bold uppercase tracking-widest text-primary">Step {createStepIndex + 1} of {CREATE_STEPS.length}</p>
+                  <h3 className="font-heading font-bold uppercase text-lg leading-tight mt-0.5">{currentCreateStep.label}</h3>
+                  <p className="text-sm text-muted-foreground mt-0.5">{currentCreateStep.hint}</p>
+                  {createStep !== "review" && (
+                    <p className="text-xs text-muted-foreground mt-1.5">
+                      {/* Classes and purchase options are only required fields once a row is added. */}
+                      {(createStep === "classes" ? fields.length > 0 : createStep === "fees" ? purchaseOptionFields.length > 0 : currentCreateStep.hasRequired)
+                        ? <><span className="text-destructive">*</span> Required. Everything else is optional.</>
+                        : "Everything on this step is optional."}
+                    </p>
                   )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="date"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Race Date <span className="text-destructive">*</span></FormLabel>
-                      <FormControl><Input type="date" {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                {/* Multi-day toggle + end date */}
-                <FormField
-                  control={form.control}
-                  name="multiDay"
-                  render={({ field }) => (
-                    <FormItem className="flex items-center gap-2 space-y-0">
-                      <FormControl>
-                        <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                      </FormControl>
-                      <FormLabel className="cursor-pointer font-normal">Multi-day event</FormLabel>
-                    </FormItem>
-                  )}
-                />
-                {watchMultiDay && (
-                  <FormField
-                    control={form.control}
-                    name="endDate"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>End Date</FormLabel>
-                        <FormControl><Input type="date" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
-
-                <FormField
-                  control={form.control}
-                  name="trackName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Track Name <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
-                      {/* Library quick-selects */}
-                      {trackLibrary.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
-                          {trackLibrary.map(t => (
-                            <button
-                              key={t.id}
-                              type="button"
-                              onClick={() => selectLibraryTrack(t)}
-                              className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border transition-all ${
-                                selectedLibraryTrackId === t.id
-                                  ? "border-primary bg-primary text-primary-foreground"
-                                  : "border-input bg-muted/40 hover:border-primary/50 text-foreground"
-                              }`}
-                            >
-                              {selectedLibraryTrackId === t.id ? <Check size={10} /> : <MapPin size={10} />}
-                              {t.name}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      <FormControl>
-                        <Input
-                          placeholder="Thunder Valley MX"
-                          {...field}
-                          onChange={(e) => { field.onChange(e); setSelectedLibraryTrackId(null); setManualTrackAddress(""); setManualTrackZip(""); }}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                {/* Street address — shown whenever a track name is entered */}
-                {form.watch("trackName")?.trim() && (
-                  <Input
-                    placeholder="Street address"
-                    aria-label="Track street address"
-                    value={manualTrackAddress}
-                    onChange={e => setManualTrackAddress(e.target.value)}
-                  />
-                )}
-
-                {/* City + State */}
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="location"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>City</FormLabel>
-                        <FormControl><Input placeholder="Denver" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="state"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>State <span className="text-destructive">*</span></FormLabel>
-                        <FormControl>
-                          <StateSelect value={field.value} onChange={field.onChange} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
                 </div>
 
-                {/* ZIP — shown whenever a track name is entered */}
-                {form.watch("trackName")?.trim() && (
-                  <Input
-                    placeholder="ZIP code"
-                    aria-label="Track ZIP code"
-                    value={manualTrackZip}
-                    onChange={e => setManualTrackZip(e.target.value)}
-                    className="w-36"
-                  />
-                )}
-
-                {/* Timing: no technology to pick. Whatever readers time the event (RM TrackR loops,
-                    RFID readers or both) decide which tags riders need. */}
-                <div className="rounded-md border bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground">
-                  <span className="font-semibold text-foreground">Timing:</span> use RM TrackR loops, RFID readers, or both. Set up your readers in Reader Setup and place them on the event's Course Map; riders need a tag for each kind of reader you use.
-                </div>
-
-                {/* Require transponder (for RM TrackR loops). Riders can rent or buy one instead. */}
-                {(
-                  <FormField
-                    control={form.control}
-                    name="requireTransponder"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Require transponder number?</FormLabel>
-                        <p className="text-xs text-muted-foreground -mt-1 mb-2">
-                          Must riders give a transponder number to register? Renting or buying one at registration also counts.
-                        </p>
-                        <div className="grid grid-cols-2 gap-2">
-                          {[
-                            { value: true, label: "Yes – Required" },
-                            { value: false, label: "No – Optional" },
-                          ].map(opt => (
-                            <button
-                              key={String(opt.value)}
-                              type="button"
-                              onClick={() => field.onChange(opt.value)}
-                              className={`flex flex-col items-start px-4 py-3 rounded-md border text-left transition-all ${
-                                field.value === opt.value
-                                  ? "border-primary bg-primary/5 text-foreground"
-                                  : "border-input bg-transparent text-muted-foreground hover:border-primary/50"
-                              }`}
-                            >
-                              <span className={`text-sm font-semibold ${field.value === opt.value ? "text-primary" : ""}`}>{opt.label}</span>
-                            </button>
-                          ))}
-                        </div>
-                        {field.value && (
-                          <TransponderRequirementTip
-                            rentalsOffered={!!watchTransponderRentalEnabled}
-                            trackrOffered={form.watch("purchaseOptions").some(o => o.optionId === RM_TRACKR_OPTION_ID)}
-                            onOfferRentals={() => form.setValue("transponderRentalEnabled", true, { shouldDirty: true })}
-                            onOfferTrackr={() => appendPurchaseOption(trackrOption)}
-                          />
-                        )}
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
-
-                {/* Quick Check-In */}
-                <FormField
-                  control={form.control}
-                  name="quickCheckinEnabled"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="flex items-center gap-1.5">
-                        <MapPin size={14} /> Quick Check-In
-                      </FormLabel>
-                      <p className="text-xs text-muted-foreground -mt-1 mb-2">
-                        Let riders self-check-in from the rider app when they arrive within 1 mile of the track on race day.
-                        You choose what riders need first (payment, timing tag, waivers and more).
-                      </p>
-                      <div className="grid grid-cols-2 gap-2">
-                        {[
-                          { value: true, label: "Enabled", desc: "Riders nearby get a check-in prompt" },
-                          { value: false, label: "Disabled", desc: "Staff checks in riders at the gate" },
-                        ].map(opt => (
-                          <button
-                            key={String(opt.value)}
-                            type="button"
-                            onClick={() => {
-                              // Turning it on asks what riders need first (everything checked to start).
-                              if (opt.value && !field.value) setQcReqOpen(true);
-                              field.onChange(opt.value);
-                            }}
-                            className={`flex flex-col items-start px-4 py-3 rounded-md border text-left transition-all ${
-                              field.value === opt.value
-                                ? "border-primary bg-primary/5 text-foreground"
-                                : "border-input bg-transparent text-muted-foreground hover:border-primary/50"
-                            }`}
-                          >
-                            <span className={`text-sm font-semibold ${field.value === opt.value ? "text-primary" : ""}`}>{opt.label}</span>
-                            <span className="text-xs mt-0.5">{opt.desc}</span>
-                          </button>
-                        ))}
-                      </div>
-                      {field.value && (
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs mt-2">
-                          <span className="text-muted-foreground">{quickCheckinRequirementsSummary(form.watch("quickCheckinRequirements"))}</span>
-                          <button type="button" className="font-semibold text-primary underline underline-offset-2" onClick={() => setQcReqOpen(true)}>
-                            Edit requirements
-                          </button>
-                        </div>
-                      )}
-                      <QuickCheckinRequirementsDialog
-                        open={qcReqOpen}
-                        onOpenChange={setQcReqOpen}
-                        value={form.watch("quickCheckinRequirements")}
-                        onSave={v => { form.setValue("quickCheckinRequirements", v, { shouldDirty: true }); setQcReqOpen(false); }}
-                        context={{
-                          paymentEnabled: !!watchPaymentEnabled,
-                          requiresWaiver: !!(form.watch("requireWaiver") || form.watch("requireLiabilityWaiver")),
-                        }}
-                      />
-                      {field.value && (
-                        <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-3 py-2 mt-2">
-                          We'll look up the track's location when you save (add a street address for the best match). On race day riders get a phone notification when they arrive within 1 mile, then tap Check In in the rider app.
-                        </p>
-                      )}
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                {/* Registration window + Collect Payments */}
-                <div className="space-y-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {createStep === "basics" && (
+                  <div className="space-y-4">
                     <FormField
                       control={form.control}
-                      name="registrationOpen"
+                      name="raceStyle"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Registration Opens</FormLabel>
-                          <FormControl>
-                            <DateTimePicker value={field.value ?? ""} onChange={field.onChange} />
-                          </FormControl>
+                          <FormLabel>Race Style <span className="text-destructive">*</span></FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select race style" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="motocross">Motocross / Supercross</SelectItem>
+                              <SelectItem value="enduro">Enduro</SelectItem>
+                              <SelectItem value="cross_country">Cross Country / Desert</SelectItem>
+                            </SelectContent>
+                          </Select>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
-                    <FormField
-                      control={form.control}
-                      name="registrationClose"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Registration Closes</FormLabel>
-                          <FormControl>
-                            <DateTimePicker value={field.value ?? ""} onChange={field.onChange} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
 
-                  {/* Collect Payments checkbox */}
-                  {!isSuperAdmin && (
-                    <div className="flex items-center gap-2 pt-1">
-                      {stripeReady ? (
-                        <FormField
-                          control={form.control}
-                          name="paymentEnabled"
-                          render={({ field }) => (
-                            <FormItem className="flex items-center gap-2 space-y-0">
-                              <FormControl>
-                                <Checkbox
-                                  checked={field.value}
-                                  onCheckedChange={field.onChange}
-                                />
-                              </FormControl>
-                              <FormLabel className="cursor-pointer font-normal">Collect Payments</FormLabel>
-                            </FormItem>
-                          )}
-                        />
-                      ) : (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div className="flex items-center gap-2 cursor-default">
-                              <Checkbox disabled checked={false} />
-                              <span className="text-sm text-muted-foreground">Collect Payments</span>
-                              <Info size={14} className="text-muted-foreground" />
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent side="right" className="max-w-64">
-                            <>Set up Stripe Connect under <strong>Payments</strong> in the sidebar to collect entry fees.</>
-                          </TooltipContent>
-                        </Tooltip>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Registration requirement checkboxes */}
-                  <div className="space-y-2 pt-1">
-                    <FormField
-                      control={form.control}
-                      name="requireAma"
-                      render={({ field }) => (
-                        <FormItem className="flex items-center gap-2 space-y-0">
-                          <FormControl>
-                            <Checkbox
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                            />
-                          </FormControl>
-                          <FormLabel className="cursor-pointer font-normal">Require AMA #</FormLabel>
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="requireClubId"
-                      render={({ field }) => (
-                        <FormItem className="flex items-center gap-2 space-y-0">
-                          <FormControl>
-                            <Checkbox
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                            />
-                          </FormControl>
-                          <FormLabel className="cursor-pointer font-normal">Require Club ID #</FormLabel>
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="noDuplicateBibs"
-                      render={({ field }) => (
-                        <FormItem className="flex items-center gap-2 space-y-0">
-                          <FormControl>
-                            <Checkbox
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                            />
-                          </FormControl>
-                          <FormLabel className="cursor-pointer font-normal">Do not allow duplicate race numbers</FormLabel>
-                        </FormItem>
-                      )}
-                    />
-                    {!isSuperAdmin && (() => {
-                      const hasWaiverText = !!(clubSettingsData?.riderAcknowledgement?.trim());
-                      return hasWaiverText ? (
-                        <FormField
-                          control={form.control}
-                          name="requireWaiver"
-                          render={({ field }) => (
-                            <FormItem className="flex items-center gap-2 space-y-0">
-                              <FormControl>
-                                <Checkbox
-                                  checked={field.value}
-                                  onCheckedChange={field.onChange}
-                                />
-                              </FormControl>
-                              <FormLabel className="cursor-pointer font-normal">Require rider acknowledgement form</FormLabel>
-                            </FormItem>
-                          )}
-                        />
-                      ) : (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div className="flex items-center gap-2 cursor-default">
-                              <Checkbox disabled checked={false} />
-                              <span className="text-sm text-muted-foreground">Require rider acknowledgement form</span>
-                              <Info size={14} className="text-muted-foreground" />
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent side="right" className="max-w-64">
-                            Set rider acknowledgement form text in Admin settings first.
-                          </TooltipContent>
-                        </Tooltip>
-                      );
-                    })()}
-
-                    {!isSuperAdmin && (() => {
-                      const hasLiabilityWaiverText = !!((clubSettingsData as any)?.liabilityWaiverText?.trim());
-                      return hasLiabilityWaiverText ? (
-                        <FormField
-                          control={form.control}
-                          name="requireLiabilityWaiver"
-                          render={({ field }) => (
-                            <FormItem className="flex items-center gap-2 space-y-0">
-                              <FormControl>
-                                <Checkbox
-                                  checked={field.value}
-                                  onCheckedChange={field.onChange}
-                                />
-                              </FormControl>
-                              <FormLabel className="cursor-pointer font-normal">Require liability waiver e-signature</FormLabel>
-                            </FormItem>
-                          )}
-                        />
-                      ) : (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div className="flex items-center gap-2 cursor-default">
-                              <Checkbox disabled checked={false} />
-                              <span className="text-sm text-muted-foreground">Require liability waiver e-signature</span>
-                              <Info size={14} className="text-muted-foreground" />
-                            </div>
-                          </TooltipTrigger>
-                          <TooltipContent side="right" className="max-w-64">
-                            Set liability waiver text in Admin settings first.
-                          </TooltipContent>
-                        </Tooltip>
-                      );
-                    })()}
-                  </div>
-
-                  {/* Scoring Format dropdown */}
-                  <FormField
-                    control={form.control}
-                    name="scoringTableId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Scoring Format</FormLabel>
-                        <Select
-                          value={field.value != null ? String(field.value) : "none"}
-                          onValueChange={(v) => field.onChange(v === "none" ? undefined : Number(v))}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select scoring format (optional)" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="none">None</SelectItem>
-                            {(pointsTables ?? []).map(t => (
-                              <SelectItem key={t.id} value={String(t.id)}>
-                                {t.name}{t.isSystemDefault ? " ★" : ""}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <p className="text-xs text-muted-foreground">
-                          {form.watch("raceStyle") === "enduro"
-                            ? "Enduro: riders are ranked by total test time (plus time-check penalties). A scoring table here only sets series points by each class's overall finish."
-                            : "Supercross formats generate Heats + Main Event. AMA/Olympic generate Motos."}
-                        </p>
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="amaEventId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>AMA Event ID</FormLabel>
-                        <FormControl>
-                          <Input placeholder="e.g. 12345" {...field} />
-                        </FormControl>
-                        <p className="text-xs text-muted-foreground">Optional — used for AMA report export.</p>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-
-                  {/* Entry fee input (only when payment enabled) */}
-                  {stripeReady && watchPaymentEnabled && (
-                    <FormField
-                      control={form.control}
-                      name="entryFee"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Entry Fee ($)</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              placeholder="0.00"
-                              {...field}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  )}
-
-                  {/* Early sign-up incentive period */}
-                  {stripeReady && watchPaymentEnabled && (
-                    <div className="space-y-3 pl-0.5">
+                    {isSuperAdmin && (
                       <FormField
                         control={form.control}
-                        name="earlyBirdEnabled"
+                        name="clubId"
                         render={({ field }) => (
-                          <FormItem className="flex items-center gap-2 space-y-0">
-                            <FormControl>
-                              <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                            </FormControl>
-                            <FormLabel className="cursor-pointer font-normal">Add early sign-up incentive period</FormLabel>
+                          <FormItem>
+                            <FormLabel>Club <span className="text-destructive">*</span></FormLabel>
+                            <Select
+                              onValueChange={(v) => field.onChange(Number(v))}
+                              value={field.value ? String(field.value) : ""}
+                            >
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select a club" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {clubs?.map(c => (
+                                  <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
                           </FormItem>
                         )}
                       />
-                      {watchEarlyBirdEnabled && (
-                        <div className="ml-6 grid grid-cols-2 gap-4">
-                          <FormField
-                            control={form.control}
-                            name="earlyBirdFee"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Early Bird Fee ($)</FormLabel>
-                                <FormControl>
-                                  <Input type="number" min="0" step="0.01" placeholder="0.00" {...field} />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name="earlyBirdEndsAt"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Incentive Period Ends</FormLabel>
-                                <FormControl>
-                                  <Input type="date" {...field} />
-                                </FormControl>
-                                <p className="text-xs text-muted-foreground">Last day early fee applies (inclusive).</p>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )}
+                    )}
 
-                  {/* RFID sticker fee (with online payments) */}
-                  {stripeReady && watchPaymentEnabled && (
-                    <div className="space-y-2 pl-0.5">
+                    <FormField
+                      control={form.control}
+                      name="name"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Event Name <span className="text-destructive">*</span></FormLabel>
+                          <FormControl><Input placeholder="Spring Classic" {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="date"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Race Date <span className="text-destructive">*</span></FormLabel>
+                          <FormControl><Input type="date" {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Multi-day toggle + end date */}
+                    <FormField
+                      control={form.control}
+                      name="multiDay"
+                      render={({ field }) => (
+                        <FormItem className="flex items-center gap-2 space-y-0">
+                          <FormControl>
+                            <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                          </FormControl>
+                          <FormLabel className="cursor-pointer font-normal">Multi-day event</FormLabel>
+                        </FormItem>
+                      )}
+                    />
+                    {watchMultiDay && (
                       <FormField
                         control={form.control}
-                        name="rfidStickerFee"
+                        name="endDate"
                         render={({ field }) => (
-                          <FormItem className="ml-0">
-                            <FormLabel>RFID Sticker Fee ($) <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                          <FormItem>
+                            <FormLabel>End Date <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                            <FormControl><Input type="date" {...field} /></FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
+                    <FormField
+                      control={form.control}
+                      name="trackName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Track Name <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                          {/* Library quick-selects */}
+                          {trackLibrary.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {trackLibrary.map(t => (
+                                <button
+                                  key={t.id}
+                                  type="button"
+                                  onClick={() => selectLibraryTrack(t)}
+                                  className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border transition-all ${
+                                    selectedLibraryTrackId === t.id
+                                      ? "border-primary bg-primary text-primary-foreground"
+                                      : "border-input bg-muted/40 hover:border-primary/50 text-foreground"
+                                  }`}
+                                >
+                                  {selectedLibraryTrackId === t.id ? <Check size={10} /> : <MapPin size={10} />}
+                                  {t.name}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                          <FormControl>
+                            <Input
+                              placeholder="Thunder Valley MX"
+                              {...field}
+                              onChange={(e) => { field.onChange(e); setSelectedLibraryTrackId(null); setManualTrackAddress(""); setManualTrackZip(""); }}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Street address — shown whenever a track name is entered */}
+                    {form.watch("trackName")?.trim() && (
+                      <Input
+                        placeholder="Street address"
+                        aria-label="Track street address"
+                        value={manualTrackAddress}
+                        onChange={e => setManualTrackAddress(e.target.value)}
+                      />
+                    )}
+
+                    {/* City + State */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="location"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>City <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                            <FormControl><Input placeholder="Denver" {...field} /></FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="state"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>State <span className="text-destructive">*</span></FormLabel>
                             <FormControl>
-                              <Input type="number" min="0" step="0.01" placeholder="Leave blank if free" {...field} />
+                              <StateSelect value={field.value} onChange={field.onChange} />
                             </FormControl>
-                            <p className="text-xs text-muted-foreground">Charge riders for an RFID sticker at registration or at the gate.</p>
                             <FormMessage />
                           </FormItem>
                         )}
                       />
                     </div>
-                  )}
 
-                  {/* Transponder rental (RM TrackR). Paid online with the
-                      entry when payments are on, otherwise collected at the gate. */}
-                  {(
-                    <div className="space-y-2 pl-0.5">
+                    {/* ZIP — shown whenever a track name is entered */}
+                    {form.watch("trackName")?.trim() && (
+                      <Input
+                        placeholder="ZIP code"
+                        aria-label="Track ZIP code"
+                        value={manualTrackZip}
+                        onChange={e => setManualTrackZip(e.target.value)}
+                        className="w-36"
+                      />
+                    )}
+
+                    {/* Event Image */}
+                    <div className="space-y-1.5 pt-2">
+                      <label className="text-sm font-medium flex items-center gap-1.5">
+                        <ImageIcon size={14} className="text-primary" /> Event Image <span className="text-muted-foreground font-normal text-xs">(optional)</span>
+                      </label>
+                      <input
+                        id="create-event-img"
+                        type="file"
+                        accept="image/jpeg,image/png,image/gif,image/webp"
+                        className="hidden"
+                        onChange={e => {
+                          const f = e.target.files?.[0];
+                          if (!f) return;
+                          e.target.value = "";
+                          if (!ALLOWED_IMAGE_TYPES.includes(f.type)) {
+                            setImgValidationError("Unsupported file type. Please upload a JPEG, PNG, GIF, or WebP image.");
+                            return;
+                          }
+                          if (f.size > MAX_IMAGE_BYTES) {
+                            setImgValidationError("Image is too large. Maximum size is 10 MB — try compressing it first.");
+                            return;
+                          }
+                          setImgValidationError(null);
+                          setPendingImageFile(f);
+                        }}
+                      />
+                      {pendingImageFile ? (
+                        <div className="flex flex-wrap items-center gap-3 p-3 rounded-md border bg-muted/40">
+                          <ImageIcon size={16} className="text-primary shrink-0" />
+                          <span className="text-sm flex-1 truncate min-w-0">{pendingImageFile.name}</span>
+                          <label className="flex items-center gap-1.5 cursor-pointer select-none text-xs text-muted-foreground shrink-0">
+                            <Checkbox checked={removeBgOnCreate} onCheckedChange={v => setRemoveBgOnCreate(!!v)} />
+                            Remove background
+                          </label>
+                          <button type="button" aria-label="Remove image" onClick={() => { setPendingImageFile(null); setImgValidationError(null); }} className="text-muted-foreground hover:text-destructive shrink-0">
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ) : (
+                        <label htmlFor="create-event-img" className="flex items-center justify-center gap-2 p-3 rounded-md border border-dashed text-sm text-muted-foreground hover:text-foreground hover:border-primary cursor-pointer transition-colors">
+                          <Upload size={14} /> Choose image
+                        </label>
+                      )}
+                      {imgValidationError && (
+                        <p className="text-sm text-destructive font-medium flex items-center gap-1.5 mt-1">
+                          {imgValidationError}
+                        </p>
+                      )}
+                      {!imgValidationError && (
+                        <p className="text-xs text-muted-foreground mt-1">JPEG, PNG, GIF, or WebP · Max 10 MB</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {createStep === "registration" && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <FormField
                         control={form.control}
-                        name="transponderRentalEnabled"
+                        name="registrationOpen"
                         render={({ field }) => (
-                          <FormItem className="flex items-center gap-2 space-y-0">
+                          <FormItem>
+                            <FormLabel>Registration Opens <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
                             <FormControl>
-                              <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                              <DateTimePicker value={field.value ?? ""} onChange={field.onChange} />
                             </FormControl>
-                            <FormLabel className="cursor-pointer font-normal">Offer transponder rentals to riders</FormLabel>
+                            <FormMessage />
                           </FormItem>
                         )}
                       />
-                      {watchTransponderRentalEnabled && (
-                        <FormField
-                          control={form.control}
-                          name="transponderRentalFee"
-                          render={({ field }) => (
-                            <FormItem className="ml-6">
-                              <FormLabel>Rental Fee per Transponder ($)</FormLabel>
-                              <FormControl>
-                                <Input type="number" min="0" step="0.01" placeholder="15.00" {...field} />
-                              </FormControl>
-                                {!(stripeReady && watchPaymentEnabled) && (
-                                  <p className="text-xs text-muted-foreground">Online payments are off, so riders pay the rental at the gate. Check-in shows it as owed.</p>
-                                )}
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      )}
+                      <FormField
+                        control={form.control}
+                        name="registrationClose"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Registration Closes <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                            <FormControl>
+                              <DateTimePicker value={field.value ?? ""} onChange={field.onChange} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                     </div>
-                  )}
 
-                  {/* Purchase Options */}
-                  <div className="space-y-2 pt-1">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm font-medium text-foreground">Purchase Options</p>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => appendPurchaseOption({ name: "", amount: "" })}
-                        >
-                          <Plus size={13} className="mr-1" /> Add Purchase Option
-                        </Button>
-                      </div>
+                    {/* Registration requirement checkboxes */}
+                    <div className="space-y-2 pt-1">
+                      <FormField
+                        control={form.control}
+                        name="requireAma"
+                        render={({ field }) => (
+                          <FormItem className="flex items-center gap-2 space-y-0">
+                            <FormControl>
+                              <Checkbox
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                              />
+                            </FormControl>
+                            <FormLabel className="cursor-pointer font-normal">Require AMA #</FormLabel>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="requireClubId"
+                        render={({ field }) => (
+                          <FormItem className="flex items-center gap-2 space-y-0">
+                            <FormControl>
+                              <Checkbox
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                              />
+                            </FormControl>
+                            <FormLabel className="cursor-pointer font-normal">Require Club ID #</FormLabel>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="noDuplicateBibs"
+                        render={({ field }) => (
+                          <FormItem className="flex items-center gap-2 space-y-0">
+                            <FormControl>
+                              <Checkbox
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                              />
+                            </FormControl>
+                            <FormLabel className="cursor-pointer font-normal">Do not allow duplicate race numbers</FormLabel>
+                          </FormItem>
+                        )}
+                      />
+                      {!isSuperAdmin && (() => {
+                        const hasWaiverText = !!(clubSettingsData?.riderAcknowledgement?.trim());
+                        return hasWaiverText ? (
+                          <FormField
+                            control={form.control}
+                            name="requireWaiver"
+                            render={({ field }) => (
+                              <FormItem className="flex items-center gap-2 space-y-0">
+                                <FormControl>
+                                  <Checkbox
+                                    checked={field.value}
+                                    onCheckedChange={field.onChange}
+                                  />
+                                </FormControl>
+                                <FormLabel className="cursor-pointer font-normal">Require rider acknowledgement form</FormLabel>
+                              </FormItem>
+                            )}
+                          />
+                        ) : (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="flex items-center gap-2 cursor-default">
+                                <Checkbox disabled checked={false} />
+                                <span className="text-sm text-muted-foreground">Require rider acknowledgement form</span>
+                                <Info size={14} className="text-muted-foreground" />
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-64">
+                              Set rider acknowledgement form text in Admin settings first.
+                            </TooltipContent>
+                          </Tooltip>
+                        );
+                      })()}
+
+                      {!isSuperAdmin && (() => {
+                        const hasLiabilityWaiverText = !!((clubSettingsData as any)?.liabilityWaiverText?.trim());
+                        return hasLiabilityWaiverText ? (
+                          <FormField
+                            control={form.control}
+                            name="requireLiabilityWaiver"
+                            render={({ field }) => (
+                              <FormItem className="flex items-center gap-2 space-y-0">
+                                <FormControl>
+                                  <Checkbox
+                                    checked={field.value}
+                                    onCheckedChange={field.onChange}
+                                  />
+                                </FormControl>
+                                <FormLabel className="cursor-pointer font-normal">Require liability waiver e-signature</FormLabel>
+                              </FormItem>
+                            )}
+                          />
+                        ) : (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="flex items-center gap-2 cursor-default">
+                                <Checkbox disabled checked={false} />
+                                <span className="text-sm text-muted-foreground">Require liability waiver e-signature</span>
+                                <Info size={14} className="text-muted-foreground" />
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-64">
+                              Set liability waiver text in Admin settings first.
+                            </TooltipContent>
+                          </Tooltip>
+                        );
+                      })()}
                     </div>
-                    <SellItemQuickAdd options={form.watch("purchaseOptions")} onAdd={o => appendPurchaseOption(o as any)} />
-                    {purchaseOptionFields.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">
-                        Add optional items riders can purchase at registration — gate fees, pit passes, etc.
-                      </p>
-                    ) : (
+
+                    {/* Scoring Format dropdown */}
+                    <FormField
+                      control={form.control}
+                      name="scoringTableId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Scoring Format <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                          <Select
+                            value={field.value != null ? String(field.value) : "none"}
+                            onValueChange={(v) => field.onChange(v === "none" ? undefined : Number(v))}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select scoring format (optional)" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="none">None</SelectItem>
+                              {(pointsTables ?? []).map(t => (
+                                <SelectItem key={t.id} value={String(t.id)}>
+                                  {t.name}{t.isSystemDefault ? " ★" : ""}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground">
+                            {form.watch("raceStyle") === "enduro"
+                              ? "Enduro: riders are ranked by total test time (plus time-check penalties). A scoring table here only sets series points by each class's overall finish."
+                              : "Supercross formats generate Heats + Main Event. AMA/Olympic generate Motos."}
+                          </p>
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="amaEventId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>AMA Event ID <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                          <FormControl>
+                            <Input placeholder="e.g. 12345" {...field} />
+                          </FormControl>
+                          <p className="text-xs text-muted-foreground">Used for AMA report export.</p>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                )}
+
+                {createStep === "classes" && (
+                  <div className="space-y-4">
+                    {/* Race Classes */}
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                          <Flag size={12} /> Race Classes
+                        </p>
+                      </div>
                       <div className="space-y-2">
-                        {purchaseOptionFields.map((optField, idx) => (
-                          <div key={optField.id} className="flex flex-wrap sm:flex-nowrap gap-2 items-start">
+                        {defaultClasses.length > 0 && (
+                          <div className="mb-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Club Classes</p>
+                              {defaultClasses.some(cls => !fields.some(f => f.name === cls.name)) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const unselected = defaultClasses.filter(cls => !fields.some(f => f.name === cls.name));
+                                    unselected.forEach(cls => append({ name: cls.name, maxRiders: "", seriesIds: [], details: cls.details ?? "" }));
+                                  }}
+                                  className="text-xs text-primary hover:text-primary/80 font-semibold transition-colors"
+                                >
+                                  Select All
+                                </button>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {defaultClasses.map(cls => {
+                                const isActive = fields.some(f => f.name === cls.name);
+                                return (
+                                  <button
+                                    key={cls.id}
+                                    type="button"
+                                    onClick={() => {
+                                      if (isActive) {
+                                        const idx = fields.findIndex(f => f.name === cls.name);
+                                        if (idx !== -1) { remove(idx); setExpandedCreateDetailRows(prev => { const next = new Set<number>(); prev.forEach(i => { if (i < idx) next.add(i); else if (i > idx) next.add(i - 1); }); return next; }); }
+                                      } else {
+                                        append({ name: cls.name, maxRiders: "", seriesIds: [], details: cls.details ?? "" });
+                                      }
+                                    }}
+                                    className={
+                                      isActive
+                                        ? "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border cursor-pointer transition-colors bg-primary text-primary-foreground border-primary"
+                                        : "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border cursor-pointer transition-colors bg-muted text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
+                                    }
+                                  >
+                                    {cls.name}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                        {fields.length > 0 && (
+                          <div className="hidden sm:grid grid-cols-[1fr_1fr_140px_32px_32px] gap-2 mb-1">
+                            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Class Name <span className="text-destructive">*</span></span>
+                            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Series</span>
+                            <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Max Riders</span>
+                            <span />
+                            <span />
+                          </div>
+                        )}
+                        {fields.length > 0 && (
+                          <p className="sm:hidden text-xs text-muted-foreground">Class name <span className="text-destructive">*</span> is required for each class. Series and max riders are optional.</p>
+                        )}
+                        {fields.map((field, index) => (
+                          <div key={field.id} className="space-y-1">
+                          <div className="grid grid-cols-2 sm:grid-cols-[1fr_1fr_140px_32px_32px] gap-2 items-start">
                             <FormField
                               control={form.control}
-                              name={`purchaseOptions.${idx}.name`}
+                              name={`raceClasses.${index}.name`}
                               render={({ field }) => (
-                                <FormItem className="w-full sm:w-auto sm:flex-1">
+                                <FormItem className="col-span-2 sm:col-span-1">
                                   <FormControl>
-                                    <Input placeholder="Gate fee, pit pass…" aria-label={`Purchase option ${idx + 1} name`} {...field} readOnly={form.watch(`purchaseOptions.${idx}.optionId`) === RM_TRACKR_OPTION_ID} />
+                                    <Input placeholder="e.g. 450 Pro" aria-label={`Class ${index + 1} name`} {...field} />
                                   </FormControl>
                                   <FormMessage />
                                 </FormItem>
@@ -1421,433 +1523,631 @@ export default function EventsList() {
                             />
                             <FormField
                               control={form.control}
-                              name={`purchaseOptions.${idx}.amount`}
+                              name={`raceClasses.${index}.seriesIds`}
+                              render={({ field: seriesField }) => {
+                                const selected: number[] = seriesField.value ?? [];
+                                const seriesOptions = clubSeriesList ?? [];
+                                const label = selected.length === 0
+                                  ? "None"
+                                  : selected.length === 1
+                                    ? (seriesOptions.find(s => s.id === selected[0])?.name ?? "1 series")
+                                    : `${selected.length} series`;
+                                return (
+                                  <FormItem>
+                                    <Popover>
+                                      <PopoverTrigger asChild>
+                                        <Button
+                                          variant="field"
+                                          size="field"
+                                          role="combobox"
+                                          className="w-full"
+                                          type="button"
+                                          aria-label={`Class ${index + 1} series: ${label}`}
+                                        >
+                                          <span className="truncate text-sm"><span className="sm:hidden text-muted-foreground">Series: </span>{label}</span>
+                                          <ChevronsUpDown size={14} className="ml-1 shrink-0 opacity-50" />
+                                        </Button>
+                                      </PopoverTrigger>
+                                      <PopoverContent className="w-60 p-2" align="start">
+                                        {seriesOptions.length === 0 ? (
+                                          <p className="text-xs text-muted-foreground p-1">No series found for this club.</p>
+                                        ) : (
+                                          seriesOptions.map(s => {
+                                            const checked = selected.includes(s.id);
+                                            return (
+                                              <div
+                                                key={s.id}
+                                                className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer"
+                                                onClick={() => {
+                                                  if (checked) {
+                                                    seriesField.onChange(selected.filter(id => id !== s.id));
+                                                  } else {
+                                                    seriesField.onChange([...selected, s.id]);
+                                                  }
+                                                }}
+                                              >
+                                                <div className={`h-4 w-4 rounded border flex items-center justify-center shrink-0 ${checked ? "bg-primary border-primary" : "border-input"}`}>
+                                                  {checked && <Check size={10} className="text-primary-foreground" />}
+                                                </div>
+                                                <span className="text-sm">{s.name}</span>
+                                              </div>
+                                            );
+                                          })
+                                        )}
+                                      </PopoverContent>
+                                    </Popover>
+                                    <FormMessage />
+                                  </FormItem>
+                                );
+                              }}
+                            />
+                            <FormField
+                              control={form.control}
+                              name={`raceClasses.${index}.maxRiders`}
                               render={({ field }) => (
-                                <FormItem className="flex-1 sm:flex-none sm:w-28">
+                                <FormItem>
                                   <FormControl>
-                                    <div className="relative">
-                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
-                                      <Input type="number" min="0" step="0.01" placeholder="0.00" className="pl-6" aria-label={`Purchase option ${idx + 1} price`} {...field} readOnly={form.watch(`purchaseOptions.${idx}.optionId`) === RM_TRACKR_OPTION_ID} />
-                                    </div>
+                                    <Input
+                                      type="number"
+                                      min="1"
+                                      placeholder="Unlimited"
+                                      aria-label={`Class ${index + 1} max riders`}
+                                      {...field}
+                                      value={field.value ?? ""}
+                                    />
                                   </FormControl>
                                   <FormMessage />
                                 </FormItem>
                               )}
                             />
+                            <div className="col-span-2 flex justify-end gap-2 sm:contents">
                             <Button
                               type="button"
                               variant="ghost"
                               size="icon"
-                              className="mt-0.5 shrink-0 text-muted-foreground hover:text-destructive"
-                              aria-label={`Remove purchase option ${idx + 1}`}
-                              onClick={() => removePurchaseOption(idx)}
+                              title={expandedCreateDetailRows.has(index) ? "Hide details" : "Add class rules / details"}
+                              aria-label={expandedCreateDetailRows.has(index) ? `Hide class ${index + 1} details` : `Add class ${index + 1} rules / details`}
+                              aria-expanded={expandedCreateDetailRows.has(index)}
+                              className={`h-9 w-8 mt-0 ${expandedCreateDetailRows.has(index) ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-primary hover:bg-primary/10"}`}
+                              onClick={() => setExpandedCreateDetailRows(prev => {
+                                const next = new Set(prev);
+                                if (next.has(index)) next.delete(index); else next.add(index);
+                                return next;
+                              })}
                             >
-                              <X size={14} />
+                              <Info size={14} />
                             </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-9 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 mt-0"
+                              aria-label={`Remove class ${index + 1}`}
+                              onClick={() => {
+                                remove(index);
+                                setExpandedCreateDetailRows(prev => {
+                                  const next = new Set<number>();
+                                  prev.forEach(i => { if (i < index) next.add(i); else if (i > index) next.add(i - 1); });
+                                  return next;
+                                });
+                              }}
+                            >
+                              <Trash2 size={14} />
+                            </Button>
+                            </div>
+                            </div>
+                            {expandedCreateDetailRows.has(index) && (
+                              <FormField
+                                control={form.control}
+                                name={`raceClasses.${index}.details`}
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormControl>
+                                      <textarea
+                                        {...field}
+                                        rows={3}
+                                        aria-label={`Class ${index + 1} rules and details`}
+                                        placeholder="Class rules, eligibility requirements, bike specs, or any other details riders should know…"
+                                        className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+                                      />
+                                    </FormControl>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                            )}
                           </div>
                         ))}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="w-full gap-2 border-dashed font-heading uppercase tracking-wider text-muted-foreground hover:text-foreground mt-1"
+                          onClick={() => append({ name: "", maxRiders: "", seriesIds: [], details: "" })}
+                        >
+                          <Plus size={14} /> Add Class
+                        </Button>
                       </div>
-                    )}
-                  </div>
-                </div>
+                    </div>
 
-                {/* Race Classes */}
-                <div className="border-t pt-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                      <Flag size={12} /> Race Classes
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    {defaultClasses.length > 0 && (
-                      <div className="mb-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Club Classes</p>
-                          {defaultClasses.some(cls => !fields.some(f => f.name === cls.name)) && (
-                            <button
+                    {filteredSeriesList.length > 0 && (
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium">Apply Series to All Classes <span className="text-muted-foreground font-normal text-xs">(optional)</span></label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="field"
+                              size="field"
+                              role="combobox"
+                              className="w-full"
                               type="button"
-                              onClick={() => {
-                                const unselected = defaultClasses.filter(cls => !fields.some(f => f.name === cls.name));
-                                unselected.forEach(cls => append({ name: cls.name, maxRiders: "", seriesIds: [], details: cls.details ?? "" }));
-                              }}
-                              className="text-xs text-primary hover:text-primary/80 font-semibold transition-colors"
+                              aria-label="Apply series to all classes"
                             >
-                              Select All
-                            </button>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {defaultClasses.map(cls => {
-                            const isActive = fields.some(f => f.name === cls.name);
-                            return (
-                              <button
-                                key={cls.id}
-                                type="button"
-                                onClick={() => {
-                                  if (isActive) {
-                                    const idx = fields.findIndex(f => f.name === cls.name);
-                                    if (idx !== -1) { remove(idx); setExpandedCreateDetailRows(prev => { const next = new Set<number>(); prev.forEach(i => { if (i < idx) next.add(i); else if (i > idx) next.add(i - 1); }); return next; }); }
-                                  } else {
-                                    append({ name: cls.name, maxRiders: "", seriesIds: [], details: cls.details ?? "" });
-                                  }
-                                }}
-                                className={
-                                  isActive
-                                    ? "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border cursor-pointer transition-colors bg-primary text-primary-foreground border-primary"
-                                    : "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border cursor-pointer transition-colors bg-muted text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
-                                }
-                              >
-                                {cls.name}
-                              </button>
-                            );
-                          })}
-                        </div>
+                              <span className="truncate text-sm">
+                                {createSeriesIds.length === 0
+                                  ? "None"
+                                  : createSeriesIds.length === 1
+                                    ? (filteredSeriesList.find(s => s.id === createSeriesIds[0])?.name ?? "1 series")
+                                    : `${createSeriesIds.length} series`}
+                              </span>
+                              <ChevronsUpDown size={14} className="ml-1 shrink-0 opacity-50" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-72 p-2" align="start">
+                            {filteredSeriesList.map(s => {
+                              const checked = createSeriesIds.includes(s.id);
+                              return (
+                                <div
+                                  key={s.id}
+                                  className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer"
+                                  onClick={() => setCreateSeriesIds(checked
+                                    ? createSeriesIds.filter(id => id !== s.id)
+                                    : [...createSeriesIds, s.id]
+                                  )}
+                                >
+                                  <div className={`h-4 w-4 rounded border flex items-center justify-center shrink-0 ${checked ? "bg-primary border-primary" : "border-input"}`}>
+                                    {checked && <Check size={10} className="text-primary-foreground" />}
+                                  </div>
+                                  <span className="text-sm">{s.name} <span className="text-muted-foreground">({s.season})</span></span>
+                                </div>
+                              );
+                            })}
+                          </PopoverContent>
+                        </Popover>
+                        <p className="text-xs text-muted-foreground">Selected series are applied to every class above. Use the per-class dropdown for individual overrides.</p>
+                        {clubSeriesList.length > filteredSeriesList.length && (
+                          <p className="text-xs text-muted-foreground">Only series with a matching scoring format are shown.</p>
+                        )}
                       </div>
                     )}
-                    {fields.length > 0 && (
-                      <div className="hidden sm:grid grid-cols-[1fr_1fr_140px_32px_32px] gap-2 mb-1">
-                        <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Class Name</span>
-                        <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Series</span>
-                        <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground px-1">Max Riders</span>
-                        <span />
-                        <span />
-                      </div>
-                    )}
-                    {fields.map((field, index) => (
-                      <div key={field.id} className="space-y-1">
-                      <div className="grid grid-cols-2 sm:grid-cols-[1fr_1fr_140px_32px_32px] gap-2 items-start">
-                        <FormField
-                          control={form.control}
-                          name={`raceClasses.${index}.name`}
-                          render={({ field }) => (
-                            <FormItem className="col-span-2 sm:col-span-1">
-                              <FormControl>
-                                <Input placeholder="e.g. 450 Pro" aria-label={`Class ${index + 1} name`} {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name={`raceClasses.${index}.seriesIds`}
-                          render={({ field: seriesField }) => {
-                            const selected: number[] = seriesField.value ?? [];
-                            const seriesOptions = clubSeriesList ?? [];
-                            const label = selected.length === 0
-                              ? "None"
-                              : selected.length === 1
-                                ? (seriesOptions.find(s => s.id === selected[0])?.name ?? "1 series")
-                                : `${selected.length} series`;
-                            return (
-                              <FormItem>
-                                <Popover>
-                                  <PopoverTrigger asChild>
-                                    <Button
-                                      variant="field"
-                                      size="field"
-                                      role="combobox"
-                                      className="w-full"
+
+                    {/* Brand Contingencies */}
+                    {!isSuperAdmin && (() => {
+                      const allKnown = [...new Set([...libraryContingencies, ...createContingencyBrands])];
+                      const handleAddBrand = () => {
+                        const trimmed = createNewBrandInput.trim();
+                        if (!trimmed || allKnown.includes(trimmed)) { setCreateNewBrandInput(""); return; }
+                        const updatedLibrary = [...libraryContingencies, trimmed];
+                        setCreateContingencyBrands(prev => [...prev, trimmed]);
+                        setCreateNewBrandInput("");
+                        if (sessionClubId) {
+                          putClubSettings.mutate({ clubId: sessionClubId, data: { brandContingencies: updatedLibrary } as any });
+                        }
+                      };
+                      return (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-1.5">
+                            <Flag size={13} className="text-muted-foreground" />
+                            <label className="text-sm font-medium">Brand Contingencies <span className="text-muted-foreground font-normal text-xs">(optional)</span></label>
+                          </div>
+                          <div className="border rounded-lg p-3 space-y-2.5 bg-muted/20">
+                            {allKnown.length === 0 && (
+                              <p className="text-xs text-muted-foreground">No contingency brands yet — add one below.</p>
+                            )}
+                            {allKnown.length > 0 && (
+                              <div className="flex flex-wrap gap-1.5">
+                                {allKnown.map(brand => {
+                                  const selected = createContingencyBrands.includes(brand);
+                                  return (
+                                    <button
+                                      key={brand}
                                       type="button"
-                                      aria-label={`Class ${index + 1} series: ${label}`}
+                                      onClick={() => setCreateContingencyBrands(selected
+                                        ? createContingencyBrands.filter(b => b !== brand)
+                                        : [...createContingencyBrands, brand]
+                                      )}
+                                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                                        selected
+                                          ? "bg-primary text-primary-foreground border-primary"
+                                          : "bg-background text-foreground border-input hover:bg-muted"
+                                      }`}
                                     >
-                                      <span className="truncate text-sm"><span className="sm:hidden text-muted-foreground">Series: </span>{label}</span>
-                                      <ChevronsUpDown size={14} className="ml-1 shrink-0 opacity-50" />
-                                    </Button>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-60 p-2" align="start">
-                                    {seriesOptions.length === 0 ? (
-                                      <p className="text-xs text-muted-foreground p-1">No series found for this club.</p>
-                                    ) : (
-                                      seriesOptions.map(s => {
-                                        const checked = selected.includes(s.id);
-                                        return (
-                                          <div
-                                            key={s.id}
-                                            className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer"
-                                            onClick={() => {
-                                              if (checked) {
-                                                seriesField.onChange(selected.filter(id => id !== s.id));
-                                              } else {
-                                                seriesField.onChange([...selected, s.id]);
-                                              }
-                                            }}
-                                          >
-                                            <div className={`h-4 w-4 rounded border flex items-center justify-center shrink-0 ${checked ? "bg-primary border-primary" : "border-input"}`}>
-                                              {checked && <Check size={10} className="text-primary-foreground" />}
-                                            </div>
-                                            <span className="text-sm">{s.name}</span>
-                                          </div>
-                                        );
-                                      })
-                                    )}
-                                  </PopoverContent>
-                                </Popover>
-                                <FormMessage />
-                              </FormItem>
-                            );
-                          }}
-                        />
-                        <FormField
-                          control={form.control}
-                          name={`raceClasses.${index}.maxRiders`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormControl>
-                                <Input
-                                  type="number"
-                                  min="1"
-                                  placeholder="Unlimited"
-                                  aria-label={`Class ${index + 1} max riders`}
-                                  {...field}
-                                  value={field.value ?? ""}
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <div className="col-span-2 flex justify-end gap-2 sm:contents">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          title={expandedCreateDetailRows.has(index) ? "Hide details" : "Add class rules / details"}
-                          aria-label={expandedCreateDetailRows.has(index) ? `Hide class ${index + 1} details` : `Add class ${index + 1} rules / details`}
-                          aria-expanded={expandedCreateDetailRows.has(index)}
-                          className={`h-9 w-8 mt-0 ${expandedCreateDetailRows.has(index) ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-primary hover:bg-primary/10"}`}
-                          onClick={() => setExpandedCreateDetailRows(prev => {
-                            const next = new Set(prev);
-                            if (next.has(index)) next.delete(index); else next.add(index);
-                            return next;
-                          })}
-                        >
-                          <Info size={14} />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-9 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 mt-0"
-                          aria-label={`Remove class ${index + 1}`}
-                          onClick={() => {
-                            remove(index);
-                            setExpandedCreateDetailRows(prev => {
-                              const next = new Set<number>();
-                              prev.forEach(i => { if (i < index) next.add(i); else if (i > index) next.add(i - 1); });
-                              return next;
-                            });
-                          }}
-                        >
-                          <Trash2 size={14} />
-                        </Button>
+                                      {selected && <Check size={9} />}
+                                      {brand}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                            <div className="flex gap-2">
+                              <Input
+                                placeholder="Add new brand…"
+                                aria-label="New contingency brand"
+                                value={createNewBrandInput}
+                                onChange={e => setCreateNewBrandInput(e.target.value)}
+                                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleAddBrand(); } }}
+                                className="h-8 text-sm"
+                              />
+                              <Button type="button" variant="outline" size="sm" className="h-8 px-3 shrink-0" aria-label="Add brand" onClick={handleAddBrand}>
+                                <Plus size={14} />
+                              </Button>
+                            </div>
+                          </div>
                         </div>
-                        </div>
-                        {expandedCreateDetailRows.has(index) && (
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {createStep === "fees" && (
+                  <div className="space-y-4">
+                    {/* Collect Payments checkbox */}
+                    {!isSuperAdmin && (
+                      <div className="flex items-center gap-2 pt-1">
+                        {stripeReady ? (
                           <FormField
                             control={form.control}
-                            name={`raceClasses.${index}.details`}
+                            name="paymentEnabled"
                             render={({ field }) => (
-                              <FormItem>
+                              <FormItem className="flex items-center gap-2 space-y-0">
                                 <FormControl>
-                                  <textarea
-                                    {...field}
-                                    rows={3}
-                                    aria-label={`Class ${index + 1} rules and details`}
-                                    placeholder="Class rules, eligibility requirements, bike specs, or any other details riders should know…"
-                                    className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+                                  <Checkbox
+                                    checked={field.value}
+                                    onCheckedChange={field.onChange}
                                   />
                                 </FormControl>
+                                <FormLabel className="cursor-pointer font-normal">Collect Payments</FormLabel>
+                              </FormItem>
+                            )}
+                          />
+                        ) : (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="flex items-center gap-2 cursor-default">
+                                <Checkbox disabled checked={false} />
+                                <span className="text-sm text-muted-foreground">Collect Payments</span>
+                                <Info size={14} className="text-muted-foreground" />
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="max-w-64">
+                              <>Set up Stripe Connect under <strong>Payments</strong> in the sidebar to collect entry fees.</>
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Entry fee input (only when payment enabled) */}
+                    {stripeReady && watchPaymentEnabled && (
+                      <FormField
+                        control={form.control}
+                        name="entryFee"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Entry Fee ($) <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                placeholder="0.00"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
+                    {/* Early sign-up incentive period */}
+                    {stripeReady && watchPaymentEnabled && (
+                      <div className="space-y-3 pl-0.5">
+                        <FormField
+                          control={form.control}
+                          name="earlyBirdEnabled"
+                          render={({ field }) => (
+                            <FormItem className="flex items-center gap-2 space-y-0">
+                              <FormControl>
+                                <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                              </FormControl>
+                              <FormLabel className="cursor-pointer font-normal">Add early sign-up incentive period</FormLabel>
+                            </FormItem>
+                          )}
+                        />
+                        {watchEarlyBirdEnabled && (
+                          <div className="ml-6 grid grid-cols-2 gap-4">
+                            <FormField
+                              control={form.control}
+                              name="earlyBirdFee"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Early Bird Fee ($) <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                                  <FormControl>
+                                    <Input type="number" min="0" step="0.01" placeholder="0.00" {...field} />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                            <FormField
+                              control={form.control}
+                              name="earlyBirdEndsAt"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Incentive Period Ends <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                                  <FormControl>
+                                    <Input type="date" {...field} />
+                                  </FormControl>
+                                  <p className="text-xs text-muted-foreground">Last day early fee applies (inclusive).</p>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* RFID sticker fee (with online payments) */}
+                    {stripeReady && watchPaymentEnabled && (
+                      <div className="space-y-2 pl-0.5">
+                        <FormField
+                          control={form.control}
+                          name="rfidStickerFee"
+                          render={({ field }) => (
+                            <FormItem className="ml-0">
+                              <FormLabel>RFID Sticker Fee ($) <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                              <FormControl>
+                                <Input type="number" min="0" step="0.01" placeholder="Leave blank if free" {...field} />
+                              </FormControl>
+                              <p className="text-xs text-muted-foreground">Charge riders for an RFID sticker at registration or at the gate.</p>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    )}
+
+                    {/* Transponder rental (RM TrackR). Paid online with the
+                        entry when payments are on, otherwise collected at the gate. */}
+                    {(
+                      <div className="space-y-2 pl-0.5">
+                        <FormField
+                          control={form.control}
+                          name="transponderRentalEnabled"
+                          render={({ field }) => (
+                            <FormItem className="flex items-center gap-2 space-y-0">
+                              <FormControl>
+                                <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                              </FormControl>
+                              <FormLabel className="cursor-pointer font-normal">Offer transponder rentals to riders</FormLabel>
+                            </FormItem>
+                          )}
+                        />
+                        {watchTransponderRentalEnabled && (
+                          <FormField
+                            control={form.control}
+                            name="transponderRentalFee"
+                            render={({ field }) => (
+                              <FormItem className="ml-6">
+                                <FormLabel>Rental Fee per Transponder ($) <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                                <FormControl>
+                                  <Input type="number" min="0" step="0.01" placeholder="15.00" {...field} />
+                                </FormControl>
+                                  {!(stripeReady && watchPaymentEnabled) && (
+                                    <p className="text-xs text-muted-foreground">Online payments are off, so riders pay the rental at the gate. Check-in shows it as owed.</p>
+                                  )}
                                 <FormMessage />
                               </FormItem>
                             )}
                           />
                         )}
                       </div>
-                    ))}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="w-full gap-2 border-dashed font-heading uppercase tracking-wider text-muted-foreground hover:text-foreground mt-1"
-                      onClick={() => append({ name: "", maxRiders: "", seriesIds: [], details: "" })}
-                    >
-                      <Plus size={14} /> Add Class
-                    </Button>
-                  </div>
-                </div>
+                    )}
 
-                {/* Brand Contingencies */}
-                {!isSuperAdmin && (() => {
-                  const allKnown = [...new Set([...libraryContingencies, ...createContingencyBrands])];
-                  const handleAddBrand = () => {
-                    const trimmed = createNewBrandInput.trim();
-                    if (!trimmed || allKnown.includes(trimmed)) { setCreateNewBrandInput(""); return; }
-                    const updatedLibrary = [...libraryContingencies, trimmed];
-                    setCreateContingencyBrands(prev => [...prev, trimmed]);
-                    setCreateNewBrandInput("");
-                    if (sessionClubId) {
-                      putClubSettings.mutate({ clubId: sessionClubId, data: { brandContingencies: updatedLibrary } as any });
-                    }
-                  };
-                  return (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-1.5">
-                        <Flag size={13} className="text-muted-foreground" />
-                        <label className="text-sm font-medium">Brand Contingencies</label>
-                      </div>
-                      <div className="border rounded-lg p-3 space-y-2.5 bg-muted/20">
-                        {allKnown.length === 0 && (
-                          <p className="text-xs text-muted-foreground">No contingency brands yet — add one below.</p>
-                        )}
-                        {allKnown.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5">
-                            {allKnown.map(brand => {
-                              const selected = createContingencyBrands.includes(brand);
-                              return (
-                                <button
-                                  key={brand}
-                                  type="button"
-                                  onClick={() => setCreateContingencyBrands(selected
-                                    ? createContingencyBrands.filter(b => b !== brand)
-                                    : [...createContingencyBrands, brand]
-                                  )}
-                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
-                                    selected
-                                      ? "bg-primary text-primary-foreground border-primary"
-                                      : "bg-background text-foreground border-input hover:bg-muted"
-                                  }`}
-                                >
-                                  {selected && <Check size={9} />}
-                                  {brand}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                        <div className="flex gap-2">
-                          <Input
-                            placeholder="Add new brand…"
-                            aria-label="New contingency brand"
-                            value={createNewBrandInput}
-                            onChange={e => setCreateNewBrandInput(e.target.value)}
-                            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleAddBrand(); } }}
-                            className="h-8 text-sm"
-                          />
-                          <Button type="button" variant="outline" size="sm" className="h-8 px-3 shrink-0" aria-label="Add brand" onClick={handleAddBrand}>
-                            <Plus size={14} />
+                    {/* Purchase Options */}
+                    <div className="space-y-2 pt-1">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-medium text-foreground">Purchase Options <span className="text-muted-foreground font-normal text-xs">(optional)</span></p>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => appendPurchaseOption({ name: "", amount: "" })}
+                          >
+                            <Plus size={13} className="mr-1" /> Add Purchase Option
                           </Button>
                         </div>
                       </div>
-                    </div>
-                  );
-                })()}
-
-                {filteredSeriesList.length > 0 && (
-                  <div className="space-y-1.5">
-                    <label className="text-sm font-medium">Apply Series to All Classes</label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="field"
-                          size="field"
-                          role="combobox"
-                          className="w-full"
-                          type="button"
-                          aria-label="Apply series to all classes"
-                        >
-                          <span className="truncate text-sm">
-                            {createSeriesIds.length === 0
-                              ? "None"
-                              : createSeriesIds.length === 1
-                                ? (filteredSeriesList.find(s => s.id === createSeriesIds[0])?.name ?? "1 series")
-                                : `${createSeriesIds.length} series`}
-                          </span>
-                          <ChevronsUpDown size={14} className="ml-1 shrink-0 opacity-50" />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-72 p-2" align="start">
-                        {filteredSeriesList.map(s => {
-                          const checked = createSeriesIds.includes(s.id);
-                          return (
-                            <div
-                              key={s.id}
-                              className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer"
-                              onClick={() => setCreateSeriesIds(checked
-                                ? createSeriesIds.filter(id => id !== s.id)
-                                : [...createSeriesIds, s.id]
-                              )}
-                            >
-                              <div className={`h-4 w-4 rounded border flex items-center justify-center shrink-0 ${checked ? "bg-primary border-primary" : "border-input"}`}>
-                                {checked && <Check size={10} className="text-primary-foreground" />}
-                              </div>
-                              <span className="text-sm">{s.name} <span className="text-muted-foreground">({s.season})</span></span>
+                      <SellItemQuickAdd options={form.watch("purchaseOptions")} onAdd={o => appendPurchaseOption(o as any)} />
+                      {purchaseOptionFields.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          Add optional items riders can purchase at registration — gate fees, pit passes, etc.
+                        </p>
+                      ) : (
+                        <div className="space-y-2">
+                          <p className="text-xs text-muted-foreground">Name <span className="text-destructive">*</span> and price <span className="text-destructive">*</span> are required for each item.</p>
+                          {purchaseOptionFields.map((optField, idx) => (
+                            <div key={optField.id} className="flex flex-wrap sm:flex-nowrap gap-2 items-start">
+                              <FormField
+                                control={form.control}
+                                name={`purchaseOptions.${idx}.name`}
+                                render={({ field }) => (
+                                  <FormItem className="w-full sm:w-auto sm:flex-1">
+                                    <FormControl>
+                                      <Input placeholder="Gate fee, pit pass…" aria-label={`Purchase option ${idx + 1} name`} {...field} readOnly={form.watch(`purchaseOptions.${idx}.optionId`) === RM_TRACKR_OPTION_ID} />
+                                    </FormControl>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                              <FormField
+                                control={form.control}
+                                name={`purchaseOptions.${idx}.amount`}
+                                render={({ field }) => (
+                                  <FormItem className="flex-1 sm:flex-none sm:w-28">
+                                    <FormControl>
+                                      <div className="relative">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
+                                        <Input type="number" min="0" step="0.01" placeholder="0.00" className="pl-6" aria-label={`Purchase option ${idx + 1} price`} {...field} readOnly={form.watch(`purchaseOptions.${idx}.optionId`) === RM_TRACKR_OPTION_ID} />
+                                      </div>
+                                    </FormControl>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="mt-0.5 shrink-0 text-muted-foreground hover:text-destructive"
+                                aria-label={`Remove purchase option ${idx + 1}`}
+                                onClick={() => removePurchaseOption(idx)}
+                              >
+                                <X size={14} />
+                              </Button>
                             </div>
-                          );
-                        })}
-                      </PopoverContent>
-                    </Popover>
-                    <p className="text-xs text-muted-foreground">Selected series are applied to every class above. Use the per-class dropdown for individual overrides.</p>
-                    {clubSeriesList.length > filteredSeriesList.length && (
-                      <p className="text-xs text-muted-foreground">Only series with a matching scoring format are shown.</p>
-                    )}
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 
-                {/* Event Image */}
-                <div className="space-y-1.5 pt-2">
-                  <label className="text-sm font-medium flex items-center gap-1.5">
-                    <ImageIcon size={14} className="text-primary" /> Event Image <span className="text-muted-foreground font-normal">(optional)</span>
-                  </label>
-                  <input
-                    id="create-event-img"
-                    type="file"
-                    accept="image/jpeg,image/png,image/gif,image/webp"
-                    className="hidden"
-                    onChange={e => {
-                      const f = e.target.files?.[0];
-                      if (!f) return;
-                      e.target.value = "";
-                      if (!ALLOWED_IMAGE_TYPES.includes(f.type)) {
-                        setImgValidationError("Unsupported file type. Please upload a JPEG, PNG, GIF, or WebP image.");
-                        return;
-                      }
-                      if (f.size > MAX_IMAGE_BYTES) {
-                        setImgValidationError("Image is too large. Maximum size is 10 MB — try compressing it first.");
-                        return;
-                      }
-                      setImgValidationError(null);
-                      setPendingImageFile(f);
-                    }}
-                  />
-                  {pendingImageFile ? (
-                    <div className="flex flex-wrap items-center gap-3 p-3 rounded-md border bg-muted/40">
-                      <ImageIcon size={16} className="text-primary shrink-0" />
-                      <span className="text-sm flex-1 truncate min-w-0">{pendingImageFile.name}</span>
-                      <label className="flex items-center gap-1.5 cursor-pointer select-none text-xs text-muted-foreground shrink-0">
-                        <Checkbox checked={removeBgOnCreate} onCheckedChange={v => setRemoveBgOnCreate(!!v)} />
-                        Remove background
-                      </label>
-                      <button type="button" aria-label="Remove image" onClick={() => { setPendingImageFile(null); setImgValidationError(null); }} className="text-muted-foreground hover:text-destructive shrink-0">
-                        <X size={14} />
-                      </button>
+                {createStep === "timing" && (
+                  <div className="space-y-4">
+                    {/* Timing: no technology to pick. Whatever readers time the event (RM TrackR loops,
+                        RFID readers or both) decide which tags riders need. */}
+                    <div className="rounded-md border bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground">
+                      <span className="font-semibold text-foreground">Timing:</span> use RM TrackR loops, RFID readers, or both. Set up your readers in Reader Setup and place them on the event's Course Map; riders need a tag for each kind of reader you use.
                     </div>
-                  ) : (
-                    <label htmlFor="create-event-img" className="flex items-center justify-center gap-2 p-3 rounded-md border border-dashed text-sm text-muted-foreground hover:text-foreground hover:border-primary cursor-pointer transition-colors">
-                      <Upload size={14} /> Choose image
-                    </label>
-                  )}
-                  {imgValidationError && (
-                    <p className="text-sm text-destructive font-medium flex items-center gap-1.5 mt-1">
-                      {imgValidationError}
-                    </p>
-                  )}
-                  {!imgValidationError && (
-                    <p className="text-xs text-muted-foreground mt-1">JPEG, PNG, GIF, or WebP · Max 10 MB</p>
-                  )}
-                </div>
 
-                <div className="sticky bottom-0 bg-background border-t pt-4 pb-1 -mx-6 px-6 mt-2 flex justify-between items-center">
+                    {/* Require transponder (for RM TrackR loops). Riders can rent or buy one instead. */}
+                    {(
+                      <FormField
+                        control={form.control}
+                        name="requireTransponder"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Require transponder number?</FormLabel>
+                            <p className="text-xs text-muted-foreground -mt-1 mb-2">
+                              Must riders give a transponder number to register? Renting or buying one at registration also counts.
+                            </p>
+                            <div className="grid grid-cols-2 gap-2">
+                              {[
+                                { value: true, label: "Yes – Required" },
+                                { value: false, label: "No – Optional" },
+                              ].map(opt => (
+                                <button
+                                  key={String(opt.value)}
+                                  type="button"
+                                  onClick={() => field.onChange(opt.value)}
+                                  className={`flex flex-col items-start px-4 py-3 rounded-md border text-left transition-all ${
+                                    field.value === opt.value
+                                      ? "border-primary bg-primary/5 text-foreground"
+                                      : "border-input bg-transparent text-muted-foreground hover:border-primary/50"
+                                  }`}
+                                >
+                                  <span className={`text-sm font-semibold ${field.value === opt.value ? "text-primary" : ""}`}>{opt.label}</span>
+                                </button>
+                              ))}
+                            </div>
+                            {field.value && (
+                              <TransponderRequirementTip
+                                rentalsOffered={!!watchTransponderRentalEnabled}
+                                trackrOffered={form.watch("purchaseOptions").some(o => o.optionId === RM_TRACKR_OPTION_ID)}
+                                onOfferRentals={() => form.setValue("transponderRentalEnabled", true, { shouldDirty: true })}
+                                onOfferTrackr={() => appendPurchaseOption(trackrOption)}
+                              />
+                            )}
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
+                    {/* Quick Check-In */}
+                    <FormField
+                      control={form.control}
+                      name="quickCheckinEnabled"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="flex items-center gap-1.5">
+                            <MapPin size={14} /> Quick Check-In
+                          </FormLabel>
+                          <p className="text-xs text-muted-foreground -mt-1 mb-2">
+                            Let riders self-check-in from the rider app when they arrive within 1 mile of the track on race day.
+                            You choose what riders need first (payment, timing tag, waivers and more).
+                          </p>
+                          <div className="grid grid-cols-2 gap-2">
+                            {[
+                              { value: true, label: "Enabled", desc: "Riders nearby get a check-in prompt" },
+                              { value: false, label: "Disabled", desc: "Staff checks in riders at the gate" },
+                            ].map(opt => (
+                              <button
+                                key={String(opt.value)}
+                                type="button"
+                                onClick={() => {
+                                  // Turning it on asks what riders need first (everything checked to start).
+                                  if (opt.value && !field.value) setQcReqOpen(true);
+                                  field.onChange(opt.value);
+                                }}
+                                className={`flex flex-col items-start px-4 py-3 rounded-md border text-left transition-all ${
+                                  field.value === opt.value
+                                    ? "border-primary bg-primary/5 text-foreground"
+                                    : "border-input bg-transparent text-muted-foreground hover:border-primary/50"
+                                }`}
+                              >
+                                <span className={`text-sm font-semibold ${field.value === opt.value ? "text-primary" : ""}`}>{opt.label}</span>
+                                <span className="text-xs mt-0.5">{opt.desc}</span>
+                              </button>
+                            ))}
+                          </div>
+                          {field.value && (
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs mt-2">
+                              <span className="text-muted-foreground">{quickCheckinRequirementsSummary(form.watch("quickCheckinRequirements"))}</span>
+                              <button type="button" className="font-semibold text-primary underline underline-offset-2" onClick={() => setQcReqOpen(true)}>
+                                Edit requirements
+                              </button>
+                            </div>
+                          )}
+                          <QuickCheckinRequirementsDialog
+                            open={qcReqOpen}
+                            onOpenChange={setQcReqOpen}
+                            value={form.watch("quickCheckinRequirements")}
+                            onSave={v => { form.setValue("quickCheckinRequirements", v, { shouldDirty: true }); setQcReqOpen(false); }}
+                            context={{
+                              paymentEnabled: !!watchPaymentEnabled,
+                              requiresWaiver: !!(form.watch("requireWaiver") || form.watch("requireLiabilityWaiver")),
+                            }}
+                          />
+                          {field.value && (
+                            <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-3 py-2 mt-2">
+                              We'll look up the track's location when you save (add a street address for the best match). On race day riders get a phone notification when they arrive within 1 mile, then tap Check In in the rider app.
+                            </p>
+                          )}
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                )}
+
+                {createStep === "review" && renderCreateReview()}
+
+                <div className="sticky -bottom-6 -mb-6 bg-background border-t pt-4 pb-6 -mx-6 px-6 mt-2 flex flex-wrap justify-between items-center gap-2">
                   <Button
                     type="button"
                     variant="outline"
@@ -1857,9 +2157,22 @@ export default function EventsList() {
                   >
                     {isSavingDraft ? <><Loader2 size={14} className="mr-2 animate-spin" /> Saving…</> : <><Pencil size={14} className="mr-2" /> Save as Draft</>}
                   </Button>
-                  <Button type="submit" disabled={isCreateBusy || createImgState === "processing" || createImgState === "uploading"} className="font-heading uppercase tracking-wider">
-                    {createMutation.isPending && !isSavingDraft ? "Creating..." : createImgState === "processing" ? <><Loader2 size={14} className="mr-2 animate-spin" /> Removing background…</> : createImgState === "uploading" ? <><Loader2 size={14} className="mr-2 animate-spin" /> Uploading image…</> : "Create Event"}
-                  </Button>
+                  <div className="flex gap-2 ml-auto">
+                    {createStepIndex > 0 && (
+                      <Button type="button" variant="outline" disabled={isCreateBusy} onClick={goToPreviousCreateStep} className="font-heading uppercase tracking-wider">
+                        <ChevronLeft size={14} /> Back
+                      </Button>
+                    )}
+                    {createStep === "review" ? (
+                      <Button key="create" type="submit" disabled={isCreateBusy || createImgState === "processing" || createImgState === "uploading"} className="font-heading uppercase tracking-wider">
+                        {createMutation.isPending && !isSavingDraft ? "Creating..." : createImgState === "processing" ? <><Loader2 size={14} className="mr-2 animate-spin" /> Removing background…</> : createImgState === "uploading" ? <><Loader2 size={14} className="mr-2 animate-spin" /> Uploading image…</> : "Create Event"}
+                      </Button>
+                    ) : (
+                      <Button key="next" type="button" disabled={isCreateBusy} onClick={() => void goToNextCreateStep()} className="font-heading uppercase tracking-wider">
+                        {editingFromReview ? "Back to Review" : createStepIndex === CREATE_STEPS.length - 2 ? "Review" : "Next"} <ChevronRight size={14} />
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </form>
             </Form>
