@@ -1320,7 +1320,7 @@ export default function EventsList() {
                         )}
                       />
                       {!isSuperAdmin && (() => {
-                        const hasWaiverText = !!(clubSettingsData?.riderAcknowledgement?.trim());
+                        const hasWaiverText = !!(clubSettingsData?.riderAcknowledgement?.trim() || (clubSettingsData as any)?.waiverPdfUrl);
                         return hasWaiverText ? (
                           <FormField
                             control={form.control}
@@ -1347,14 +1347,14 @@ export default function EventsList() {
                               </div>
                             </TooltipTrigger>
                             <TooltipContent side="right" className="max-w-64">
-                              Set rider acknowledgement form text in Admin settings first.
+                              Add your rider acknowledgement form first (Team → Forms).
                             </TooltipContent>
                           </Tooltip>
                         );
                       })()}
 
                       {!isSuperAdmin && (() => {
-                        const hasLiabilityWaiverText = !!((clubSettingsData as any)?.liabilityWaiverText?.trim());
+                        const hasLiabilityWaiverText = !!((clubSettingsData as any)?.liabilityWaiverText?.trim() || (clubSettingsData as any)?.liabilityWaiverPdfUrl);
                         return hasLiabilityWaiverText ? (
                           <FormField
                             control={form.control}
@@ -1381,7 +1381,7 @@ export default function EventsList() {
                               </div>
                             </TooltipTrigger>
                             <TooltipContent side="right" className="max-w-64">
-                              Set liability waiver text in Admin settings first.
+                              Upload your liability waiver first (Team → Forms).
                             </TooltipContent>
                           </Tooltip>
                         );
