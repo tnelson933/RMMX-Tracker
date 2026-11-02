@@ -1,4 +1,3 @@
-import { eventTimingTags, timingTagsLabel } from "@/components/organizer/timingTags";
 import { eventToday } from "@workspace/api-zod";
 import { localDateString } from "@/lib/eventDates";
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
@@ -1234,7 +1233,6 @@ export default function EventSchedule() {
   const raceStyle: "motocross" | "enduro" | "cross_country" = (event as any)?.raceStyle ?? "motocross";
   const isEnduro = raceStyle === "enduro";
   const isCrossCountry = raceStyle === "cross_country";
-  const timingLabel = timingTagsLabel(eventTimingTags(event));
 
   // ── Local state ──
   const [viewMode, setViewMode] = useState<ViewMode>("run-order");
@@ -3464,8 +3462,8 @@ export default function EventSchedule() {
                       {genTestRfidStart && <div className="h-2 w-2 rounded-full bg-primary" />}
                     </div>
                     <div>
-                      <p className="text-sm font-semibold">{timingLabel} at start &amp; finish</p>
-                      <p className="text-xs text-muted-foreground">Rider's transponder starts the clock at the test entrance and stops it at the finish — fully automatic.</p>
+                      <p className="text-sm font-semibold">Automatic start &amp; finish</p>
+                      <p className="text-xs text-muted-foreground">A reader at the test entrance starts each rider's clock and one at the finish stops it, from their RM TrackR or RFID tag. Fully automatic.</p>
                     </div>
                   </button>
                   <button
@@ -3477,8 +3475,8 @@ export default function EventSchedule() {
                       {!genTestRfidStart && <div className="h-2 w-2 rounded-full bg-primary" />}
                     </div>
                     <div>
-                      <p className="text-sm font-semibold">Manual start, {timingLabel} finish</p>
-                      <p className="text-xs text-muted-foreground">Enter the rider's number at the start to kick off their time; the finish transponder stops it automatically.</p>
+                      <p className="text-sm font-semibold">Manual start, automatic finish</p>
+                      <p className="text-xs text-muted-foreground">Enter the rider's number at the start to begin their time; the reader at the finish stops it automatically.</p>
                     </div>
                   </button>
                 </div>
@@ -4402,10 +4400,10 @@ export default function EventSchedule() {
                 />
                 <div>
                   <label htmlFor="enduroRfidStart" className="text-sm font-medium cursor-pointer">
-                    {timingLabel} start gate
+                    Automatic start (reader at the start)
                   </label>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    When checked, the start transponder crossing triggers the timer. Otherwise riders are started manually by bib number.
+                    When checked, a rider's tag (RM TrackR or RFID) crossing the start reader starts their time. Otherwise riders are started manually by bib number.
                   </p>
                 </div>
               </div>
