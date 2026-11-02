@@ -329,7 +329,11 @@ export default function Checkin() {
     setRentalAssignInputId(null);
   };
 
-  const { data: event, isLoading: eventLoading } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
+  // Fresh each time check-in opens (and on return to the tab, and every minute while open):
+  // the tags shown and sold follow the club's readers, so a reader added or removed shows up.
+  const { data: event, isLoading: eventLoading } = useGetEvent(eventId, {
+    query: { enabled: !!eventId, refetchOnMount: "always", refetchOnWindowFocus: true, refetchInterval: 60_000 } as any,
+  });
   // Which kinds of tag the event's readers use (RM TrackR, RFID or both).
   const tags = eventTimingTags(event);
   // What check-in shows and sells: every kind any of the club's readers use.
