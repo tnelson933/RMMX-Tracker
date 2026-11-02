@@ -65,10 +65,20 @@ router.get("/events/:eventId/checkins", async (req, res) => {
 
   // Fetch all waiver signatures for this event to compute waiverSigned per rider.
   const sigRows = await db
-    .select({ signerEmail: liabilityWaiverSignaturesTable.signerEmail })
+    .select({
+      signerEmail: liabilityWaiverSignaturesTable.signerEmail,
+      registrationId: liabilityWaiverSignaturesTable.registrationId,
+      signerType: liabilityWaiverSignaturesTable.signerType,
+      minorRiderName: liabilityWaiverSignaturesTable.minorRiderName,
+    })
     .from(liabilityWaiverSignaturesTable)
     .where(eq(liabilityWaiverSignaturesTable.eventId, eventId));
-  const signedEmails = new Set(sigRows.map(s => s.signerEmail.toLowerCase()));
+  const riderOfReg = new Map(regs.map(r => [r.registrationId, r.riderId]));
+  const signedRiders = new Set(sigRows.filter(s => s.registrationId != null).map(s => riderOfReg.get(s.registrationId!)).filter((id): id is number => id != null));
+  const unlinked = sigRows.filter(s => s.registrationId == null);
+  const signedEmails = new Set(unlinked.filter(s => s.signerType !== "guardian").map(s => s.signerEmail.toLowerCase()));
+  const normName = (n: string) => n.toLowerCase().replace(/\s+/g, " ").trim();
+  const signedMinors = new Set(unlinked.filter(s => s.signerType === "guardian" && s.minorRiderName).map(s => normName(s.minorRiderName!)));
 
   // RFID stickers assigned for this event. An event can use RM TrackR loops and
   // RFID readers together, so a rider may have a transponder and a sticker.
@@ -128,7 +138,9 @@ router.get("/events/:eventId/checkins", async (req, res) => {
       // Each kind of tag on its own (rfidNumber above is whichever was set last).
       transponderNumber,
       rfidTag,
-      waiverSigned: riderEmail ? signedEmails.has(riderEmail) : false,
+      waiverSigned: signedRiders.has(r.riderId)
+        || (!!riderEmail && signedEmails.has(riderEmail))
+        || signedMinors.has(normName(`${r.firstName ?? ""} ${r.lastName ?? ""}`)),
     };
   }));
 });

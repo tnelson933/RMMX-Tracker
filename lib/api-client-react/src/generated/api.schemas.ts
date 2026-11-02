@@ -1434,6 +1434,8 @@ export interface RaceResult {
   dns?: boolean;
   /** @nullable */
   bibNumber?: string | null;
+  /** heat, main, practice, enduro_test… (practice isn't scored) */
+  motoType?: string;
 }
 
 export interface RiderResultInput {
@@ -1655,6 +1657,17 @@ export interface StateInfo {
   eventCount: number;
 }
 
+/**
+ * Racing today or later, by the event's own local date (its time zone).
+ */
+export type UpcomingEventItemPhase = typeof UpcomingEventItemPhase[keyof typeof UpcomingEventItemPhase];
+
+
+export const UpcomingEventItemPhase = {
+  today: 'today',
+  upcoming: 'upcoming',
+} as const;
+
 export interface UpcomingEventItem {
   eventId: number;
   name: string;
@@ -1669,6 +1682,8 @@ export interface UpcomingEventItem {
   trackName?: string;
   status: string;
   clubName?: string;
+  /** Racing today or later, by the event's own local date (its time zone). */
+  phase?: UpcomingEventItemPhase;
 }
 
 export interface RecentResultItem {
@@ -1683,6 +1698,8 @@ export interface RecentResultItem {
   trackName?: string;
   /** True once the organizer has finalized every finished race; otherwise results are unofficial. Absent when the event has no results. */
   official?: boolean;
+  /** @nullable */
+  endDate?: string | null;
 }
 
 export type EventReportData = { [key: string]: unknown };

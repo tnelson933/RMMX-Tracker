@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { useListEvents, useListStates } from "@workspace/api-client-react";
+import { useListRecentResults, useListStates } from "@workspace/api-client-react";
+import { OfficialResultsBadge } from "@/components/OfficialResultsBadge";
 import { TitleBand } from "@/components/TitleBand";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,14 +19,23 @@ export default function Results() {
   
   const { data: states, isLoading: statesLoading } = useListStates();
   
-  const { data: eventsRaw, isLoading: eventsLoading } = useListEvents({
+  // Finished events, newest first, each with whether its results are official yet.
+  const { data: eventsRaw, isLoading: eventsLoading } = useListRecentResults({
     state: stateFilter === "all" ? undefined : stateFilter,
-    status: 'completed'
-  });
+    limit: 200,
+  } as any);
 
-  const events = eventsRaw
-    ? [...eventsRaw].sort((a, b) => b.date.localeCompare(a.date))
-    : undefined;
+  const events = eventsRaw?.map(r => ({
+    id: r.eventId,
+    name: r.eventName,
+    state: r.state,
+    date: r.date,
+    endDate: r.endDate ?? null,
+    location: r.location,
+    trackName: r.trackName,
+    clubName: r.clubName,
+    official: r.official,
+  }));
 
   return (
     <div>
@@ -92,9 +102,13 @@ export default function Results() {
                         <span className="bg-[#FDEAEA] text-primary px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-[0.5px]">
                           {event.state}
                         </span>
-                        <span className="text-xs text-muted-foreground uppercase font-semibold tracking-wider flex items-center gap-1">
-                          <Flag size={12} /> Results Official
-                        </span>
+                        {event.official != null ? (
+                          <OfficialResultsBadge official={event.official} compact />
+                        ) : (
+                          <span className="text-xs text-muted-foreground uppercase font-semibold tracking-wider flex items-center gap-1">
+                            <Flag size={12} /> No results posted
+                          </span>
+                        )}
                       </div>
                       <h3 className="text-2xl font-heading font-bold group-hover:text-primary transition-colors leading-tight mb-2">
                         {event.name}
@@ -103,9 +117,7 @@ export default function Results() {
                         {(event.location || event.trackName) && (
                           <div className="flex items-center gap-1.5">
                             <MapPin size={16} className="text-muted-foreground/70" />
-                            {event.trackName
-                              ? `${event.trackName}, ${event.location}`
-                              : event.location}
+                            {[event.trackName, event.location].filter(Boolean).join(", ")}
                           </div>
                         )}
                         {event.clubName && (

@@ -206,6 +206,7 @@ export * from './stripeConnectStatus';
 export * from './teamMember';
 export * from './teamMemberStatus';
 export * from './upcomingEventItem';
+export * from './upcomingEventItemPhase';
 export * from './updateMe';
 export * from './updatePracticeSessionInput';
 export * from './updatePracticeSessionInputStatus';

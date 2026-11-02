@@ -296,7 +296,7 @@ function MotoScheduleRow({
                 <>
                   <span>·</span>
                   <Trophy size={11} />
-                  {motoResults.length} finishers
+                  {motoResults.filter(r => !r.dnf && !r.dns).length} finishers
                 </>
               ) : hasLineup ? (
                 <>
@@ -420,7 +420,7 @@ export default function EventResults() {
   const liveMode = !!(event && isLiveDay(event.date, (event as any).endDate, event.status));
   const isEnduroEvent = (event as any)?.raceStyle === "enduro";
 
-  const { data: results, isLoading: resultsLoading } = useListResults(eventId, {
+  const { data: allResults, isLoading: resultsLoading } = useListResults(eventId, {
     query: {
       enabled: !!eventId,
       refetchInterval: liveMode ? 15_000 : false,
@@ -469,6 +469,16 @@ export default function EventResults() {
     return () => clearInterval(id);
   }, [eventId]);
 
+  // Practice isn't scored: it doesn't appear as results or count as racers.
+  const results = allResults?.filter(r => r.motoType !== "practice");
+  // A class's races, one table per race (by id: two races may share a name), in running order.
+  const racesIn = (rows: RaceResult[]) => {
+    const order = (id: number) => motos?.find(m => m.id === id)?.motoNumber ?? id;
+    return Array.from(new Set(rows.map(r => r.motoId))).sort((a, b) => order(a) - order(b));
+  };
+  // Enduro tests run for all classes at once ("All Classes"), so they belong to every class tab.
+  const motoForClass = (m: Moto, cls: string) => m.raceClass === cls || m.type === "enduro_test";
+
   const activeMoto = motos?.find(m => m.status === "in_progress");
   const liveRace = useLiveRaceStream(activeMoto?.id);
 
@@ -477,7 +487,7 @@ export default function EventResults() {
   }
 
   const classResults = results?.filter(r => r.raceClass === activeClass) || [];
-  const motosByClass = Array.from(new Set(classResults.map(r => r.motoName))).filter(Boolean) as string[];
+  const motosByClass = racesIn(classResults);
 
   // Group motos by class for schedule view — exclude practice sessions
   const raceMotosList = (motos ?? []).filter(m => m.type !== "practice");
@@ -488,7 +498,7 @@ export default function EventResults() {
     return acc;
   }, {});
 
-  const activeClassMoto = motos?.find(m => m.status === "in_progress" && m.raceClass === activeClass);
+  const activeClassMoto = motos?.find(m => m.status === "in_progress" && motoForClass(m, activeClass));
 
   if (eventLoading || resultsLoading) {
     return <div className="container mx-auto px-4 py-8 h-screen flex items-center justify-center">Loading…</div>;
@@ -712,14 +722,15 @@ export default function EventResults() {
                     ) : (
                       <div className="space-y-12">
                         {motosByClass.length > 0 ? (
-                          motosByClass.map(motoName => {
+                          motosByClass.map(motoId => {
                             const motoResults = classResults
-                              .filter(r => r.motoName === motoName)
+                              .filter(r => r.motoId === motoId)
                               .sort((a, b) => a.position - b.position);
-                            const matchingMoto = motos?.find(m => m.name === motoName && m.raceClass === activeClass);
+                            const matchingMoto = motos?.find(m => m.id === motoId);
+                            const motoName = matchingMoto?.name ?? motoResults[0]?.motoName ?? "Race";
                             const isComplete = matchingMoto?.status === "completed";
                             return (
-                              <div key={motoName} className="space-y-4">
+                              <div key={motoId} className="space-y-4">
                                 <div className="flex items-center gap-3">
                                   <h3 className="text-xl font-heading font-bold uppercase px-2 py-1 bg-muted inline-block rounded">{motoName}</h3>
                                   {isComplete && <OfficialResultsBadge official={motoResults.every(r => (r as any).official)} />}
@@ -823,7 +834,7 @@ export default function EventResults() {
               {/* One TabsContent per race class */}
               {(event.raceClasses ?? []).map(cls => {
                 const clsResults = results?.filter(r => r.raceClass === cls) || [];
-                const clsMotoNames = Array.from(new Set(clsResults.map(r => r.motoName))).filter(Boolean) as string[];
+                const clsMotoIds = racesIn(clsResults);
                 return (
                   <TabsContent key={cls} value={cls} className="m-0 bg-card border rounded-b-lg shadow-sm">
                     <div className="p-6 md:p-8">
@@ -841,13 +852,14 @@ export default function EventResults() {
                         </div>
                       ) : (
                         <div className="space-y-12">
-                          {clsMotoNames.length > 0 ? (
-                            clsMotoNames.map(motoName => {
+                          {clsMotoIds.length > 0 ? (
+                            clsMotoIds.map(motoId => {
                               const motoResults = clsResults
-                                .filter(r => r.motoName === motoName)
+                                .filter(r => r.motoId === motoId)
                                 .sort((a, b) => a.position - b.position);
+                              const motoName = motos?.find(m => m.id === motoId)?.name ?? motoResults[0]?.motoName ?? "Race";
                               return (
-                                <div key={motoName} className="space-y-4">
+                                <div key={motoId} className="space-y-4">
                                   <div className="flex items-center gap-3 flex-wrap">
                                     <h3 className="text-xl font-heading font-bold uppercase px-2 py-1 bg-muted inline-block rounded">{motoName}</h3>
                                     <OfficialResultsBadge official={motoResults.every(r => (r as any).official)} />

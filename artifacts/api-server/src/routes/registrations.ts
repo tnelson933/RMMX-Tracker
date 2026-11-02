@@ -22,6 +22,7 @@ import { riderMobileTokensTable } from "@workspace/db";
 import { reminderAvailability, reminderStatusText, rentalReplacementCharge, sendRentalReminders, unreturnedRentals, type ReminderStatus } from "../lib/rentalReminders";
 import { addonIsPaid, confirmAddonPayment, recordCardAddonPending, recordCashAddon, type AddonItem } from "../lib/addonPayments";
 import { browserAccount, chargeOnReader, embeddedAllowed, checkoutUiParams, clubStripeOf, onClub, onClubOrPlatform, registrationClubStripe, retrievePayment, transferTo } from "../lib/stripePayments";
+import { acknowledgementSnapshot, clubWaiverSettings, waiverPdfOf } from "../lib/waiverSettings";
 
 /** Payment-check failures: an unknown/invalid Stripe session is the caller's error (404), anything else a 500 without Stripe's internals. */
 function sendPaymentCheckError(res: any, err: any) {
@@ -1195,13 +1196,15 @@ router.get("/clubs/:clubId/riders/:riderId/waiver-acknowledgments", async (req, 
     )
     .orderBy(desc(registrationsTable.waiverAcknowledgedAt));
 
-  return res.json(rows.map(r => ({
+  const seenEvents = new Set<number>();
+  return res.json(rows.filter(r => !seenEvents.has(r.eventId) && !!seenEvents.add(r.eventId)).map(r => ({
     id: r.id,
     eventId: r.eventId,
     eventName: r.eventName,
     eventDate: typeof r.eventDate === "string" ? r.eventDate : (r.eventDate as Date).toISOString(),
     waiverAcknowledgedAt: r.waiverAcknowledgedAt ? r.waiverAcknowledgedAt.toISOString() : null,
     waiverSnapshot: r.waiverSnapshot,
+    pdfUrl: r.waiverSnapshot ? waiverPdfOf(r.waiverSnapshot) : null,
   })));
 });
 
@@ -1415,12 +1418,9 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   // Fetch waiver text server-side so the snapshot can't be spoofed by the client
   let serverWaiverSnapshot: string | null = null;
   if (events[0].requireWaiver && waiverAcknowledgedAt) {
-    const [settings] = await db.select({ riderAcknowledgement: clubSettingsTable.riderAcknowledgement, waiverPdfUrl: clubSettingsTable.waiverPdfUrl })
-      .from(clubSettingsTable)
-      .where(eq(clubSettingsTable.clubId, events[0].clubId));
-    serverWaiverSnapshot = settings?.riderAcknowledgement ?? (settings?.waiverPdfUrl ? `[PDF waiver] ${settings.waiverPdfUrl}` : null);
+    serverWaiverSnapshot = acknowledgementSnapshot(await clubWaiverSettings(events[0].clubId));
     if (!serverWaiverSnapshot) {
-      return res.status(400).json({ error: "No waiver configured for this event's club" });
+      return res.status(400).json({ error: "This event's acknowledgement form isn't set up yet. Contact the organizer." });
     }
   }
   // The date check backs up the status sweep: never take a rider registration
@@ -1714,7 +1714,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     rmTrackrPurchased: includesRmTrackr(purchaseOptsList),
     myLapsTransponderNumber: normalizedTransponderNumber,
     compCode: validatedCompCode,
-    waiverAcknowledgedAt: waiverAcknowledgedAt ? new Date(waiverAcknowledgedAt) : null,
+    waiverAcknowledgedAt: waiverAcknowledgedAt ? new Date() : null,
     waiverSnapshot: serverWaiverSnapshot,
   };
   const insertedRegs = await db.insert(registrationsTable).values(

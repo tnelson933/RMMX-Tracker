@@ -2112,7 +2112,8 @@ export const ListResultsResponseItem = zod.object({
   "points": zod.number().nullish(),
   "dnf": zod.boolean().optional(),
   "dns": zod.boolean().optional(),
-  "bibNumber": zod.string().nullish()
+  "bibNumber": zod.string().nullish(),
+  "motoType": zod.string().optional().describe('heat, main, practice, enduro_test… (practice isn\'t scored)')
 })
 export const ListResultsResponse = zod.array(ListResultsResponseItem)
 
@@ -2849,7 +2850,8 @@ export const ListUpcomingEventsResponseItem = zod.object({
   "location": zod.string().optional(),
   "trackName": zod.string().optional(),
   "status": zod.string(),
-  "clubName": zod.string().optional()
+  "clubName": zod.string().optional(),
+  "phase": zod.enum(['today', 'upcoming']).optional().describe('Racing today or later, by the event\'s own local date (its time zone).')
 })
 export const ListUpcomingEventsResponse = zod.array(ListUpcomingEventsResponseItem)
 
@@ -2872,7 +2874,8 @@ export const ListRecentResultsResponseItem = zod.object({
   "clubName": zod.string().optional(),
   "location": zod.string().optional(),
   "trackName": zod.string().optional(),
-  "official": zod.boolean().optional().describe('True once the organizer has finalized every finished race; otherwise results are unofficial. Absent when the event has no results.')
+  "official": zod.boolean().optional().describe('True once the organizer has finalized every finished race; otherwise results are unofficial. Absent when the event has no results.'),
+  "endDate": zod.string().nullish()
 })
 export const ListRecentResultsResponse = zod.array(ListRecentResultsResponseItem)
 

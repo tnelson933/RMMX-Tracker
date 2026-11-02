@@ -1007,6 +1007,9 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
     };
 
     let regsUpserted = 0;
+    // Desktop registration id → cloud id (they differ when the desktop's id was taken),
+    // so waiver signatures below link to the right entry.
+    const regIdMap = new Map<number, number>();
     for (const r of regs) {
       const eventId = mapEventId(r.event_id);
       const riderId = Number(r.rider_id);
@@ -1042,6 +1045,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       }
 
       if (existing) {
+        if (requestedRegId) regIdMap.set(requestedRegId, existing.id);
         await tx
           .update(registrationsTable)
           .set({
@@ -1059,7 +1063,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
         const requestedId = r.id != null && Number(r.id) > 0 ? Number(r.id) : undefined;
         const clientId = requestedId && await idIsFree(registrationsTable, requestedId) ? requestedId : undefined;
         if (clientId) explicitIdTables.add("registrations");
-        await tx.insert(registrationsTable).values({
+        const [insertedReg] = await tx.insert(registrationsTable).values({
           ...(clientId ? { id: clientId } : {}),
           eventId,
           riderId,
@@ -1071,7 +1075,8 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
           amountPaid:    r.amount_paid    != null ? String(r.amount_paid)    : null,
           paymentMethod: r.payment_method != null ? String(r.payment_method) : null,
           ...raceDayRegistrationFields(r),
-        });
+        }).returning({ id: registrationsTable.id });
+        if (requestedRegId && insertedReg) regIdMap.set(requestedRegId, insertedReg.id);
       }
       regsUpserted++;
     }
@@ -1265,11 +1270,22 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       let fieldLayout: unknown = w.field_layout ?? null;
       if (typeof fieldLayout === "string") { try { fieldLayout = JSON.parse(fieldLayout); } catch { fieldLayout = null; } }
       const isGuardian = w.signer_type === "guardian";
+      // The entry it belongs to: remapped if pushed now, else kept only if it's this event's.
+      let registrationId: number | null = null;
+      if (w.registration_id != null) {
+        const pushedId = Number(w.registration_id);
+        registrationId = regIdMap.get(pushedId) ?? null;
+        if (registrationId == null) {
+          const [own] = await tx.select({ id: registrationsTable.id }).from(registrationsTable)
+            .where(and(eq(registrationsTable.id, pushedId), eq(registrationsTable.eventId, eventId)));
+          registrationId = own?.id ?? null;
+        }
+      }
       await tx.insert(liabilityWaiverSignaturesTable).values({
         ...(clientId ? { id: clientId } : {}),
         clubId,
         eventId,
-        registrationId: w.registration_id != null ? Number(w.registration_id) : null,
+        registrationId,
         signerName,
         signerEmail,
         signerIp: w.signer_ip != null ? String(w.signer_ip) : null,

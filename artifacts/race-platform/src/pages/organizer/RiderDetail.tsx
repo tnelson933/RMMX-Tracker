@@ -15,7 +15,7 @@ import { zodResolver } from "@/lib/zodResolver";
 import { z } from "zod";
 import { loadPdfJs, PDF_JS_WORKER_URL } from "@/lib/pdfJs";
 import { useToast } from "@/hooks/use-toast";
-import { User, Tag, History, ChevronLeft, Save, Activity, Bike, Star, MapPin, Ticket, Copy, Check, Trash2, Plus, Loader2, FileText, ShieldCheck, ChevronDown, Download, ExternalLink, Radio } from "lucide-react";
+import { User, Tag, History, ChevronLeft, Save, Activity, Bike, Star, MapPin, Ticket, Copy, Check, Trash2, Plus, Loader2, FileText, ShieldCheck, ChevronDown, Download, ExternalLink, Radio, Printer } from "lucide-react";
 import { format } from "date-fns";
 import { useGetMe } from "@workspace/api-client-react";
 import { PdfSignedViewer } from "@/components/PdfSignedViewer";
@@ -31,6 +31,8 @@ interface WaiverAck {
   eventDate: string;
   waiverAcknowledgedAt: string;
   waiverSnapshot: string | null;
+  /** The acknowledgement PDF the rider accepted, or null when it was typed text. */
+  pdfUrl?: string | null;
 }
 
 interface WaiverField {
@@ -52,112 +54,214 @@ interface PdfWaiverSignature {
   signerEmail: string;
   signedAt: string;
   waiverSnapshot: string;
+  /** The signed PDF, or null when the waiver was typed text (in waiverSnapshot). */
+  pdfUrl?: string | null;
   fieldLayout: WaiverField[] | null;
   signerType: "self" | "guardian";
   minorRiderName: string | null;
   waiverContentHash: string;
+  signerIp?: string | null;
+  signerUserAgent?: string | null;
 }
 
-// ── Download helper ───────────────────────────────────────────────────────────
+/** The PDF behind a stored snapshot ("[PDF waiver] url", or an older bare url). */
+function snapshotPdf(snapshot: string | null | undefined): string | null {
+  const s = (snapshot ?? "").trim();
+  if (s.startsWith("[PDF waiver] ")) return s.slice("[PDF waiver] ".length).trim();
+  return /^(https?:\/\/|\/api\/storage\/)\S+$/.test(s) ? s : null;
+}
 
-async function downloadSignedPdf(sig: PdfWaiverSignature): Promise<void> {
-  const pdfjs = await loadPdfJs();
-  if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-    pdfjs.GlobalWorkerOptions.workerSrc =
-      PDF_JS_WORKER_URL;
-  }
+// ── Signed copy (download / print) ───────────────────────────────────────────
 
-  const loadingTask = pdfjs.getDocument(sig.waiverSnapshot);
-  const pdfDoc = await loadingTask.promise;
+interface SignedCopy {
+  title: string;
+  pdfUrl: string | null;
+  text: string | null;
+  /** Fill the PDF's name/email/date/signature boxes with these values. */
+  stamp?: { fields: WaiverField[]; name: string; email: string; date: string; signature: string };
+  /** The signature record printed on the last page. */
+  record: Array<[string, string]>;
+}
 
+/** The form as signed (the PDF with its filled-in boxes, or the text), then a signature record page. */
+async function buildSignedCopy(copy: SignedCopy) {
   const { jsPDF } = await import("jspdf");
-
-  const signerName = sig.signerName;
-  const signerEmail = sig.signerEmail;
-  const signedDate = format(new Date(sig.signedAt), "MM/dd/yyyy");
-  const fields = sig.fieldLayout ?? [];
-
   let pdf: InstanceType<typeof jsPDF> | null = null;
 
-  for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
-    const page = await pdfDoc.getPage(pageNum);
-    const viewport = page.getViewport({ scale: 2 });
+  if (copy.pdfUrl) {
+    const pdfjs = await loadPdfJs();
+    if (!pdfjs.GlobalWorkerOptions.workerSrc) pdfjs.GlobalWorkerOptions.workerSrc = PDF_JS_WORKER_URL;
+    const file = await fetch(copy.pdfUrl, { credentials: "include" });
+    if (!file.ok) throw new Error(`The form's PDF couldn't be loaded (${file.status}).`);
+    const pdfDoc = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+      const page = await pdfDoc.getPage(pageNum);
+      const viewport = page.getViewport({ scale: 2 });
+      const canvas = document.createElement("canvas");
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext("2d")!;
+      await page.render({ canvasContext: ctx, viewport }).promise;
 
-    const canvas = document.createElement("canvas");
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    const ctx = canvas.getContext("2d")!;
+      for (const field of (copy.stamp?.fields ?? []).filter(f => f.page === pageNum)) {
+        const x = field.x * viewport.width;
+        const y = field.y * viewport.height;
+        const w = field.width * viewport.width;
+        const h = field.height * viewport.height;
+        ctx.fillStyle = "rgba(219, 234, 254, 0.55)";
+        ctx.fillRect(x, y, w, h);
+        const fontSize = Math.max(10, Math.min(h * 0.55, 24));
+        ctx.font = field.type === "signature" ? `italic ${fontSize}px Georgia, serif` : `${fontSize}px Arial, sans-serif`;
+        ctx.fillStyle = field.type === "signature" ? "#1d4ed8" : "#1e293b";
+        ctx.textBaseline = "middle";
+        const s = copy.stamp!;
+        const value = field.type === "name" ? s.name : field.type === "email" ? s.email : field.type === "date" ? s.date : s.signature;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x + 4, y, w - 8, h);
+        ctx.clip();
+        ctx.fillText(value, x + 6, y + h / 2);
+        ctx.restore();
+      }
 
-    await page.render({ canvasContext: ctx, viewport }).promise;
-
-    // Draw field values on this page's canvas
-    const pageFields = fields.filter(f => f.page === pageNum);
-    for (const field of pageFields) {
-      const x = field.x * viewport.width;
-      const y = field.y * viewport.height;
-      const w = field.width * viewport.width;
-      const h = field.height * viewport.height;
-
-      // Highlight background
-      ctx.fillStyle = "rgba(219, 234, 254, 0.55)";
-      ctx.fillRect(x, y, w, h);
-
-      // Text value
-      const fontSize = Math.max(10, Math.min(h * 0.55, 24));
-      ctx.font = field.type === "signature"
-        ? `italic ${fontSize}px Georgia, serif`
-        : `${fontSize}px Arial, sans-serif`;
-      ctx.fillStyle = field.type === "signature" ? "#1d4ed8" : "#1e293b";
-      ctx.textBaseline = "middle";
-
-      const signatureValue =
-        (sig.signerType === "guardian" && sig.minorRiderName)
-          ? `${signerName} — parent/guardian of ${sig.minorRiderName}`
-          : signerName;
-      const value =
-        field.type === "name" ? signerName
-        : field.type === "email" ? signerEmail
-        : field.type === "date" ? signedDate
-        : signatureValue; // signature
-
-      // Clip to field bounds
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(x + 4, y, w - 8, h);
-      ctx.clip();
-      ctx.fillText(value, x + 6, y + h / 2);
-      ctx.restore();
+      const pdfW = viewport.width / 2;
+      const pdfH = viewport.height / 2;
+      const orientation = pdfW > pdfH ? "landscape" : "portrait";
+      if (!pdf) pdf = new jsPDF({ orientation, unit: "pt", format: [pdfW, pdfH] });
+      else pdf.addPage([pdfW, pdfH], orientation);
+      pdf.addImage(canvas.toDataURL("image/jpeg", 0.9), "JPEG", 0, 0, pdfW, pdfH);
     }
-
-    const imgData = canvas.toDataURL("image/png");
-    const pdfW = viewport.width / 2;
-    const pdfH = viewport.height / 2;
-
-    if (!pdf) {
-      pdf = new jsPDF({
-        orientation: pdfW > pdfH ? "landscape" : "portrait",
-        unit: "pt",
-        format: [pdfW, pdfH],
-      });
-    } else {
-      pdf.addPage([pdfW, pdfH], pdfW > pdfH ? "landscape" : "portrait");
-    }
-
-    pdf.addImage(imgData, "PNG", 0, 0, pdfW, pdfH);
   }
 
-  if (pdf) {
-    const filename = `waiver-${sig.signerName.replace(/\s+/g, "-").toLowerCase()}-${sig.eventName.replace(/\s+/g, "-").toLowerCase()}.pdf`;
-    pdf.save(filename);
+  // Typed text forms, on letter pages.
+  const margin = 54;
+  const writeLines = (doc: InstanceType<typeof jsPDF>, lines: string[], startY: number, lineHeight: number) => {
+    let y = startY;
+    const bottom = doc.internal.pageSize.getHeight() - margin;
+    for (const line of lines) {
+      if (y > bottom) { doc.addPage("letter", "portrait"); y = margin; }
+      doc.text(line, margin, y);
+      y += lineHeight;
+    }
+    return y;
+  };
+  if (!copy.pdfUrl && copy.text) {
+    pdf = new jsPDF({ unit: "pt", format: "letter" });
+    const width = pdf.internal.pageSize.getWidth() - margin * 2;
+    pdf.setFont("helvetica", "bold").setFontSize(15);
+    pdf.text(copy.title, margin, margin);
+    pdf.setFont("helvetica", "normal").setFontSize(10.5);
+    writeLines(pdf, pdf.splitTextToSize(copy.text, width), margin + 28, 14);
   }
+
+  // Signature record.
+  if (!pdf) pdf = new jsPDF({ unit: "pt", format: "letter" });
+  else pdf.addPage("letter", "portrait");
+  const width = pdf.internal.pageSize.getWidth() - margin * 2;
+  pdf.setFont("helvetica", "bold").setFontSize(15);
+  pdf.text("Signature record", margin, margin);
+  pdf.setFont("helvetica", "normal").setFontSize(10);
+  pdf.text(copy.title, margin, margin + 18);
+  let y = margin + 48;
+  for (const [label, value] of copy.record) {
+    pdf.setFont("helvetica", "bold").setFontSize(10);
+    y = writeLines(pdf, [label], y, 13);
+    pdf.setFont("helvetica", "normal").setFontSize(10);
+    y = writeLines(pdf, pdf.splitTextToSize(value || "—", width), y, 13) + 8;
+  }
+  pdf.setFontSize(8.5).setTextColor(120);
+  writeLines(pdf, pdf.splitTextToSize(`Kept by RM Roost. Printed ${format(new Date(), "MMMM d, yyyy 'at' h:mm a")}.`, width), y + 6, 11);
+  pdf.setTextColor(0);
+  return pdf;
+}
+
+function fileName(...parts: string[]) {
+  return `${parts.join("-").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}.pdf`;
+}
+
+function signatureCopy(sig: PdfWaiverSignature): SignedCopy {
+  const pdfUrl = sig.pdfUrl !== undefined ? sig.pdfUrl : snapshotPdf(sig.waiverSnapshot);
+  const guardianOf = sig.signerType === "guardian" && sig.minorRiderName ? sig.minorRiderName : null;
+  return {
+    title: `Liability waiver: ${sig.eventName}`,
+    pdfUrl,
+    text: pdfUrl ? null : sig.waiverSnapshot,
+    stamp: {
+      fields: sig.fieldLayout ?? [],
+      name: sig.signerName,
+      email: sig.signerEmail,
+      date: format(new Date(sig.signedAt), "MM/dd/yyyy"),
+      signature: guardianOf ? `${sig.signerName} — parent/guardian of ${guardianOf}` : sig.signerName,
+    },
+    record: [
+      ["Event", `${sig.eventName} (${sig.eventDate.substring(0, 10)})`],
+      ["Signed by", guardianOf ? `${sig.signerName}, parent/guardian of ${guardianOf}` : sig.signerName],
+      ["Email", sig.signerEmail],
+      ["Signed", format(new Date(sig.signedAt), "MMMM d, yyyy 'at' h:mm:ss a")],
+      ["Signature", "Typed name, with consent to sign electronically"],
+      ["IP address", sig.signerIp ?? ""],
+      ["Device", sig.signerUserAgent ?? ""],
+      ["Document fingerprint (SHA-256)", sig.waiverContentHash],
+    ],
+  };
+}
+
+function acknowledgementCopy(ack: WaiverAck, riderName: string): SignedCopy {
+  const pdfUrl = ack.pdfUrl !== undefined ? ack.pdfUrl : snapshotPdf(ack.waiverSnapshot);
+  return {
+    title: `Rider acknowledgement: ${ack.eventName}`,
+    pdfUrl,
+    text: pdfUrl ? null : ack.waiverSnapshot,
+    record: [
+      ["Event", `${ack.eventName} (${ack.eventDate.substring(0, 10)})`],
+      ["Rider", riderName],
+      ["Accepted", format(new Date(ack.waiverAcknowledgedAt), "MMMM d, yyyy 'at' h:mm:ss a")],
+      ["How", "Checked the acknowledgement box when registering"],
+    ],
+  };
+}
+
+async function downloadCopy(copy: SignedCopy, name: string) {
+  (await buildSignedCopy(copy)).save(name);
+}
+
+/**
+ * Opens the print dialog for the signed copy, from a hidden frame on this page (no
+ * pop-up to block); if the browser can't print it there, the copy opens in a new tab.
+ */
+async function printCopy(copy: SignedCopy) {
+  const pdf = await buildSignedCopy(copy);
+  const url = String(pdf.output("bloburl"));
+  const frame = document.createElement("iframe");
+  frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
+  frame.onload = () => {
+    try {
+      frame.contentWindow?.focus();
+      frame.contentWindow?.print();
+    } catch {
+      window.open(url, "_blank");
+    }
+    setTimeout(() => frame.remove(), 60_000);
+  };
+  frame.src = url;
+  document.body.appendChild(frame);
 }
 
 // ── WaiverAcknowledgmentsCard ─────────────────────────────────────────────────
 
-function WaiverAcknowledgmentsCard({ riderId, clubId }: { riderId: number; clubId: number }) {
+function WaiverAcknowledgmentsCard({ riderId, clubId, riderName }: { riderId: number; clubId: number; riderName: string }) {
+  const { toast } = useToast();
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [viewingSig, setViewingSig] = useState<PdfWaiverSignature | null>(null);
-  const [downloading, setDownloading] = useState<number | null>(null);
+  const [viewingAckPdf, setViewingAckPdf] = useState<WaiverAck | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const run = async (key: string, task: () => Promise<void>) => {
+    setBusy(key);
+    try { await task(); }
+    catch (err) { console.error("signed copy", err); toast({ title: "Couldn't open the signed copy", description: "The form's file may have been removed. Try again, or check Team → Forms.", variant: "destructive" }); }
+    finally { setBusy(null); }
+  };
 
   const { data: acks, isLoading: acksLoading, isError: acksFailed, refetch: refetchAcks } = useQuery<WaiverAck[]>({
     queryKey: ["waiver-acknowledgments", clubId, riderId],
@@ -177,11 +281,28 @@ function WaiverAcknowledgmentsCard({ riderId, clubId }: { riderId: number; clubI
     },
   });
 
+  const shownAcks = (acks ?? []).filter(a => a.waiverSnapshot);
   const isLoading = acksLoading || sigsLoading;
-  const hasPdfSigs = pdfSigs && pdfSigs.length > 0;
-  const hasTextAcks = acks && acks.some(a => a.waiverSnapshot && !a.waiverSnapshot.startsWith("http"));
   const loadFailed = (acksFailed || sigsFailed) && !isLoading;
-  const isEmpty = !hasPdfSigs && !hasTextAcks && !isLoading && !loadFailed;
+  const isEmpty = !pdfSigs?.length && !shownAcks.length && !isLoading && !loadFailed;
+  const viewingSigPdf = viewingSig ? (viewingSig.pdfUrl !== undefined ? viewingSig.pdfUrl : snapshotPdf(viewingSig.waiverSnapshot)) : null;
+
+  const actions = (key: string, onView: () => void, copy: () => SignedCopy, name: string) => (
+    <div className="flex items-center gap-1 shrink-0">
+      <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={onView}>
+        <ExternalLink size={11} className="mr-1" />
+        View
+      </Button>
+      <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" title="Print" aria-label="Print"
+        disabled={busy === `print-${key}`} onClick={() => run(`print-${key}`, () => printCopy(copy()))}>
+        {busy === `print-${key}` ? <Loader2 size={11} className="animate-spin" /> : <Printer size={11} />}
+      </Button>
+      <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" title="Download PDF" aria-label="Download PDF"
+        disabled={busy === `dl-${key}`} onClick={() => run(`dl-${key}`, () => downloadCopy(copy(), name))}>
+        {busy === `dl-${key}` ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
+      </Button>
+    </div>
+  );
 
   return (
     <>
@@ -210,11 +331,11 @@ function WaiverAcknowledgmentsCard({ riderId, clubId }: { riderId: number; clubI
               </Button>
             </div>
           ) : isEmpty ? (
-            <div className="p-6 text-center text-muted-foreground text-sm">No waiver acknowledgments on record.</div>
+            <div className="p-6 text-center text-muted-foreground text-sm">No signed waivers or acknowledgements on record.</div>
           ) : (
             <div className="divide-y">
 
-              {/* PDF signed waivers */}
+              {/* Signed liability waivers */}
               {pdfSigs?.map(sig => (
                 <div key={`pdf-${sig.id}`} className="p-4">
                   <div className="flex items-start justify-between gap-2">
@@ -222,7 +343,7 @@ function WaiverAcknowledgmentsCard({ riderId, clubId }: { riderId: number; clubI
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-semibold truncate">{sig.eventName}</p>
                         <Badge variant="outline" className="text-xs py-0 h-5 border-green-400 text-green-700 bg-green-50">
-                          PDF Signed
+                          Liability waiver · signed
                         </Badge>
                       </div>
                       <p className="text-xs text-muted-foreground mt-0.5">
@@ -234,78 +355,55 @@ function WaiverAcknowledgmentsCard({ riderId, clubId }: { riderId: number; clubI
                         {" · "}{format(new Date(sig.signedAt), "MMM d, yyyy 'at' h:mm a")}
                       </p>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 px-2 text-xs"
-                        onClick={() => setViewingSig(sig)}
-                      >
-                        <ExternalLink size={11} className="mr-1" />
-                        View
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-xs text-muted-foreground"
-                        disabled={downloading === sig.id}
-                        onClick={async () => {
-                          setDownloading(sig.id);
-                          try { await downloadSignedPdf(sig); } finally { setDownloading(null); }
-                        }}
-                      >
-                        {downloading === sig.id
-                          ? <Loader2 size={11} className="animate-spin" />
-                          : <Download size={11} />
-                        }
-                      </Button>
-                    </div>
+                    {actions(`sig-${sig.id}`, () => setViewingSig(sig), () => signatureCopy(sig), fileName("waiver", sig.signerName, sig.eventName))}
                   </div>
                 </div>
               ))}
 
-              {/* Text waiver acknowledgments (non-PDF) */}
-              {acks?.filter(a => a.waiverSnapshot && !a.waiverSnapshot.startsWith("http")).map(ack => (
-                <div key={`txt-${ack.id}`} className="p-4">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate">{ack.eventName}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
-                        <ShieldCheck size={11} className="text-green-600 shrink-0" />
-                        Accepted {format(new Date(ack.waiverAcknowledgedAt), "MMM d, yyyy 'at' h:mm a")}
-                      </p>
+              {/* Rider acknowledgements */}
+              {shownAcks.map(ack => {
+                const ackPdf = ack.pdfUrl !== undefined ? ack.pdfUrl : snapshotPdf(ack.waiverSnapshot);
+                return (
+                  <div key={`ack-${ack.id}`} className="p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-semibold truncate">{ack.eventName}</p>
+                          <Badge variant="outline" className="text-xs py-0 h-5">Acknowledgement · accepted</Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                          <ShieldCheck size={11} className="text-green-600 shrink-0" />
+                          Accepted {format(new Date(ack.waiverAcknowledgedAt), "MMM d, yyyy 'at' h:mm a")}
+                        </p>
+                      </div>
+                      {actions(
+                        `ack-${ack.id}`,
+                        () => ackPdf ? setViewingAckPdf(ack) : setExpandedId(expandedId === ack.id ? null : ack.id),
+                        () => acknowledgementCopy(ack, riderName),
+                        fileName("acknowledgement", riderName, ack.eventName),
+                      )}
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 px-2 text-xs text-muted-foreground"
-                      onClick={() => setExpandedId(expandedId === ack.id ? null : ack.id)}
-                    >
-                      <FileText size={12} className="mr-1" />
-                      {expandedId === ack.id ? "Hide" : "View"}
-                      <ChevronDown size={12} className={`ml-1 transition-transform ${expandedId === ack.id ? "rotate-180" : ""}`} />
-                    </Button>
+                    {!ackPdf && expandedId === ack.id && ack.waiverSnapshot && (
+                      <div className="mt-3 rounded-md bg-muted/50 border px-3 py-3 max-h-64 overflow-y-auto">
+                        <pre className="whitespace-pre-wrap font-sans text-xs text-muted-foreground leading-relaxed">
+                          {ack.waiverSnapshot}
+                        </pre>
+                      </div>
+                    )}
                   </div>
-                  {expandedId === ack.id && ack.waiverSnapshot && (
-                    <div className="mt-3 rounded-md bg-muted/50 border px-3 py-3 max-h-48 overflow-y-auto">
-                      <pre className="whitespace-pre-wrap font-sans text-xs text-muted-foreground leading-relaxed">
-                        {ack.waiverSnapshot}
-                      </pre>
-                    </div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
 
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* PDF viewer dialog */}
+      {/* Signed waiver viewer */}
       <Dialog open={!!viewingSig} onOpenChange={(open) => { if (!open) setViewingSig(null); }}>
         <DialogContent className="max-w-[92vw] w-[92vw] h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
-          <DialogHeader className="px-5 py-3 border-b flex-row items-center justify-between space-y-0">
-            <div>
+          <DialogHeader className="px-5 py-3 border-b flex-row items-center justify-between space-y-0 gap-3 pr-12">
+            <div className="min-w-0">
               <DialogTitle className="font-heading uppercase tracking-wider text-base">
                 Signed Waiver — {viewingSig?.eventName}
               </DialogTitle>
@@ -318,34 +416,77 @@ function WaiverAcknowledgmentsCard({ riderId, clubId }: { riderId: number; clubI
                 {viewingSig ? format(new Date(viewingSig.signedAt), "MMMM d, yyyy 'at' h:mm a") : ""}
               </DialogDescription>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="shrink-0 ml-4"
-              disabled={!viewingSig || downloading === viewingSig.id}
-              onClick={async () => {
-                if (!viewingSig) return;
-                setDownloading(viewingSig.id);
-                try { await downloadSignedPdf(viewingSig); } finally { setDownloading(null); }
-              }}
-            >
-              {downloading === viewingSig?.id
-                ? <Loader2 size={14} className="animate-spin mr-1.5" />
-                : <Download size={14} className="mr-1.5" />
-              }
-              Download PDF
-            </Button>
+            {viewingSig && (
+              <div className="flex items-center gap-2 shrink-0">
+                <Button variant="outline" size="sm" disabled={busy === "print-view"}
+                  onClick={() => run("print-view", () => printCopy(signatureCopy(viewingSig)))}>
+                  {busy === "print-view" ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Printer size={14} className="mr-1.5" />}
+                  Print
+                </Button>
+                <Button variant="outline" size="sm" disabled={busy === "dl-view"}
+                  onClick={() => run("dl-view", () => downloadCopy(signatureCopy(viewingSig), fileName("waiver", viewingSig.signerName, viewingSig.eventName)))}>
+                  {busy === "dl-view" ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Download size={14} className="mr-1.5" />}
+                  Download PDF
+                </Button>
+              </div>
+            )}
           </DialogHeader>
           <div className="flex-1 overflow-hidden">
-            {viewingSig && (
+            {viewingSig && (viewingSigPdf ? (
               <PdfSignedViewer
-                url={viewingSig.waiverSnapshot}
+                url={viewingSigPdf}
                 fields={viewingSig.fieldLayout ?? []}
                 signerName={viewingSig.signerName}
                 signerEmail={viewingSig.signerEmail}
                 signedAt={format(new Date(viewingSig.signedAt), "MM/dd/yyyy")}
                 signerType={viewingSig.signerType}
                 minorRiderName={viewingSig.minorRiderName ?? undefined}
+              />
+            ) : (
+              <div className="h-full overflow-y-auto p-6">
+                <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">{viewingSig.waiverSnapshot}</pre>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Acknowledgement PDF viewer */}
+      <Dialog open={!!viewingAckPdf} onOpenChange={(open) => { if (!open) setViewingAckPdf(null); }}>
+        <DialogContent className="max-w-[92vw] w-[92vw] h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
+          <DialogHeader className="px-5 py-3 border-b flex-row items-center justify-between space-y-0 gap-3 pr-12">
+            <div className="min-w-0">
+              <DialogTitle className="font-heading uppercase tracking-wider text-base">
+                Rider Acknowledgement — {viewingAckPdf?.eventName}
+              </DialogTitle>
+              <DialogDescription className="text-xs mt-0.5">
+                Accepted by <strong>{riderName}</strong> on{" "}
+                {viewingAckPdf ? format(new Date(viewingAckPdf.waiverAcknowledgedAt), "MMMM d, yyyy 'at' h:mm a") : ""}
+              </DialogDescription>
+            </div>
+            {viewingAckPdf && (
+              <div className="flex items-center gap-2 shrink-0">
+                <Button variant="outline" size="sm" disabled={busy === "print-ackview"}
+                  onClick={() => run("print-ackview", () => printCopy(acknowledgementCopy(viewingAckPdf, riderName)))}>
+                  {busy === "print-ackview" ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Printer size={14} className="mr-1.5" />}
+                  Print
+                </Button>
+                <Button variant="outline" size="sm" disabled={busy === "dl-ackview"}
+                  onClick={() => run("dl-ackview", () => downloadCopy(acknowledgementCopy(viewingAckPdf, riderName), fileName("acknowledgement", riderName, viewingAckPdf.eventName)))}>
+                  {busy === "dl-ackview" ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Download size={14} className="mr-1.5" />}
+                  Download PDF
+                </Button>
+              </div>
+            )}
+          </DialogHeader>
+          <div className="flex-1 overflow-hidden">
+            {viewingAckPdf && (
+              <PdfSignedViewer
+                url={(viewingAckPdf.pdfUrl !== undefined ? viewingAckPdf.pdfUrl : snapshotPdf(viewingAckPdf.waiverSnapshot)) ?? ""}
+                fields={[]}
+                signerName={riderName}
+                signerEmail=""
+                signedAt={format(new Date(viewingAckPdf.waiverAcknowledgedAt), "MM/dd/yyyy")}
               />
             )}
           </div>
@@ -1253,7 +1394,7 @@ export default function RiderDetail() {
 
           {/* Waiver acknowledgment history */}
           {clubId && (
-            <WaiverAcknowledgmentsCard riderId={riderId} clubId={clubId} />
+            <WaiverAcknowledgmentsCard riderId={riderId} clubId={clubId} riderName={`${r.firstName ?? ""} ${r.lastName ?? ""}`.trim()} />
           )}
 
           {/* Active transponder quick view */}

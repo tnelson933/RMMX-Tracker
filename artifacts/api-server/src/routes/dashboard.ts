@@ -1,4 +1,5 @@
 import { advanceEventStatuses } from "../lib/eventStatus";
+import { eventToday } from "@workspace/api-zod";
 import { computeEventOverall } from "../lib/eventOverall";
 import { Router } from "express";
 import { db } from "@workspace/db";
@@ -355,14 +356,17 @@ router.get("/events/:eventId/addon-sales", async (req, res) => {
   return res.json({ ...sales, collectedAtCheckin: atCheckin });
 });
 
+/** Events whose racing is over: completed, or the older "results published" status. */
+const FINISHED_STATUSES = ["completed", "results_published"];
+
 router.get("/public/states", async (req, res) => {
   const stateData = await db.select({
-    state: eventsTable.state,
+    state: sql<string>`trim(${eventsTable.state})`,
     count: count(),
   }).from(eventsTable)
-    .where(eq(eventsTable.status, 'completed'))
-    .groupBy(eventsTable.state)
-    .orderBy(eventsTable.state);
+    .where(inArray(eventsTable.status, FINISHED_STATUSES))
+    .groupBy(sql`trim(${eventsTable.state})`)
+    .orderBy(sql`trim(${eventsTable.state})`);
 
   return res.json(stateData.map(s => ({ state: s.state, eventCount: s.count })));
 });
@@ -390,13 +394,14 @@ router.get("/public/upcoming", async (req, res) => {
     .where(and(
       // Include draft events too so we can advance their status below; filter
       // them back out after advancement.
-      sql`${eventsTable.status} != 'completed'`,
+      sql`${eventsTable.status} not in ('completed', 'results_published')`,
       // Exclude events whose race day has already passed — even if the
       // organizer hasn't finalized/published the event yet.  Use endDate
       // when set (multi-day events) so they show until the last day.
       // SUBSTRING(...,1,10) guards against dates stored as full ISO timestamps
       // (e.g. "2026-06-23T18:00:00.000Z") vs plain "YYYY-MM-DD" strings.
-      sql`SUBSTRING(COALESCE(${eventsTable.endDate}, ${eventsTable.date}), 1, 10) >= to_char(CURRENT_DATE, 'YYYY-MM-DD')`,
+      // A day of slack for the server's own clock; each event's local date decides below.
+      sql`SUBSTRING(COALESCE(${eventsTable.endDate}, ${eventsTable.date}), 1, 10) >= to_char(CURRENT_DATE - 1, 'YYYY-MM-DD')`,
     ))
     .orderBy(eventsTable.date);
 
@@ -407,8 +412,10 @@ router.get("/public/upcoming", async (req, res) => {
   return res.json(
     events
       // Apply any status advances computed above, then filter out drafts.
-      .map(e => ({ ...e, status: advanced.get(e.id) ?? e.status }))
-      .filter(e => e.status !== "draft")
+      .map(e => ({ ...e, status: advanced.get(e.id) ?? e.status, localToday: eventToday(e) }))
+      .filter(e => e.status !== "draft" && e.status !== "completed")
+      // Still racing or ahead by the event's own local date (its track's time zone).
+      .filter(e => (e.endDate ?? e.date).substring(0, 10) >= e.localToday)
       .map(e => ({
         eventId: e.id,
         name: e.name,
@@ -419,18 +426,20 @@ router.get("/public/upcoming", async (req, res) => {
         trackName: e.trackName,
         status: e.status,
         clubName: e.clubName || "",
+        phase: e.date.substring(0, 10) <= e.localToday ? "today" as const : "upcoming" as const,
       }))
   );
 });
 
 router.get("/public/recent-results", async (req, res) => {
   const { state, limit = "10" } = req.query;
-  const baseCondition = eq(eventsTable.status, 'completed');
+  const baseCondition = inArray(eventsTable.status, FINISHED_STATUSES);
   const events = await db.select({
     id: eventsTable.id,
     name: eventsTable.name,
     state: eventsTable.state,
     date: eventsTable.date,
+    endDate: eventsTable.endDate,
     location: eventsTable.location,
     trackName: eventsTable.trackName,
     clubName: clubsTable.name,
@@ -439,27 +448,35 @@ router.get("/public/recent-results", async (req, res) => {
   }).from(eventsTable)
     .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
     .leftJoin(eventPublicationTable, eq(eventPublicationTable.eventId, eventsTable.id))
-    .where(state ? and(baseCondition, eq(eventsTable.state, String(state))) : baseCondition)
-    .orderBy(desc(eventsTable.date))
-    .limit(Number(limit));
+    .where(state ? and(baseCondition, sql`trim(${eventsTable.state}) = ${String(state).trim()}`) : baseCondition)
+    .orderBy(desc(eventsTable.date), desc(eventsTable.id))
+    .limit(Math.min(Number(limit) || 10, 200));
+
+  // Each event's winner of its last finished race (practice isn't a race), in one query.
+  const winners = events.length ? await db.execute(sql`
+    select distinct on (rr.event_id) rr.event_id as "eventId", rr.race_class as "raceClass",
+           r.first_name as "firstName", r.last_name as "lastName"
+    from race_results rr
+    join motos m on m.id = rr.moto_id
+    left join riders r on r.id = rr.rider_id
+    where rr.event_id in (${sql.join(events.map(e => sql`${e.id}`), sql`, `)})
+      and rr.position = 1 and coalesce(rr.dnf, false) = false and coalesce(rr.dns, false) = false
+      and m.status = 'completed' and coalesce(m.type, 'heat') <> 'practice'
+    order by rr.event_id, m.completed_at desc nulls last, m.moto_number desc
+  `) : { rows: [] };
+  const winnerByEvent = new Map((winners.rows as Array<{ eventId: number; raceClass: string | null; firstName: string | null; lastName: string | null }>).map(w => [Number(w.eventId), w]));
 
   const results = [];
   for (const e of events) {
-    const topResult = await db.select({
-      riderid: raceResultsTable.riderId,
-      raceClass: raceResultsTable.raceClass,
-      firstName: ridersTable.firstName,
-      lastName: ridersTable.lastName,
-    }).from(raceResultsTable)
-      .leftJoin(ridersTable, eq(raceResultsTable.riderId, ridersTable.id))
-      .where(and(eq(raceResultsTable.eventId, e.id), eq(raceResultsTable.position, 1)))
-      .limit(1);
+    const w = winnerByEvent.get(e.id);
+    const topResult = w ? [w] : [];
 
     results.push({
       eventId: e.id,
       eventName: e.name,
       state: e.state,
       date: e.date,
+      endDate: e.endDate ?? null,
       location: e.location || "",
       trackName: e.trackName || "",
       clubName: e.clubName || "",

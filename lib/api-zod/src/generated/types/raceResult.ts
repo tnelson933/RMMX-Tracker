@@ -28,4 +28,6 @@ export interface RaceResult {
   dns?: boolean;
   /** @nullable */
   bibNumber?: string | null;
+  /** heat, main, practice, enduro_test… (practice isn't scored) */
+  motoType?: string;
 }

@@ -5,6 +5,7 @@
  * RM Roost API
  * OpenAPI spec version: 0.1.0
  */
+import type { UpcomingEventItemPhase } from './upcomingEventItemPhase';
 
 export interface UpcomingEventItem {
   eventId: number;
@@ -20,4 +21,6 @@ export interface UpcomingEventItem {
   trackName?: string;
   status: string;
   clubName?: string;
+  /** Racing today or later, by the event's own local date (its time zone). */
+  phase?: UpcomingEventItemPhase;
 }

@@ -265,6 +265,10 @@ router.get("/events/:eventId/results", async (req, res) => {
   const ownerView = await callerOwnsEvent(eventId, res);
 
   if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
+  if (!ownerView) {
+    const [evt] = await db.select({ status: eventsTable.status }).from(eventsTable).where(eq(eventsTable.id, eventId));
+    if (!evt || evt.status === "draft") return res.json([]);
+  }
 
   const results = await db.select({
     id: raceResultsTable.id,
@@ -302,6 +306,7 @@ router.get("/events/:eventId/results", async (req, res) => {
     motoId: r.motoId,
     // Practice isn't finalized; everything else is unofficial until it is.
     official: r.resultsFinalizedAt != null || r.motoType === "practice",
+    motoType: r.motoType ?? "heat",
     lowerIsBetter,
     motoName: r.motoName || "",
     riderId: r.riderId,

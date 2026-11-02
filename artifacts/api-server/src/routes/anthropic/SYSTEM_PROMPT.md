@@ -892,7 +892,7 @@ Text riders must agree to at online registration (safety rules, code of conduct)
 1. **Choose PDF** → upload your waiver.
 2. **Place Signing Fields** (later shown as **Edit Fields (n)**) → drag signature and date fields onto the pages → **Save Layout**.
 3. Remove it with the X icon.
-4. Turn it on per event with **Require liability waiver e-signature** in the event settings. Riders type their name to e-sign during registration, and signed waivers appear in each rider's **Waiver History**.
+4. Turn it on per event with **Require liability waiver e-signature** in the event settings. The checkbox (and **Require rider acknowledgement form**) is greyed out until that form is set up under Admin → Forms (typed text or an uploaded PDF). Riders type their name to e-sign during registration (or at check-in, or in the app), and signed waivers and accepted acknowledgements appear in each rider's **Waiver History** (Riders → search the rider → open them). Each has **View**, **Print** and **Download PDF**: the form as signed, with name, date and signature filled in, plus a signature record page (who signed, parent/guardian if any, when, IP address, device and the document fingerprint). A parent/guardian's signature shows on the minor rider's page.
 
 ---
 

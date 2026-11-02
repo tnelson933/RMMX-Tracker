@@ -312,7 +312,7 @@ export default function Checkin() {
   const [trackrError, setTrackrError] = useState<string | null>(null);
 
   // Liability waiver modal state
-  interface WaiverTarget { riderId: number; riderName: string; email: string; rfidNumber?: string | null; bibToSave?: string; }
+  interface WaiverTarget { riderId: number; registrationId?: number; riderName: string; email: string; rfidNumber?: string | null; bibToSave?: string; }
   const [waiverTarget, setWaiverTarget] = useState<WaiverTarget | null>(null);
   const [waiverPdfUrl, setWaiverPdfUrl] = useState<string>("");
   const [waiverFetching, setWaiverFetching] = useState(false);
@@ -455,7 +455,7 @@ export default function Checkin() {
           signerName: waiverName.trim(),
           signerEmail: emailToUse,
           consentToEsign: true,
-          waiverSnapshot: waiverPdfUrl,
+          registrationId: waiverTarget.registrationId,
         }),
       });
       const json = await res.json();
@@ -1227,6 +1227,7 @@ export default function Checkin() {
                         if (requireLiabilityWaiver && !(checkin as any).waiverSigned) {
                           openWaiverModal({
                             riderId: checkin.riderId,
+                            registrationId: (checkin as any).registrationId ?? undefined,
                             riderName: checkin.riderName,
                             email: checkin.email ?? "",
                             rfidNumber: held.rfid,

@@ -1,4 +1,5 @@
 import { brandedEmailHtml, esc } from "./emailLayout";
+import { waiverPdfOf } from "./waiverSettings";
 const FROM_ADDRESS = process.env.EMAIL_FROM || "RM Roost <onboarding@resend.dev>";
 
 export async function sendEmail(to: string, subject: string, html: string): Promise<{ ok: boolean; reason?: string }> {
@@ -107,11 +108,15 @@ export async function sendLiabilityWaiverConfirmation(opts: {
     month: "long", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short",
   });
 
-  const isPdfUrl = waiverSnapshot.startsWith("http") || waiverSnapshot.startsWith("/api/storage");
-  const documentSection = isPdfUrl
+  // Names come from the signer: escape them. A PDF waiver links to the club's file on our site.
+  const safeName = escapeHtml(signerName);
+  const safeEvent = escapeHtml(eventName);
+  const pdf = waiverPdfOf(waiverSnapshot);
+  const pdfHref = pdf ? escapeHtml(pdf.startsWith("/") ? `${(process.env.APP_URL || "https://www.rmroost.com").replace(/\/$/, "")}${pdf}` : pdf) : null;
+  const documentSection = pdfHref
     ? `<p style="margin:0 0 8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#888">Document you signed</p>
        <div style="background:#f7f7f7;border:1px solid #e5e5e5;border-radius:4px;padding:16px 20px">
-         <a href="${waiverSnapshot}" style="color:#2563eb;font-size:14px;word-break:break-all">View Liability Waiver PDF →</a>
+         <a href="${pdfHref}" style="color:#2563eb;font-size:14px;word-break:break-all">View Liability Waiver PDF →</a>
        </div>`
     : `<p style="margin:0 0 8px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#888">Document you signed</p>
        <div style="background:#f7f7f7;border:1px solid #e5e5e5;border-radius:4px;padding:16px 20px;max-height:500px;overflow:hidden">
@@ -124,24 +129,24 @@ export async function sendLiabilityWaiverConfirmation(opts: {
 
         <div style="background:#111;padding:28px 32px">
           <p style="margin:0 0 4px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#dc2626">Liability Waiver — Signed Copy</p>
-          <h1 style="margin:0;font-size:22px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:#fff">${eventName}</h1>
+          <h1 style="margin:0;font-size:22px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:#fff">${safeEvent}</h1>
         </div>
 
         <div style="padding:28px 32px">
           <p style="margin:0 0 20px;font-size:15px;color:#444;line-height:1.6">
-            Hi ${signerName},<br><br>
-            This email confirms your legally binding electronic signature on the liability waiver for <strong>${eventName}</strong>.
+            Hi ${safeName},<br><br>
+            This email confirms your legally binding electronic signature on the liability waiver for <strong>${safeEvent}</strong>.
             Keep this email for your records.
           </p>
 
           <table style="width:100%;border-collapse:collapse;margin-bottom:24px;font-size:14px">
             <tr style="border-bottom:1px solid #f0f0f0">
               <td style="padding:10px 0;color:#888;width:140px">Signed by</td>
-              <td style="padding:10px 0;color:#111;font-weight:600">${signerName}</td>
+              <td style="padding:10px 0;color:#111;font-weight:600">${safeName}</td>
             </tr>
             <tr style="border-bottom:1px solid #f0f0f0">
               <td style="padding:10px 0;color:#888">Event</td>
-              <td style="padding:10px 0;color:#111">${eventName}</td>
+              <td style="padding:10px 0;color:#111">${safeEvent}</td>
             </tr>
             <tr style="border-bottom:1px solid #f0f0f0">
               <td style="padding:10px 0;color:#888">Signed at</td>

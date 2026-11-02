@@ -12,6 +12,8 @@ import { normalizeEventPurchaseOptions } from "../lib/rmTrackr";
 import { clubBuiltInPrice, eventTrackrPrice } from "../lib/sellItems";
 import { normalizeState } from "../utils/normalizeState";
 import { quickCheckinRequirements } from "../lib/quickCheckinRequirements";
+import { missingWaiverSetup } from "../lib/waiverSettings";
+import { callerOwnsClub } from "../middleware/accessControl";
 import { eventTimingTags, eventsTimingTags } from "../lib/eventTimingTags";
 
 const router = Router();
@@ -124,8 +126,9 @@ router.get("/events", async (req, res) => {
     : await query.orderBy(eventsTable.date);
 
   const advanced = await advanceStatuses(events);
-  const tagsByEvent = await eventsTimingTags(events.map(e => e.id));
-  return res.json(events.map(e => ({
+  const visible = events.filter(e => (advanced.get(e.id) ?? e.status) !== "draft" || callerOwnsClub(res, e.clubId));
+  const tagsByEvent = await eventsTimingTags(visible.map(e => e.id));
+  return res.json(visible.map(e => ({
     ...e,
     timingTechnology: normalizeTimingTechnology(e.timingTechnology),
     timingTags: tagsByEvent.get(e.id),
@@ -148,6 +151,8 @@ router.post("/events", async (req, res) => {
   const isDraftCreate = req.body.draft === true;
   if (!clubId || !name) return res.status(400).json({ error: "Enter an event name." });
   if (!(await scoringTableUsable(scoringTableId, clubId))) return res.status(400).json({ error: "That scoring table isn't available to this club." });
+  const waiverSetupProblem = await missingWaiverSetup(clubId, { requireWaiver, requireLiabilityWaiver });
+  if (waiverSetupProblem) return res.status(400).json({ error: waiverSetupProblem });
   if (!isDraftCreate && (!date || !state)) return res.status(400).json({ error: "Enter the event date and choose a state." });
 
   // For draft saves, default date to today and state to "TBD"
@@ -294,6 +299,9 @@ router.get("/events/:eventId", async (req, res) => {
   if (staffCId !== null && events[0].clubId !== staffCId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   const advanced = await advanceStatuses(events);
   const e = events[0];
+  if ((advanced.get(e.id) ?? e.status) === "draft" && !callerOwnsClub(res, e.clubId)) {
+    return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
+  }
 
   // For enduro events, expose per-class start times from time-check targets (public info).
   let classStartTimes: Record<string, string | null> = {};
@@ -342,6 +350,11 @@ router.patch("/events/:eventId", async (req, res) => {
 
   if (req.body.scoringTableId !== undefined && before && !(await scoringTableUsable(req.body.scoringTableId, before.clubId))) {
     return res.status(400).json({ error: "That scoring table isn't available to this club." });
+  }
+
+  if (before) {
+    const waiverSetupProblem = await missingWaiverSetup(before.clubId, req.body);
+    if (waiverSetupProblem) return res.status(400).json({ error: waiverSetupProblem });
   }
 
   const patchDate = req.body.date ?? before?.date;

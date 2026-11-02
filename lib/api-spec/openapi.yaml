@@ -4817,6 +4817,9 @@ components:
           type: boolean
         bibNumber:
           type: ["string", "null"]
+        motoType:
+          type: string
+          description: heat, main, practice, enduro_test… (practice isn't scored)
 
     ResultsInput:
       type: object
@@ -5247,6 +5250,10 @@ components:
           type: string
         clubName:
           type: string
+        phase:
+          type: string
+          enum: [today, upcoming]
+          description: Racing today or later, by the event's own local date (its time zone).
 
     RecentResultItem:
       type: object
@@ -5273,6 +5280,8 @@ components:
         official:
           type: boolean
           description: True once the organizer has finalized every finished race; otherwise results are unofficial. Absent when the event has no results.
+        endDate:
+          type: ["string", "null"]
 
     EventReport:
       type: object

@@ -11,7 +11,7 @@ import {
   rfidAssignmentsTable,
   liabilityWaiverSignaturesTable,
 } from "@workspace/db";
-import { and, eq, ilike, ne, or } from "drizzle-orm";
+import { and, eq, ilike, isNotNull, ne, or } from "drizzle-orm";
 import { eventTimeZone, normalizeActiveTransponderIdentifier, todayInZone } from "@workspace/api-zod";
 import { requireRiderAuth } from "./rider-portal";
 import { canManageRider } from "../lib/riderAccess";
@@ -20,6 +20,8 @@ import { getUncachableStripeClient } from "../stripeClient";
 import { confirmRegistrationSession } from "./registrations";
 import { riderCardError } from "../lib/stripeErrors";
 import { clubStripeOf, onClub, onClubOrPlatform, transferTo } from "../lib/stripePayments";
+import { acknowledgementSnapshot, liabilityWaiverSnapshot, waiverPdfOf } from "../lib/waiverSettings";
+import { sendLiabilityWaiverConfirmation } from "../lib/email";
 
 // Lets a rider fix what keeps them from Quick Check-In without staff:
 // pay an unfinished registration, sign the waiver, or add the transponder or
@@ -166,14 +168,36 @@ router.post("/rider/registrations/:regId/checkout", requireRiderAuth, async (req
 });
 
 // ── Waiver ───────────────────────────────────────────────────────────────────
-async function waiverFor(event: typeof eventsTable.$inferSelect) {
+/**
+ * The form this rider still has to sign for the event: the liability waiver first,
+ * then the acknowledgement (when the event requires both, both are needed).
+ */
+async function waiverFor(event: typeof eventsTable.$inferSelect, riderId: number) {
   const [settings] = await db.select().from(clubSettingsTable).where(eq(clubSettingsTable.clubId, event.clubId));
+  let liabilitySigned = false;
   if (event.requireLiabilityWaiver) {
+    const [sig] = await db.select({ id: liabilityWaiverSignaturesTable.id })
+      .from(liabilityWaiverSignaturesTable)
+      .innerJoin(registrationsTable, eq(registrationsTable.id, liabilityWaiverSignaturesTable.registrationId))
+      .where(and(eq(liabilityWaiverSignaturesTable.eventId, event.id), eq(registrationsTable.eventId, event.id), eq(registrationsTable.riderId, riderId)))
+      .limit(1);
+    liabilitySigned = !!sig;
+  }
+  let acknowledged = true;
+  if (event.requireWaiver) {
+    const [acked] = await db.select({ id: registrationsTable.id }).from(registrationsTable).where(and(
+      eq(registrationsTable.eventId, event.id), eq(registrationsTable.riderId, riderId),
+      ne(registrationsTable.status, "void"), isNotNull(registrationsTable.waiverAcknowledgedAt),
+    )).limit(1);
+    acknowledged = !!acked;
+  }
+  if (event.requireLiabilityWaiver && (!liabilitySigned || acknowledged)) {
     return {
       kind: "liability" as const,
       text: settings?.liabilityWaiverText ?? null,
       pdfUrl: settings?.liabilityWaiverPdfUrl ?? null,
-      snapshot: settings?.liabilityWaiverText ?? (settings?.liabilityWaiverPdfUrl ? `[PDF waiver] ${settings.liabilityWaiverPdfUrl}` : null),
+      snapshot: liabilityWaiverSnapshot(settings),
+      fields: settings?.liabilityWaiverFields ?? null,
     };
   }
   if (event.requireWaiver) {
@@ -181,7 +205,8 @@ async function waiverFor(event: typeof eventsTable.$inferSelect) {
       kind: "acknowledgement" as const,
       text: settings?.riderAcknowledgement ?? null,
       pdfUrl: settings?.waiverPdfUrl ?? null,
-      snapshot: settings?.riderAcknowledgement ?? (settings?.waiverPdfUrl ? `[PDF waiver] ${settings.waiverPdfUrl}` : null),
+      snapshot: acknowledgementSnapshot(settings),
+      fields: null,
     };
   }
   return null;
@@ -190,9 +215,9 @@ async function waiverFor(event: typeof eventsTable.$inferSelect) {
 router.get("/rider/registrations/:regId/waiver", requireRiderAuth, async (req, res) => {
   const owned = await loadOwnedRegistration(req, res);
   if (!owned) return;
-  const waiver = await waiverFor(owned.event);
+  const waiver = await waiverFor(owned.event, owned.rider.id);
   if (!waiver) return res.status(404).json({ error: "This event doesn't require a waiver." });
-  const { snapshot: _snapshot, ...shown } = waiver;
+  const { snapshot: _snapshot, fields: _fields, ...shown } = waiver;
   return res.json({ ...shown, eventName: owned.event.name, riderName: `${owned.rider.firstName} ${owned.rider.lastName}`.trim() });
 });
 
@@ -204,7 +229,7 @@ router.post("/rider/registrations/:regId/waiver", requireRiderAuth, async (req, 
   if (!String(signerName ?? "").trim()) return res.status(400).json({ error: "Type your full name to sign." });
   if (!consentToEsign) return res.status(400).json({ error: "Check the box to agree to sign electronically." });
 
-  const waiver = await waiverFor(event);
+  const waiver = await waiverFor(event, rider.id);
   if (!waiver?.snapshot) return res.status(409).json({ error: "The waiver isn't available in the app. Sign it at the gate." });
 
   if (waiver.kind === "acknowledgement") {
@@ -215,6 +240,8 @@ router.post("/rider/registrations/:regId/waiver", requireRiderAuth, async (req, 
   }
 
   const guardian = !!asGuardian;
+  const signedAt = new Date();
+  const contentHash = createHash("sha256").update(waiver.snapshot, "utf8").digest("hex");
   await db.insert(liabilityWaiverSignaturesTable).values({
     clubId: event.clubId,
     eventId: event.id,
@@ -224,13 +251,25 @@ router.post("/rider/registrations/:regId/waiver", requireRiderAuth, async (req, 
     signerIp: req.ip ?? null,
     signerUserAgent: req.get("user-agent") ?? null,
     consentToEsign: true,
-    waiverContentHash: createHash("sha256").update(waiver.snapshot, "utf8").digest("hex"),
+    waiverContentHash: contentHash,
     waiverSnapshot: waiver.snapshot,
+    // Where the name, date and signature go on the club's PDF, as when the rider signed.
+    fieldLayout: waiverPdfOf(waiver.snapshot) ? (waiver.fields ?? null) : null,
     signerType: guardian ? "guardian" : "self",
     minorRiderName: guardian ? `${rider.firstName} ${rider.lastName}`.trim() : null,
-    signedAt: new Date(),
+    signedAt,
   });
-  return res.json({ ok: true });
+  sendLiabilityWaiverConfirmation({
+    to: account.email,
+    signerName: String(signerName).trim(),
+    eventName: event.name,
+    signedAt: signedAt.toISOString(),
+    contentHash,
+    waiverSnapshot: waiver.snapshot,
+  }).catch(() => {});
+  // Both forms required: tell the app the acknowledgement is still to do.
+  const next = await waiverFor(event, rider.id);
+  return res.json({ ok: true, ...(next?.kind === "acknowledgement" ? { next: "acknowledgement" } : {}) });
 });
 
 /** True when another rider's profile already carries this transponder/sticker number. */

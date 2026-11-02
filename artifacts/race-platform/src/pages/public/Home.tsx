@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { OfficialResultsBadge } from "@/components/OfficialResultsBadge";
 import { Link, useLocation } from "wouter";
 import {
@@ -316,25 +316,27 @@ export default function Home() {
   } as any);
 
   const todayStr = format(new Date(), "yyyy-MM-dd");
-  // "Today" = today falls within the event's date range (start ≤ today ≤ end).
-  // Using date range instead of `status === "race_day"` prevents stale events
-  // whose race day has passed but haven't been finalized from staying on screen.
-  const todayEvents = upcomingAll?.filter(e => {
+  // "Today" = racing today by the event's own local date (the server's `phase`, from
+  // the track's time zone), so a race stays on Today all evening wherever the viewer is.
+  const isToday = (e: NonNullable<typeof upcomingAll>[number]) => {
+    if (e.phase) return e.phase === "today";
     const dateStr = e.date.substring(0, 10);
-    const endStr  = e.endDate ? String(e.endDate).substring(0, 10) : dateStr;
+    const endStr = e.endDate ? String(e.endDate).substring(0, 10) : dateStr;
     return dateStr <= todayStr && endStr >= todayStr;
-  }) ?? [];
-  const futureEvents = upcomingAll?.filter(e =>
-    e.date.substring(0, 10) > todayStr
-  ) ?? [];
+  };
+  const todayEvents = upcomingAll?.filter(isToday) ?? [];
+  const futureEvents = upcomingAll?.filter(e => !isToday(e)) ?? [];
 
   const todayStates = [...new Set(todayEvents.map(e => (e.state ?? "").trim()).filter(Boolean))].sort();
   const futureStates = [...new Set(futureEvents.map(e => (e.state ?? "").trim()).filter(Boolean))].sort();
   const pastStates = states?.map(s => s.state) ?? [];
 
-  // Auto-select today tab if there are events today, else upcoming or past
+  // Auto-select today tab if there are events today, else upcoming or past —
+  // on first load only, so the 30-second refresh never moves the viewer off their tab.
+  const tabChosen = useRef(false);
   useEffect(() => {
-    if (!upcomingAll) return;
+    if (!upcomingAll || tabChosen.current) return;
+    tabChosen.current = true;
     if (todayEvents.length > 0) setActiveTab("today");
     else if (futureEvents.length > 0) setActiveTab("upcoming");
     else setActiveTab("past");

@@ -204,7 +204,7 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
     const hasRfid = hasStickerBesidesTransponder(stickersByKey.get(key), regTag.transponder) || !!regTag.sticker;
     // requireWaiver = simple acknowledgment stored on the registration row (waiver_acknowledged_at)
     // requireLiabilityWaiver = full PDF e-signature stored in liability_waiver_signatures
-    const waiverSigned = r.requireLiabilityWaiver ? waiverByRider.has(key) : !!r.waiverAcknowledgedAt;
+    const waiverSigned = (!r.requireLiabilityWaiver || waiverByRider.has(key)) && (!r.requireWaiver || !!r.waiverAcknowledgedAt);
     const ineligibleReason = quickCheckinIneligibleReason(requirements, {
       // Unpaid online registrations (checkout not completed) pay at the gate.
       registrationConfirmed: r.regStatus === "confirmed",
@@ -400,8 +400,9 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
   // requireWaiver = simple acknowledgment on the registration row (waiver_acknowledged_at)
   // requireLiabilityWaiver = full PDF e-signature in liability_waiver_signatures,
   // linked to one of this rider's registrations for the event (any class entry).
-  let waiverSigned = !!reg.waiverAcknowledgedAt;
-  if (event.requireLiabilityWaiver) {
+  // With both required, the rider needs both.
+  let waiverSigned = !event.requireWaiver || !!reg.waiverAcknowledgedAt;
+  if (waiverSigned && event.requireLiabilityWaiver) {
     const [sig] = await db
       .select({ id: liabilityWaiverSignaturesTable.id })
       .from(liabilityWaiverSignaturesTable)
