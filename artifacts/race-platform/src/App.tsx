@@ -126,6 +126,12 @@ const Loading = () => (
   </div>
 );
 
+/** The login page, coming back here after signing in. */
+function loginWithNext(): string {
+  const here = window.location.pathname + window.location.search;
+  return here && here !== "/" ? `/login?next=${encodeURIComponent(here)}` : "/login";
+}
+
 /**
  * ProtectedRoute — requires authentication.
  * If permKey is provided, staff users must have that permission or they land on /no-access.
@@ -133,7 +139,7 @@ const Loading = () => (
 function ProtectedRoute({ children, permKey }: { children: React.ReactNode; permKey?: string }) {
   const { isAuthenticated, isLoading, user, permissions } = useAuth();
   if (isLoading) return <Loading />;
-  if (!isAuthenticated) return <Redirect to="/login" />;
+  if (!isAuthenticated) return <Redirect to={loginWithNext()} />;
 
   // Staff permission enforcement
   if (user?.role === "staff" && permKey && !permissions.includes(permKey)) {
@@ -147,7 +153,7 @@ function ProtectedRoute({ children, permKey }: { children: React.ReactNode; perm
 function OrganizerOnlyRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, user } = useAuth();
   if (isLoading) return <Loading />;
-  if (!isAuthenticated) return <Redirect to="/login" />;
+  if (!isAuthenticated) return <Redirect to={loginWithNext()} />;
   if (user?.role === "staff") return <Redirect to="/no-access" />;
   return <OrganizerLayout>{children}</OrganizerLayout>;
 }

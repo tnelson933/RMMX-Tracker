@@ -79,6 +79,8 @@ export const eventsTable = pgTable("events", {
   zip: text("zip"),
   /** When the race day stats emails went out (once, when all results became official). */
   statsEmailsSentAt: timestamp("stats_emails_sent_at", { withTimezone: true }),
+  /** When the "finalize your results" reminder went to the organizers (once). */
+  finalizeReminderSentAt: timestamp("finalize_reminder_sent_at", { withTimezone: true }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

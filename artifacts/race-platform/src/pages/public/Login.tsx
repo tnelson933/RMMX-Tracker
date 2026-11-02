@@ -40,8 +40,12 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [cloudSyncing, setCloudSyncing] = useState(false);
 
+  // After signing in, go back to the page the organizer was headed to (e.g. a
+  // link in an email), but only a page on this site.
   useEffect(() => {
-    if (isAuthenticated) setLocation("/dashboard");
+    if (!isAuthenticated) return;
+    const next = new URLSearchParams(window.location.search).get("next");
+    setLocation(next && next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/login") ? next : "/dashboard");
   }, [isAuthenticated, setLocation]);
 
   const savedEmail = typeof localStorage !== "undefined" ? (localStorage.getItem("rmmx_saved_email") ?? "") : "";

@@ -10,6 +10,7 @@ import { startQuickCheckinNotifier } from "./lib/quickCheckinNotifier";
 import { startRaceClock } from "./lib/raceClock";
 import { startPaymentSweeper } from "./lib/paymentSweeper";
 import { sendEnrollmentConfirmations } from "./lib/smsAlerts";
+import { startFinalizeReminders } from "./lib/finalizeReminder";
 
 const rawPort = process.env["PORT"];
 
@@ -48,4 +49,6 @@ httpServer.listen(port, (err?: Error) => {
   // Card payments the rider's browser and Stripe's webhook both missed.
   startPaymentSweeper();
   startRentalSweeper();
+  // Organizers: a reminder to finalize results 12 hours after an event ends.
+  startFinalizeReminders();
 });
