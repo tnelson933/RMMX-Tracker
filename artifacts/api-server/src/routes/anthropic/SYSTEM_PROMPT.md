@@ -672,6 +672,8 @@ In the desktop app, broadcasting needs cloud sync set up ("Go to Settings → Cl
 3. Clubs connected before this change have an older Express account. The Payments page offers **Switch account** to move to the club's own Stripe account: the old account keeps taking payments until the new one's setup is finished (**Finish setup** resumes it). Card readers need the club's own account.
 4. Turn payments on per event with the **Collect Payments** checkbox in the event settings.
 
+**Race day stats emails:** riders can tick **Send me my race day stats** when they register online. Once every race at the event is finalized (results official), each of those riders who raced gets one email with their finish, time, points and lap times for each race (best lap highlighted) and a link to the full results. It's automatic and sent once per event; the organizer only finalizes the races. Correcting a race afterwards doesn't send it again.
+
 **How the money flows:** riders pay by card at online registration. A card payment is recorded even if the rider closes the page before returning from Stripe (RM Roost checks with Stripe in the background within a few minutes), and each entry records what it was charged. Payments are made directly on the club's own Stripe account: the money goes straight to the club, Stripe bills its processing fees to the club, and refunds and disputes are the club's. RM Roost takes no fee and isn't in the money flow. (Clubs still on an older Express account until they switch: payments pass through RM Roost's Stripe account to the club in full, with RM Roost covering the fees.) Refunds and payouts are handled in the Stripe Dashboard (RM Roost's Cancellations tab only tracks whether a refund was done).
 
 ---

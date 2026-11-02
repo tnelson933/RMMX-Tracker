@@ -31,6 +31,8 @@ export interface BrandedEmail {
   heading: string;
   /** Paragraphs of HTML (escape any user text with esc()). */
   paragraphs: string[];
+  /** Block HTML after the paragraphs (e.g. a results table). */
+  extraHtml?: string;
   button: { label: string; url: string };
   /** Small print under the button (HTML). */
   note?: string;
@@ -64,6 +66,7 @@ export function brandedEmailHtml(e: BrandedEmail): string {
         <p style="margin:0 0 6px;font-family:${heading};font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:${RED};">${esc(e.eyebrow)}</p>
         <h1 style="margin:0 0 18px;font-family:${heading};font-size:30px;line-height:1.1;font-weight:800;text-transform:uppercase;color:${INK};">${esc(e.heading)}</h1>
         ${e.paragraphs.map(p => `<p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:${MUTED};">${p}</p>`).join("\n        ")}
+        ${e.extraHtml ?? ""}
       </td></tr>
       <tr><td align="left" style="padding:8px 36px 28px;">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>

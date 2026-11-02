@@ -37,6 +37,7 @@ import { sendLiabilityWaiverConfirmation } from "../lib/email";
 import { recomputeEnduroPositionsForEvent } from "./enduro-scoring";
 import { syncEventPublication } from "../lib/resultsVisibility";
 import { notifyFollowersOfResults } from "../lib/riderCareer";
+import { sendRaceDayStats } from "../lib/raceDayStats";
 
 const router = Router();
 
@@ -1449,7 +1450,10 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       void (async () => {
         for (const eventId of finalizeEventIds) {
           try {
-            if (await syncEventPublication(eventId)) void notifyFollowersOfResults(eventId);
+            if (await syncEventPublication(eventId)) {
+              void notifyFollowersOfResults(eventId);
+              void sendRaceDayStats(eventId).catch(() => {});
+            }
           } catch (err) {
             req.log.warn({ err, eventId }, "desktop-push: results publication sync failed");
           }

@@ -11,6 +11,7 @@ import { sendPushNotifications } from "../lib/push";
 import { sendConnectorCommand } from "../lib/connectorRelay";
 import { accountIdsForRiders } from "../lib/riderAccess";
 import { callerOwnsClub } from "../middleware/accessControl";
+import { sendRaceDayStats } from "../lib/raceDayStats";
 
 export type NormalizedMotoTiming =
   | { lapCount: number | null; timeLimitMs: number | null; plusLaps: number | null; error?: never }
@@ -504,7 +505,11 @@ for (const action of ["finalize", "unfinalize"] as const) {
     }
     const nowOfficial = await syncEventPublication(moto.eventId);
     // Followers hear about a rider's results once the whole event is official.
-    if (nowOfficial) void notifyFollowersOfResults(moto.eventId);
+    if (nowOfficial) {
+      void notifyFollowersOfResults(moto.eventId);
+      // "Send me my race day stats" riders get their official results, once.
+      void sendRaceDayStats(moto.eventId).catch(err => req.log?.error({ err: err?.message }, "[stats-email] failed"));
+    }
     buildLeaderboard(id).then(snapshot => { if (snapshot) sseBroadcast(id, snapshot); }).catch(() => {});
     return res.json({ ok: true, motoId: id, resultsFinalizedAt: updated.resultsFinalizedAt?.toISOString() ?? null });
   });

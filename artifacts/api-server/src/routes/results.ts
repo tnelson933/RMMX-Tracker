@@ -15,6 +15,7 @@ import { formulaPoints } from "../lib/safeFormula";
 import { notifyFollowersOfResults } from "../lib/riderCareer";
 import { callerOwnsClub } from "../middleware/accessControl";
 import { withMotoLock } from "./timing";
+import { sendRaceDayStats } from "../lib/raceDayStats";
 
 
 /** Slice a lapTimes array to at most lapCount entries. Handles null/undefined gracefully. */
@@ -650,7 +651,10 @@ router.post("/events/:eventId/results/publish", async (req, res) => {
     ));
   const newlyPublished = await syncEventPublication(eventId);
   // Tell followers their riders' results are in (only when the event first becomes official).
-  if (newlyPublished) void notifyFollowersOfResults(eventId);
+  if (newlyPublished) {
+    void notifyFollowersOfResults(eventId);
+    void sendRaceDayStats(eventId).catch(err => req.log?.error({ err: err?.message }, "[stats-email] failed"));
+  }
 
   return res.json({ ok: true, published });
 });

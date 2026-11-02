@@ -77,6 +77,8 @@ export const eventsTable = pgTable("events", {
   trackLng: doublePrecision("track_lng"),
   streetAddress: text("street_address"),
   zip: text("zip"),
+  /** When the race day stats emails went out (once, when all results became official). */
+  statsEmailsSentAt: timestamp("stats_emails_sent_at", { withTimezone: true }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
