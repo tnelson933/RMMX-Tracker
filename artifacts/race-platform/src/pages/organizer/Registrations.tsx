@@ -454,18 +454,26 @@ export default function Registrations() {
     );
   });
 
-  // Float registrations with invalid transponder/RFID numbers to the top.
-  const sortedRegs = [...filteredRegs].sort((a, b) => {
-    const invalid = (r: any) => {
-      const regTag = splitRegistrationTag(r.myLapsTransponderNumber);
-      return isInvalidAssignedActiveTransponderIdentifier(regTag.transponder) || isInvalidRfid(r.rfidNumber ?? regTag.sticker);
-    };
-    const aInvalid = invalid(a);
-    const bInvalid = invalid(b);
-    if (aInvalid && !bInvalid) return -1;
-    if (!aInvalid && bInvalid) return 1;
-    return 0;
-  });
+  // What needs the organizer's attention on an entry (the same things its row flags).
+  const issuesOf = (r: any): string[] => {
+    if (r.status === "void") return [];
+    const issues: string[] = [];
+    const regTag = splitRegistrationTag(r.myLapsTransponderNumber);
+    const rawRfid = r.rfidNumber as string | null;
+    const rfid = (rawRfid && rawRfid.trim().toLowerCase() !== regTag.transponder?.trim().toLowerCase() ? rawRfid : null) ?? regTag.sticker;
+    if (isInvalidAssignedActiveTransponderIdentifier(regTag.transponder)) issues.push("Transponder invalid");
+    if (isInvalidRfid(rfid)) issues.push("RFID invalid");
+    const bib = r.bibNumber || suggestions.get(r.id) || "";
+    if (bib && (bibRiders.get(bib)?.size ?? 0) > 1) issues.push("Duplicate number");
+    if (r.status === "pending") issues.push("Payment pending");
+    if ((event as any)?.requireWaiver && !r.waiverAcknowledgedAt) issues.push("Acknowledgement missing");
+    return issues;
+  };
+  const issuesById = new Map(filteredRegs.map(r => [r.id, issuesOf(r)]));
+  const issueCount = [...issuesById.values()].filter(i => i.length > 0).length;
+  // Entries with issues first, so they're seen right away (otherwise the list's order).
+  const sortedRegs = [...filteredRegs].sort((a, b) =>
+    Number((issuesById.get(b.id)?.length ?? 0) > 0) - Number((issuesById.get(a.id)?.length ?? 0) > 0));
 
   // ── Handlers ─────────────────────────────────────────────────────────────────
   const handleCreate = async (data: OnSiteRegForm) => {
@@ -1751,6 +1759,15 @@ export default function Registrations() {
         </DialogContent>
       </Dialog>
 
+      {issueCount > 0 && (
+        <div className="mb-3 flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-2.5 text-sm text-destructive">
+          <AlertCircle size={15} className="shrink-0" />
+          <span>
+            <strong>{issueCount} {issueCount === 1 ? "entry needs" : "entries need"} attention</strong>, shown first: duplicate numbers, invalid transponder or RFID numbers, payments still pending, or a missing acknowledgement.
+          </span>
+        </div>
+      )}
+
       <Card>
         <div className="rounded-md border">
           <Table>
@@ -1790,7 +1807,11 @@ export default function Registrations() {
                   const showRfid = tags.rfid || !!rfidVal;
 
                   return (
-                    <TableRow key={reg.id} className={hasInvalidTransponder || hasInvalidRfid ? "bg-red-50 dark:bg-red-950/20 border-l-4 border-l-destructive" : ""}>
+                    <TableRow
+                      key={reg.id}
+                      className={(issuesById.get(reg.id)?.length ?? 0) > 0 ? "bg-red-50 dark:bg-red-950/20 border-l-4 border-l-destructive" : ""}
+                      title={(issuesById.get(reg.id)?.length ?? 0) > 0 ? `Needs attention: ${issuesById.get(reg.id)!.join(", ")}` : undefined}
+                    >
                       <TableCell className="text-muted-foreground font-mono">{reg.id}</TableCell>
                       <TableCell>
                         <button
