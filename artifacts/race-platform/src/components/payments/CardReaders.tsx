@@ -31,6 +31,51 @@ async function send(method: string, url: string, body?: unknown) {
  * like online payments. Check-in's card button offers "Charge on <reader>"
  * once one is added and online.
  */
+/** How a club gets a reader working, shown on the Payments page. */
+function ReaderSteps() {
+  return (
+    <div className="rounded-lg border bg-muted/20 p-4 text-sm space-y-3">
+      <p className="font-semibold">How to set up a card reader</p>
+      <ol className="list-decimal pl-5 space-y-1.5 text-muted-foreground">
+        <li><strong className="text-foreground">Get a reader.</strong> Buy a Stripe smart reader (BBPOS WisePOS E or Stripe Reader S700) from your club's Stripe dashboard: Open Stripe Dashboard above, then <strong>Terminal → Shop</strong> (sometimes under More → Terminal). Other card readers won't work.</li>
+        <li><strong className="text-foreground">Turn it on and connect it to Wi-Fi</strong> at your track (or a phone hotspot). It must stay online during check-in.</li>
+        <li><strong className="text-foreground">Get its pairing code.</strong> On the reader, swipe from the left edge, open <strong>Settings</strong>, enter the admin PIN <strong>07139</strong>, then tap <strong>Generate pairing code</strong>. A short code of three words appears.</li>
+        <li><strong className="text-foreground">Add it here.</strong> Click <strong>Add a card reader</strong> below, type the code and a name (e.g. "Gate reader"). The first reader also asks for your club's address.</li>
+        <li><strong className="text-foreground">Take payments at check-in.</strong> On Check-In or Registrations, click <strong>Pay with Card</strong> and choose <strong>Charge on Gate reader</strong>. The amount appears on the reader; the rider taps, inserts or swipes, and RM Roost marks it paid by itself.</li>
+      </ol>
+      <p className="text-xs text-muted-foreground">Readers are optional. Without one, staff type the card in the page or the rider pays on their phone.</p>
+    </div>
+  );
+}
+
+/**
+ * The card readers section, always shown on Payments: the steps, and either
+ * the club's readers or what has to happen first (own Stripe account, setup
+ * finished).
+ */
+export function CardReadersSection({ blocked }: { blocked: string | null }) {
+  if (!blocked) return <CardReaders />;
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-3">
+          <div className="bg-primary/10 rounded-full p-3"><CreditCard size={22} className="text-primary" /></div>
+          <div>
+            <CardTitle className="font-heading uppercase">Card readers</CardTitle>
+            <CardDescription>Optional. Take cards in person at check-in on a Stripe reader (tap, insert or swipe).</CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-800">
+          <strong>Not available yet:</strong> {blocked}
+        </div>
+        <ReaderSteps />
+      </CardContent>
+    </Card>
+  );
+}
+
 export function CardReaders() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -96,12 +141,13 @@ export function CardReaders() {
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {readers.length === 0 && !isLoading && !isError && <ReaderSteps />}
         {isError ? (
           <p className="text-sm text-muted-foreground">Couldn't load your card readers. <button className="underline" onClick={() => refetch()}>Try again</button></p>
         ) : isLoading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : readers.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No card readers yet.</p>
+          <p className="text-sm text-muted-foreground">No card readers added yet.</p>
         ) : (
           <div className="space-y-2">
             {readers.map(r => (

@@ -22,7 +22,7 @@ import { CreditCard, CheckCircle2, AlertCircle, ExternalLink, Loader2, ArrowRigh
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { responseErrorMessage } from "@/lib/friendlyErrors";
-import { CardReaders } from "@/components/payments/CardReaders";
+import { CardReadersSection } from "@/components/payments/CardReaders";
 
 function LinkifiedStripeError({ message }: { message: string }) {
   const parts = message.split(/(https?:\/\/[^\s]+)/g);
@@ -495,34 +495,48 @@ export default function StripeConnect() {
       )}
 
       {/* In-person card payments at check-in (optional; the club's own Stripe account) */}
-      {status?.connected && status.onboardingComplete && status.ownAccount && !offline && canManage && <CardReaders />}
+      {!offline && canManage && (
+        <CardReadersSection
+          blocked={
+            !status?.connected ? "Connect Stripe above first. Card readers take payments into your club's own Stripe account."
+            : !status.ownAccount ? "Your club is on an older Stripe connection. Use Switch account above to move to your club's own Stripe account, then add readers here."
+            : !status.onboardingComplete ? "Finish your club's Stripe setup above first (see what Stripe still needs). Readers can be added as soon as it's done."
+            : null
+          }
+        />
+      )}
 
       <Card className="bg-muted/30">
         <CardContent className="pt-6">
           <h3 className="font-heading font-semibold uppercase tracking-wide text-sm mb-3">How it works</h3>
-          <div className="grid gap-3 sm:grid-cols-3 text-sm text-muted-foreground">
+          <div className="grid gap-4 sm:grid-cols-2 text-sm text-muted-foreground">
             <div className="space-y-1">
-              <div className="font-medium text-foreground">1. Connect</div>
+              <div className="font-medium text-foreground">1. Connect your club's Stripe</div>
               <div>
-                Set up your club's own Stripe account (or sign in with one you have) and add your banking info. First-time setup requires{" "}
-                <a
-                  href="https://dashboard.stripe.com/connect"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary underline underline-offset-2 hover:opacity-80"
-                >
-                  enabling Connect
-                </a>{" "}
-                on your Stripe account.
+                Click <strong>Connect with Stripe</strong> and complete Stripe's setup: your business details and the bank account for payouts.
+                It creates your club's own Stripe account, or links one you already have. Use your club's own email; it becomes your Stripe login.
               </div>
             </div>
             <div className="space-y-1">
-              <div className="font-medium text-foreground">2. Enable on Events</div>
-              <div>Check "Collect Payments" and set an entry fee when creating events</div>
+              <div className="font-medium text-foreground">2. Turn on payments per event</div>
+              <div>
+                In an event's settings, check <strong>Collect Payments</strong> and set the entry fee. Transponder rentals, RM TrackR sales and
+                other items use the same account.
+              </div>
             </div>
             <div className="space-y-1">
-              <div className="font-medium text-foreground">3. Get Paid</div>
-              <div>Riders pay at registration and funds deposit directly to your account</div>
+              <div className="font-medium text-foreground">3. Take payments</div>
+              <div>
+                Riders pay by card when they register online, right on the RM Roost page. At check-in, staff take cash or a card: typed in the page,
+                paid on the rider's phone, or on a card reader (below).
+              </div>
+            </div>
+            <div className="space-y-1">
+              <div className="font-medium text-foreground">4. Get paid</div>
+              <div>
+                Payments go straight to your club's Stripe account and pay out to your bank on Stripe's schedule. Stripe's processing fees come
+                out of each payment; RM Roost takes no cut. Refunds, disputes and payouts are in your Stripe dashboard.
+              </div>
             </div>
           </div>
         </CardContent>
