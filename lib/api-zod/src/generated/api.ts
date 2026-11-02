@@ -484,7 +484,11 @@ export const ListEventsResponseItem = zod.object({
   "timingTags": zod.object({
   "transponder": zod.boolean().describe('RM TrackR active transponder'),
   "rfid": zod.boolean().describe('Passive RFID sticker'),
-  "fromReaders": zod.boolean()
+  "fromReaders": zod.boolean(),
+  "offered": zod.object({
+  "transponder": zod.boolean(),
+  "rfid": zod.boolean()
+}).optional().describe('Every kind any of the club\'s readers use (event, course map and club readers together). Check-in shows and sells these; transponder\/rfid above are what a rider must have.')
 }).optional().describe('Which kinds of tag the event\'s readers use (its course map, else its track\'s, else the club\'s readers). fromReaders is false when no readers are set up, so either kind may be used.'),
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().nullish(),
@@ -636,7 +640,11 @@ export const GetEventResponse = zod.object({
   "timingTags": zod.object({
   "transponder": zod.boolean().describe('RM TrackR active transponder'),
   "rfid": zod.boolean().describe('Passive RFID sticker'),
-  "fromReaders": zod.boolean()
+  "fromReaders": zod.boolean(),
+  "offered": zod.object({
+  "transponder": zod.boolean(),
+  "rfid": zod.boolean()
+}).optional().describe('Every kind any of the club\'s readers use (event, course map and club readers together). Check-in shows and sells these; transponder\/rfid above are what a rider must have.')
 }).optional().describe('Which kinds of tag the event\'s readers use (its course map, else its track\'s, else the club\'s readers). fromReaders is false when no readers are set up, so either kind may be used.'),
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().nullish(),
@@ -786,7 +794,11 @@ export const UpdateEventResponse = zod.object({
   "timingTags": zod.object({
   "transponder": zod.boolean().describe('RM TrackR active transponder'),
   "rfid": zod.boolean().describe('Passive RFID sticker'),
-  "fromReaders": zod.boolean()
+  "fromReaders": zod.boolean(),
+  "offered": zod.object({
+  "transponder": zod.boolean(),
+  "rfid": zod.boolean()
+}).optional().describe('Every kind any of the club\'s readers use (event, course map and club readers together). Check-in shows and sells these; transponder\/rfid above are what a rider must have.')
 }).optional().describe('Which kinds of tag the event\'s readers use (its course map, else its track\'s, else the club\'s readers). fromReaders is false when no readers are set up, so either kind may be used.'),
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().nullish(),
@@ -2567,7 +2579,11 @@ export const GetClubDashboardResponse = zod.object({
   "timingTags": zod.object({
   "transponder": zod.boolean().describe('RM TrackR active transponder'),
   "rfid": zod.boolean().describe('Passive RFID sticker'),
-  "fromReaders": zod.boolean()
+  "fromReaders": zod.boolean(),
+  "offered": zod.object({
+  "transponder": zod.boolean(),
+  "rfid": zod.boolean()
+}).optional().describe('Every kind any of the club\'s readers use (event, course map and club readers together). Check-in shows and sells these; transponder\/rfid above are what a rider must have.')
 }).optional().describe('Which kinds of tag the event\'s readers use (its course map, else its track\'s, else the club\'s readers). fromReaders is false when no readers are set up, so either kind may be used.'),
   "transponderRentalEnabled": zod.boolean().optional(),
   "transponderRentalFee": zod.number().nullish(),

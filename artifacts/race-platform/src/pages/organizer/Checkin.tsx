@@ -17,7 +17,7 @@ import { CacheStatusBadge } from "@/components/CacheStatusBadge";
 import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
 import { isInvalidAssignedActiveTransponderIdentifier } from "@/lib/activeTransponder";
 import { RM_TRACKR_NAME, RM_TRACKR_PRICE } from "@/lib/rmTrackr";
-import { eventTimingTags, splitRegistrationTag, type TimingTags } from "@/components/organizer/timingTags";
+import { eventTimingTags, offeredTags, splitRegistrationTag, type TimingTags } from "@/components/organizer/timingTags";
 
 // RFID tags: alphanumeric + dashes, 1–32 characters.
 function isInvalidRfid(val: string | null | undefined): boolean {
@@ -332,6 +332,8 @@ export default function Checkin() {
   const { data: event, isLoading: eventLoading } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
   // Which kinds of tag the event's readers use (RM TrackR, RFID or both).
   const tags = eventTimingTags(event);
+  // What check-in shows and sells: every kind any of the club's readers use.
+  const offered = offeredTags(tags);
   const { data: rawCheckins, isLoading: checkinsLoading, isError: checkinsError } = useListCheckins(eventId, {
     query: { enabled: !!eventId, refetchInterval: 10000 } as any
   });
@@ -1067,9 +1069,9 @@ export default function Checkin() {
                         {(() => {
                           if (isOffline || checkin.registrationId == null) return null;
                           const regId = checkin.registrationId;
-                          const canSellTrackr = tags.transponder && trackrPrice != null && !held.transponder
+                          const canSellTrackr = offered.transponder && trackrPrice != null && !held.transponder
                             && !(checkin as any).transponderRental && !(checkin as any).rmTrackrPurchased;
-                          const canSellRfid = tags.rfid && rfidStickerFee != null && !held.rfid && !(checkin as any).rfidStickerPurchased;
+                          const canSellRfid = offered.rfid && rfidStickerFee != null && !held.rfid && !(checkin as any).rfidStickerPurchased;
                           if (!canSellTrackr && !canSellRfid) return null;
                           const label = canSellTrackr && canSellRfid ? "RM TrackR or RFID" : canSellTrackr ? "RM TrackR" : "RFID Tag";
                           // Non-modal, and the dialog opens after the menu closes, so closing the menu doesn't dismiss it.
@@ -1097,11 +1099,11 @@ export default function Checkin() {
                         })()}
                         {([
                           // Also when the event asks for or rents transponders, or the rider has one.
-                          (tags.transponder || !!held.transponder || !!(event as any)?.requireTransponder || transponderRentalEnabled)
+                          (offered.transponder || !!held.transponder || !!(event as any)?.requireTransponder || transponderRentalEnabled)
                             && { kind: "transponder" as const, name: RM_TRACKR_NAME, value: held.transponder, invalid: transponderInvalid,
                             // A rental or purchase still to hand out has its own notice below.
                             hideMissing: needsRental || needsTrackr },
-                          (tags.rfid || !!held.rfid) && { kind: "rfid" as const, name: "RFID", value: held.rfid, invalid: rfidInvalid, hideMissing: false },
+                          (offered.rfid || !!held.rfid) && { kind: "rfid" as const, name: "RFID", value: held.rfid, invalid: rfidInvalid, hideMissing: false },
                         ].filter(Boolean) as Array<{ kind: TagKind; name: string; value: string | null; invalid: boolean; hideMissing: boolean }>).map(t => (
                           t.invalid ? (
                             <button

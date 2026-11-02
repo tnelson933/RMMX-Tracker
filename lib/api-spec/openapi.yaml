@@ -3629,6 +3629,13 @@ components:
             transponder: { type: boolean, description: RM TrackR active transponder }
             rfid: { type: boolean, description: Passive RFID sticker }
             fromReaders: { type: boolean }
+            offered:
+              type: object
+              description: Every kind any of the club's readers use (event, course map and club readers together). Check-in shows and sells these; transponder/rfid above are what a rider must have.
+              properties:
+                transponder: { type: boolean }
+                rfid: { type: boolean }
+              required: [transponder, rfid]
           required: [transponder, rfid, fromReaders]
         transponderRentalEnabled:
           type: boolean

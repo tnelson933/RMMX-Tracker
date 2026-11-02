@@ -26,7 +26,7 @@ import { useToast } from "@/hooks/use-toast";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import { isInvalidAssignedActiveTransponderIdentifier } from "@/lib/activeTransponder";
-import { eventTimingTags, splitRegistrationTag } from "@/components/organizer/timingTags";
+import { eventTimingTags, offeredTags, splitRegistrationTag } from "@/components/organizer/timingTags";
 import { responseErrorMessage } from "@/lib/friendlyErrors";
 import { CardPaymentPanel, type CardStarted, type CardStartOptions } from "@/components/payments/CardPaymentPanel";
 
@@ -1777,7 +1777,7 @@ export default function Registrations() {
                 <TableHead className="font-heading font-bold uppercase tracking-wider">Rider</TableHead>
                 <TableHead className="font-heading font-bold uppercase tracking-wider">Class</TableHead>
                 <TableHead className="font-heading font-bold uppercase tracking-wider">#</TableHead>
-                <TableHead className="font-heading font-bold uppercase tracking-wider">{tags.transponder && tags.rfid ? "Tags" : tags.transponder ? "Transponder" : "RFID"}</TableHead>
+                <TableHead className="font-heading font-bold uppercase tracking-wider">{offeredTags(tags).transponder && offeredTags(tags).rfid ? "Tags" : offeredTags(tags).transponder ? "Transponder" : "RFID"}</TableHead>
                 <TableHead className="font-heading font-bold uppercase tracking-wider">Status</TableHead>
                 <TableHead className="font-heading font-bold uppercase tracking-wider">Waiver</TableHead>
                 <TableHead className="text-right font-heading font-bold uppercase tracking-wider">Actions</TableHead>
@@ -1803,8 +1803,8 @@ export default function Registrations() {
                   const rfidVal = (rawRfid && rawRfid.trim().toLowerCase() !== transponderVal?.trim().toLowerCase() ? rawRfid : null) ?? regTag.sticker;
                   const hasInvalidRfid = isInvalidRfid(rfidVal);
                   // Show each kind of tag the event uses, or any the rider has anyway.
-                  const showTransponder = tags.transponder || !!transponderVal || transponderIsRental;
-                  const showRfid = tags.rfid || !!rfidVal;
+                  const showTransponder = offeredTags(tags).transponder || !!transponderVal || transponderIsRental;
+                  const showRfid = offeredTags(tags).rfid || !!rfidVal;
 
                   return (
                     <TableRow

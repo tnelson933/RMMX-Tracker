@@ -3,35 +3,42 @@ import test from "node:test";
 import { hasRequiredTags, splitRegistrationTag, timingTagsFromReaders, timingTagsLabel } from "./eventTimingTags";
 
 test("the event's own readers decide which tags riders need", () => {
-  assert.deepEqual(timingTagsFromReaders([["active_transponder", "rfid"], ["rfid"], []]), { transponder: true, rfid: true, fromReaders: true });
-  assert.deepEqual(timingTagsFromReaders([["active_transponder"], ["rfid"], ["rfid"]]), { transponder: true, rfid: false, fromReaders: true });
+  assert.deepEqual(timingTagsFromReaders([["active_transponder", "rfid"], ["rfid"], []]), { transponder: true, rfid: true, fromReaders: true, offered: { transponder: true, rfid: true } });
+  assert.deepEqual(timingTagsFromReaders([["active_transponder"], ["rfid"], ["rfid"]]), { transponder: true, rfid: false, fromReaders: true, offered: { transponder: true, rfid: true } });
 });
 
 test("falls back to the track's course map, then the club's readers", () => {
-  assert.deepEqual(timingTagsFromReaders([[], ["rfid"], ["active_transponder"]]), { transponder: false, rfid: true, fromReaders: true });
-  assert.deepEqual(timingTagsFromReaders([[], [], ["active_transponder"]]), { transponder: true, rfid: false, fromReaders: true });
+  assert.deepEqual(timingTagsFromReaders([[], ["rfid"], ["active_transponder"]]), { transponder: false, rfid: true, fromReaders: true, offered: { transponder: true, rfid: true } });
+  assert.deepEqual(timingTagsFromReaders([[], [], ["active_transponder"]]), { transponder: true, rfid: false, fromReaders: true, offered: { transponder: true, rfid: false } });
 });
 
 test("with no readers set up, either kind may be used", () => {
-  assert.deepEqual(timingTagsFromReaders([[], [], []]), { transponder: true, rfid: true, fromReaders: false });
+  assert.deepEqual(timingTagsFromReaders([[], [], []]), { transponder: true, rfid: true, fromReaders: false, offered: { transponder: true, rfid: true } });
 });
 
 test("a rider needs every kind the readers use, or any one when none are set up", () => {
-  const both = { transponder: true, rfid: true, fromReaders: true };
+  const both = { transponder: true, rfid: true, fromReaders: true, offered: { transponder: true, rfid: true } };
   assert.equal(hasRequiredTags(both, { transponder: true, rfid: false }), false);
   assert.equal(hasRequiredTags(both, { transponder: true, rfid: true }), true);
-  const loopOnly = { transponder: true, rfid: false, fromReaders: true };
+  const loopOnly = { transponder: true, rfid: false, fromReaders: true, offered: { transponder: true, rfid: true } };
   assert.equal(hasRequiredTags(loopOnly, { transponder: true, rfid: false }), true);
   assert.equal(hasRequiredTags(loopOnly, { transponder: false, rfid: true }), false);
-  const none = { transponder: true, rfid: true, fromReaders: false };
+  const none = { transponder: true, rfid: true, fromReaders: false, offered: { transponder: true, rfid: true } };
   assert.equal(hasRequiredTags(none, { transponder: false, rfid: true }), true);
   assert.equal(hasRequiredTags(none, { transponder: false, rfid: false }), false);
 });
 
+test("check-in offers every kind any of the club's readers use, while riders need only the event's", () => {
+  // The event (or its track) has only the RM TrackR loop; the club also has an RFID reader.
+  const tags = timingTagsFromReaders([["active_transponder"], [], ["active_transponder", "rfid"]]);
+  assert.deepEqual({ transponder: tags.transponder, rfid: tags.rfid }, { transponder: true, rfid: false });
+  assert.deepEqual(tags.offered, { transponder: true, rfid: true });
+});
+
 test("labels", () => {
-  assert.equal(timingTagsLabel({ transponder: true, rfid: true, fromReaders: true }), "RM TrackR + RFID");
-  assert.equal(timingTagsLabel({ transponder: true, rfid: false, fromReaders: true }), "RM TrackR");
-  assert.equal(timingTagsLabel({ transponder: false, rfid: true, fromReaders: true }), "RFID");
+  assert.equal(timingTagsLabel({ transponder: true, rfid: true, fromReaders: true, offered: { transponder: true, rfid: true } }), "RM TrackR + RFID");
+  assert.equal(timingTagsLabel({ transponder: true, rfid: false, fromReaders: true, offered: { transponder: true, rfid: true } }), "RM TrackR");
+  assert.equal(timingTagsLabel({ transponder: false, rfid: true, fromReaders: true, offered: { transponder: true, rfid: true } }), "RFID");
 });
 
 test("an old RFID sticker number in the transponder field is a sticker, not a bad transponder", () => {

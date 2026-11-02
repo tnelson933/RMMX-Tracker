@@ -250,6 +250,14 @@ export const EventTimingTechnology = {
 } as const;
 
 /**
+ * Every kind any of the club's readers use (event, course map and club readers together). Check-in shows and sells these; transponder/rfid above are what a rider must have.
+ */
+export type EventTimingTagsOffered = {
+  transponder: boolean;
+  rfid: boolean;
+};
+
+/**
  * Which kinds of tag the event's readers use (its course map, else its track's, else the club's readers). fromReaders is false when no readers are set up, so either kind may be used.
  */
 export type EventTimingTags = {
@@ -258,6 +266,8 @@ export type EventTimingTags = {
   /** Passive RFID sticker */
   rfid: boolean;
   fromReaders: boolean;
+  /** Every kind any of the club's readers use (event, course map and club readers together). Check-in shows and sells these; transponder/rfid above are what a rider must have. */
+  offered?: EventTimingTagsOffered;
 };
 
 /**

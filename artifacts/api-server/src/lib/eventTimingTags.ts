@@ -17,6 +17,13 @@ export interface TimingTags {
    * tag counts as having one, instead of needing both.
    */
   fromReaders: boolean;
+  /**
+   * Every kind any of the readers use (the event's, its track's course map and
+   * the club's): what check-in shows and sells. A club with an RM TrackR loop
+   * and an RFID reader can hand out either, even when this event's own readers
+   * only need one.
+   */
+  offered?: { transponder: boolean; rfid: boolean };
 }
 
 /** Does a rider holding these tags have what the event's readers need? */
@@ -31,19 +38,24 @@ export function hasRequiredTags(tags: TimingTags, held: { transponder: boolean; 
  * club has. With no readers set up yet, either kind may be used.
  */
 export function timingTagsFromReaders(sources: Array<Array<string | null | undefined>>): TimingTags {
+  const all = sources.flat();
+  const offered = all.length > 0
+    ? { transponder: all.includes("active_transponder"), rfid: all.some(t => t !== "active_transponder") }
+    : { transponder: true, rfid: true };
   const types = sources.find(list => list.length > 0);
   if (types) {
     return {
       transponder: types.includes("active_transponder"),
       rfid: types.some(t => t !== "active_transponder"),
       fromReaders: true,
+      offered,
     };
   }
-  return { transponder: true, rfid: true, fromReaders: false };
+  return { transponder: true, rfid: true, fromReaders: false, offered };
 }
 
 export async function eventTimingTags(eventId: number): Promise<TimingTags> {
-  return (await eventsTimingTags([eventId])).get(eventId) ?? { transponder: true, rfid: true, fromReaders: false };
+  return (await eventsTimingTags([eventId])).get(eventId) ?? { transponder: true, rfid: true, fromReaders: false, offered: { transponder: true, rfid: true } };
 }
 
 /** eventTimingTags for several events with a fixed number of queries. */

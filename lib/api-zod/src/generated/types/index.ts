@@ -96,6 +96,7 @@ export * from './eventReport';
 export * from './eventReportData';
 export * from './eventStatus';
 export * from './eventTimingTags';
+export * from './eventTimingTagsOffered';
 export * from './eventTimingTechnology';
 export * from './eventUpdate';
 export * from './eventUpdateQuickCheckinRequirements';

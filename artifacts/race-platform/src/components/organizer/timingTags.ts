@@ -10,9 +10,16 @@ export interface TimingTags {
   transponder: boolean;
   rfid: boolean;
   fromReaders: boolean;
+  /** Every kind any of the club's readers use: what check-in shows and sells. */
+  offered?: { transponder: boolean; rfid: boolean };
 }
 
 export const ANY_TIMING_TAGS: TimingTags = { transponder: true, rfid: true, fromReaders: false };
+
+/** The tag kinds check-in shows and sells (older servers: the event's own). */
+export function offeredTags(tags: TimingTags): { transponder: boolean; rfid: boolean } {
+  return tags.offered ?? { transponder: tags.transponder, rfid: tags.rfid };
+}
 
 /**
  * An event's tags from the API. The desktop app's offline server doesn't send
