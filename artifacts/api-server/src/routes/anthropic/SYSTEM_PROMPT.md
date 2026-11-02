@@ -140,6 +140,17 @@ Main fields:
 
 **Registration Link:** the Overview tab has a card with the public registration link and a copy button. Riders can only register while the status is Registration Open.
 
+**What riders see when they register online:** a step-by-step form with a progress bar ("Step 2 of 6"), one section at a time:
+1. **Rider**: email first. A returning rider's saved profile fills in the rest (name, phone, date of birth, number, address, emergency contact, bike, transponder), with "Welcome back"; several profiles on one email ask which one. Then name, phone, date of birth, preferred number, and AMA # / Club ID # when the event requires them.
+2. **Contact**: address, emergency contact, and **Send me my race day stats**.
+3. **Classes**: one or more classes, each one entry fee.
+4. **Add-ons** (only when the event has any): RM TrackR Transponder number or rent/buy one, RFID sticker, purchase options.
+5. **Bike**: manufacturer, model, year, sponsors (shows the event's contingency brands).
+6. **Waiver** (only when the event requires one): the liability waiver e-signature and/or the rider acknowledgement form.
+7. **Review**: every section with an **Edit** link (Edit opens that step; **Save & Review** returns to the review), the price breakdown, the **Have a discount code?** box and the total.
+
+**Next** won't move on until the step is complete (required fields, a class, a transponder or rent/buy when required, a signed waiver), and **Back** keeps everything entered. The last button is **Pay $X** when the event collects payments online and there's something to pay (Stripe's card form then opens in the page), or **Submit Registration** when it doesn't (Collect Payments off, free entry, or a 100% discount code). With Collect Payments off, the review notes that fees are paid at the gate.
+
 **Event Discount Codes:** the Overview tab's **Discount Codes** card makes codes for this event only — **Auto-generate** (choose how many) or **Custom** code, **$ Fixed** or **%**, usage limit, optional expiry → **Generate Codes** / **Create Code**. A 100% code gives a free (complimentary) entry. Riders type the code at online registration.
 
 **Event widget:** an embed card on the event lets clubs put the event on their own website.
@@ -509,7 +520,7 @@ The codes table shows: code string (with a copy button), discount amount/type, a
 - **Trash** — permanently delete the code (cannot be undone)
 
 ### How riders use a discount code
-During online self-registration, riders enter the code in a **"Promo / Discount Code"** field. If valid, the discount is applied to their total before payment. If the code is locked to a different rider, expired, inactive, or used up, the registration form shows an error.
+During online self-registration, riders enter the code on the last (Review) step, in the **Have a discount code?** box. If valid, the discount is applied to their total before payment. If the code is locked to a different rider, expired, inactive, or used up, the registration form shows an error.
 
 ---
 

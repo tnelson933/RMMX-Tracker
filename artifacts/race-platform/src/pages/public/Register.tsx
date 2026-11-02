@@ -5,7 +5,7 @@ import { StateSelect } from "@/components/ui/StateSelect";
 import { RM_TRACKR_OPTION_ID } from "@/lib/rmTrackr";
 import { eventTimingTags, type TimingTags } from "@/components/organizer/timingTags";
 import { useRoute, Link } from "wouter";
-import { useForm } from "react-hook-form";
+import { useForm, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@/lib/zodResolver";
 import { z } from "zod";
 import { loadPdfJs, PDF_JS_WORKER_URL } from "@/lib/pdfJs";
@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Calendar, MapPin, Flag, CheckCircle2, AlertCircle, CreditCard, Loader2, ExternalLink, DollarSign, Mail, Tag, X as XIcon, FileText, ShieldCheck, Users, ZoomIn, HelpCircle } from "lucide-react";
+import { Calendar, MapPin, Flag, CheckCircle2, AlertCircle, CreditCard, Loader2, ExternalLink, DollarSign, Mail, Tag, X as XIcon, FileText, ShieldCheck, Users, ZoomIn, HelpCircle, ChevronLeft, ChevronRight, Pencil } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { format, parseISO } from "date-fns";
 import { formatEventDatesFull } from "@/lib/eventDates";
@@ -125,14 +125,103 @@ function PdfScrollViewer({ url, onScrolledToBottom }: { url: string; onScrolledT
 
 
 // Brand section heading: charcoal Barlow 800 with the TitleBand's skewed red slash.
-function SectionHeader({ children }: { children: React.ReactNode }) {
+function SectionHeader({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <CardHeader className="px-6 py-4 border-b-2 border-[#ECECEC]">
+    <CardHeader className="px-6 py-4 border-b-2 border-[#ECECEC] flex flex-row items-center justify-between gap-3 space-y-0">
       <h3 className="flex items-center gap-3 m-0 font-heading font-extrabold uppercase text-lg leading-none tracking-[0.5px] text-[#242424]">
         <span aria-hidden className="w-[4px] h-5 bg-primary -skew-x-[18deg] shrink-0" />
         {children}
       </h3>
+      {action}
     </CardHeader>
+  );
+}
+
+// The registration wizard: one group of fields per step, then a review.
+type StepId = "rider" | "contact" | "classes" | "addons" | "bike" | "waiver" | "review";
+
+const STEP_LABELS: Record<StepId, string> = {
+  rider: "Rider",
+  contact: "Contact",
+  classes: "Classes",
+  addons: "Add-ons",
+  bike: "Bike",
+  waiver: "Waiver",
+  review: "Review",
+};
+
+// Which step each field lives on, so a failed submit can send the rider back to it.
+const FIELD_STEPS: Record<string, StepId> = {
+  email: "rider", firstName: "rider", lastName: "rider", phone: "rider", dateOfBirth: "rider",
+  bibNumber: "rider", amaNumber: "rider", clubIdNumber: "rider",
+  streetAddress: "contact", city: "contact", homeState: "contact", zip: "contact",
+  emergencyContact: "contact", emergencyPhone: "contact", statsEmailOptIn: "contact",
+  selectedClasses: "classes",
+  myLapsTransponderNumber: "addons", rentTransponder: "addons", purchaseRfidSticker: "addons", selectedPurchaseOptions: "addons",
+  bikeBrand: "bike", bikeModel: "bike", bikeYear: "bike", sponsors: "bike",
+};
+
+function StepProgress({ steps, current, onJump }: { steps: string[]; current: number; onJump: (index: number) => void }) {
+  return (
+    <nav aria-label="Registration progress">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-[13px] font-bold uppercase tracking-[2px] text-muted-foreground">Step {current + 1} of {steps.length}</span>
+        <span className="font-heading font-extrabold uppercase text-lg leading-none text-[#242424] sm:hidden">{steps[current]}</span>
+      </div>
+      <ol className="flex gap-1.5 mt-2.5">
+        {steps.map((label, i) => (
+          <li key={label} className="flex-1 min-w-0">
+            {/* Earlier steps can be revisited; later ones open with Next. */}
+            <button
+              type="button"
+              disabled={i >= current}
+              onClick={() => onJump(i)}
+              aria-current={i === current ? "step" : undefined}
+              aria-label={`${label}${i < current ? " (done, go back)" : ""}`}
+              className="group w-full text-left disabled:cursor-default"
+            >
+              <span className={`block h-1.5 rounded-full ${i < current ? "bg-[#242424] group-hover:bg-primary" : i === current ? "bg-primary" : "bg-[#ECECEC]"}`} />
+              <span className={`hidden sm:block mt-1.5 truncate text-[12px] font-bold uppercase tracking-[1px] ${i === current ? "text-[#242424]" : "text-muted-foreground"}`}>
+                {label}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+
+function ReviewSection({ title, onEdit, children }: { title: string; onEdit: () => void; children: React.ReactNode }) {
+  return (
+    <Card>
+      <SectionHeader
+        action={
+          <button
+            type="button"
+            onClick={onEdit}
+            className="inline-flex items-center gap-1.5 min-h-[44px] -my-2 -mr-2 px-2 text-sm font-bold uppercase tracking-[0.5px] text-primary hover:underline"
+            aria-label={`Edit ${title}`}
+          >
+            <Pencil size={14} /> Edit
+          </button>
+        }
+      >
+        {title}
+      </SectionHeader>
+      <CardContent className="px-6 py-1.5">
+        <dl className="divide-y divide-[#ECECEC]">{children}</dl>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ReviewRow({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="flex justify-between gap-4 py-2.5">
+      <dt className="text-[13px] font-bold uppercase tracking-[1px] text-muted-foreground pt-0.5 shrink-0 max-w-[45%]">{label}</dt>
+      <dd className={`text-right text-[15px] min-w-0 break-words ${value ? "font-medium text-[#242424]" : "text-muted-foreground"}`}>{value || "—"}</dd>
+    </div>
   );
 }
 
@@ -308,6 +397,14 @@ export default function Register() {
   const [bibCheckState, setBibCheckState] = useState<"idle" | "checking" | "taken" | "available">("idle");
   const [selectedRiderId, setSelectedRiderId] = useState<number | null>(null);
 
+  // Wizard state
+  const [step, setStep] = useState<StepId>("rider");
+  // Set when the rider taps Edit on the review, so Next goes straight back to it.
+  const [returnToReview, setReturnToReview] = useState(false);
+  const [stepError, setStepError] = useState<string | null>(null);
+  const wizardTopRef = useRef<HTMLDivElement>(null);
+  const reviewOpenedAtRef = useRef(0);
+
   // Waiver state
   const [waiverModalOpen, setWaiverModalOpen] = useState(false);
   const [pdfWaiverModalOpen, setPdfWaiverModalOpen] = useState(false);
@@ -358,6 +455,7 @@ export default function Register() {
     const ts = new Date().toISOString();
     setWaiverTimestamp(ts);
     setWaiverAccepted(true);
+    setStepError(null);
     setWaiverModalOpen(false);
     setPdfWaiverModalOpen(false);
     setPdfWaiverChecked(false);
@@ -390,6 +488,7 @@ export default function Register() {
       setLiabilityWaiverSignedAt(new Date().toISOString());
       setLiabilityWaiverAccepted(true);
       setLiabilityWaiverModalOpen(false);
+      setStepError(null);
     } catch (e: any) {
       setLiabilityWaiverSignError(e.message || "Signing failed. Please try again.");
     } finally {
@@ -508,6 +607,15 @@ export default function Register() {
       selectedClasses: [], bibNumber: "", amaNumber: "", clubIdNumber: "", bikeBrand: "", bikeModel: "", bikeYear: "", sponsors: "", statsEmailOptIn: false, rentTransponder: false, purchaseRfidSticker: false, myLapsTransponderNumber: "", selectedPurchaseOptions: [],
     },
   });
+
+  // Next checks a step without submitting the form, so re-check a flagged field as
+  // the rider fixes it (react-hook-form only does this by itself after a submit).
+  useEffect(() => {
+    const sub = form.watch((_, { name }) => {
+      if (name && form.getFieldState(name).error) void form.trigger(name);
+    });
+    return () => sub.unsubscribe();
+  }, [form]);
 
   // Auto-populate form when arriving from the rider app or web portal with ?email=
   useEffect(() => {
@@ -777,17 +885,21 @@ export default function Register() {
       return;
     }
     // Client-side enforcement of event-level required fields
+    // Each failed rule sends the rider back to the step that holds the field.
     if (event?.requireAma && !data.amaNumber?.trim()) {
+      setStep("rider");
       form.setError("amaNumber", { message: "AMA # is required for this event" });
       return;
     }
     if (event?.requireClubId && !data.clubIdNumber?.trim()) {
+      setStep("rider");
       form.setError("clubIdNumber", { message: "Club ID # is required for this event" });
       return;
     }
     if (event?.requireTransponder
       && !data.myLapsTransponderNumber?.trim() && !data.rentTransponder && !data.selectedPurchaseOptions.includes(RM_TRACKR_OPTION_ID)) {
       const canGetOne = !!event.transponderRentalEnabled || (event.purchaseOptions ?? []).some(o => o.id === RM_TRACKR_OPTION_ID);
+      setStep("addons");
       form.setError("myLapsTransponderNumber", {
         message: canGetOne ? "Enter your transponder number, or choose to rent or buy one below." : "A transponder number is required for this event.",
       });
@@ -842,6 +954,8 @@ export default function Register() {
       } else {
         setSuccess({ ...json, amountPaid: json.amountPaid != null ? Number(json.amountPaid) : null });
       }
+      // The payment / confirmation screen is short; show it from the top.
+      window.scrollTo({ top: 0 });
     } catch (e: any) {
       setSubmitError(e.message || "Something went wrong. Please try again.");
     } finally {
@@ -1029,6 +1143,103 @@ export default function Register() {
   const pastClose = closeDate && now > closeDate;
   const isOpen = event.status === "registration_open" && !notYetOpen && !pastClose;
 
+  // Steps this event needs: add-ons and waivers only show when the event has them.
+  const hasLiabilityWaiver = event.requireLiabilityWaiver && !!event.liabilityWaiverPdfUrl;
+  const hasAcknowledgement = event.requireWaiver && !!(event.waiverText || event.waiverPdfUrl);
+  const steps: StepId[] = [
+    "rider",
+    "contact",
+    "classes",
+    ...(showTransponderSection || event.rfidStickerFee != null || addOnOptions.length > 0 ? ["addons" as const] : []),
+    "bike",
+    ...(hasLiabilityWaiver || hasAcknowledgement ? ["waiver" as const] : []),
+    "review",
+  ];
+  const stepIndex = Math.max(0, steps.indexOf(step));
+  // Drives the "* Required" note; must match what validateStep enforces.
+  const stepHasRequired = step === "rider" || step === "classes" || step === "waiver"
+    || (step === "addons" && event.requireTransponder && !gettingTransponder);
+  const v = form.getValues();
+
+  const goTo = (id: StepId) => {
+    if (id === "review") reviewOpenedAtRef.current = Date.now();
+    setStepError(null);
+    setStep(id);
+    requestAnimationFrame(() => wizardTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+
+  // Same rules the submit enforces, checked as the rider leaves each step.
+  const validateStep = async (id: StepId): Promise<boolean> => {
+    setStepError(null);
+    setSubmitError(null);
+    if (id === "rider") {
+      if (!(await form.trigger(["email", "firstName", "lastName"]))) return false;
+      if (lookupState === "pick" || (riderOptions !== null && selectedRiderId === null)) {
+        setStepError("Select the correct rider profile for this email to continue.");
+        return false;
+      }
+      if (event.requireAma && !form.getValues("amaNumber")?.trim()) {
+        form.setError("amaNumber", { message: "AMA # is required for this event" });
+        return false;
+      }
+      if (event.requireClubId && !form.getValues("clubIdNumber")?.trim()) {
+        form.setError("clubIdNumber", { message: "Club ID # is required for this event" });
+        return false;
+      }
+      if (bibCheckState === "taken") {
+        setStepError(`#${form.getValues("bibNumber")} is already taken for this event. Choose another number.`);
+        return false;
+      }
+    }
+    if (id === "classes") return form.trigger("selectedClasses");
+    if (id === "addons" && event.requireTransponder) {
+      const d = form.getValues();
+      if (!d.myLapsTransponderNumber?.trim() && !d.rentTransponder && !d.selectedPurchaseOptions.includes(RM_TRACKR_OPTION_ID)) {
+        form.setError("myLapsTransponderNumber", {
+          message: offersRental || trackrOption ? "Enter your transponder number, or choose to rent or buy one below." : "A transponder number is required for this event.",
+        });
+        return false;
+      }
+    }
+    if (id === "waiver") {
+      if (hasLiabilityWaiver && !liabilityWaiverAccepted) {
+        setStepError("Sign the liability waiver to continue.");
+        return false;
+      }
+      if (hasAcknowledgement && !waiverAccepted) {
+        setStepError("Read and accept the rider acknowledgement form to continue.");
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const goNext = async () => {
+    if (!(await validateStep(step))) return;
+    if (returnToReview) {
+      setReturnToReview(false);
+      goTo("review");
+      return;
+    }
+    goTo(steps[Math.min(stepIndex + 1, steps.length - 1)]);
+  };
+
+  const goBack = () => {
+    setReturnToReview(false);
+    goTo(steps[Math.max(0, stepIndex - 1)]);
+  };
+
+  const editStep = (id: StepId) => {
+    setReturnToReview(true);
+    goTo(id);
+  };
+
+  // The schema failed on submit: open the first step with a problem.
+  const onInvalid = (errors: FieldErrors<RegisterForm>) => {
+    const first = steps.find(s => Object.keys(errors).some(f => FIELD_STEPS[f] === s));
+    if (first) goTo(first);
+  };
+
   return (
     <div>
       <TitleBand
@@ -1122,9 +1333,9 @@ export default function Register() {
             <div>
               <h2 className="text-[28px] font-heading font-extrabold uppercase text-[#242424] leading-none">Rider Registration</h2>
               <p className="text-[#333] mt-3 leading-[1.7]">
-                Fill out the form below to secure your spot.
-                {event.paymentEnabled && effectiveEntryFee && (
-                  <> You'll be redirected to Stripe to pay the <strong>${effectiveEntryFee} entry fee</strong> after submitting.</>
+                A few quick steps to secure your spot. You can check everything before you finish.
+                {event.paymentEnabled && !!effectiveEntryFee && (
+                  <> You pay the <strong>${effectiveEntryFee} entry fee</strong> on the last step.</>
                 )}
               </p>
             </div>
@@ -1136,7 +1347,7 @@ export default function Register() {
               </div>
             )}
 
-            {submitError && (
+            {submitError && step !== "review" && (
               <div className="bg-destructive/10 border border-destructive/30 text-destructive rounded-md px-4 py-3 text-sm flex items-center gap-2">
                 <AlertCircle size={16} className="shrink-0" />
                 {submitError}
@@ -1144,819 +1355,997 @@ export default function Register() {
             )}
 
             <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                {/* Email — first question, drives rider lookup */}
-                <Card>
-                  <SectionHeader>Your Email</SectionHeader>
-                  <CardContent className="p-6 space-y-3">
-                    <FormField control={form.control} name="email" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Email Address <span className="text-destructive">*</span></FormLabel>
-                        <FormControl>
-                          <Input
-                            type="email"
-                            placeholder="rider@example.com"
-                            {...field}
-                            onChange={e => {
-                              lookupRequestRef.current++;
-                              riderClassesRequestRef.current++;
-                              setSelectedRiderId(null);
-                              setAlreadyRegisteredClasses(new Set());
-                              setRiderOptions(null);
-                              setLookedUpName("");
-                              setLookupState("idle");
-                              field.onChange(e);
-                            }}
-                            onBlur={e => { field.onBlur(); lookupByEmail(e.target.value); }}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-                    {lookupState === "loading" && (
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Loader2 size={14} className="animate-spin" />
-                        Looking up your rider profile...
-                      </div>
-                    )}
-                    {lookupState === "found" && (
-                      <div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 text-green-800 px-4 py-3 text-sm">
-                        <CheckCircle2 size={16} className="shrink-0 text-green-600" />
-                        <span>Welcome back, <strong>{lookedUpName}</strong>! Your info has been pre-filled — review and update anything that's changed.</span>
-                      </div>
-                    )}
-                    {lookupState === "pick" && riderOptions && (
-                      <div className="rounded-md border border-primary/30 bg-primary/5 p-4 space-y-3">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                          <Users size={15} className="text-primary shrink-0" />
-                          Multiple rider profiles found — select yours:
-                        </div>
-                        <div className="space-y-2">
-                          {riderOptions.map(rider => (
-                            <button
-                              key={rider.id}
-                              type="button"
-                              onClick={() => populateFromRider(rider)}
-                              className="w-full text-left rounded-lg border border-border bg-background px-4 py-3 hover:border-primary hover:bg-primary/5 transition-colors focus:outline-none focus:ring-2 focus:ring-ring"
-                            >
-                              <div className="font-semibold text-sm">{rider.firstName} {rider.lastName}</div>
-                              <div className="text-xs text-muted-foreground mt-0.5">
-                                {[
-                                  rider.dateOfBirth ? `DOB ${rider.dateOfBirth}` : "",
-                                  rider.phone,
-                                  [rider.city, rider.homeState].filter(Boolean).join(", "),
-                                  rider.bibNumber ? `#${rider.bibNumber}` : "",
-                                ].filter(Boolean).join(" · ") || `Profile ID ${rider.id}`}
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {lookupState === "not_found" && (
-                      <p className="text-xs text-muted-foreground">No existing profile found — fill in your details below and we'll create one for you.</p>
-                    )}
-                  </CardContent>
-                </Card>
+              <form
+                onSubmit={e => {
+                  // Enter (or the phone's Go key) moves to the next step; only the review step submits.
+                  if (step === "review") {
+                    // A double-tap on "Next: Review" must not land on Pay/Submit.
+                    if (Date.now() - reviewOpenedAtRef.current < 800) { e.preventDefault(); return; }
+                    void form.handleSubmit(onSubmit, onInvalid)(e);
+                    return;
+                  }
+                  e.preventDefault();
+                  void goNext();
+                }}
+                className="space-y-6"
+              >
+                <div ref={wizardTopRef} className="scroll-mt-4">
+                  <StepProgress steps={steps.map(s => STEP_LABELS[s])} current={stepIndex} onJump={i => goTo(steps[i])} />
+                  {step !== "review" && (
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      {stepHasRequired
+                        ? <><span className="text-destructive">*</span> Required. Everything else is optional.</>
+                        : "Everything on this step is optional."}
+                    </p>
+                  )}
+                </div>
 
-                <Card>
-                  <SectionHeader>Rider Info</SectionHeader>
-                  <CardContent className="p-6 space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField control={form.control} name="firstName" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>First Name <span className="text-destructive">*</span></FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="Jake"
-                              {...field}
-                              onChange={field.onChange}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                      <FormField control={form.control} name="lastName" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Last Name <span className="text-destructive">*</span></FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="Morrison"
-                              {...field}
-                              onChange={field.onChange}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField control={form.control} name="phone" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Phone</FormLabel>
-                          <FormControl><Input placeholder="602-555-0100" {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                      <FormField control={form.control} name="dateOfBirth" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Date of Birth</FormLabel>
-                          <FormControl><Input type="text" inputMode="numeric" placeholder="MM/DD/YYYY" {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                    </div>
-                    <FormField control={form.control} name="streetAddress" render={({ field }) => (
-                      <FormItem>
-                        <div className="flex items-center justify-between">
-                          <FormLabel>Street Address</FormLabel>
-                          <span className="text-[10px] text-muted-foreground">Saved to your profile for next time</span>
-                        </div>
-                        <FormControl><Input placeholder="123 Dirt Track Rd" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                      <FormField control={form.control} name="city" render={({ field }) => (
-                        <FormItem className="col-span-2 sm:col-span-1">
-                          <FormLabel>City</FormLabel>
-                          <FormControl><Input placeholder="Tucson" {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                      <FormField control={form.control} name="homeState" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>State</FormLabel>
-                          <FormControl><StateSelect value={field.value} onChange={field.onChange} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                      <FormField control={form.control} name="zip" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>ZIP</FormLabel>
-                          <FormControl><Input placeholder="85701" maxLength={10} {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                    </div>
-                    <FormField control={form.control} name="bibNumber" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          Preferred #
-                          {event?.noDuplicateBibs && <span className="text-destructive ml-1">*</span>}
-                        </FormLabel>
-                        <FormControl>
-                          <div className="relative">
-                            <Input placeholder="101" {...field} className={bibCheckState === "taken" ? "border-destructive pr-8" : bibCheckState === "available" ? "border-green-500 pr-8" : ""} />
-                            {bibCheckState === "checking" && <Loader2 size={14} className="absolute right-2 top-1/2 -translate-y-1/2 animate-spin text-muted-foreground" />}
-                            {bibCheckState === "taken" && <AlertCircle size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-destructive" />}
-                            {bibCheckState === "available" && <CheckCircle2 size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-green-500" />}
+                {step === "rider" && (
+                  <>
+                    {/* Email — first question, drives rider lookup */}
+                    <Card>
+                      <SectionHeader>Your Email</SectionHeader>
+                      <CardContent className="p-6 space-y-3">
+                        <FormField control={form.control} name="email" render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Email Address <span className="text-destructive">*</span></FormLabel>
+                            <FormControl>
+                              <Input
+                                type="email"
+                                placeholder="rider@example.com"
+                                {...field}
+                                onChange={e => {
+                                  lookupRequestRef.current++;
+                                  riderClassesRequestRef.current++;
+                                  setSelectedRiderId(null);
+                                  setAlreadyRegisteredClasses(new Set());
+                                  setRiderOptions(null);
+                                  setLookedUpName("");
+                                  setLookupState("idle");
+                                  field.onChange(e);
+                                }}
+                                onBlur={e => { field.onBlur(); lookupByEmail(e.target.value); }}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )} />
+                        {lookupState === "loading" && (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Loader2 size={14} className="animate-spin" />
+                            Looking up your rider profile...
                           </div>
-                        </FormControl>
-                        {bibCheckState === "taken" && <p className="text-xs text-destructive">#{field.value} is already taken for this event</p>}
-                        {bibCheckState === "available" && <p className="text-xs text-green-600">#{field.value} is available</p>}
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-                    {event.requireAma && (
-                      <FormField control={form.control} name="amaNumber" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>AMA # <span className="text-destructive">*</span></FormLabel>
-                          <FormControl><Input placeholder="123456" {...field} /></FormControl>
-                          <p className="text-xs text-muted-foreground">Your AMA membership number is required for this event.</p>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                    )}
-                    {event.requireClubId && (
-                      <FormField control={form.control} name="clubIdNumber" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Club ID # <span className="text-destructive">*</span></FormLabel>
-                          <FormControl><Input placeholder="Club membership number" {...field} /></FormControl>
-                          <p className="text-xs text-muted-foreground">Your club membership ID is required for this event.</p>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                    )}
-                  </CardContent>
-                </Card>
+                        )}
+                        {lookupState === "found" && (
+                          <div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 text-green-800 px-4 py-3 text-sm">
+                            <CheckCircle2 size={16} className="shrink-0 text-green-600" />
+                            <span>Welcome back, <strong>{lookedUpName}</strong>! Your info has been pre-filled — review and update anything that's changed.</span>
+                          </div>
+                        )}
+                        {lookupState === "pick" && riderOptions && (
+                          <div className="rounded-md border border-primary/30 bg-primary/5 p-4 space-y-3">
+                            <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                              <Users size={15} className="text-primary shrink-0" />
+                              Multiple rider profiles found — select yours:
+                            </div>
+                            <div className="space-y-2">
+                              {riderOptions.map(rider => (
+                                <button
+                                  key={rider.id}
+                                  type="button"
+                                  onClick={() => populateFromRider(rider)}
+                                  className="w-full text-left rounded-lg border border-border bg-background px-4 py-3 hover:border-primary hover:bg-primary/5 transition-colors focus:outline-none focus:ring-2 focus:ring-ring"
+                                >
+                                  <div className="font-semibold text-sm">{rider.firstName} {rider.lastName}</div>
+                                  <div className="text-xs text-muted-foreground mt-0.5">
+                                    {[
+                                      rider.dateOfBirth ? `DOB ${rider.dateOfBirth}` : "",
+                                      rider.phone,
+                                      [rider.city, rider.homeState].filter(Boolean).join(", "),
+                                      rider.bibNumber ? `#${rider.bibNumber}` : "",
+                                    ].filter(Boolean).join(" · ") || `Profile ID ${rider.id}`}
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {lookupState === "not_found" && (
+                          <p className="text-xs text-muted-foreground">No existing profile found — fill in your details below and we'll create one for you.</p>
+                        )}
+                      </CardContent>
+                    </Card>
 
-                <Card>
-                  <SectionHeader>Race Class</SectionHeader>
-                  <CardContent className="p-6">
+                    <Card>
+                      <SectionHeader>Rider Info</SectionHeader>
+                      <CardContent className="p-6 space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <FormField control={form.control} name="firstName" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>First Name <span className="text-destructive">*</span></FormLabel>
+                              <FormControl>
+                                <Input
+                                  placeholder="Jake"
+                                  {...field}
+                                  onChange={field.onChange}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )} />
+                          <FormField control={form.control} name="lastName" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Last Name <span className="text-destructive">*</span></FormLabel>
+                              <FormControl>
+                                <Input
+                                  placeholder="Morrison"
+                                  {...field}
+                                  onChange={field.onChange}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )} />
+                        </div>
+                        <div className="grid grid-cols-2 items-end gap-4">
+                          <FormField control={form.control} name="phone" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Phone <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                              <FormControl><Input placeholder="602-555-0100" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )} />
+                          <FormField control={form.control} name="dateOfBirth" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Date of Birth <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                              <FormControl><Input type="text" inputMode="numeric" placeholder="MM/DD/YYYY" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )} />
+                        </div>
+                        <FormField control={form.control} name="bibNumber" render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>
+                              Preferred # <span className="text-muted-foreground font-normal text-xs">(optional)</span>
+                            </FormLabel>
+                            <FormControl>
+                              <div className="relative">
+                                <Input placeholder="101" {...field} className={bibCheckState === "taken" ? "border-destructive pr-8" : bibCheckState === "available" ? "border-green-500 pr-8" : ""} />
+                                {bibCheckState === "checking" && <Loader2 size={14} className="absolute right-2 top-1/2 -translate-y-1/2 animate-spin text-muted-foreground" />}
+                                {bibCheckState === "taken" && <AlertCircle size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-destructive" />}
+                                {bibCheckState === "available" && <CheckCircle2 size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-green-500" />}
+                              </div>
+                            </FormControl>
+                            {bibCheckState === "taken" && <p className="text-xs text-destructive">#{field.value} is already taken for this event</p>}
+                            {bibCheckState === "available" && <p className="text-xs text-green-600">#{field.value} is available</p>}
+                            <FormMessage />
+                          </FormItem>
+                        )} />
+                        {event.requireAma && (
+                          <FormField control={form.control} name="amaNumber" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>AMA # <span className="text-destructive">*</span></FormLabel>
+                              <FormControl><Input placeholder="123456" {...field} /></FormControl>
+                              <p className="text-xs text-muted-foreground">Your AMA membership number is required for this event.</p>
+                              <FormMessage />
+                            </FormItem>
+                          )} />
+                        )}
+                        {event.requireClubId && (
+                          <FormField control={form.control} name="clubIdNumber" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Club ID # <span className="text-destructive">*</span></FormLabel>
+                              <FormControl><Input placeholder="Club membership number" {...field} /></FormControl>
+                              <p className="text-xs text-muted-foreground">Your club membership ID is required for this event.</p>
+                              <FormMessage />
+                            </FormItem>
+                          )} />
+                        )}
+                      </CardContent>
+                    </Card>
+                  </>
+                )}
+
+                {step === "contact" && (
+                  <>
+                    <Card>
+                      <SectionHeader>Address</SectionHeader>
+                      <CardContent className="p-6 space-y-4">
+                        <FormField control={form.control} name="streetAddress" render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Street Address <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                            <FormControl><Input placeholder="123 Dirt Track Rd" {...field} /></FormControl>
+                            <p className="text-xs text-muted-foreground">Saved to your profile for next time.</p>
+                            <FormMessage />
+                          </FormItem>
+                        )} />
+                        <div className="grid grid-cols-2 sm:grid-cols-3 items-end gap-4">
+                          <FormField control={form.control} name="city" render={({ field }) => (
+                            <FormItem className="col-span-2 sm:col-span-1">
+                              <FormLabel>City <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                              <FormControl><Input placeholder="Tucson" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )} />
+                          <FormField control={form.control} name="homeState" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>State <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                              <FormControl><StateSelect value={field.value} onChange={field.onChange} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )} />
+                          <FormField control={form.control} name="zip" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>ZIP <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                              <FormControl><Input placeholder="85701" maxLength={10} {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )} />
+                        </div>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <SectionHeader>Emergency Contact</SectionHeader>
+                      <CardContent className="p-6 space-y-4">
+                        <div className="grid grid-cols-2 items-end gap-4">
+                          <FormField control={form.control} name="emergencyContact" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Contact Name <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                              <FormControl><Input placeholder="Jane Morrison" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )} />
+                          <FormField control={form.control} name="emergencyPhone" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Contact Phone <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                              <FormControl><Input placeholder="602-555-0200" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )} />
+                        </div>
+                      </CardContent>
+                    </Card>
+
                     <FormField
                       control={form.control}
-                      name="selectedClasses"
+                      name="statsEmailOptIn"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>
-                            {event.raceClasses.length > 1 ? "Select Your Class(es)" : "Select Your Class"}
-                            {" "}<span className="text-destructive">*</span>
-                          </FormLabel>
-                          {event.raceClasses.length > 1 && (
-                            <p className="text-[13px] text-muted-foreground mt-0.5 mb-2">You can enter multiple classes — each costs one entry fee.</p>
-                          )}
-                          <div className="space-y-2 mt-1">
-                            {event.raceClasses.map(cls => {
-                              const alreadyIn = alreadyRegisteredClasses.has(cls);
-                              return (
-                              <div key={cls} className={`flex items-center gap-3 rounded-[14px] border-2 px-4 min-h-[56px] transition-colors ${alreadyIn ? "bg-muted/60 border-[#ECECEC] opacity-60 cursor-not-allowed" : (field.value ?? []).includes(cls) ? "bg-background border-primary" : "bg-background border-[#ECECEC] hover:border-[#8C8C8C]"}`}>
-                                <FormControl>
-                                  <Checkbox
-                                    id={`class-${cls}`}
-                                    checked={alreadyIn || (field.value ?? []).includes(cls)}
-                                    disabled={alreadyIn}
-                                    onCheckedChange={checked => {
-                                      if (alreadyIn) return;
-                                      const current = field.value ?? [];
-                                      if (checked) {
-                                        field.onChange([...current, cls]);
-                                      } else {
-                                        field.onChange(current.filter((c: string) => c !== cls));
-                                      }
-                                    }}
-                                    className="mt-0.5"
-                                  />
-                                </FormControl>
-                                <label htmlFor={`class-${cls}`} className={`py-3.5 font-bold text-[#242424] flex items-center justify-between flex-1 ${alreadyIn ? "cursor-not-allowed" : "cursor-pointer"}`}>
-                                  <span className="flex items-center gap-1.5">
-                                    {cls}
-                                    {event.classDetails?.[cls] && (
-                                      <TooltipProvider>
-                                        <Tooltip>
-                                          <TooltipTrigger asChild>
-                                            <span onClick={e => e.preventDefault()} className="cursor-help">
-                                              <HelpCircle className="h-3.5 w-3.5 text-muted-foreground hover:text-primary transition-colors" />
-                                            </span>
-                                          </TooltipTrigger>
-                                          <TooltipContent className="max-w-xs text-sm whitespace-pre-wrap" side="right">
-                                            {event.classDetails[cls]}
-                                          </TooltipContent>
-                                        </Tooltip>
-                                      </TooltipProvider>
-                                    )}
-                                  </span>
-                                  {alreadyIn ? (
-                                    <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Already registered</span>
-                                  ) : event.paymentEnabled && effectiveEntryFee ? (
-                                    <span className="flex items-center gap-1.5">
-                                      {earlyBirdActive && event.entryFee && (
-                                        <span className="text-muted-foreground line-through text-sm">${event.entryFee.toFixed(2)}</span>
-                                      )}
-                                      <span className="text-[#242424] font-bold">${effectiveEntryFee.toFixed(2)}</span>
-                                    </span>
-                                  ) : null}
-                                </label>
-                              </div>
-                              );
-                            })}
+                          <div className="flex items-start gap-3 rounded-[14px] border-2 border-[#ECECEC] bg-[#FAFAFA] px-5 py-4">
+                            <FormControl>
+                              <Checkbox
+                                id="stats-optin"
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                                className="mt-0.5"
+                              />
+                            </FormControl>
+                            <div className="space-y-0.5 leading-none">
+                              <label
+                                htmlFor="stats-optin"
+                                className="text-sm font-semibold cursor-pointer flex items-center gap-1.5"
+                              >
+                                <Mail size={16} className="text-[#555] shrink-0" />
+                                Send me my race day stats
+                              </label>
+                              <p className="text-[13px] leading-snug text-muted-foreground">
+                                We'll email your results — finish position, lap times, and points — to <strong>{form.watch("email") || "your email"}</strong> once the event is complete.
+                              </p>
+                            </div>
                           </div>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
-                  </CardContent>
-                </Card>
-
-                {showTransponderSection && (
-                  <Card>
-                    <SectionHeader>RM TrackR Transponder</SectionHeader>
-                    <CardContent className="p-6 space-y-4">
-                      {/* Own transponder number */}
-                      <FormField
-                        control={form.control}
-                        name="myLapsTransponderNumber"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>
-                              RM TrackR Transponder Number{" "}
-                              <span className="text-muted-foreground font-normal">
-                                {event.requireTransponder && !gettingTransponder ? "(required)" : "(optional)"}
-                              </span>
-                            </FormLabel>
-                            <FormControl>
-                              <Input
-                                {...field}
-                                placeholder={gettingTransponder ? "Assigned at check-in" : "e.g. 123456789"}
-                                disabled={gettingTransponder}
-                                onChange={e => {
-                                  field.onChange(e);
-                                  if (e.target.value.trim()) {
-                                    form.setValue("rentTransponder", false);
-                                    form.setValue("selectedPurchaseOptions", (form.getValues("selectedPurchaseOptions") ?? []).filter(id => id !== RM_TRACKR_OPTION_ID));
-                                  }
-                                }}
-                              />
-                            </FormControl>
-                            <p className="text-xs text-muted-foreground">Enter the number printed on your personal active transponder.</p>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      {/* No transponder? Rent or buy one — only what the event offers */}
-                      {(offersRental || trackrOption) && (
-                        <>
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                            <div className="h-px flex-1 bg-border" />
-                            <span className="uppercase tracking-widest font-semibold">or, no transponder?</span>
-                            <div className="h-px flex-1 bg-border" />
-                          </div>
-                          {offersRental && (
-                            <div className="flex items-start gap-3 rounded-lg border bg-background px-4 py-3.5">
-                              <Checkbox
-                                id="rent-transponder"
-                                checked={!!watchedRentTransponder}
-                                onCheckedChange={val => chooseTransponder(val === true ? "rent" : null)}
-                                className="mt-0.5"
-                              />
-                              <div className="space-y-0.5 leading-none">
-                                <label htmlFor="rent-transponder" className="text-sm font-semibold cursor-pointer">
-                                  Rent one for this event{event.transponderRentalFee != null && <> — <span className="text-primary">${Number(event.transponderRentalFee).toFixed(2)}</span></>}
-                                </label>
-                                <p className="text-xs text-muted-foreground">
-                                  Pick it up at check-in and return it after the event.
-                                  {!event.paymentEnabled && event.transponderRentalFee != null && " You pay the rental fee at the gate."}
-                                </p>
-                              </div>
-                            </div>
-                          )}
-                          {trackrOption && (
-                            <div className="flex items-start gap-3 rounded-lg border bg-background px-4 py-3.5">
-                              <Checkbox
-                                id="buy-transponder"
-                                checked={buyingTrackr}
-                                onCheckedChange={val => chooseTransponder(val === true ? "buy" : null)}
-                                className="mt-0.5"
-                              />
-                              <div className="space-y-0.5 leading-none">
-                                <label htmlFor="buy-transponder" className="text-sm font-semibold cursor-pointer">
-                                  Buy your own {trackrOption.name} — <span className="text-primary">${Number(trackrOption.amount).toFixed(2)}</span>
-                                </label>
-                                <p className="text-xs text-muted-foreground">
-                                  Yours to keep for every race. Pick it up at check-in.
-                                  {!event.paymentEnabled && " You pay for it at the gate."}
-                                </p>
-                              </div>
-                            </div>
-                          )}
-                          {gettingTransponder && (
-                            <p className="text-xs font-medium text-green-800 bg-green-50 border border-green-200 rounded-md px-3 py-2">
-                              You don't need a transponder number now. The organizer hands you your transponder at check-in and records its number.
-                            </p>
-                          )}
-                        </>
-                      )}
-                    </CardContent>
-                  </Card>
+                  </>
                 )}
 
-                {/* RFID Sticker */}
-                {event.rfidStickerFee != null && (
-                  <Card>
-                    <SectionHeader>RFID Sticker</SectionHeader>
-                    <CardContent className="p-6">
-                      <FormField
-                        control={form.control}
-                        name="purchaseRfidSticker"
-                        render={({ field }) => (
-                          <FormItem>
-                            <div className="flex items-start gap-3 rounded-lg border bg-background px-4 py-3.5">
-                              <FormControl>
-                                <Checkbox
-                                  id="purchase-rfid-sticker"
-                                  checked={field.value}
-                                  onCheckedChange={field.onChange}
-                                  className="mt-0.5"
-                                />
-                              </FormControl>
-                              <div className="space-y-0.5 leading-none">
-                                <label htmlFor="purchase-rfid-sticker" className="text-sm font-semibold cursor-pointer">
-                                  I need an RFID sticker — <span className="text-primary">${Number(event.rfidStickerFee).toFixed(2)}</span>
-                                </label>
-                                <p className="text-xs text-muted-foreground">
-                                  Required to be timed during the event. Add one if you don't already have an RFID sticker from this club.
-                                </p>
-                              </div>
-                            </div>
-                          </FormItem>
-                        )}
-                      />
-                    </CardContent>
-                  </Card>
-                )}
-
-                {/* Purchase Options */}
-                {addOnOptions.length > 0 && (
-                  <Card>
-                    <SectionHeader>Add-ons</SectionHeader>
-                    <CardContent className="p-6 space-y-3">
-                      {addOnOptions.map(opt => (
+                {step === "classes" && (
+                  <>
+                    <Card>
+                      <SectionHeader>Race Class</SectionHeader>
+                      <CardContent className="p-6">
                         <FormField
-                          key={opt.id}
                           control={form.control}
-                          name="selectedPurchaseOptions"
+                          name="selectedClasses"
                           render={({ field }) => (
                             <FormItem>
-                              <div className="flex items-start gap-3 rounded-lg border bg-background px-4 py-3.5">
-                                <FormControl>
-                                  <Checkbox
-                                    id={`opt-${opt.id}`}
-                                    checked={field.value.includes(opt.id)}
-                                    onCheckedChange={checked => {
-                                      if (checked) {
-                                        field.onChange([...field.value, opt.id]);
-                                      } else {
-                                        field.onChange(field.value.filter((id: string) => id !== opt.id));
-                                      }
-                                    }}
-                                    className="mt-0.5"
-                                  />
-                                </FormControl>
-                                <div className="space-y-0.5 leading-none flex-1">
-                                  <label htmlFor={`opt-${opt.id}`} className="text-sm font-semibold cursor-pointer flex items-center justify-between">
-                                    <span>{opt.name}</span>
-                                    <span className="text-primary">${Number(opt.amount).toFixed(2)}</span>
-                                  </label>
-                                  {opt.id === RM_TRACKR_OPTION_ID && (
-                                    <p className="text-xs text-muted-foreground pt-1">
-                                      Your own RM TrackR Transponder to keep. Pick it up at check-in.
-                                    </p>
-                                  )}
-                                </div>
+                              <FormLabel>
+                                {event.raceClasses.length > 1 ? "Select Your Class(es)" : "Select Your Class"}
+                                {" "}<span className="text-destructive">*</span>
+                              </FormLabel>
+                              {event.raceClasses.length > 1 && (
+                                <p className="text-[13px] text-muted-foreground mt-0.5 mb-2">You can enter multiple classes — each costs one entry fee.</p>
+                              )}
+                              <div className="space-y-2 mt-1">
+                                {event.raceClasses.map(cls => {
+                                  const alreadyIn = alreadyRegisteredClasses.has(cls);
+                                  return (
+                                  <div key={cls} className={`flex items-center gap-3 rounded-[14px] border-2 px-4 min-h-[56px] transition-colors ${alreadyIn ? "bg-muted/60 border-[#ECECEC] opacity-60 cursor-not-allowed" : (field.value ?? []).includes(cls) ? "bg-background border-primary" : "bg-background border-[#ECECEC] hover:border-[#8C8C8C]"}`}>
+                                    <FormControl>
+                                      <Checkbox
+                                        id={`class-${cls}`}
+                                        checked={alreadyIn || (field.value ?? []).includes(cls)}
+                                        disabled={alreadyIn}
+                                        onCheckedChange={checked => {
+                                          if (alreadyIn) return;
+                                          const current = field.value ?? [];
+                                          if (checked) {
+                                            field.onChange([...current, cls]);
+                                          } else {
+                                            field.onChange(current.filter((c: string) => c !== cls));
+                                          }
+                                        }}
+                                        className="mt-0.5"
+                                      />
+                                    </FormControl>
+                                    <label htmlFor={`class-${cls}`} className={`py-3.5 font-bold text-[#242424] flex items-center justify-between flex-1 ${alreadyIn ? "cursor-not-allowed" : "cursor-pointer"}`}>
+                                      <span className="flex items-center gap-1.5">
+                                        {cls}
+                                        {event.classDetails?.[cls] && (
+                                          <TooltipProvider>
+                                            <Tooltip>
+                                              <TooltipTrigger asChild>
+                                                <span onClick={e => e.preventDefault()} className="cursor-help">
+                                                  <HelpCircle className="h-3.5 w-3.5 text-muted-foreground hover:text-primary transition-colors" />
+                                                </span>
+                                              </TooltipTrigger>
+                                              <TooltipContent className="max-w-xs text-sm whitespace-pre-wrap" side="right">
+                                                {event.classDetails[cls]}
+                                              </TooltipContent>
+                                            </Tooltip>
+                                          </TooltipProvider>
+                                        )}
+                                      </span>
+                                      {alreadyIn ? (
+                                        <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Already registered</span>
+                                      ) : event.paymentEnabled && effectiveEntryFee ? (
+                                        <span className="flex items-center gap-1.5">
+                                          {earlyBirdActive && event.entryFee && (
+                                            <span className="text-muted-foreground line-through text-sm">${event.entryFee.toFixed(2)}</span>
+                                          )}
+                                          <span className="text-[#242424] font-bold">${effectiveEntryFee.toFixed(2)}</span>
+                                        </span>
+                                      ) : null}
+                                    </label>
+                                  </div>
+                                  );
+                                })}
                               </div>
+                              <FormMessage />
                             </FormItem>
                           )}
                         />
-                      ))}
-                    </CardContent>
-                  </Card>
+                      </CardContent>
+                    </Card>
+                  </>
                 )}
 
-                <Card>
-                  <SectionHeader>Bike</SectionHeader>
-                  <CardContent className="p-6">
-                    {/* Contingency: the organizer reports each brand's finishers from these answers. */}
-                    {(event.contingencyBrands ?? []).length > 0 && (
-                      <div className="mb-5 rounded-lg border border-primary/30 bg-primary/[0.03] px-4 py-3">
-                        <p className="text-sm font-semibold flex items-center gap-1.5"><Flag size={14} className="text-primary" /> Contingency at this event</p>
-                        <div className="flex flex-wrap gap-1.5 mt-2">
-                          {(event.contingencyBrands ?? []).map(b => (
-                            <span key={b} className="rounded-full border bg-background px-2.5 py-0.5 text-xs font-semibold">{b}</span>
+                {step === "addons" && (
+                  <>
+                    {showTransponderSection && (
+                      <Card>
+                        <SectionHeader>RM TrackR Transponder</SectionHeader>
+                        <CardContent className="p-6 space-y-4">
+                          {/* Own transponder number */}
+                          <FormField
+                            control={form.control}
+                            name="myLapsTransponderNumber"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>
+                                  RM TrackR Transponder Number
+                                  {event.requireTransponder && !gettingTransponder
+                                    ? <> <span className="text-destructive">*</span></>
+                                    : <> <span className="text-muted-foreground font-normal text-xs">(optional)</span></>}
+                                </FormLabel>
+                                <FormControl>
+                                  <Input
+                                    {...field}
+                                    placeholder={gettingTransponder ? "Assigned at check-in" : "e.g. 123456789"}
+                                    disabled={gettingTransponder}
+                                    onChange={e => {
+                                      field.onChange(e);
+                                      if (e.target.value.trim()) {
+                                        form.setValue("rentTransponder", false);
+                                        form.setValue("selectedPurchaseOptions", (form.getValues("selectedPurchaseOptions") ?? []).filter(id => id !== RM_TRACKR_OPTION_ID));
+                                      }
+                                    }}
+                                  />
+                                </FormControl>
+                                <p className="text-xs text-muted-foreground">Enter the number printed on your personal active transponder.</p>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+
+                          {/* No transponder? Rent or buy one — only what the event offers */}
+                          {(offersRental || trackrOption) && (
+                            <>
+                              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                <div className="h-px flex-1 bg-border" />
+                                <span className="uppercase tracking-widest font-semibold">or, no transponder?</span>
+                                <div className="h-px flex-1 bg-border" />
+                              </div>
+                              {offersRental && (
+                                <div className="flex items-start gap-3 rounded-lg border bg-background px-4 py-3.5">
+                                  <Checkbox
+                                    id="rent-transponder"
+                                    checked={!!watchedRentTransponder}
+                                    onCheckedChange={val => chooseTransponder(val === true ? "rent" : null)}
+                                    className="mt-0.5"
+                                  />
+                                  <div className="space-y-0.5 leading-none">
+                                    <label htmlFor="rent-transponder" className="text-sm font-semibold cursor-pointer">
+                                      Rent one for this event{event.transponderRentalFee != null && <> — <span className="text-primary">${Number(event.transponderRentalFee).toFixed(2)}</span></>}
+                                    </label>
+                                    <p className="text-xs text-muted-foreground">
+                                      Pick it up at check-in and return it after the event.
+                                      {!event.paymentEnabled && event.transponderRentalFee != null && " You pay the rental fee at the gate."}
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+                              {trackrOption && (
+                                <div className="flex items-start gap-3 rounded-lg border bg-background px-4 py-3.5">
+                                  <Checkbox
+                                    id="buy-transponder"
+                                    checked={buyingTrackr}
+                                    onCheckedChange={val => chooseTransponder(val === true ? "buy" : null)}
+                                    className="mt-0.5"
+                                  />
+                                  <div className="space-y-0.5 leading-none">
+                                    <label htmlFor="buy-transponder" className="text-sm font-semibold cursor-pointer">
+                                      Buy your own {trackrOption.name} — <span className="text-primary">${Number(trackrOption.amount).toFixed(2)}</span>
+                                    </label>
+                                    <p className="text-xs text-muted-foreground">
+                                      Yours to keep for every race. Pick it up at check-in.
+                                      {!event.paymentEnabled && " You pay for it at the gate."}
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+                              {gettingTransponder && (
+                                <p className="text-xs font-medium text-green-800 bg-green-50 border border-green-200 rounded-md px-3 py-2">
+                                  You don't need a transponder number now. The organizer hands you your transponder at check-in and records its number.
+                                </p>
+                              )}
+                            </>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* RFID Sticker */}
+                    {event.rfidStickerFee != null && (
+                      <Card>
+                        <SectionHeader>RFID Sticker</SectionHeader>
+                        <CardContent className="p-6">
+                          <FormField
+                            control={form.control}
+                            name="purchaseRfidSticker"
+                            render={({ field }) => (
+                              <FormItem>
+                                <div className="flex items-start gap-3 rounded-lg border bg-background px-4 py-3.5">
+                                  <FormControl>
+                                    <Checkbox
+                                      id="purchase-rfid-sticker"
+                                      checked={field.value}
+                                      onCheckedChange={field.onChange}
+                                      className="mt-0.5"
+                                    />
+                                  </FormControl>
+                                  <div className="space-y-0.5 leading-none">
+                                    <label htmlFor="purchase-rfid-sticker" className="text-sm font-semibold cursor-pointer">
+                                      I need an RFID sticker — <span className="text-primary">${Number(event.rfidStickerFee).toFixed(2)}</span>
+                                    </label>
+                                    <p className="text-xs text-muted-foreground">
+                                      Required to be timed during the event. Add one if you don't already have an RFID sticker from this club.
+                                    </p>
+                                  </div>
+                                </div>
+                              </FormItem>
+                            )}
+                          />
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {/* Purchase Options */}
+                    {addOnOptions.length > 0 && (
+                      <Card>
+                        <SectionHeader>Add-ons</SectionHeader>
+                        <CardContent className="p-6 space-y-3">
+                          {addOnOptions.map(opt => (
+                            <FormField
+                              key={opt.id}
+                              control={form.control}
+                              name="selectedPurchaseOptions"
+                              render={({ field }) => (
+                                <FormItem>
+                                  <div className="flex items-start gap-3 rounded-lg border bg-background px-4 py-3.5">
+                                    <FormControl>
+                                      <Checkbox
+                                        id={`opt-${opt.id}`}
+                                        checked={field.value.includes(opt.id)}
+                                        onCheckedChange={checked => {
+                                          if (checked) {
+                                            field.onChange([...field.value, opt.id]);
+                                          } else {
+                                            field.onChange(field.value.filter((id: string) => id !== opt.id));
+                                          }
+                                        }}
+                                        className="mt-0.5"
+                                      />
+                                    </FormControl>
+                                    <div className="space-y-0.5 leading-none flex-1">
+                                      <label htmlFor={`opt-${opt.id}`} className="text-sm font-semibold cursor-pointer flex items-center justify-between">
+                                        <span>{opt.name}</span>
+                                        <span className="text-primary">${Number(opt.amount).toFixed(2)}</span>
+                                      </label>
+                                      {opt.id === RM_TRACKR_OPTION_ID && (
+                                        <p className="text-xs text-muted-foreground pt-1">
+                                          Your own RM TrackR Transponder to keep. Pick it up at check-in.
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                </FormItem>
+                              )}
+                            />
                           ))}
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-2">
-                          These brands pay contingency on their own rules. To be included in a brand's results, pick your bike brand below and list gear or parts brands under Sponsors.
-                          Register with the brand's program first, and use the same name you registered with.
-                        </p>
-                      </div>
+                        </CardContent>
+                      </Card>
                     )}
-                    <FormField
-                      control={form.control}
-                      name="bikeBrand"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Manufacturer</FormLabel>
-                          <div className="mt-1">
-                            <BikeBrandChips brands={BIKE_BRANDS} value={field.value} onChange={field.onChange} />
+                  </>
+                )}
+
+                {step === "bike" && (
+                  <>
+                    <Card>
+                      <SectionHeader>Bike</SectionHeader>
+                      <CardContent className="p-6">
+                        {/* Contingency: the organizer reports each brand's finishers from these answers. */}
+                        {(event.contingencyBrands ?? []).length > 0 && (
+                          <div className="mb-5 rounded-lg border border-primary/30 bg-primary/[0.03] px-4 py-3">
+                            <p className="text-sm font-semibold flex items-center gap-1.5"><Flag size={14} className="text-primary" /> Contingency at this event</p>
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {(event.contingencyBrands ?? []).map(b => (
+                                <span key={b} className="rounded-full border bg-background px-2.5 py-0.5 text-xs font-semibold">{b}</span>
+                              ))}
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-2">
+                              These brands pay contingency on their own rules. To be included in a brand's results, pick your bike brand below and list gear or parts brands under Sponsors.
+                              Register with the brand's program first, and use the same name you registered with.
+                            </p>
                           </div>
-                          <input
-                            type="text"
-                            placeholder="Other brand (e.g. Sherco, TM, Rieju…)"
-                            value={BIKE_BRANDS.some(b => b.name === field.value) ? "" : (field.value ?? "")}
-                            onChange={e => field.onChange(e.target.value)}
-                            className="mt-3 w-full rounded-none border-2 border-input bg-background px-3 text-base placeholder:text-muted-foreground focus:outline-none focus:border-foreground"
-                          />
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <div className="grid grid-cols-2 gap-3 mt-4">
-                      <FormField control={form.control} name="bikeModel" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Model</FormLabel>
-                          <FormControl><Input placeholder="450 SX-F, CRF450R…" {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                      <FormField control={form.control} name="bikeYear" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Year</FormLabel>
-                          <FormControl><Input placeholder="2024" maxLength={4} {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <SectionHeader>Sponsors</SectionHeader>
-                  <CardContent className="p-6">
-                    <FormField control={form.control} name="sponsors" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Sponsors <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
-                        <FormControl>
-                          <Input placeholder="KTM, FMF, Alpinestars" {...field} />
-                        </FormControl>
-                        <p className="text-xs text-muted-foreground mt-1">Separate multiple sponsors with a comma.</p>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <SectionHeader>Emergency Contact</SectionHeader>
-                  <CardContent className="p-6 space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField control={form.control} name="emergencyContact" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Contact Name</FormLabel>
-                          <FormControl><Input placeholder="Jane Morrison" {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                      <FormField control={form.control} name="emergencyPhone" render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Contact Phone</FormLabel>
-                          <FormControl><Input placeholder="602-555-0200" {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )} />
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <FormField
-                  control={form.control}
-                  name="statsEmailOptIn"
-                  render={({ field }) => (
-                    <FormItem>
-                      <div className="flex items-start gap-3 rounded-[14px] border-2 border-[#ECECEC] bg-[#FAFAFA] px-5 py-4">
-                        <FormControl>
-                          <Checkbox
-                            id="stats-optin"
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                            className="mt-0.5"
-                          />
-                        </FormControl>
-                        <div className="space-y-0.5 leading-none">
-                          <label
-                            htmlFor="stats-optin"
-                            className="text-sm font-semibold cursor-pointer flex items-center gap-1.5"
-                          >
-                            <Mail size={16} className="text-[#555] shrink-0" />
-                            Send me my race day stats
-                          </label>
-                          <p className="text-[13px] leading-snug text-muted-foreground">
-                            We'll email your results — finish position, lap times, and points — to <strong>{form.watch("email") || "your email"}</strong> once the event is complete.
-                          </p>
-                        </div>
-                      </div>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                {/* Discount Code */}
-                {event.paymentEnabled && event.entryFee && (
-                  <div className="rounded-[14px] border-2 border-[#ECECEC] bg-[#FAFAFA] px-5 py-4 space-y-3">
-                    <p className="font-bold text-[#242424] flex items-center gap-1.5">
-                      <Tag size={16} className="text-[#555] shrink-0" />
-                      Have a discount code?
-                    </p>
-                    {appliedComp ? (
-                      <div className="flex items-center justify-between rounded bg-green-50 border border-green-200 px-3 py-2">
-                        <div className="text-sm text-green-700">
-                          <span className="font-mono font-bold tracking-widest">{appliedComp.code}</span>
-                          <span className="ml-2">— {appliedComp.discountType === "percentage" ? `${appliedComp.amount.toFixed(0)}% off` : `$${appliedComp.amount.toFixed(2)} off`}</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => { setAppliedComp(null); setCompCodeInput(""); }}
-                          className="text-green-600 hover:text-green-800 transition-colors ml-2"
-                        >
-                          <XIcon size={16} />
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex gap-2">
-                        <Input
-                          value={compCodeInput}
-                          onChange={e => { setCompCodeInput(e.target.value.toUpperCase()); setCompError(null); }}
-                          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleApplyComp(); } }}
-                          placeholder="Enter discount code…"
-                          className="font-mono tracking-widest flex-1 bg-white"
-                          disabled={compApplying}
+                        )}
+                        <FormField
+                          control={form.control}
+                          name="bikeBrand"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Manufacturer <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                              <div className="mt-1">
+                                <BikeBrandChips brands={BIKE_BRANDS} value={field.value} onChange={field.onChange} />
+                              </div>
+                              <input
+                                type="text"
+                                placeholder="Other brand (e.g. Sherco, TM, Rieju…)"
+                                value={BIKE_BRANDS.some(b => b.name === field.value) ? "" : (field.value ?? "")}
+                                onChange={e => field.onChange(e.target.value)}
+                                className="mt-3 w-full rounded-none border-2 border-input bg-background px-3 text-base placeholder:text-muted-foreground focus:outline-none focus:border-foreground"
+                              />
+                              <FormMessage />
+                            </FormItem>
+                          )}
                         />
-                        <Button
-                          type="button"
-                          className="h-[52px] px-6 bg-[#242424] border-[#242424] text-white hover:bg-black"
-                          onClick={handleApplyComp}
-                          disabled={compApplying || !compCodeInput.trim()}
-                        >
-                          {compApplying ? <Loader2 size={14} className="animate-spin" /> : "Apply"}
-                        </Button>
-                      </div>
-                    )}
-                    {compError && <p className="text-xs text-red-500">{compError}</p>}
-                    {(selectedPurchasesTotal > 0 || rentalTotal > 0 || rfidStickerTotal > 0 || appliedComp || numSelectedClasses > 1) && effectiveEntryFee && (
-                      <div className="border-t pt-2 mt-1 space-y-1.5">
-                        <div className="text-xs text-muted-foreground flex justify-between">
-                          <span>
-                            {numSelectedClasses > 1
-                              ? `Entry fee (${numSelectedClasses} classes × $${effectiveEntryFee.toFixed(2)})${earlyBirdActive ? " 🐦" : ""}`
-                              : earlyBirdActive ? "Entry fee (early bird)" : "Entry fee"}
-                          </span>
-                          <span>${(effectiveEntryFee * Math.max(1, numSelectedClasses)).toFixed(2)}</span>
+                        <div className="grid grid-cols-2 items-end gap-3 mt-4">
+                          <FormField control={form.control} name="bikeModel" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Model <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                              <FormControl><Input placeholder="450 SX-F, CRF450R…" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )} />
+                          <FormField control={form.control} name="bikeYear" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Year <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                              <FormControl><Input placeholder="2024" maxLength={4} {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )} />
                         </div>
-                        {(event.purchaseOptions ?? []).filter(o => (watchedPurchaseOptions ?? []).includes(o.id)).map(o => (
-                          <div key={o.id} className="text-xs text-muted-foreground flex justify-between">
-                            <span>{o.name}</span><span>${Number(o.amount).toFixed(2)}</span>
+                      </CardContent>
+                    </Card>
+
+                    <Card>
+                      <SectionHeader>Sponsors</SectionHeader>
+                      <CardContent className="p-6">
+                        <FormField control={form.control} name="sponsors" render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Sponsors <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                            <FormControl>
+                              <Input placeholder="KTM, FMF, Alpinestars" {...field} />
+                            </FormControl>
+                            <p className="text-xs text-muted-foreground mt-1">Separate multiple sponsors with a comma.</p>
+                            <FormMessage />
+                          </FormItem>
+                        )} />
+                      </CardContent>
+                    </Card>
+                  </>
+                )}
+
+                {step === "waiver" && (
+                  <>
+                    {/* Liability Waiver e-sign */}
+                    {event.requireLiabilityWaiver && event.liabilityWaiverPdfUrl && (
+                      <div className={`rounded-lg border px-4 py-4 space-y-3 transition-colors ${liabilityWaiverAccepted ? "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800" : "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-700"}`}>
+                        <div className="flex items-start gap-3">
+                          <ShieldCheck size={18} className={`mt-0.5 shrink-0 ${liabilityWaiverAccepted ? "text-green-600" : "text-red-600"}`} />
+                          <div className="flex-1 space-y-1">
+                            <p className="text-sm font-semibold">
+                              {liabilityWaiverAccepted ? "Liability Waiver Signed" : <>Liability Waiver <span className="text-destructive">*</span></>}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {liabilityWaiverAccepted
+                                ? `Signed by ${liabilityWaiverSignerName}${liabilityWaiverSignerType === "guardian" && liabilityWaiverMinorRiderName ? ` (parent/guardian of ${liabilityWaiverMinorRiderName})` : ""} — legally binding electronic signature`
+                                : "You must read and electronically sign the liability waiver before registering."}
+                            </p>
                           </div>
-                        ))}
-                        {rentalTotal > 0 && (
-                          <div className="text-xs text-muted-foreground flex justify-between">
-                            <span>Transponder rental</span><span>${rentalTotal.toFixed(2)}</span>
-                          </div>
-                        )}
-                        {rfidStickerTotal > 0 && (
-                          <div className="text-xs text-muted-foreground flex justify-between">
-                            <span>RFID sticker</span><span>${rfidStickerTotal.toFixed(2)}</span>
-                          </div>
-                        )}
-                        {appliedComp && (
-                          <div className="text-xs text-green-700 flex justify-between">
-                            <span>Discount code ({appliedComp.code})</span>
-                            <span>−{appliedComp.discountType === "percentage"
-                              ? `${appliedComp.amount.toFixed(0)}% ($${compDiscountDollars.toFixed(2)})`
-                              : `$${compDiscountDollars.toFixed(2)}`
-                            }</span>
-                          </div>
-                        )}
-                        <div className="text-sm font-bold flex justify-between border-t pt-1.5">
-                          <span>Total due</span>
-                          <span>{totalDue === 0 ? "FREE" : `$${totalDue.toFixed(2)}`}</span>
+                          {liabilityWaiverAccepted && <ShieldCheck size={18} className="text-green-600 shrink-0 mt-0.5" />}
                         </div>
+                        {!liabilityWaiverAccepted && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="w-full h-auto py-2.5 whitespace-normal leading-snug font-heading uppercase tracking-wider border-red-400 text-red-700 hover:bg-red-100"
+                            onClick={() => {
+                              setLiabilityWaiverScrolledToBottom(false);
+                              setLiabilityWaiverConsentChecked(false);
+                              setLiabilityWaiverConsentGiven(false);
+                              setLiabilityWaiverSignerName(`${form.getValues("firstName")} ${form.getValues("lastName")}`.trim());
+                              setLiabilityWaiverSignError(null);
+                              setLiabilityWaiverSignerType("self");
+                              setLiabilityWaiverMinorRiderName("");
+                              setLiabilityWaiverModalOpen(true);
+                            }}
+                          >
+                            <ShieldCheck size={14} className="mr-2" />
+                            Read &amp; Sign Liability Waiver
+                          </Button>
+                        )}
+                        {liabilityWaiverAccepted && (
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setLiabilityWaiverScrolledToBottom(false);
+                                setLiabilityWaiverSignError(null);
+                                setLiabilityWaiverConsentGiven(true);
+                                setLiabilityWaiverModalOpen(true);
+                              }}
+                              className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-primary flex-1"
+                            >
+                              <FileText size={12} /> View signed waiver
+                            </button>
+                            <button
+                              type="button"
+                              onClick={downloadSignedPdf}
+                              disabled={liabilityWaiverDownloading}
+                              className="flex items-center justify-center gap-1.5 text-xs text-primary hover:text-primary/80 font-semibold flex-1 disabled:opacity-50"
+                            >
+                              {liabilityWaiverDownloading
+                                ? <><Loader2 size={12} className="animate-spin" /> Preparing…</>
+                                : <><FileText size={12} /> Download signed copy</>}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
-                  </div>
+
+                    {/* Waiver acknowledgment */}
+                    {event.requireWaiver && (event.waiverText || event.waiverPdfUrl) && (
+                      <div className={`rounded-lg border px-4 py-4 space-y-3 transition-colors ${waiverAccepted ? "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800" : "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-700"}`}>
+                        <div className="flex items-start gap-3">
+                          <FileText size={18} className={`mt-0.5 shrink-0 ${waiverAccepted ? "text-green-600" : "text-amber-600"}`} />
+                          <div className="flex-1 space-y-1">
+                            <p className="text-sm font-semibold">
+                              {waiverAccepted ? "Acknowledgement Accepted" : <>Rider Acknowledgement Form <span className="text-destructive">*</span></>}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {waiverAccepted
+                                ? `Accepted on ${waiverTimestamp ? format(new Date(waiverTimestamp), "MMM d, yyyy 'at' h:mm a") : "—"}`
+                                : "You must read and acknowledge the rider acknowledgement form before registering."}
+                            </p>
+                          </div>
+                          {waiverAccepted && <ShieldCheck size={18} className="text-green-600 shrink-0 mt-0.5" />}
+                        </div>
+
+                        {/* PDF waiver path */}
+                        {event.waiverPdfUrl && !waiverAccepted && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="w-full h-auto py-2.5 whitespace-normal leading-snug font-heading uppercase tracking-wider border-amber-400 text-amber-700 hover:bg-amber-100"
+                            onClick={() => { setPdfWaiverChecked(false); setPdfWaiverModalOpen(true); }}
+                          >
+                            <FileText size={14} className="mr-2" />
+                            Read &amp; Acknowledge Rider Acknowledgement Form
+                          </Button>
+                        )}
+
+                        {/* Text waiver path (no PDF) */}
+                        {!event.waiverPdfUrl && !waiverAccepted && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="w-full h-auto py-2.5 whitespace-normal leading-snug font-heading uppercase tracking-wider border-amber-400 text-amber-700 hover:bg-amber-100"
+                            onClick={() => { setWaiverScrolledToBottom(false); setWaiverModalOpen(true); }}
+                          >
+                            <FileText size={14} className="mr-2" />
+                            Read &amp; Acknowledge Rider Acknowledgement Form
+                          </Button>
+                        )}
+
+                        {/* View links after accepted */}
+                        {waiverAccepted && event.waiverPdfUrl && (
+                          <button
+                            type="button"
+                            onClick={() => { setPdfWaiverChecked(false); setPdfWaiverModalOpen(true); }}
+                            className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-primary w-full"
+                          >
+                            <FileText size={12} /> View PDF
+                          </button>
+                        )}
+                        {waiverAccepted && !event.waiverPdfUrl && event.waiverText && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="w-full text-xs text-muted-foreground"
+                            onClick={() => { setWaiverScrolledToBottom(false); setWaiverModalOpen(true); }}
+                          >
+                            View acknowledgement form
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
 
-                {/* Liability Waiver e-sign */}
-                {event.requireLiabilityWaiver && event.liabilityWaiverPdfUrl && (
-                  <div className={`rounded-lg border px-4 py-4 space-y-3 transition-colors ${liabilityWaiverAccepted ? "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800" : "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-700"}`}>
-                    <div className="flex items-start gap-3">
-                      <ShieldCheck size={18} className={`mt-0.5 shrink-0 ${liabilityWaiverAccepted ? "text-green-600" : "text-red-600"}`} />
-                      <div className="flex-1 space-y-1">
-                        <p className="text-sm font-semibold">
-                          {liabilityWaiverAccepted ? "Liability Waiver Signed" : "Liability Waiver Required"}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {liabilityWaiverAccepted
-                            ? `Signed by ${liabilityWaiverSignerName}${liabilityWaiverSignerType === "guardian" && liabilityWaiverMinorRiderName ? ` (parent/guardian of ${liabilityWaiverMinorRiderName})` : ""} — legally binding electronic signature`
-                            : "You must read and electronically sign the liability waiver before registering."}
-                        </p>
-                      </div>
-                      {liabilityWaiverAccepted && <ShieldCheck size={18} className="text-green-600 shrink-0 mt-0.5" />}
+                {step === "review" && (
+                  <>
+                    <ReviewSection title="Rider" onEdit={() => editStep("rider")}>
+                      <ReviewRow label="Name" value={`${v.firstName} ${v.lastName}`.trim()} />
+                      <ReviewRow label="Email" value={v.email} />
+                      <ReviewRow label="Phone" value={v.phone} />
+                      <ReviewRow label="Date of Birth" value={v.dateOfBirth} />
+                      <ReviewRow label="Preferred #" value={v.bibNumber} />
+                      {(event.requireAma || !!v.amaNumber) && <ReviewRow label="AMA #" value={v.amaNumber} />}
+                      {(event.requireClubId || !!v.clubIdNumber) && <ReviewRow label="Club ID #" value={v.clubIdNumber} />}
+                    </ReviewSection>
+
+                    <ReviewSection title="Contact" onEdit={() => editStep("contact")}>
+                      <ReviewRow
+                        label="Address"
+                        value={[v.streetAddress, v.city, [v.homeState, v.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ")}
+                      />
+                      <ReviewRow label="Emergency Contact" value={[v.emergencyContact, v.emergencyPhone].filter(Boolean).join(" · ")} />
+                      <ReviewRow label="Race Day Stats" value={v.statsEmailOptIn ? "Email them to me" : "No"} />
+                    </ReviewSection>
+
+                    <ReviewSection title={v.selectedClasses.length > 1 ? "Classes" : "Class"} onEdit={() => editStep("classes")}>
+                      {v.selectedClasses.map(cls => (
+                        <ReviewRow
+                          key={cls}
+                          label={cls}
+                          value={event.paymentEnabled && effectiveEntryFee ? `$${effectiveEntryFee.toFixed(2)}` : "Entered"}
+                        />
+                      ))}
+                    </ReviewSection>
+
+                    {steps.includes("addons") && (
+                      <ReviewSection title="Add-ons" onEdit={() => editStep("addons")}>
+                        {showTransponderSection && (
+                          <ReviewRow
+                            label="Transponder"
+                            value={buyingTrackr && trackrOption
+                              ? `Buying ${trackrOption.name} — $${Number(trackrOption.amount).toFixed(2)}`
+                              : v.rentTransponder
+                                ? `Renting one${event.transponderRentalFee != null ? ` — $${Number(event.transponderRentalFee).toFixed(2)}` : ""}`
+                                : v.myLapsTransponderNumber?.trim() ? `My own: ${v.myLapsTransponderNumber.trim()}` : "None"}
+                          />
+                        )}
+                        {event.rfidStickerFee != null && (
+                          <ReviewRow
+                            label="RFID Sticker"
+                            value={v.purchaseRfidSticker ? `Yes — $${Number(event.rfidStickerFee).toFixed(2)}` : "No"}
+                          />
+                        )}
+                        {addOnOptions.length > 0 && (
+                          <ReviewRow
+                            label="Extras"
+                            value={addOnOptions.filter(o => v.selectedPurchaseOptions.includes(o.id))
+                              .map(o => `${o.name} — $${Number(o.amount).toFixed(2)}`).join(", ") || "None"}
+                          />
+                        )}
+                        {!event.paymentEnabled && (gettingTransponder || v.purchaseRfidSticker) && (
+                          <p className="py-2.5 text-[13px] text-muted-foreground">You pay for these at the gate.</p>
+                        )}
+                      </ReviewSection>
+                    )}
+
+                    <ReviewSection title="Bike" onEdit={() => editStep("bike")}>
+                      <ReviewRow label="Bike" value={[v.bikeYear, v.bikeBrand, v.bikeModel].filter(Boolean).join(" ")} />
+                      <ReviewRow label="Sponsors" value={v.sponsors} />
+                    </ReviewSection>
+
+                    {steps.includes("waiver") && (
+                      <ReviewSection title="Waiver" onEdit={() => editStep("waiver")}>
+                        {event.requireLiabilityWaiver && event.liabilityWaiverPdfUrl && (
+                          <ReviewRow
+                            label="Liability Waiver"
+                            value={liabilityWaiverAccepted
+                              ? `Signed by ${liabilityWaiverSignerName}${liabilityWaiverSignerType === "guardian" && liabilityWaiverMinorRiderName ? ` (parent/guardian of ${liabilityWaiverMinorRiderName})` : ""}`
+                              : "Not signed"}
+                          />
+                        )}
+                        {event.requireWaiver && (event.waiverText || event.waiverPdfUrl) && (
+                          <ReviewRow
+                            label="Acknowledgement"
+                            value={waiverAccepted && waiverTimestamp ? `Accepted ${format(new Date(waiverTimestamp), "MMM d, yyyy 'at' h:mm a")}` : "Not accepted"}
+                          />
+                        )}
+                      </ReviewSection>
+                    )}
+
+                    {event.paymentEnabled && !!effectiveEntryFee ? (
+                      <Card>
+                        <SectionHeader>Total</SectionHeader>
+                        <CardContent className="p-6 space-y-4">
+                          <dl className="space-y-2 text-[15px] text-[#333]">
+                            <div className="flex justify-between gap-4">
+                              <dt>
+                                {numSelectedClasses > 1
+                                  ? `Entry fee (${numSelectedClasses} classes × $${effectiveEntryFee.toFixed(2)})`
+                                  : earlyBirdActive ? "Entry fee (early bird)" : "Entry fee"}
+                              </dt>
+                              <dd>${(effectiveEntryFee * Math.max(1, numSelectedClasses)).toFixed(2)}</dd>
+                            </div>
+                            {(event.purchaseOptions ?? []).filter(o => (watchedPurchaseOptions ?? []).includes(o.id)).map(o => (
+                              <div key={o.id} className="flex justify-between gap-4">
+                                <dt>{o.name}</dt><dd>${Number(o.amount).toFixed(2)}</dd>
+                              </div>
+                            ))}
+                            {rentalTotal > 0 && (
+                              <div className="flex justify-between gap-4">
+                                <dt>Transponder rental</dt><dd>${rentalTotal.toFixed(2)}</dd>
+                              </div>
+                            )}
+                            {rfidStickerTotal > 0 && (
+                              <div className="flex justify-between gap-4">
+                                <dt>RFID sticker</dt><dd>${rfidStickerTotal.toFixed(2)}</dd>
+                              </div>
+                            )}
+                            {appliedComp && (
+                              <div className="flex justify-between gap-4 text-green-700">
+                                <dt>Discount code ({appliedComp.code})</dt>
+                                <dd>−{appliedComp.discountType === "percentage"
+                                  ? `${appliedComp.amount.toFixed(0)}% ($${compDiscountDollars.toFixed(2)})`
+                                  : `$${compDiscountDollars.toFixed(2)}`
+                                }</dd>
+                              </div>
+                            )}
+                          </dl>
+                          {/* Discount Code */}
+                          {event.paymentEnabled && event.entryFee && (
+                            <div className="rounded-[14px] border-2 border-[#ECECEC] bg-[#FAFAFA] px-5 py-4 space-y-3">
+                              <p className="font-bold text-[#242424] flex items-center gap-1.5">
+                                <Tag size={16} className="text-[#555] shrink-0" />
+                                Have a discount code?
+                              </p>
+                              {appliedComp ? (
+                                <div className="flex items-center justify-between rounded bg-green-50 border border-green-200 px-3 py-2">
+                                  <div className="text-sm text-green-700">
+                                    <span className="font-mono font-bold tracking-widest">{appliedComp.code}</span>
+                                    <span className="ml-2">— {appliedComp.discountType === "percentage" ? `${appliedComp.amount.toFixed(0)}% off` : `$${appliedComp.amount.toFixed(2)} off`}</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => { setAppliedComp(null); setCompCodeInput(""); }}
+                                    className="text-green-600 hover:text-green-800 transition-colors ml-2"
+                                  >
+                                    <XIcon size={16} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex gap-2">
+                                  <Input
+                                    value={compCodeInput}
+                                    onChange={e => { setCompCodeInput(e.target.value.toUpperCase()); setCompError(null); }}
+                                    onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleApplyComp(); } }}
+                                    placeholder="Enter discount code…"
+                                    className="font-mono tracking-widest flex-1 bg-white"
+                                    disabled={compApplying}
+                                  />
+                                  <Button
+                                    type="button"
+                                    className="h-[52px] px-6 bg-[#242424] border-[#242424] text-white hover:bg-black"
+                                    onClick={handleApplyComp}
+                                    disabled={compApplying || !compCodeInput.trim()}
+                                  >
+                                    {compApplying ? <Loader2 size={14} className="animate-spin" /> : "Apply"}
+                                  </Button>
+                                </div>
+                              )}
+                              {compError && <p className="text-xs text-red-500">{compError}</p>}
+                            </div>
+                          )}
+                          <div className="flex items-baseline justify-between gap-4 border-t-2 border-[#ECECEC] pt-4">
+                            <span className="font-heading font-extrabold uppercase text-lg text-[#242424]">Total Due</span>
+                            <span className="font-heading font-extrabold text-[28px] leading-none text-[#242424]">{totalDue === 0 ? "FREE" : `$${totalDue.toFixed(2)}`}</span>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ) : !event.paymentEnabled && (effectiveEntryFee || rentalTotal || rfidStickerTotal || selectedPurchasesTotal) ? (
+                      <p className="rounded-[14px] border-2 border-[#ECECEC] bg-[#FAFAFA] px-5 py-4 text-[15px] text-[#333]">
+                        This event doesn't take payment online. You pay any fees at the gate.
+                      </p>
+                    ) : null}
+                  </>
+                )}
+
+                {/* Back / Next, kept in reach of the thumb on phones */}
+                <div className="sticky bottom-0 z-10 -mx-4 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-background/95 backdrop-blur border-t-2 border-[#ECECEC] space-y-3">
+                  {(stepError || (step === "review" && submitError)) && (
+                    <div className="bg-destructive/10 border border-destructive/30 text-destructive rounded-md px-4 py-3 text-sm flex items-center gap-2">
+                      <AlertCircle size={16} className="shrink-0" />
+                      {stepError || submitError}
                     </div>
-                    {!liabilityWaiverAccepted && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="w-full font-heading uppercase tracking-wider border-red-400 text-red-700 hover:bg-red-100"
-                        onClick={() => {
-                          setLiabilityWaiverScrolledToBottom(false);
-                          setLiabilityWaiverConsentChecked(false);
-                          setLiabilityWaiverConsentGiven(false);
-                          setLiabilityWaiverSignerName(`${form.getValues("firstName")} ${form.getValues("lastName")}`.trim());
-                          setLiabilityWaiverSignError(null);
-                          setLiabilityWaiverSignerType("self");
-                          setLiabilityWaiverMinorRiderName("");
-                          setLiabilityWaiverModalOpen(true);
-                        }}
-                      >
-                        <ShieldCheck size={14} className="mr-2" />
-                        Read &amp; Sign Liability Waiver
-                      </Button>
-                    )}
-                    {liabilityWaiverAccepted && (
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setLiabilityWaiverScrolledToBottom(false);
-                            setLiabilityWaiverSignError(null);
-                            setLiabilityWaiverConsentGiven(true);
-                            setLiabilityWaiverModalOpen(true);
-                          }}
-                          className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-primary flex-1"
-                        >
-                          <FileText size={12} /> View signed waiver
-                        </button>
-                        <button
-                          type="button"
-                          onClick={downloadSignedPdf}
-                          disabled={liabilityWaiverDownloading}
-                          className="flex items-center justify-center gap-1.5 text-xs text-primary hover:text-primary/80 font-semibold flex-1 disabled:opacity-50"
-                        >
-                          {liabilityWaiverDownloading
-                            ? <><Loader2 size={12} className="animate-spin" /> Preparing…</>
-                            : <><FileText size={12} /> Download signed copy</>}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Waiver acknowledgment */}
-                {event.requireWaiver && (event.waiverText || event.waiverPdfUrl) && (
-                  <div className={`rounded-lg border px-4 py-4 space-y-3 transition-colors ${waiverAccepted ? "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800" : "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-700"}`}>
-                    <div className="flex items-start gap-3">
-                      <FileText size={18} className={`mt-0.5 shrink-0 ${waiverAccepted ? "text-green-600" : "text-amber-600"}`} />
-                      <div className="flex-1 space-y-1">
-                        <p className="text-sm font-semibold">
-                          {waiverAccepted ? "Acknowledgement Accepted" : "Rider Acknowledgement Form Required"}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {waiverAccepted
-                            ? `Accepted on ${waiverTimestamp ? format(new Date(waiverTimestamp), "MMM d, yyyy 'at' h:mm a") : "—"}`
-                            : "You must read and acknowledge the rider acknowledgement form before registering."}
-                        </p>
-                      </div>
-                      {waiverAccepted && <ShieldCheck size={18} className="text-green-600 shrink-0 mt-0.5" />}
-                    </div>
-
-                    {/* PDF waiver path */}
-                    {event.waiverPdfUrl && !waiverAccepted && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="w-full font-heading uppercase tracking-wider border-amber-400 text-amber-700 hover:bg-amber-100"
-                        onClick={() => { setPdfWaiverChecked(false); setPdfWaiverModalOpen(true); }}
-                      >
-                        <FileText size={14} className="mr-2" />
-                        Read &amp; Acknowledge Rider Acknowledgement Form
-                      </Button>
-                    )}
-
-                    {/* Text waiver path (no PDF) */}
-                    {!event.waiverPdfUrl && !waiverAccepted && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="w-full font-heading uppercase tracking-wider border-amber-400 text-amber-700 hover:bg-amber-100"
-                        onClick={() => { setWaiverScrolledToBottom(false); setWaiverModalOpen(true); }}
-                      >
-                        <FileText size={14} className="mr-2" />
-                        Read &amp; Acknowledge Rider Acknowledgement Form
-                      </Button>
-                    )}
-
-                    {/* View links after accepted */}
-                    {waiverAccepted && event.waiverPdfUrl && (
-                      <button
-                        type="button"
-                        onClick={() => { setPdfWaiverChecked(false); setPdfWaiverModalOpen(true); }}
-                        className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-primary w-full"
-                      >
-                        <FileText size={12} /> View PDF
-                      </button>
-                    )}
-                    {waiverAccepted && !event.waiverPdfUrl && event.waiverText && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="w-full text-xs text-muted-foreground"
-                        onClick={() => { setWaiverScrolledToBottom(false); setWaiverModalOpen(true); }}
-                      >
-                        View acknowledgement form
-                      </Button>
-                    )}
-                  </div>
-                )}
-
-                <Button
-                  type="submit"
-                  disabled={submitting || lookupState === "pick" || (riderOptions !== null && selectedRiderId === null) || bibCheckState === "taken" || bibCheckState === "checking" || (event.requireWaiver && !waiverAccepted) || (event.requireLiabilityWaiver && !liabilityWaiverAccepted)}
-                  variant="secondary"
-                  className="w-full text-base h-[52px] hover:bg-[#146806]"
-                >
-                  {submitting ? (
-                    <><Loader2 size={18} className="mr-2 animate-spin" /> Processing...</>
-                  ) : event.paymentEnabled && totalDue > 0 ? (
-                    <><CreditCard size={18} className="mr-2" /> Register & Pay ${totalDue.toFixed(2)} →</>
-                  ) : (
-                    "Complete Registration →"
                   )}
-                </Button>
-                <p className="text-center text-[13px] text-muted-foreground">By registering you agree to the event's waiver and rules.</p>
+                  <div className="flex gap-3">
+                    {stepIndex > 0 && (
+                      <Button type="button" variant="outline" className="h-[52px] px-5 text-base" onClick={goBack} disabled={submitting}>
+                        <ChevronLeft size={18} /> Back
+                      </Button>
+                    )}
+                    {step !== "review" ? (
+                      <Button
+                        key="next"
+                        type="submit"
+                        className="flex-1 h-[52px] text-base"
+                        disabled={step === "rider" && (lookupState === "loading" || bibCheckState === "checking")}
+                      >
+                        {returnToReview ? "Save & Review" : `Next: ${STEP_LABELS[steps[stepIndex + 1]]}`} <ChevronRight size={18} />
+                      </Button>
+                    ) : (
+                      <Button
+                        key="finish"
+                        type="submit"
+                        disabled={submitting || lookupState === "pick" || (riderOptions !== null && selectedRiderId === null) || bibCheckState === "taken" || bibCheckState === "checking" || (event.requireWaiver && !waiverAccepted) || (event.requireLiabilityWaiver && !liabilityWaiverAccepted)}
+                        variant="secondary"
+                        className="flex-1 text-base h-[52px] hover:bg-[#146806]"
+                      >
+                        {submitting ? (
+                          <><Loader2 size={18} className="mr-2 animate-spin" /> Processing...</>
+                        ) : event.paymentEnabled && totalDue > 0 ? (
+                          <><CreditCard size={18} className="mr-2" /> Pay ${totalDue.toFixed(2)}</>
+                        ) : (
+                          "Submit Registration"
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                  {step === "review" && (
+                    <p className="text-center text-[13px] text-muted-foreground">By registering you agree to the event's waiver and rules.</p>
+                  )}
+                </div>
               </form>
             </Form>
 
@@ -2220,6 +2609,7 @@ export default function Register() {
                         {liabilityWaiverSignerType === "guardian"
                           ? "Your full legal name (parent/guardian)"
                           : "Confirm your full legal name to sign"}
+                        {" "}<span className="text-destructive">*</span>
                       </label>
                       <Input
                         placeholder="Full legal name"
