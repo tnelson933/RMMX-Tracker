@@ -19,3 +19,27 @@ test("reader location state codes", () => {
   assert.ok(checkStatesCode("ut"));
   assert.ok(!checkStatesCode("Utah"));
 });
+
+test("clubs on their own Stripe account are charged directly; older Express clubs by transfer", async () => {
+  const { clubStripeOf, onClub, transferTo, browserAccount, onClubOrPlatform } = await import("./stripePayments");
+  const own = clubStripeOf({ stripeAccountId: "acct_own", stripeDirectCharges: true })!;
+  const express = clubStripeOf({ stripeAccountId: "acct_exp", stripeDirectCharges: false })!;
+  assert.deepEqual(onClub(own), { stripeAccount: "acct_own" });
+  assert.deepEqual(transferTo(own), {});
+  assert.equal(browserAccount(own), "acct_own");
+  assert.equal(onClub(express), undefined);
+  assert.deepEqual(transferTo(express), { transfer_data: { destination: "acct_exp" } });
+  assert.equal(browserAccount(express), null);
+  assert.equal(clubStripeOf({ stripeAccountId: null, stripeDirectCharges: true }), null);
+
+  // Lookups: the club's account first; payments from before the switch fall back to RM Roost's.
+  const calls: Array<string | undefined> = [];
+  const found = await onClubOrPlatform(own, async o => {
+    calls.push(o?.stripeAccount);
+    if (o?.stripeAccount) throw Object.assign(new Error("No such checkout.session"), { code: "resource_missing" });
+    return "platform";
+  });
+  assert.equal(found, "platform");
+  assert.deepEqual(calls, ["acct_own", undefined]);
+  await assert.rejects(onClubOrPlatform(own, async () => { throw Object.assign(new Error("boom"), { code: "api_error" }); }), /boom/);
+});

@@ -9,7 +9,7 @@ import { pool } from "@workspace/db";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { redactLogUrl } from "./lib/logRedaction";
-import { WebhookHandlers } from "./webhookHandlers";
+import { WebhookHandlers, processConnectWebhook } from "./webhookHandlers";
 import { accessControlMiddleware } from "./middleware/accessControl";
 import { ingestObservationMiddleware } from "./middleware/ingestObservation";
 
@@ -66,6 +66,23 @@ app.post(
       res.status(200).json({ received: true });
     } catch (err: any) {
       logger.error({ err: err?.message }, "Stripe webhook error");
+      res.status(400).json({ error: "Webhook processing error" });
+    }
+  }
+);
+
+// Events from clubs' own Stripe accounts (direct charges), also raw.
+app.post(
+  "/api/stripe/connect-webhook",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    const signature = req.headers["stripe-signature"];
+    if (!signature) { res.status(400).json({ error: "Missing stripe-signature" }); return; }
+    try {
+      await processConnectWebhook(req.body as Buffer, Array.isArray(signature) ? signature[0] : signature);
+      res.status(200).json({ received: true });
+    } catch (err: any) {
+      logger.error({ err: err?.message }, "Stripe Connect webhook error");
       res.status(400).json({ error: "Webhook processing error" });
     }
   }

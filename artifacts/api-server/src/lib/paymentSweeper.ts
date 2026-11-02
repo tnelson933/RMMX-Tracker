@@ -18,7 +18,7 @@ export async function sweepPendingPayments(): Promise<number> {
   // Only entries still waiting for payment (never refunded or voided ones),
   // newest checkouts first so a backlog can't starve today's riders.
   const rows = await db
-    .select({ sessionId: registrationsTable.stripeSessionId })
+    .select({ sessionId: registrationsTable.stripeSessionId, registrationId: sql<number>`min(${registrationsTable.id})` })
     .from(registrationsTable)
     .where(and(
       isNotNull(registrationsTable.stripeSessionId),
@@ -35,10 +35,22 @@ export async function sweepPendingPayments(): Promise<number> {
   const { confirmRegistrationSession } = await import("../routes/registrations");
   const stripe = await getUncachableStripeClient();
   let confirmed = 0;
-  for (const { sessionId } of rows) {
+  const { onClubOrPlatform, registrationClubStripe, paymentIntentAsPaid } = await import("./stripePayments");
+  for (const { sessionId, registrationId } of rows) {
     if (!sessionId) continue;
     try {
-      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      // On the club's own account (direct charges), else RM Roost's (older payments).
+      const club = await registrationClubStripe(Number(registrationId));
+      if (sessionId.startsWith("pi_")) {
+        // A card-reader payment: confirm once it succeeds (the reader dialog usually has).
+        const pi = paymentIntentAsPaid(await onClubOrPlatform(club, o => stripe.paymentIntents.retrieve(sessionId, undefined, o)));
+        if (pi.payment_status === "paid") {
+          const regs = await confirmRegistrationSession(pi);
+          if (regs.length) { confirmed += regs.length; logger.info({ sessionId, entries: regs.length }, "Registration paid on card reader (background payment check)"); }
+        }
+        continue;
+      }
+      const session = await onClubOrPlatform(club, o => stripe.checkout.sessions.retrieve(sessionId, undefined, o));
       if (session.status === "expired" && session.payment_status !== "paid") {
         // An expired checkout can never be paid: stop sweeping it. The entry stays
         // unpaid (pay at the gate, or start a new checkout).

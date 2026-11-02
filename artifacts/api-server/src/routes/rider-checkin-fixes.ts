@@ -19,6 +19,7 @@ import { resolvePurchaseOptions } from "../lib/purchaseOptions";
 import { getUncachableStripeClient } from "../stripeClient";
 import { confirmRegistrationSession } from "./registrations";
 import { riderCardError } from "../lib/stripeErrors";
+import { clubStripeOf, onClub, onClubOrPlatform, transferTo } from "../lib/stripePayments";
 
 // Lets a rider fix what keeps them from Quick Check-In without staff:
 // pay an unfinished registration, sign the waiver, or add the transponder or
@@ -106,11 +107,13 @@ router.post("/rider/registrations/:regId/checkout", requireRiderAuth, async (req
   try {
     const stripe = await getUncachableStripeClient();
     const appUrl = getAppUrl();
+    const cs = clubStripeOf(club)!;
     // Never start a second charge for the same entries: reuse a checkout that's
     // still open (from registration or an earlier tap), and stop if one was paid.
     // The entries' own checkout sessions first (exact, however busy Stripe is).
     for (const sessionId of new Set(pending.map(r => r.stripeSessionId).filter((v): v is string => !!v))) {
-      const own = await stripe.checkout.sessions.retrieve(sessionId).catch(() => null);
+      if (!sessionId.startsWith("cs_")) continue;
+      const own = await onClubOrPlatform(cs, o => stripe.checkout.sessions.retrieve(sessionId, undefined, o)).catch(() => null);
       if (own?.payment_status === "paid") {
         await confirmRegistrationSession(own);
         return res.status(409).json({ error: "Your payment went through. It can take a minute to show; pull down to refresh." });
@@ -125,7 +128,7 @@ router.post("/rider/registrations/:regId/checkout", requireRiderAuth, async (req
     const recentSessions = await stripe.checkout.sessions.list({
       created: { gte: Math.floor(Date.now() / 1000) - 24 * 3600 },
       limit: 100,
-    });
+    }, onClub(cs));
     const mine = recentSessions.data.filter(covers);
     if (mine.some(s => s.status === "complete" && s.payment_status === "paid")) {
       return res.status(409).json({ error: "Your payment went through. It can take a minute to show; pull down to refresh." });
@@ -140,11 +143,11 @@ router.post("/rider/registrations/:regId/checkout", requireRiderAuth, async (req
         quantity: 1,
       })),
       customer_email: rider.email ?? undefined,
-      payment_intent_data: { transfer_data: { destination: club.stripeAccountId } },
+      payment_intent_data: { ...transferTo(cs) },
       metadata: { registrationIds: pending.map(r => r.id).join(","), type: "registration" },
       success_url: `${appUrl}/register/${event.id}?reg_id=${first.id}&session_id={CHECKOUT_SESSION_ID}&payment_success=1`,
       cancel_url: `${appUrl}/register/${event.id}?payment_cancelled=1`,
-    });
+    }, onClub(cs));
     // Remember the session on each entry, with its own share: class fee, and
     // add-ons on the first entry (same split as the line items above).
     const classCents = perClass > 0 ? Math.round(perClass * 100) : 0;

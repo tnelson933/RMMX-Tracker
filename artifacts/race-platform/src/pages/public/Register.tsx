@@ -229,6 +229,8 @@ interface PendingPayment {
   checkoutUrl: string;
   /** Stripe's form shown in this page (embedded checkout). */
   clientSecret?: string | null;
+  /** The club's own Stripe account the payment is on. */
+  stripeAccount?: string | null;
   registrationId: number;
   sessionId: string | null;
   riderName: string;
@@ -827,6 +829,7 @@ export default function Register() {
         setPendingPayment({
           checkoutUrl: json.checkoutUrl ?? "",
           clientSecret: json.clientSecret ?? null,
+          stripeAccount: json.stripeAccount ?? null,
           registrationId: json.registrationId,
           sessionId: json.sessionId ?? null,
           riderName: json.riderName,
@@ -973,7 +976,7 @@ export default function Register() {
           {/* Stripe's payment form, in this page */}
           {pendingPayment.clientSecret && (
             <Card><CardContent className="p-2 sm:p-4">
-              <EmbeddedCardForm clientSecret={pendingPayment.clientSecret} onComplete={() => verifyPayment(pendingPayment.registrationId, pendingPayment.sessionId)} />
+              <EmbeddedCardForm clientSecret={pendingPayment.clientSecret} stripeAccount={pendingPayment.stripeAccount} onComplete={() => verifyPayment(pendingPayment.registrationId, pendingPayment.sessionId)} />
             </CardContent></Card>
           )}
 

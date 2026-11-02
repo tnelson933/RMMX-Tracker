@@ -19,6 +19,8 @@ export interface CardStartOptions { embedded?: boolean; readerId?: string }
 export interface CardStarted {
   sessionId: string;
   clientSecret?: string | null;
+  /** The club's own Stripe account the payment is on (the in-page form loads for it). */
+  stripeAccount?: string | null;
   checkoutUrl?: string | null;
   paymentIntentId?: string | null;
 }
@@ -144,7 +146,7 @@ export function CardPaymentPanel({ eventId, amount, current, start, onCancel }: 
       {starting && <div className="flex justify-center py-8"><Loader2 className="animate-spin text-muted-foreground" /></div>}
 
       {!starting && mode === "embedded" && current?.clientSecret && (
-        <EmbeddedCardForm clientSecret={current.clientSecret} />
+        <EmbeddedCardForm clientSecret={current.clientSecret} stripeAccount={current.stripeAccount} />
       )}
 
       {!starting && mode === "reader" && current?.paymentIntentId && (
@@ -158,7 +160,8 @@ export function CardPaymentPanel({ eventId, amount, current, start, onCancel }: 
         </div>
       )}
 
-      {!starting && mode === "phone" && current?.checkoutUrl && (
+      {/* The in-page form isn't available (no publishable key yet): the server sent Stripe's page instead. */}
+      {!starting && (mode === "phone" || (mode === "embedded" && !current?.clientSecret)) && current?.checkoutUrl && (
         <>
           <p className="text-sm text-center flex items-center gap-1.5"><Smartphone size={16} /> Rider scans to pay {money} on their phone</p>
           <div className="p-3 bg-white rounded-xl border shadow-sm"><QRCodeSVG value={current.checkoutUrl} size={180} /></div>

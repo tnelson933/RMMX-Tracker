@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { clubsTable, usersTable, registrationsTable, eventsTable } from "@workspace/db";
 import { and, eq, gt, isNotNull, isNull, ne } from "drizzle-orm";
+import type Stripe from "stripe";
 import { getUncachableStripeClient } from "../stripeClient";
 import { isStripeAccountUnreachable } from "../lib/stripeErrors";
 
@@ -26,6 +27,41 @@ async function syncOnboardingState(clubId: number, account: { charges_enabled?: 
     await db.update(clubsTable).set({ stripeOnboardingComplete: complete }).where(eq(clubsTable.id, clubId));
   }
   return complete;
+}
+
+/**
+ * A club's own Stripe account (Stripe's "full dashboard" / Standard kind):
+ * the club has its own Stripe login, and Stripe bills its processing fees and
+ * any losses (refunds, disputes) to the club. RM Roost charges it directly, so
+ * none of the club's money passes through RM Roost's account.
+ */
+async function createOwnAccount(stripe: Stripe, clubId: number, clubName: string, email: string | undefined, key: string) {
+  return stripe.accounts.create({
+    email,
+    // Checkout needs a business name; the club can change it during setup.
+    business_profile: { name: clubName.slice(0, 100) },
+    controller: {
+      stripe_dashboard: { type: "full" },
+      fees: { payer: "account" },
+      losses: { payments: "stripe" },
+      requirement_collection: "stripe",
+    },
+    capabilities: { card_payments: { requested: true }, transfers: { requested: true } },
+    metadata: { clubId: String(clubId) },
+  }, { idempotencyKey: `club-${clubId}-own-account-${key}` });
+}
+
+/**
+ * Switching from an older Express account: once the new account can take
+ * payments and pay out, it replaces the old one and charges go to it directly.
+ */
+async function finishSwitch(stripe: Stripe, clubId: number, pendingId: string): Promise<boolean> {
+  const account = await stripe.accounts.retrieve(pendingId);
+  if (!isOnboardingComplete(account)) return false;
+  await db.update(clubsTable)
+    .set({ stripeAccountId: pendingId, stripeDirectCharges: true, stripePendingAccountId: null, stripeOnboardingComplete: true, stripeTerminalLocationId: null })
+    .where(and(eq(clubsTable.id, clubId), eq(clubsTable.stripePendingAccountId, pendingId)));
+  return true;
 }
 
 async function requireAuth(req: any, res: any): Promise<{ userId: number; clubId: number | null; role: string } | null> {
@@ -68,6 +104,19 @@ router.get("/stripe/connect/status", async (req, res) => {
 
   let accountEmail: string | null = null;
   let onboardingComplete = club.stripeOnboardingComplete ?? false;
+  let ownAccount = !!club.stripeDirectCharges;
+  let switchPending = !!club.stripePendingAccountId;
+  if (club.stripePendingAccountId) {
+    try {
+      const stripe = await getUncachableStripeClient();
+      if (await finishSwitch(stripe, auth.clubId, club.stripePendingAccountId)) {
+        club.stripeAccountId = club.stripePendingAccountId;
+        ownAccount = true;
+        switchPending = false;
+        onboardingComplete = true;
+      }
+    } catch { /* non-fatal: the old account keeps working */ }
+  }
   // The saved account exists in the club row but RM Roost's Stripe can't use it
   // (other mode or keys, or deleted): card payments fail until it's reconnected.
   let needsReconnect = false;
@@ -90,6 +139,10 @@ router.get("/stripe/connect/status", async (req, res) => {
     connected: !!club.stripeAccountId && !needsReconnect,
     onboardingComplete: needsReconnect ? false : onboardingComplete,
     needsReconnect,
+    // The club's own Stripe account (charged directly; RM Roost's account isn't involved).
+    ownAccount,
+    // Switching from an older Express account: the new one's setup isn't finished yet.
+    switchPending,
     accountId: club.stripeAccountId ?? null,
     email: accountEmail,
   });
@@ -149,21 +202,34 @@ router.post("/stripe/connect/start", async (req, res) => {
       ? req.body.email.trim()
       : undefined;
 
+    // An older Express club switching to its own account: set the new one up
+    // while the old one keeps taking payments; it takes over once it's ready.
+    if (accountId && !club.stripeDirectCharges && req.body?.switchAccount === true) {
+      let pendingId = club.stripePendingAccountId;
+      if (!pendingId) {
+        const created = await createOwnAccount(stripe, auth.clubId, club.name, emailOverride ?? club.contactEmail ?? undefined, `switch-${accountId}`);
+        const [stored] = await db.update(clubsTable).set({ stripePendingAccountId: created.id })
+          .where(and(eq(clubsTable.id, auth.clubId), isNull(clubsTable.stripePendingAccountId)))
+          .returning({ pending: clubsTable.stripePendingAccountId });
+        pendingId = stored?.pending ?? created.id;
+      }
+      const link = await stripe.accountLinks.create({
+        account: pendingId,
+        refresh_url: `${appUrl}/payments?refresh=1`,
+        return_url: `${appUrl}/api/stripe/connect/return`,
+        type: "account_onboarding",
+      });
+      return res.json({ url: link.url });
+    }
+
     if (!accountId) {
       // Two taps (or two organizers) at once must not create two Stripe accounts:
       // the idempotency key makes Stripe return the same account for this club
       // (for 24 hours), and only a club with no account yet gets one stored.
-      const account = await stripe.accounts.create({
-        type: "express",
-        email: emailOverride ?? club.contactEmail ?? undefined,
-        capabilities: {
-          card_payments: { requested: true },
-          transfers: { requested: true },
-        },
-      }, { idempotencyKey: `club-${auth.clubId}-connect-account-${club.stripeAccountId ?? "first"}` });
+      const account = await createOwnAccount(stripe, auth.clubId, club.name, emailOverride ?? club.contactEmail ?? undefined, `new-${club.stripeAccountId ?? "first"}`);
       const [stored] = await db
         .update(clubsTable)
-        .set({ stripeAccountId: account.id, stripeOnboardingComplete: false })
+        .set({ stripeAccountId: account.id, stripeDirectCharges: true, stripeOnboardingComplete: false, stripeTerminalLocationId: null })
         .where(and(eq(clubsTable.id, auth.clubId), isNull(clubsTable.stripeAccountId)))
         .returning({ stripeAccountId: clubsTable.stripeAccountId });
       if (stored?.stripeAccountId) {
@@ -196,7 +262,10 @@ router.get("/stripe/connect/return", async (req, res) => {
       const [user] = await db.select().from(usersTable).where(eq(usersTable.id, sessionUserId));
       if (user?.clubId) {
         const [club] = await db.select().from(clubsTable).where(eq(clubsTable.id, user.clubId));
-        if (club?.stripeAccountId) {
+        if (club?.stripePendingAccountId) {
+          const stripe = await getUncachableStripeClient();
+          await finishSwitch(stripe, user.clubId, club.stripePendingAccountId);
+        } else if (club?.stripeAccountId) {
           const stripe = await getUncachableStripeClient();
           const account = await stripe.accounts.retrieve(club.stripeAccountId);
           await syncOnboardingState(user.clubId, account, club.stripeOnboardingComplete ?? false);
@@ -216,6 +285,9 @@ router.get("/stripe/connect/dashboard-link", async (req, res) => {
 
   const [club] = await db.select().from(clubsTable).where(eq(clubsTable.id, auth.clubId));
   if (!club?.stripeAccountId) return res.status(400).json({ error: "Card payments aren't set up for your club yet. Go to Payments and connect Stripe." });
+
+  // A club's own account: they sign in to their own Stripe dashboard.
+  if (club.stripeDirectCharges) return res.json({ url: "https://dashboard.stripe.com/" });
 
   try {
     const stripe = await getUncachableStripeClient();
@@ -253,7 +325,7 @@ router.delete("/stripe/connect", async (req, res) => {
 
   await db
     .update(clubsTable)
-    .set({ stripeAccountId: null, stripeOnboardingComplete: false })
+    .set({ stripeAccountId: null, stripeOnboardingComplete: false, stripeDirectCharges: false, stripePendingAccountId: null, stripeTerminalLocationId: null })
     .where(eq(clubsTable.id, auth.clubId));
   return res.json({ ok: true });
 });

@@ -21,7 +21,7 @@ import { canManageRider } from "../lib/riderAccess";
 import { riderMobileTokensTable } from "@workspace/db";
 import { reminderAvailability, reminderStatusText, rentalReplacementCharge, sendRentalReminders, unreturnedRentals, type ReminderStatus } from "../lib/rentalReminders";
 import { addonIsPaid, confirmAddonPayment, recordCardAddonPending, recordCashAddon, type AddonItem } from "../lib/addonPayments";
-import { chargeOnReader, checkoutUiParams, retrievePayment } from "../lib/stripePayments";
+import { browserAccount, chargeOnReader, embeddedAllowed, checkoutUiParams, clubStripeOf, onClub, onClubOrPlatform, registrationClubStripe, retrievePayment, transferTo } from "../lib/stripePayments";
 
 /** Payment-check failures: an unknown/invalid Stripe session is the caller's error (404), anything else a 500 without Stripe's internals. */
 function sendPaymentCheckError(res: any, err: any) {
@@ -662,13 +662,14 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
     // A payment already started for this entry: if it was paid, record it; if a
     // hosted checkout is still open, reuse it rather than starting a second charge.
     if (reg.stripeSessionId) {
-      const previous = await retrievePayment(stripeForCheck, reg.stripeSessionId).catch(() => null);
+      const regClub = await registrationClubStripe(reg.id);
+      const previous = await retrievePayment(stripeForCheck, reg.stripeSessionId, regClub).catch(() => null);
       if (previous?.payment_status === "paid") {
         await confirmRegistrationSession(previous);
         return res.status(409).json({ error: "This entry was already paid by card. Refresh to see it." });
       }
       if (!embedded && !readerId && reg.stripeSessionId.startsWith("cs_")) {
-        const open = await stripeForCheck.checkout.sessions.retrieve(reg.stripeSessionId).catch(() => null);
+        const open = await onClubOrPlatform(regClub, o => stripeForCheck.checkout.sessions.retrieve(reg.stripeSessionId!, undefined, o)).catch(() => null);
         if (open?.status === "open" && open.url) return res.json({ checkoutUrl: open.url, sessionId: open.id });
       }
     }
@@ -744,7 +745,7 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
 
     if (readerId) {
       const charged = await chargeOnReader(stripe, {
-        clubId: event.clubId, readerId, destination: club.stripeAccountId, amountCents: chargeCents,
+        clubId: event.clubId, club: clubStripeOf(club)!, readerId, amountCents: chargeCents,
         description: `${event.name}: entry`, metadata,
       });
       if (!charged.ok) return res.status(409).json({ error: charged.error });
@@ -759,19 +760,19 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
       line_items: lineItems,
       customer_email: rider?.email ?? undefined,
       payment_intent_data: {
-        transfer_data: { destination: club.stripeAccountId },
+        ...transferTo(clubStripeOf(club)!),
       },
       metadata,
-      ...checkoutUiParams(embedded, {
+      ...checkoutUiParams(await embeddedAllowed(embedded), {
         success_url: `${appUrl}/events/${eventId}/registrations`,
         cancel_url: `${appUrl}/events/${eventId}/registrations`,
       }),
-    });
+    }, onClub(clubStripeOf(club)!));
     await db.update(registrationsTable)
       .set({ stripeSessionId: session.id, amountDue: (chargeCents / 100).toFixed(2) })
       .where(eq(registrationsTable.id, regId));
 
-    return res.json({ checkoutUrl: session.url, clientSecret: session.client_secret ?? null, sessionId: session.id, entryFee, rentalFee, purchaseOptionsTotal });
+    return res.json({ checkoutUrl: session.url, clientSecret: session.client_secret ?? null, stripeAccount: browserAccount(clubStripeOf(club)!), sessionId: session.id, entryFee, rentalFee, purchaseOptionsTotal });
   } catch (err: any) {
     req.log?.error({ err: err?.message }, "[charge] Error");
     return res.status(500).json({ error: organizerCardError(err) });
@@ -782,12 +783,12 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
 async function addonOnReader(req: any, eventId: number, regId: number, item: AddonItem, amount: number, label: string): Promise<{ status: number; body: unknown }> {
   const readerId = typeof req.body?.readerId === "string" ? req.body.readerId : "";
   const [event] = await db.select({ clubId: eventsTable.clubId, name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, eventId));
-  const [club] = event ? await db.select({ stripeAccountId: clubsTable.stripeAccountId }).from(clubsTable).where(eq(clubsTable.id, event.clubId)) : [];
+  const [club] = event ? await db.select({ stripeAccountId: clubsTable.stripeAccountId, stripeDirectCharges: clubsTable.stripeDirectCharges }).from(clubsTable).where(eq(clubsTable.id, event.clubId)) : [];
   if (!event || !club?.stripeAccountId) return { status: 400, body: { error: ORGANIZER_NO_STRIPE } };
   try {
     const stripe = await getUncachableStripeClient();
     const charged = await chargeOnReader(stripe, {
-      clubId: event.clubId, readerId, destination: club.stripeAccountId, amountCents: Math.round(amount * 100),
+      clubId: event.clubId, club: clubStripeOf(club)!, readerId, amountCents: Math.round(amount * 100),
       description: `${event.name}: ${label}`, metadata: { registrationId: String(regId), type: item, eventId: String(eventId) },
     });
     if (!charged.ok) return { status: 409, body: { error: charged.error } };
@@ -857,17 +858,17 @@ router.post("/events/:eventId/registrations/:regId/add-transponder-rental", asyn
         }],
         customer_email: rider?.email ?? undefined,
         payment_intent_data: {
-          transfer_data: { destination: club.stripeAccountId },
+          ...transferTo(clubStripeOf(club)!),
         },
         metadata: { registrationId: String(regId), type: "transponder_rental" },
-        ...checkoutUiParams(req.body?.embedded === true, {
+        ...checkoutUiParams(await embeddedAllowed(req.body?.embedded === true), {
           success_url: `${appUrl}/events/${eventId}/checkin`,
           cancel_url: `${appUrl}/events/${eventId}/checkin`,
         }),
-      });
+      }, onClub(clubStripeOf(club)!));
 
       await recordCardAddonPending(eventId, regId, "transponder_rental", rentalFee, session.id);
-      return res.json({ checkoutUrl: session.url, clientSecret: session.client_secret ?? null, sessionId: session.id, rentalFee });
+      return res.json({ checkoutUrl: session.url, clientSecret: session.client_secret ?? null, stripeAccount: browserAccount(clubStripeOf(club)!), sessionId: session.id, rentalFee });
     } catch (err: any) {
       req.log?.error({ err: err?.message }, "[add-transponder-rental] Error");
       return res.status(500).json({ error: organizerCardError(err) });
@@ -934,17 +935,17 @@ router.post("/events/:eventId/registrations/:regId/add-rfid-sticker", async (req
         }],
         customer_email: rider?.email ?? undefined,
         payment_intent_data: {
-          transfer_data: { destination: club.stripeAccountId },
+          ...transferTo(clubStripeOf(club)!),
         },
         metadata: { registrationId: String(regId), type: "rfid_sticker" },
-        ...checkoutUiParams(req.body?.embedded === true, {
+        ...checkoutUiParams(await embeddedAllowed(req.body?.embedded === true), {
           success_url: `${appUrl}/events/${eventId}/checkin`,
           cancel_url: `${appUrl}/events/${eventId}/checkin`,
         }),
-      });
+      }, onClub(clubStripeOf(club)!));
 
       await recordCardAddonPending(eventId, regId, "rfid_sticker", stickerFee, session.id);
-      return res.json({ checkoutUrl: session.url, clientSecret: session.client_secret ?? null, sessionId: session.id, stickerFee });
+      return res.json({ checkoutUrl: session.url, clientSecret: session.client_secret ?? null, stripeAccount: browserAccount(clubStripeOf(club)!), sessionId: session.id, stickerFee });
     } catch (err: any) {
       req.log?.error({ err: err?.message }, "[add-rfid-sticker] Error");
       return res.status(500).json({ error: organizerCardError(err) });
@@ -1022,17 +1023,17 @@ router.post("/events/:eventId/registrations/:regId/add-rm-trackr", async (req, r
         }],
         customer_email: rider?.email ?? undefined,
         payment_intent_data: {
-          transfer_data: { destination: club.stripeAccountId },
+          ...transferTo(clubStripeOf(club)!),
         },
         metadata: { registrationId: String(regId), type: "rm_trackr" },
-        ...checkoutUiParams(req.body?.embedded === true, {
+        ...checkoutUiParams(await embeddedAllowed(req.body?.embedded === true), {
           success_url: `${appUrl}/events/${eventId}/checkin`,
           cancel_url: `${appUrl}/events/${eventId}/checkin`,
         }),
-      });
+      }, onClub(clubStripeOf(club)!));
 
       await recordCardAddonPending(eventId, regId, "rm_trackr", price, session.id);
-      return res.json({ checkoutUrl: session.url, clientSecret: session.client_secret ?? null, sessionId: session.id, price });
+      return res.json({ checkoutUrl: session.url, clientSecret: session.client_secret ?? null, stripeAccount: browserAccount(clubStripeOf(club)!), sessionId: session.id, price });
     } catch (err: any) {
       req.log?.error({ err: err?.message }, "[add-rm-trackr] Error");
       return res.status(500).json({ error: organizerCardError(err) });
@@ -1050,7 +1051,7 @@ router.post("/public/registrations/:id/verify-rm-trackr", async (req, res) => {
 
   try {
     const stripe = await getUncachableStripeClient();
-    const session = await retrievePayment(stripe, sessionId);
+    const session = await retrievePayment(stripe, sessionId, await registrationClubStripe(id));
 
     if (session.metadata?.registrationId !== String(id) || session.metadata?.type !== "rm_trackr") {
       return res.status(403).json({ error: "This payment link doesn't match this RM TrackR purchase. Start the payment again." });
@@ -1080,7 +1081,7 @@ router.post("/public/registrations/:id/verify-rfid-sticker", async (req, res) =>
 
   try {
     const stripe = await getUncachableStripeClient();
-    const session = await retrievePayment(stripe, sessionId);
+    const session = await retrievePayment(stripe, sessionId, await registrationClubStripe(id));
 
     if (session.metadata?.registrationId !== String(id) || session.metadata?.type !== "rfid_sticker") {
       return res.status(403).json({ error: "This payment link doesn't match this sticker purchase. Start the payment again." });
@@ -1113,7 +1114,7 @@ router.post("/public/registrations/:id/verify-transponder-rental", async (req, r
 
   try {
     const stripe = await getUncachableStripeClient();
-    const session = await retrievePayment(stripe, sessionId);
+    const session = await retrievePayment(stripe, sessionId, await registrationClubStripe(id));
 
     if (session.metadata?.registrationId !== String(id) || session.metadata?.type !== "transponder_rental") {
       return res.status(403).json({ error: "This payment link doesn't match this rental. Start the payment again." });
@@ -1466,9 +1467,13 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     for (const prior of earlier) {
       if (prior.paymentStatus !== "paid" && prior.status === "pending" && prior.stripeSessionId) {
         const stripe = await getUncachableStripeClient().catch(() => null);
-        const session = stripe ? await stripe.checkout.sessions.retrieve(prior.stripeSessionId).catch(() => null) : null;
+        const priorClub = await registrationClubStripe(prior.id);
+        const sessionId = prior.stripeSessionId;
+        const session = stripe && sessionId.startsWith("cs_")
+          ? await onClubOrPlatform(priorClub, o => stripe.checkout.sessions.retrieve(sessionId, undefined, o)).catch(() => null)
+          : null;
         if (session?.payment_status === "paid") await confirmRegistrationSession(session);
-        else if (session?.status === "open") await stripe!.checkout.sessions.expire(prior.stripeSessionId).catch(() => {});
+        else if (session?.status === "open") await onClubOrPlatform(priorClub, o => stripe!.checkout.sessions.expire(sessionId, undefined, o)).catch(() => {});
       }
     }
     const current = earlier.length
@@ -1854,10 +1859,10 @@ router.post("/public/events/:eventId/register", async (req, res) => {
           mode: "payment",
           line_items: lineItems,
           payment_intent_data: {
-            transfer_data: { destination: club.stripeAccountId },
+            ...transferTo(clubStripeOf(club)!),
           },
           // The website shows the form in its own page; other callers (the rider app) get Stripe's page.
-          ...checkoutUiParams(req.body?.embeddedCheckout === true, {
+          ...checkoutUiParams(await embeddedAllowed(req.body?.embeddedCheckout === true), {
             success_url: `${appUrl}/register/${eventId}?reg_id=${primaryRegId}&session_id={CHECKOUT_SESSION_ID}&payment_success=1`,
             cancel_url: `${appUrl}/register/${eventId}?payment_cancelled=1`,
           }),
@@ -1867,7 +1872,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
             eventId: String(eventId),
           },
           customer_email: email,
-        });
+        }, onClub(clubStripeOf(club)!));
 
         // Each entry's own charge: its class fee; add-ons ride on the first entry.
         for (const [idx, reg] of insertedRegs.entries()) {
@@ -1881,7 +1886,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
           return res.status(201).json({
             requiresPayment: true,
             checkoutUrl: session.url ?? null,
-            clientSecret: session.client_secret ?? null,
+            clientSecret: session.client_secret ?? null, stripeAccount: browserAccount(clubStripeOf(club)!),
             sessionId: session.id,
             registrationId: primaryRegId,
             riderName: `${rider.firstName} ${rider.lastName}`,
@@ -2343,7 +2348,7 @@ router.post("/public/registrations/:id/verify-payment", async (req, res) => {
 
   try {
     const stripe = await getUncachableStripeClient();
-    const session = await retrievePayment(stripe, sessionId);
+    const session = await retrievePayment(stripe, sessionId, await registrationClubStripe(id));
 
     // Support both multi-class (registrationIds comma-sep) and single-class (registrationId)
     const regIdsStr = session.metadata?.registrationIds || session.metadata?.registrationId;

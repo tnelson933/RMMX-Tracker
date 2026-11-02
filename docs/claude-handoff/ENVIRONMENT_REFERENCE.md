@@ -35,6 +35,7 @@ process environment or add a reviewed development-only loader.
 | `TWILIO_AUTH_TOKEN` | Twilio server credential |
 | `TWILIO_FROM_NUMBER` | Twilio sending number (or `TWILIO_MESSAGING_SERVICE_SID`) |
 | `STRIPE_PUBLISHABLE_KEY` | Stripe publishable key (pk_live_/pk_test_, public by design): shows Stripe's payment form inside the website instead of a new window. Must be the same Stripe account and mode as STRIPE_SECRET_KEY |
+| `STRIPE_CONNECT_WEBHOOK_SECRET` | Signing secret of the Stripe **Connect** webhook endpoint (`/api/stripe/connect-webhook`, "events on connected accounts"): card payments on clubs' own accounts are confirmed from it |
 | `TWILIO_SMS_WEBHOOK_URL` | Optional. The incoming-message webhook URL set on the Twilio number, if not `APP_URL` + `/api/twilio/sms` (replies are verified against the URL Twilio signed) |
 | `GITHUB_TOKEN` | Support investigation: code search, and pull requests for approved code fixes (contents + pull requests write) |
 | `SUPPORT_GITHUB_REPO` | Repository the support investigation reads (default `tnelson933/RMMX-Tracker`) |

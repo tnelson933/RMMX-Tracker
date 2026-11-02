@@ -26,6 +26,7 @@ const STAFF_RULES: RouteRule[] = [
   { pattern: /^\/public(\/|$)/, permissions: [] },
   { pattern: /^\/rider(\/|$)/, permissions: [] },
   { pattern: /^\/stripe\/webhook/, permissions: [] },
+  { pattern: /^\/stripe\/connect-webhook$/, permissions: [] },
   { pattern: /^\/stripe\/config$/, permissions: [] },
 
   // ── Rider-level discount-code assignment (discount_codes, all methods) ────

@@ -61,7 +61,7 @@ function useStripeConnectStatus() {
         const body = await res.json().catch(() => null);
         throw new Error(responseErrorMessage(res.status, body));
       }
-      return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean; needsReconnect?: boolean; accountId: string | null; email?: string | null; source?: string }>;
+      return res.json() as Promise<{ connected: boolean; onboardingComplete: boolean; needsReconnect?: boolean; ownAccount?: boolean; switchPending?: boolean; accountId: string | null; email?: string | null; source?: string }>;
     },
     // Stripe onboarding opens in another tab (or, in RM Roost, the system
     // browser), so re-check whenever the organizer comes back to this window.
@@ -117,12 +117,13 @@ export default function StripeConnect() {
   }, [user?.email]);
 
   const startMutation = useMutation({
-    mutationFn: async () => {
+    // switchAccount: move an older Express connection to the club's own Stripe account.
+    mutationFn: async (opts?: { switchAccount?: boolean }) => {
       const res = await fetch("/api/stripe/connect/start", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: stripeEmail.trim() || undefined }),
+        body: JSON.stringify({ email: stripeEmail.trim() || undefined, switchAccount: opts?.switchAccount === true }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -324,7 +325,7 @@ export default function StripeConnect() {
               </p>
             </div>
             <Button
-              onClick={() => startMutation.mutate()}
+              onClick={() => startMutation.mutate(undefined)}
               disabled={startMutation.isPending}
               className="font-heading uppercase tracking-wider"
               size="lg"
@@ -406,7 +407,7 @@ export default function StripeConnect() {
                 <span>
                   Your Stripe account setup isn't fully complete.{" "}
                   {offline ? "Finish setup on the RM Roost website to take payments and receive payouts."
-                    : canManage ? <><button onClick={() => startMutation.mutate()} className="underline underline-offset-2 font-medium hover:opacity-80">Finish setup</button> to take payments and receive payouts.</>
+                    : canManage ? <><button onClick={() => startMutation.mutate(status.switchPending ? { switchAccount: true } : undefined)} className="underline underline-offset-2 font-medium hover:opacity-80">Finish setup</button> to take payments and receive payouts.</>
                     : "Ask your club organizer to finish setup."}
                 </span>
               </div>
@@ -415,7 +416,26 @@ export default function StripeConnect() {
             {status.onboardingComplete && (
               <p className="text-sm text-muted-foreground">
                 Payment collection is active. On any event, open the edit form and check <strong>Collect Payments</strong> to charge riders an entry fee at registration.
+                {status.ownAccount && <> Payments go straight to your club's own Stripe account, and Stripe's fees are billed to it.</>}
               </p>
+            )}
+
+            {/* Older connections: move to the club's own Stripe account (charged directly, own fees and dashboard). */}
+            {status.connected && !status.ownAccount && !offline && canManage && (
+              <div className="flex flex-wrap items-start gap-3 rounded-md border border-primary/30 bg-primary/5 px-4 py-3 text-sm">
+                <AlertCircle size={15} className="mt-0.5 shrink-0 text-primary" />
+                <div className="flex-1 min-w-[14rem] space-y-1">
+                  <p className="font-semibold">{status.switchPending ? "Finish switching to your own Stripe account" : "Switch to your own Stripe account"}</p>
+                  <p className="text-muted-foreground">
+                    {status.switchPending
+                      ? "Your new account's setup isn't finished. Until it is, payments keep going to your current account."
+                      : "Your club gets its own full Stripe account: payments go straight to it, with its own dashboard and fees. Needed for card readers. Your current account keeps working until the new one is set up."}
+                  </p>
+                </div>
+                <Button size="sm" onClick={() => startMutation.mutate({ switchAccount: true })} disabled={startMutation.isPending} className="font-heading uppercase tracking-wider">
+                  {startMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : status.switchPending ? "Finish setup" : "Switch account"}
+                </Button>
+              </div>
             )}
             {!offline && canManage && (
             <Button
@@ -435,17 +455,17 @@ export default function StripeConnect() {
         </Card>
       )}
 
-      <Card className="bg-muted/30">
-        {/* In-person card payments at check-in (optional) */}
-        {status?.connected && status.onboardingComplete && !offline && canManage && <CardReaders />}
+      {/* In-person card payments at check-in (optional; the club's own Stripe account) */}
+      {status?.connected && status.onboardingComplete && status.ownAccount && !offline && canManage && <CardReaders />}
 
+      <Card className="bg-muted/30">
         <CardContent className="pt-6">
           <h3 className="font-heading font-semibold uppercase tracking-wide text-sm mb-3">How it works</h3>
           <div className="grid gap-3 sm:grid-cols-3 text-sm text-muted-foreground">
             <div className="space-y-1">
               <div className="font-medium text-foreground">1. Connect</div>
               <div>
-                Set up your Stripe Express account with your banking info. First-time setup requires{" "}
+                Set up your club's own Stripe account (or sign in with one you have) and add your banking info. First-time setup requires{" "}
                 <a
                   href="https://dashboard.stripe.com/connect"
                   target="_blank"

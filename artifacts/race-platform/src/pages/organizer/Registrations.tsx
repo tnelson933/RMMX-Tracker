@@ -592,6 +592,7 @@ export default function Registrations() {
       sessionId: json.sessionId,
       checkoutUrl: json.checkoutUrl ?? null,
       clientSecret: json.clientSecret ?? null,
+      stripeAccount: json.stripeAccount ?? null,
       paymentIntentId: json.paymentIntentId ?? null,
       entryFee: json.entryFee ?? prev?.entryFee ?? 0,
       rentalFee: json.rentalFee ?? prev?.rentalFee ?? 0,

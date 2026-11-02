@@ -13,6 +13,14 @@ export const clubsTable = pgTable("clubs", {
   description: text("description"),
   stripeAccountId: text("stripe_account_id"),
   stripeOnboardingComplete: boolean("stripe_onboarding_complete").notNull().default(false),
+  /**
+   * The club's Stripe account is its own (Standard): charges are made on it
+   * directly and Stripe bills its fees and losses to the club. False: an older
+   * Express account, charged through RM Roost's account and transferred.
+   */
+  stripeDirectCharges: boolean("stripe_direct_charges").notNull().default(false),
+  /** A Standard account the club is switching to, used once its Stripe setup is finished. */
+  stripePendingAccountId: text("stripe_pending_account_id"),
   /** Stripe Terminal location the club's card readers are registered to. */
   stripeTerminalLocationId: text("stripe_terminal_location_id"),
   autoDnfEnabled: boolean("auto_dnf_enabled").notNull().default(false),

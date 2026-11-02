@@ -69,9 +69,13 @@ development only. All commands run from the repo root (`RM-Tracker/`).
   desktop app. `APP_URL` in `.env` must match, because it builds Stripe return URLs.
 - Stripe: the local `.env` uses a **test-mode** restricted key. Dev Club (#1000) is
   onboarded to Connect in test mode, and test event 1 has a paid test registration.
-  Local test organizer: `.local-pg/e2e-credentials.txt` (gitignored). Payments are
-  destination charges with no `application_fee_amount`: the club gets the full fee
-  and the platform's Stripe balance pays the processing fees. Both are launched by `scripts/dev-local.mjs`, which loads the
+  Local test organizer: `.local-pg/e2e-credentials.txt` (gitignored). Clubs connect their own
+  Stripe (Standard, "full dashboard") account and are charged **directly** on it
+  (`stripeAccount` request option, `clubs.stripe_direct_charges`): the club gets the money
+  and pays Stripe's fees and losses; the platform account isn't in the flow. Clubs on older
+  Express accounts stay on destination charges (platform pays fees) until they switch on the
+  Payments page. See `artifacts/api-server/src/lib/stripePayments.ts`. Dev Club #1000 is still
+  an Express test account. Both are launched by `scripts/dev-local.mjs`, which loads the
   root `.env` (gitignored; template `.env.example`). AI env vars are placeholders, so
   Rocky/AI/TTS routes fail locally until real keys are configured.
 - `node scripts/dev-bootstrap-admin.mjs [email] [club] [state]`: creates the first

@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db, clubsTable, eventsTable, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { getStripePublishableKey, getUncachableStripeClient } from "../stripeClient";
-import { cancelReaderCharge, clubTerminalLocation } from "../lib/stripePayments";
+import { cancelReaderCharge, clubStripe, clubTerminalLocation, onClub, type ClubStripe } from "../lib/stripePayments";
 import { checkStatesCode } from "../lib/cardReaderInput";
 
 /**
@@ -10,9 +10,9 @@ import { checkStatesCode } from "../lib/cardReaderInput";
  * S700) for in-person card payments at check-in, and the publishable key the
  * website needs to show Stripe's payment form in its own page.
  *
- * Readers live on the platform's Stripe account, registered to one Terminal
- * location per club; payments on them are paid out to the club like online
- * ones. Payments page: add (by the code the reader shows), rename, remove.
+ * Readers live on the club's own Stripe account (clubs on Standard accounts;
+ * older Express clubs switch first), registered to one Terminal location per
+ * club, so reader payments go straight to the club. Payments page: add (by the code the reader shows), rename, remove.
  * Check-in: list the club's readers, cancel a charge, and in test mode tap a
  * simulated card.
  */
@@ -45,11 +45,17 @@ function readerView(r: any) {
   };
 }
 
+/** The club's Stripe account when it can use card readers (its own Standard account). */
+async function readerAccount(clubId: number): Promise<ClubStripe | null> {
+  const c = await clubStripe(clubId);
+  return c?.direct ? c : null;
+}
+
 async function listClubReaders(clubId: number) {
-  const location = await clubTerminalLocation(clubId);
-  if (!location) return [];
+  const [location, c] = await Promise.all([clubTerminalLocation(clubId), readerAccount(clubId)]);
+  if (!location || !c) return [];
   const stripe = await getUncachableStripeClient();
-  const readers = await stripe.terminal.readers.list({ location, limit: 100 });
+  const readers = await stripe.terminal.readers.list({ location, limit: 100 }, onClub(c));
   return readers.data.map(readerView);
 }
 
@@ -75,6 +81,8 @@ router.post("/stripe/connect/readers", async (req, res) => {
 
   const [club] = await db.select().from(clubsTable).where(eq(clubsTable.id, clubId));
   if (!club?.stripeAccountId) return res.status(400).json({ error: "Connect Stripe first (above), then add card readers." });
+  const c = await readerAccount(clubId);
+  if (!c) return res.status(400).json({ error: "Card readers need your club on its own Stripe account. Use \"Switch to your own Stripe account\" above first." });
 
   try {
     const stripe = await getUncachableStripeClient();
@@ -96,12 +104,12 @@ router.post("/stripe/connect/readers", async (req, res) => {
         display_name: club.name.slice(0, 100),
         address,
         metadata: { clubId: String(clubId) },
-      }, { idempotencyKey: `club-${clubId}-terminal-location` });
+      }, { idempotencyKey: `club-${clubId}-${c.accountId}-terminal-location`, stripeAccount: c.accountId });
       const [stored] = await db.update(clubsTable).set({ stripeTerminalLocationId: created.id })
         .where(eq(clubsTable.id, clubId)).returning({ location: clubsTable.stripeTerminalLocationId });
       location = stored?.location ?? created.id;
     }
-    const reader = await stripe.terminal.readers.create({ registration_code: code, label, location, metadata: { clubId: String(clubId) } });
+    const reader = await stripe.terminal.readers.create({ registration_code: code, label, location, metadata: { clubId: String(clubId) } }, onClub(c));
     return res.status(201).json(readerView(reader));
   } catch (err: any) {
     req.log?.error({ err: err?.message, code: err?.code }, "[card-readers] add failed");
@@ -123,7 +131,7 @@ router.patch("/stripe/connect/readers/:id", async (req, res) => {
   const readers = await listClubReaders(clubId).catch(() => []);
   if (!readers.some(r => r.id === req.params.id)) return res.status(404).json({ error: "That reader isn't connected to your club." });
   const stripe = await getUncachableStripeClient();
-  const updated = await stripe.terminal.readers.update(req.params.id, { label });
+  const updated = await stripe.terminal.readers.update(req.params.id, { label }, onClub((await readerAccount(clubId))!));
   return res.json(readerView(updated));
 });
 
@@ -134,7 +142,7 @@ router.delete("/stripe/connect/readers/:id", async (req, res) => {
   const readers = await listClubReaders(clubId).catch(() => []);
   if (!readers.some(r => r.id === req.params.id)) return res.status(404).json({ error: "That reader isn't connected to your club." });
   const stripe = await getUncachableStripeClient();
-  await stripe.terminal.readers.del(req.params.id);
+  await stripe.terminal.readers.del(req.params.id, undefined, onClub((await readerAccount(clubId))!));
   return res.json({ ok: true });
 });
 
@@ -164,13 +172,15 @@ async function clubPayment(req: any, res: any) {
   if (clubId == null) return null;
   const id = String(req.params.paymentIntentId);
   if (!/^pi_[A-Za-z0-9]+$/.test(id)) { res.status(400).json({ error: "That payment wasn't found." }); return null; }
+  const c = await readerAccount(clubId);
+  if (!c) { res.status(404).json({ error: "That payment wasn't found." }); return null; }
   const stripe = await getUncachableStripeClient();
-  const pi = await stripe.paymentIntents.retrieve(id).catch(() => null);
+  const pi = await stripe.paymentIntents.retrieve(id, undefined, onClub(c)).catch(() => null);
   if (!pi || pi.metadata?.eventId !== String(req.params.eventId) || !pi.metadata?.readerId) {
     res.status(404).json({ error: "That payment wasn't found." });
     return null;
   }
-  return { stripe, pi };
+  return { stripe, pi, c };
 }
 
 // POST /events/:eventId/reader-payments/:paymentIntentId/cancel — staff backed out
@@ -178,7 +188,7 @@ router.post("/events/:eventId/reader-payments/:paymentIntentId/cancel", async (r
   const found = await clubPayment(req, res);
   if (!found) return;
   if (found.pi.status === "succeeded") return res.status(409).json({ error: "That payment already went through." });
-  await cancelReaderCharge(found.stripe, found.pi.id);
+  await cancelReaderCharge(found.stripe, found.c, found.pi.id);
   return res.json({ ok: true });
 });
 
@@ -187,7 +197,7 @@ router.post("/events/:eventId/reader-payments/:paymentIntentId/simulate", async 
   const found = await clubPayment(req, res);
   if (!found) return;
   if (found.pi.livemode) return res.status(400).json({ error: "Simulated taps only work in Stripe test mode." });
-  await found.stripe.testHelpers.terminal.readers.presentPaymentMethod(found.pi.metadata.readerId);
+  await found.stripe.testHelpers.terminal.readers.presentPaymentMethod(found.pi.metadata.readerId, undefined, onClub(found.c));
   return res.json({ ok: true });
 });
 

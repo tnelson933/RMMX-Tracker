@@ -10,30 +10,34 @@ import { Loader2 } from "lucide-react";
  */
 
 interface StripeConfig { stripe: Stripe | null; testMode: boolean }
-let configPromise: Promise<StripeConfig> | null = null;
+const configs = new Map<string, Promise<StripeConfig>>();
 
-/** Stripe.js with the site's publishable key (loaded once). */
-export function getStripeConfig(): Promise<StripeConfig> {
-  if (!configPromise) {
-    configPromise = fetch("/api/stripe/config")
+/**
+ * Stripe.js with the site's publishable key, loaded once per account: a club
+ * on its own Stripe account is charged on it, so the form must load for it.
+ */
+export function getStripeConfig(stripeAccount?: string | null): Promise<StripeConfig> {
+  const key = stripeAccount ?? "";
+  if (!configs.has(key)) {
+    configs.set(key, fetch("/api/stripe/config")
       .then(r => (r.ok ? r.json() : { publishableKey: null, testMode: false }))
       .then(async (c: { publishableKey: string | null; testMode: boolean }) => ({
-        stripe: c.publishableKey ? await loadStripe(c.publishableKey) : null,
+        stripe: c.publishableKey ? await loadStripe(c.publishableKey, stripeAccount ? { stripeAccount } : undefined) : null,
         testMode: !!c.testMode,
       }))
-      .catch(() => ({ stripe: null, testMode: false }));
+      .catch(() => ({ stripe: null, testMode: false })));
   }
-  return configPromise;
+  return configs.get(key)!;
 }
 
-export function useStripeConfig(): StripeConfig | null {
+export function useStripeConfig(stripeAccount?: string | null): StripeConfig | null {
   const [config, setConfig] = useState<StripeConfig | null>(null);
-  useEffect(() => { let live = true; getStripeConfig().then(c => { if (live) setConfig(c); }); return () => { live = false; }; }, []);
+  useEffect(() => { let live = true; setConfig(null); getStripeConfig(stripeAccount).then(c => { if (live) setConfig(c); }); return () => { live = false; }; }, [stripeAccount]);
   return config;
 }
 
-export function EmbeddedCardForm({ clientSecret, onComplete }: { clientSecret: string; onComplete?: () => void }) {
-  const config = useStripeConfig();
+export function EmbeddedCardForm({ clientSecret, stripeAccount, onComplete }: { clientSecret: string; stripeAccount?: string | null; onComplete?: () => void }) {
+  const config = useStripeConfig(stripeAccount);
   if (!config) {
     return <div className="flex justify-center py-10"><Loader2 className="animate-spin text-muted-foreground" /></div>;
   }
@@ -46,7 +50,7 @@ export function EmbeddedCardForm({ clientSecret, onComplete }: { clientSecret: s
   }
   return (
     <div className="w-full rounded-lg overflow-hidden" data-testid="embedded-checkout">
-      <EmbeddedCheckoutProvider key={clientSecret} stripe={config.stripe} options={{ clientSecret, onComplete }}>
+      <EmbeddedCheckoutProvider key={`${stripeAccount ?? ""}:${clientSecret}`} stripe={config.stripe} options={{ clientSecret, onComplete }}>
         <EmbeddedCheckout />
       </EmbeddedCheckoutProvider>
     </div>
