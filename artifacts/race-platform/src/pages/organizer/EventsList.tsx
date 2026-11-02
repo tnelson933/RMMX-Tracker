@@ -91,8 +91,10 @@ const createEventSchema = z.object({
   multiDay: z.boolean().default(false),
   endDate: z.string().optional(),
   state: z.string().min(1, "State is required"),
-  location: z.string().optional(),
-  trackName: z.string().optional(),
+  location: z.string().refine(s => s.trim().length > 0, "City is required"),
+  trackName: z.string().refine(s => s.trim().length > 0, "Track name is required"),
+  trackAddress: z.string().refine(s => s.trim().length > 0, "Street address is required"),
+  trackZip: z.string().refine(s => /^\d{5}(-\d{4})?$/.test(s.trim()), "Enter a 5-digit ZIP code"),
   requireTransponder: z.boolean().default(false),
   raceClasses: z.array(z.object({
     name: z.string().min(1, "Class name is required"),
@@ -149,7 +151,7 @@ const CREATE_STEPS = [
 type CreateStepId = typeof CREATE_STEPS[number]["id"];
 
 const CREATE_STEP_FIELDS: Record<CreateStepId, (keyof CreateEventValues)[]> = {
-  basics: ["raceStyle", "clubId", "name", "date", "multiDay", "endDate", "state", "location", "trackName"],
+  basics: ["raceStyle", "clubId", "name", "date", "multiDay", "endDate", "state", "location", "trackName", "trackAddress", "trackZip"],
   registration: ["registrationOpen", "registrationClose", "requireAma", "requireClubId", "noDuplicateBibs", "requireWaiver", "requireLiabilityWaiver", "scoringTableId", "amaEventId"],
   classes: ["raceClasses"],
   fees: ["paymentEnabled", "entryFee", "earlyBirdEnabled", "earlyBirdFee", "earlyBirdEndsAt", "rfidStickerFee", "transponderRentalEnabled", "transponderRentalFee", "purchaseOptions"],
@@ -241,8 +243,6 @@ export default function EventsList() {
   // Track library state
   const [trackLibrary, setTrackLibrary] = useState<{ id: number; name: string; address: string | null; city: string | null; state: string | null; zip: string | null }[]>([]);
   const [selectedLibraryTrackId, setSelectedLibraryTrackId] = useState<number | null>(null);
-  const [manualTrackAddress, setManualTrackAddress] = useState("");
-  const [manualTrackZip, setManualTrackZip] = useState("");
 
   // Super-admin sees all events; club_organizer and staff see only their own club's events
   const eventsQuery = isSuperAdmin
@@ -352,7 +352,12 @@ export default function EventsList() {
     if (savedTrackName && !form.getValues("trackName")) {
       form.setValue("trackName", savedTrackName);
     }
-  }, [clubSettingsData, isCreateOpen]);
+    // A pre-filled name that's in the track library brings its address too.
+    if (isCreateOpen && !selectedLibraryTrackId) {
+      const match = findLibraryTrack(form.getValues("trackName") ?? "");
+      if (match) selectLibraryTrack(match);
+    }
+  }, [clubSettingsData, isCreateOpen, trackLibrary]);
 
   // Load track library on mount
   useEffect(() => {
@@ -380,6 +385,32 @@ export default function EventsList() {
     setManualTrackZip(t.zip ?? "");
   };
 
+  const findLibraryTrack = (name: string) => {
+    const key = name.trim().toLowerCase();
+    return key ? trackLibrary.find(t => t.name.trim().toLowerCase() === key) : undefined;
+  };
+
+  /**
+   * Typing a name already in the track library fills in its address, city, state
+   * and ZIP. Moving off a library track clears what it filled in (fields the
+   * organizer has since changed are kept); anything typed for a new track is kept.
+   */
+  const onTrackNameTyped = (value: string, onChange: (v: string) => void) => {
+    onChange(value);
+    const match = findLibraryTrack(value);
+    if (match) {
+      if (match.id !== selectedLibraryTrackId) selectLibraryTrack(match);
+      return;
+    }
+    const prev = selectedLibraryTrackId ? trackLibrary.find(t => t.id === selectedLibraryTrackId) : undefined;
+    if (selectedLibraryTrackId) setSelectedLibraryTrackId(null);
+    if (!prev) return;
+    if (manualTrackAddress === (prev.address ?? "")) setManualTrackAddress("");
+    if (manualTrackZip === (prev.zip ?? "")) setManualTrackZip("");
+    if (prev.city && form.getValues("location") === prev.city) form.setValue("location", "");
+    if (prev.state && form.getValues("state") === prev.state) form.setValue("state", "");
+  };
+
 
   const form = useForm<CreateEventValues>({
     resolver: zodResolver(createEventSchema),
@@ -392,6 +423,8 @@ export default function EventsList() {
       state: "",
       location: "",
       trackName: "",
+      trackAddress: "",
+      trackZip: "",
       raceClasses: [],
       clubId: sessionClubId ?? undefined,
       registrationOpen: "",
@@ -416,6 +449,13 @@ export default function EventsList() {
       amaEventId: "",
     }
   });
+
+  // The track's street address and ZIP are form fields (both required); these keep
+  // the names the payload and track-library code use.
+  const manualTrackAddress = form.watch("trackAddress") ?? "";
+  const manualTrackZip = form.watch("trackZip") ?? "";
+  const setManualTrackAddress = (v: string) => form.setValue("trackAddress", v);
+  const setManualTrackZip = (v: string) => form.setValue("trackZip", v);
 
   const watchMultiDay = form.watch("multiDay");
 
@@ -1104,7 +1144,7 @@ export default function EventsList() {
                       name="trackName"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Track Name <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                          <FormLabel>Track Name <span className="text-destructive">*</span></FormLabel>
                           {/* Library quick-selects */}
                           {trackLibrary.length > 0 && (
                             <div className="flex flex-wrap gap-1.5">
@@ -1129,23 +1169,44 @@ export default function EventsList() {
                             <Input
                               placeholder="Thunder Valley MX"
                               {...field}
-                              onChange={(e) => { field.onChange(e); setSelectedLibraryTrackId(null); setManualTrackAddress(""); setManualTrackZip(""); }}
+                              onChange={(e) => onTrackNameTyped(e.target.value, field.onChange)}
                             />
                           </FormControl>
+                          <p className="text-xs text-muted-foreground">
+                            {selectedLibraryTrackId
+                              ? "From your track library. Changes to the address are saved to it."
+                              : "A new track is saved to your track library when you create the event."}
+                          </p>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
 
-                    {/* Street address — shown whenever a track name is entered */}
-                    {form.watch("trackName")?.trim() && (
-                      <Input
-                        placeholder="Street address"
-                        aria-label="Track street address"
-                        value={manualTrackAddress}
-                        onChange={e => setManualTrackAddress(e.target.value)}
+                    {/* Street address + ZIP */}
+                    <div className="grid grid-cols-[1fr_8rem] gap-4">
+                      <FormField
+                        control={form.control}
+                        name="trackAddress"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Street Address <span className="text-destructive">*</span></FormLabel>
+                            <FormControl><Input placeholder="1234 County Road 5" autoComplete="street-address" {...field} /></FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
                       />
-                    )}
+                      <FormField
+                        control={form.control}
+                        name="trackZip"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>ZIP <span className="text-destructive">*</span></FormLabel>
+                            <FormControl><Input placeholder="80014" inputMode="numeric" autoComplete="postal-code" {...field} /></FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
 
                     {/* City + State */}
                     <div className="grid grid-cols-2 gap-4">
@@ -1154,7 +1215,7 @@ export default function EventsList() {
                         name="location"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>City <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
+                            <FormLabel>City <span className="text-destructive">*</span></FormLabel>
                             <FormControl><Input placeholder="Denver" {...field} /></FormControl>
                             <FormMessage />
                           </FormItem>
@@ -1174,17 +1235,6 @@ export default function EventsList() {
                         )}
                       />
                     </div>
-
-                    {/* ZIP — shown whenever a track name is entered */}
-                    {form.watch("trackName")?.trim() && (
-                      <Input
-                        placeholder="ZIP code"
-                        aria-label="Track ZIP code"
-                        value={manualTrackZip}
-                        onChange={e => setManualTrackZip(e.target.value)}
-                        className="w-36"
-                      />
-                    )}
 
                     {/* Event Image */}
                     <div className="space-y-1.5 pt-2">

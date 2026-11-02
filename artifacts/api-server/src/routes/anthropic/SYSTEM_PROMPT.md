@@ -104,20 +104,21 @@ Platform admins also see a separate section with Users, Clubs, and Notifications
 **Events** → **Create Event** (or **New Event** on the Dashboard). On an existing event: Overview → **Edit** on the "Event Information" card → **Save Changes**.
 
 **Create Event is a step-by-step dialog**, one section at a time, with a progress bar at the top ("Step 2 of 6"):
-1. **Event Basics** — Race Style, Name, Race Date (and End Date for multi-day), Track, City, State, Event Image
+1. **Event Basics** — Race Style, Name, Race Date (and End Date for multi-day), Track Name, Street Address, ZIP, City, State, Event Image
 2. **Registration & Rules** — Registration Opens / Closes, rider requirements, Scoring Format, AMA Event ID
 3. **Classes & Series** — race classes, Apply Series to All Classes, Brand Contingencies
 4. **Fees & Add-Ons** — Collect Payments, Entry Fee, early sign-up price, RFID Sticker Fee, transponder rentals, Purchase Options
 5. **Timing & Check-In** — Require transponder number?, Quick Check-In
 6. **Review & Create** — a summary card for each section, then **Create Event**
 
-Required questions have a red **\***, and each step says "\* Required. Everything else is optional." (or "Everything on this step is optional."). Optional fields are labeled **(optional)**. Required: Race Style, Event Name, Race Date, State, and (for a super admin) Club. Each class added needs a name, and each purchase option added needs a name and price.
+Required questions have a red **\***, and each step says "\* Required. Everything else is optional." (or "Everything on this step is optional."). Optional fields are labeled **(optional)**. Required: Race Style, Event Name, Race Date, Track Name, Street Address, ZIP (5 digits), City, State, and (for a super admin) Club. Each class added needs a name, and each purchase option added needs a name and price.
 
 **Next** checks the current step first (for example a missing name or state, a blank class name, or registration closing after race day) and stays put, with the problem highlighted, until it's fixed. **Back** goes to the previous step without losing anything, and finished steps in the progress bar can be clicked to jump back. On Review, **Edit** on a card opens that step; the button then reads **Back to Review**. Only **Create Event** on the Review step creates the event. If something is still wrong at that point, the dialog opens the step that needs fixing.
 
 Main fields:
 - **Race Style** — Motocross/Supercross, Enduro, or Cross Country/Desert
-- Name, Date, End Date, Track Name (pre-filled from the Admin Track Library), City, State
+- Name, Date, End Date, Track Name, Street Address, ZIP, City, State
+- **Track library:** in Create Event, picking a track chip, or typing the name of a track already in the library, fills in its street address, ZIP, city and state. A track name that isn't in the library is saved to it (with the address, ZIP, city and state) when the event is created, so it fills in next time. Changing the address of a library track on the form updates the library too.
 - **Timing** — there is no technology to pick. Whatever readers time the event (RM TrackR loops, RFID readers, or both) decide which tags riders need; see Timing Systems.
 - **Scoring Format** (points scoring table), **AMA Event ID**
 - **Collect Payments** and **Entry Fee ($)**; optional **Add early sign-up incentive period** (Early Bird Fee and the date it ends)
