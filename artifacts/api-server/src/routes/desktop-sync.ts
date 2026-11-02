@@ -38,6 +38,7 @@ import { recomputeEnduroPositionsForEvent } from "./enduro-scoring";
 import { syncEventPublication } from "../lib/resultsVisibility";
 import { notifyFollowersOfResults } from "../lib/riderCareer";
 import { sendRaceDayStats } from "../lib/raceDayStats";
+import { queueRaceGasCredits } from "../lib/raceGasCredits";
 
 const router = Router();
 
@@ -1469,6 +1470,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
             if (await syncEventPublication(eventId)) {
               void notifyFollowersOfResults(eventId);
               void sendRaceDayStats(eventId).catch(() => {});
+              void queueRaceGasCredits(eventId);
             }
           } catch (err) {
             req.log.warn({ err, eventId }, "desktop-push: results publication sync failed");

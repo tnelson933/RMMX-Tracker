@@ -12,6 +12,7 @@ import { sendConnectorCommand } from "../lib/connectorRelay";
 import { accountIdsForRiders } from "../lib/riderAccess";
 import { callerOwnsClub } from "../middleware/accessControl";
 import { sendRaceDayStats } from "../lib/raceDayStats";
+import { queueRaceGasCredits } from "../lib/raceGasCredits";
 
 export type NormalizedMotoTiming =
   | { lapCount: number | null; timeLimitMs: number | null; plusLaps: number | null; error?: never }
@@ -465,6 +466,8 @@ export async function afterMotoCompleted(moto: typeof motosTable.$inferSelect): 
   // Points from the finishing order (live timing never runs the manual results save).
   import("./results").then(({ scoreMotoPoints }) => scoreMotoPoints(moto.id)).catch(() => {});
   sendRaceNotifications(moto.eventId).catch(() => {});
+  // Race Gas: riders in this race earn their website credit now.
+  if (moto.type !== "practice") void queueRaceGasCredits(moto.eventId);
   if (moto.type === "heat") {
     getEventFormat(moto.eventId).then(async ({ isSupercross }) => {
       if (!isSupercross) return;
@@ -509,6 +512,7 @@ for (const action of ["finalize", "unfinalize"] as const) {
       void notifyFollowersOfResults(moto.eventId);
       // "Send me my race day stats" riders get their official results, once.
       void sendRaceDayStats(moto.eventId).catch(err => req.log?.error({ err: err?.message }, "[stats-email] failed"));
+      void queueRaceGasCredits(moto.eventId);
     }
     buildLeaderboard(id).then(snapshot => { if (snapshot) sseBroadcast(id, snapshot); }).catch(() => {});
     return res.json({ ok: true, motoId: id, resultsFinalizedAt: updated.resultsFinalizedAt?.toISOString() ?? null });

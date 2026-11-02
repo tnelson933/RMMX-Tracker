@@ -11,6 +11,7 @@ import { startRaceClock } from "./lib/raceClock";
 import { startPaymentSweeper } from "./lib/paymentSweeper";
 import { sendEnrollmentConfirmations } from "./lib/smsAlerts";
 import { startFinalizeReminders } from "./lib/finalizeReminder";
+import { startRaceGasRetries } from "./lib/raceGasCredits";
 
 const rawPort = process.env["PORT"];
 
@@ -51,4 +52,5 @@ httpServer.listen(port, (err?: Error) => {
   startRentalSweeper();
   // Organizers: a reminder to finalize results 12 hours after an event ends.
   startFinalizeReminders();
+  startRaceGasRetries();
 });

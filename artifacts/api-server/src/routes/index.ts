@@ -50,6 +50,7 @@ import riderSocialRouter from "./rider-social";
 import supportRouter from "./support";
 import twilioSmsRouter from "./twilio-sms";
 import cardReadersRouter from "./card-readers";
+import raceGasRouter from "./race-gas";
 
 const router: IRouter = Router();
 
@@ -104,5 +105,6 @@ router.use(riderSocialRouter);
 router.use(supportRouter);
 router.use(twilioSmsRouter);
 router.use(cardReadersRouter);
+router.use(raceGasRouter);
 
 export default router;

@@ -40,6 +40,7 @@ import AdminNotifications from "@/pages/organizer/AdminNotifications";
 import SetPassword from "@/pages/public/SetPassword";
 import SupportDecision from "@/pages/public/SupportDecision";
 import SupportTickets from "@/pages/organizer/SupportTickets";
+import RaceGasAdmin from "@/pages/organizer/RaceGasAdmin";
 import StripeConnect from "@/pages/organizer/StripeConnect";
 import StandalonePractice from "@/pages/organizer/StandalonePractice";
 import DiscountCodesPage from "@/pages/organizer/DiscountCodes";
@@ -333,6 +334,9 @@ function Router() {
       </Route>
       <Route path="/admin/support">
         <OrganizerOnlyRoute><SupportTickets /></OrganizerOnlyRoute>
+      </Route>
+      <Route path="/admin/race-gas">
+        <OrganizerOnlyRoute><RaceGasAdmin /></OrganizerOnlyRoute>
       </Route>
 
       <Route component={NotFound} />

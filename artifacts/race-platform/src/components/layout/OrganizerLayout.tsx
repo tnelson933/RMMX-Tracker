@@ -34,6 +34,7 @@ import {
   Monitor,
   Eye,
   LifeBuoy,
+  Fuel,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MirrorDialog, SuperAdminRail, MirrorBanner, quitMirror, type MirrorInfo } from "./MirrorControls";
@@ -255,6 +256,18 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
             >
               <LifeBuoy size={18} />
               Support
+            </Link>
+            <Link
+              href="/admin/race-gas"
+              onClick={close}
+              className={`flex items-center gap-3 px-3 py-2 rounded-md font-medium text-sm transition-colors ${
+                location.startsWith("/admin/race-gas")
+                  ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              }`}
+            >
+              <Fuel size={18} />
+              Race Gas
             </Link>
           </div>
         )}
