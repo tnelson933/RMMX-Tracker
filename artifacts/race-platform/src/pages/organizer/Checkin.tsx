@@ -1067,9 +1067,9 @@ export default function Checkin() {
                         {(() => {
                           if (isOffline || checkin.registrationId == null) return null;
                           const regId = checkin.registrationId;
-                          const canSellTrackr = trackrPrice != null && !held.transponder
+                          const canSellTrackr = tags.transponder && trackrPrice != null && !held.transponder
                             && !(checkin as any).transponderRental && !(checkin as any).rmTrackrPurchased;
-                          const canSellRfid = rfidStickerFee != null && !held.rfid && !(checkin as any).rfidStickerPurchased;
+                          const canSellRfid = tags.rfid && rfidStickerFee != null && !held.rfid && !(checkin as any).rfidStickerPurchased;
                           if (!canSellTrackr && !canSellRfid) return null;
                           const label = canSellTrackr && canSellRfid ? "RM TrackR or RFID" : canSellTrackr ? "RM TrackR" : "RFID Tag";
                           // Non-modal, and the dialog opens after the menu closes, so closing the menu doesn't dismiss it.
@@ -1096,11 +1096,13 @@ export default function Checkin() {
                           );
                         })()}
                         {([
-                          { kind: "transponder" as const, name: RM_TRACKR_NAME, value: held.transponder, invalid: transponderInvalid,
+                          // Also when the event asks for or rents transponders, or the rider has one.
+                          (tags.transponder || !!held.transponder || !!(event as any)?.requireTransponder || transponderRentalEnabled)
+                            && { kind: "transponder" as const, name: RM_TRACKR_NAME, value: held.transponder, invalid: transponderInvalid,
                             // A rental or purchase still to hand out has its own notice below.
                             hideMissing: needsRental || needsTrackr },
-                          { kind: "rfid" as const, name: "RFID", value: held.rfid, invalid: rfidInvalid, hideMissing: false },
-                        ] as Array<{ kind: TagKind; name: string; value: string | null; invalid: boolean; hideMissing: boolean }>).map(t => (
+                          (tags.rfid || !!held.rfid) && { kind: "rfid" as const, name: "RFID", value: held.rfid, invalid: rfidInvalid, hideMissing: false },
+                        ].filter(Boolean) as Array<{ kind: TagKind; name: string; value: string | null; invalid: boolean; hideMissing: boolean }>).map(t => (
                           t.invalid ? (
                             <button
                               key={t.kind}
