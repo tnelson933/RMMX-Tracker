@@ -18,6 +18,7 @@ import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
 import { isInvalidAssignedActiveTransponderIdentifier } from "@/lib/activeTransponder";
 import { RM_TRACKR_NAME, RM_TRACKR_PRICE } from "@/lib/rmTrackr";
 import { eventTimingTags, offeredTags, splitRegistrationTag, type TimingTags } from "@/components/organizer/timingTags";
+import { CashTender } from "@/components/organizer/CashTender";
 
 // RFID tags: alphanumeric + dashes, 1–32 characters.
 function isInvalidRfid(val: string | null | undefined): boolean {
@@ -279,7 +280,7 @@ export default function Checkin() {
   const [syncingFromCloud, setSyncingFromCloud] = useState(false);
 
   // Transponder rental modal state
-  type RentalStep = "method" | "card" | "done";
+  type RentalStep = "method" | "cash" | "card" | "done";
   /** collect: the rider chose it at registration and still owes for it. */
   interface RentalTarget { registrationId: number; riderName: string; collect?: boolean }
   interface RentalCard extends CardStarted { regId: number; rentalFee: number; }
@@ -292,7 +293,7 @@ export default function Checkin() {
   const [rentalAssignInputId, setRentalAssignInputId] = useState<number | null>(null);
 
   // RFID sticker modal state
-  type StickerStep = "method" | "card";
+  type StickerStep = "method" | "cash" | "card";
   interface StickerTarget { registrationId: number; riderName: string; }
   interface StickerCard extends CardStarted { regId: number; stickerFee: number; }
   const [stickerTarget, setStickerTarget] = useState<StickerTarget | null>(null);
@@ -302,7 +303,7 @@ export default function Checkin() {
   const [stickerError, setStickerError] = useState<string | null>(null);
 
   // RM TrackR sale (POS) modal state
-  type TrackrStep = "method" | "card";
+  type TrackrStep = "method" | "cash" | "card";
   interface TrackrTarget { registrationId: number; riderName: string; collect?: boolean }
   interface TrackrCard extends CardStarted { regId: number; price: number; }
   const [trackrTarget, setTrackrTarget] = useState<TrackrTarget | null>(null);
@@ -487,7 +488,7 @@ export default function Checkin() {
   }, []);
 
   // RFID sticker cash handler
-  const handleStickerCash = async () => {
+  const handleStickerCash = async (cashTendered: number) => {
     if (!stickerTarget) return;
     setStickerSubmitting(true);
     setStickerError(null);
@@ -495,12 +496,12 @@ export default function Checkin() {
       const res = await fetch(`/api/events/${eventId}/registrations/${stickerTarget.registrationId}/add-rfid-sticker`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentMethod: "cash" }),
+        body: JSON.stringify({ paymentMethod: "cash", cashTendered }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Couldn't add sticker");
       queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
-      toast({ title: "RFID tag sold", description: `$${Number(json.stickerFee).toFixed(2)} collected in cash. Assign the tag to finish.` });
+      toast({ title: "RFID tag sold", description: `$${Number(json.stickerFee).toFixed(2)} collected in cash${json.cashChange ? `, $${Number(json.cashChange).toFixed(2)} change given` : ""}. Assign the tag to finish.` });
       closeStickerModal();
     } catch (e: any) {
       setStickerError(e.message);
@@ -544,7 +545,7 @@ export default function Checkin() {
     setTrackrError(null);
   }, []);
 
-  const sellTrackr = async (paymentMethod: "cash" | "card") => {
+  const sellTrackr = async (paymentMethod: "cash" | "card", cashTendered?: number) => {
     if (!trackrTarget) return;
     setTrackrSubmitting(true);
     setTrackrError(null);
@@ -552,13 +553,13 @@ export default function Checkin() {
       const res = await fetch(`/api/events/${eventId}/registrations/${trackrTarget.registrationId}/add-rm-trackr`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentMethod }),
+        body: JSON.stringify({ paymentMethod, ...(cashTendered != null ? { cashTendered } : {}) }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `Couldn't sell ${RM_TRACKR_NAME} (error ${res.status})`);
       if (paymentMethod === "cash") {
         queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
-        toast({ title: `${RM_TRACKR_NAME} sold`, description: `$${Number(json.price).toFixed(2)} collected in cash. Assign the transponder to finish.` });
+        toast({ title: `${RM_TRACKR_NAME} sold`, description: `$${Number(json.price).toFixed(2)} collected in cash${json.cashChange ? `, $${Number(json.cashChange).toFixed(2)} change given` : ""}. Assign the transponder to finish.` });
         closeTrackrModal();
       }
     } catch (e: any) {
@@ -606,7 +607,7 @@ export default function Checkin() {
   }, []);
 
   // Cash rental handler
-  const handleRentalCash = async () => {
+  const handleRentalCash = async (cashTendered: number) => {
     if (!rentalTarget) return;
     setRentalSubmitting(true);
     setRentalError(null);
@@ -614,12 +615,12 @@ export default function Checkin() {
       const res = await fetch(`/api/events/${eventId}/registrations/${rentalTarget.registrationId}/add-transponder-rental`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentMethod: "cash" }),
+        body: JSON.stringify({ paymentMethod: "cash", cashTendered }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Couldn't add rental");
       queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) });
-      toast({ title: "Transponder rental added", description: `$${Number(json.rentalFee).toFixed(2)} collected` });
+      toast({ title: "Transponder rental added", description: `$${Number(json.rentalFee).toFixed(2)} collected${json.cashChange ? `, $${Number(json.cashChange).toFixed(2)} change given` : ""}` });
       closeRentalModal();
     } catch (e: any) {
       setRentalError(e.message);
@@ -1412,7 +1413,7 @@ export default function Checkin() {
               <Button
                 variant="outline"
                 className="h-16 flex flex-col gap-1"
-                onClick={handleStickerCash}
+                onClick={() => { setStickerError(null); setStickerStep("cash"); }}
                 disabled={stickerSubmitting}
               >
                 {stickerSubmitting ? <Loader2 size={20} className="animate-spin" /> : <Banknote size={20} />}
@@ -1428,6 +1429,10 @@ export default function Checkin() {
               </Button>
             </div>
           </div>
+        )}
+
+        {stickerStep === "cash" && (
+          <CashTender due={Number(rfidStickerFee ?? 0)} busy={stickerSubmitting} error={stickerError} onConfirm={handleStickerCash} onBack={() => { setStickerError(null); setStickerStep("method"); }} />
         )}
 
         {stickerStep === "card" && (
@@ -1461,7 +1466,7 @@ export default function Checkin() {
               <Button
                 variant="outline"
                 className="h-16 flex flex-col gap-1"
-                onClick={() => sellTrackr("cash")}
+                onClick={() => { setTrackrError(null); setTrackrStep("cash"); }}
                 disabled={trackrSubmitting}
               >
                 {trackrSubmitting ? <Loader2 size={20} className="animate-spin" /> : <Banknote size={20} />}
@@ -1477,6 +1482,10 @@ export default function Checkin() {
               </Button>
             </div>
           </div>
+        )}
+
+        {trackrStep === "cash" && (
+          <CashTender due={trackrPrice ?? RM_TRACKR_PRICE} busy={trackrSubmitting} error={trackrError} onConfirm={t => sellTrackr("cash", t)} onBack={() => { setTrackrError(null); setTrackrStep("method"); }} />
         )}
 
         {trackrStep === "card" && (
@@ -1512,7 +1521,7 @@ export default function Checkin() {
               <Button
                 variant="outline"
                 className="h-16 flex flex-col gap-1"
-                onClick={handleRentalCash}
+                onClick={() => { setRentalError(null); setRentalStep("cash"); }}
                 disabled={rentalSubmitting}
               >
                 {rentalSubmitting ? <Loader2 size={20} className="animate-spin" /> : <Banknote size={20} />}
@@ -1528,6 +1537,10 @@ export default function Checkin() {
               </Button>
             </div>
           </div>
+        )}
+
+        {rentalStep === "cash" && (
+          <CashTender due={Number(transponderRentalFee ?? 0)} busy={rentalSubmitting} error={rentalError} onConfirm={handleRentalCash} onBack={() => { setRentalError(null); setRentalStep("method"); }} />
         )}
 
         {rentalStep === "card" && (

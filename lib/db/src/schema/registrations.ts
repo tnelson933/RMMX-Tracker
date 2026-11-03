@@ -14,6 +14,9 @@ export const registrationsTable = pgTable("registrations", {
   paymentStatus: text("payment_status").notNull().default("unpaid"), // unpaid | paid | refunded
   paymentMethod: text("payment_method"), // card | cash | null
   amountPaid: numeric("amount_paid", { precision: 10, scale: 2 }),
+  /** Cash only: what the rider handed over, and the change given back (amountPaid is what's kept). */
+  cashTendered: numeric("cash_tendered", { precision: 10, scale: 2 }),
+  cashChange: numeric("cash_change", { precision: 10, scale: 2 }),
   /** What this entry was charged at checkout (its share of entry fees, plus add-ons on the first entry). */
   amountDue: numeric("amount_due", { precision: 10, scale: 2 }),
   /** The Stripe Checkout session that pays for this entry. */

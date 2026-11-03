@@ -17,10 +17,26 @@ const FLAG: Record<AddonItem, "transponderRental" | "rmTrackrPurchased" | "rfidS
   rfid_sticker: "rfidStickerPurchased",
 };
 
-/** Cash taken at check-in: the add-on is paid now. */
-export async function recordCashAddon(eventId: number, registrationId: number, item: AddonItem, amount: number): Promise<void> {
+/** What the rider handed over and the change given back, for a cash payment. */
+export interface CashTender { tendered: number; change: number }
+
+/**
+ * The amount tendered sent with a cash payment, checked against the amount due.
+ * null when none was sent (older screens); an error when it's short or not a number.
+ */
+export function parseCashTendered(raw: unknown, due: number): CashTender | null | { error: string } {
+  if (raw === undefined || raw === null || raw === "") return null;
+  const tendered = Number(raw);
+  if (!Number.isFinite(tendered) || tendered < 0) return { error: "Enter the amount of cash the rider handed you." };
+  if (tendered + 0.005 < due) return { error: `That's $${(due - tendered).toFixed(2)} short of the $${due.toFixed(2)} due.` };
+  return { tendered: Math.round(tendered * 100) / 100, change: Math.round((tendered - due) * 100) / 100 };
+}
+
+/** Cash taken at check-in: the add-on is paid now, at its price; tendered and change are logged with it. */
+export async function recordCashAddon(eventId: number, registrationId: number, item: AddonItem, amount: number, tender: CashTender | null = null): Promise<void> {
   await db.insert(addonPaymentsTable).values({
     eventId, registrationId, item, amount: amount.toFixed(2), method: "cash", status: "paid", paidAt: new Date(),
+    ...(tender ? { cashTendered: tender.tendered.toFixed(2), cashChange: tender.change.toFixed(2) } : {}),
   });
 }
 

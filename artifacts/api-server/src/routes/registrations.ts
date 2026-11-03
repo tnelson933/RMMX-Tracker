@@ -20,7 +20,7 @@ import { RM_TRACKR_NAME } from "@workspace/db";
 import { canManageRider } from "../lib/riderAccess";
 import { riderMobileTokensTable } from "@workspace/db";
 import { reminderAvailability, reminderStatusText, rentalReplacementCharge, sendRentalReminders, unreturnedRentals, type ReminderStatus } from "../lib/rentalReminders";
-import { addonIsPaid, confirmAddonPayment, recordCardAddonPending, recordCashAddon, type AddonItem } from "../lib/addonPayments";
+import { addonIsPaid, confirmAddonPayment, parseCashTendered, recordCardAddonPending, recordCashAddon, type AddonItem } from "../lib/addonPayments";
 import { browserAccount, chargeOnReader, embeddedAllowed, checkoutUiParams, clubStripeOf, onClub, onClubOrPlatform, registrationClubStripe, retrievePayment, transferTo } from "../lib/stripePayments";
 import { acknowledgementSnapshot, clubWaiverSettings, waiverPdfOf } from "../lib/waiverSettings";
 
@@ -549,6 +549,12 @@ router.patch("/registrations/:registrationId", async (req, res) => {
   // null / "" clears the amount (String(null) used to store the text "null").
   if (amountPaid !== undefined) updates.amountPaid = amountPaid === null || amountPaid === "" ? null : String(amountPaid);
   if (paymentMethod !== undefined) updates.paymentMethod = paymentMethod;
+  // Cash at the gate: log what the rider handed over and the change given (amountPaid is what's kept).
+  if (paymentMethod === "cash" && req.body.cashTendered !== undefined) {
+    const tender = parseCashTendered(req.body.cashTendered, Number(amountPaid ?? 0));
+    if (tender && "error" in tender) return res.status(400).json({ error: tender.error });
+    if (tender) { updates.cashTendered = tender.tendered.toFixed(2); updates.cashChange = tender.change.toFixed(2); }
+  }
   if (displayFirstName !== undefined) updates.displayFirstName = displayFirstName;
   if (displayLastName !== undefined) updates.displayLastName = displayLastName;
   if (newRiderId !== undefined) updates.riderId = newRiderId;
@@ -824,11 +830,13 @@ router.post("/events/:eventId/registrations/:regId/add-transponder-rental", asyn
   const rentalFee = Number(event.transponderRentalFee);
 
   if (paymentMethod === "cash") {
+    const tender = parseCashTendered(req.body.cashTendered, rentalFee);
+    if (tender && "error" in tender) return res.status(400).json({ error: tender.error });
     await db.update(registrationsTable)
       .set({ transponderRental: true })
       .where(eq(registrationsTable.id, regId));
-    await recordCashAddon(eventId, regId, "transponder_rental", rentalFee);
-    return res.json({ success: true, rentalFee });
+    await recordCashAddon(eventId, regId, "transponder_rental", rentalFee, tender);
+    return res.json({ success: true, rentalFee, cashTendered: tender?.tendered ?? null, cashChange: tender?.change ?? null });
   }
 
   if (paymentMethod === "reader") {
@@ -901,11 +909,13 @@ router.post("/events/:eventId/registrations/:regId/add-rfid-sticker", async (req
   }
 
   if (paymentMethod === "cash") {
+    const tender = parseCashTendered(req.body.cashTendered, stickerFee);
+    if (tender && "error" in tender) return res.status(400).json({ error: tender.error });
     await db.update(registrationsTable)
       .set({ rfidStickerPurchased: true })
       .where(and(eq(registrationsTable.eventId, eventId), eq(registrationsTable.riderId, reg.riderId)));
-    await recordCashAddon(eventId, regId, "rfid_sticker", stickerFee);
-    return res.json({ success: true, stickerFee });
+    await recordCashAddon(eventId, regId, "rfid_sticker", stickerFee, tender);
+    return res.json({ success: true, stickerFee, cashTendered: tender?.tendered ?? null, cashChange: tender?.change ?? null });
   }
 
   if (paymentMethod === "reader") {
@@ -991,9 +1001,11 @@ router.post("/events/:eventId/registrations/:regId/add-rm-trackr", async (req, r
   if (price == null) return res.status(400).json({ error: `Your club has hidden the ${RM_TRACKR_NAME} in Admin → Sell Items. Show it there to sell it.` });
 
   if (paymentMethod === "cash") {
+    const tender = parseCashTendered(req.body.cashTendered, price);
+    if (tender && "error" in tender) return res.status(400).json({ error: tender.error });
     await markRmTrackrPurchased(eventId, reg.riderId);
-    await recordCashAddon(eventId, regId, "rm_trackr", price);
-    return res.json({ success: true, price });
+    await recordCashAddon(eventId, regId, "rm_trackr", price, tender);
+    return res.json({ success: true, price, cashTendered: tender?.tendered ?? null, cashChange: tender?.change ?? null });
   }
 
   if (paymentMethod === "reader") {

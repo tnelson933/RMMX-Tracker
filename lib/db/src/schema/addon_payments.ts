@@ -19,6 +19,9 @@ export const addonPaymentsTable = pgTable("addon_payments", {
   /** "paid" | "pending" */
   status: text("status").notNull(),
   stripeSessionId: text("stripe_session_id"),
+  /** Cash only: what the rider handed over, and the change given back (amount is what's kept). */
+  cashTendered: numeric("cash_tendered", { precision: 10, scale: 2 }),
+  cashChange: numeric("cash_change", { precision: 10, scale: 2 }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   paidAt: timestamp("paid_at", { withTimezone: true }),
 }, (t) => [

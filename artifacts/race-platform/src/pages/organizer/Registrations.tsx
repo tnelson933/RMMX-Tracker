@@ -27,6 +27,7 @@ import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import { isInvalidAssignedActiveTransponderIdentifier } from "@/lib/activeTransponder";
 import { eventTimingTags, offeredTags, splitRegistrationTag } from "@/components/organizer/timingTags";
+import { CashTender } from "@/components/organizer/CashTender";
 import { responseErrorMessage } from "@/lib/friendlyErrors";
 import { CardPaymentPanel, type CardStarted, type CardStartOptions } from "@/components/payments/CardPaymentPanel";
 
@@ -141,6 +142,9 @@ interface PendingCard extends CardStarted {
 interface PaymentDone {
   method: "cash" | "card";
   amount: number;
+  /** Cash only: what the rider handed over and the change given back. */
+  tendered?: number;
+  change?: number;
 }
 
 export default function Registrations() {
@@ -658,7 +662,8 @@ export default function Registrations() {
     }
   };
 
-  const handleCashPayment = async () => {
+  // Cash: recorded at the amount due, with what the rider handed over and the change given.
+  const handleCashPayment = async (cashTendered: number) => {
     if (!regSuccess) return;
     const amount = parseFloat(cashAmount);
     if (isNaN(amount) || amount < 0) {
@@ -671,11 +676,12 @@ export default function Registrations() {
       const res = await fetch(`/api/registrations/${regSuccess.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paymentStatus: "paid", amountPaid: amount, paymentMethod: "cash" }),
+        body: JSON.stringify({ paymentStatus: "paid", amountPaid: amount, paymentMethod: "cash", cashTendered }),
       });
-      if (!res.ok) throw new Error("Couldn't record payment");
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Couldn't record payment");
       await queryClient.invalidateQueries({ queryKey: getListRegistrationsQueryKey(eventId) });
-      setPaymentDone({ method: "cash", amount });
+      setPaymentDone({ method: "cash", amount, tendered: cashTendered, change: Math.round((cashTendered - amount) * 100) / 100 });
       setStep("pay-done");
     } catch (e: any) {
       setPaymentError(e.message || "Could not record cash payment.");
@@ -1401,24 +1407,10 @@ export default function Registrations() {
               <Banknote size={26} className="text-green-700" />
             </div>
             <h3 className="text-xl font-heading font-bold uppercase">Cash Payment</h3>
-            <p className="text-muted-foreground mt-1">Enter the amount collected from the rider.</p>
+            <p className="text-muted-foreground mt-1">Enter what the rider hands you; the change to give back shows below.</p>
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Amount Received ($)</label>
-            <div className="relative">
-              <DollarSign size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                value={cashAmount}
-                onChange={e => setCashAmount(e.target.value)}
-                className="pl-8 text-lg font-mono h-12"
-                placeholder="0.00"
-                autoFocus
-              />
-            </div>
             {eventEntryFee && (() => {
               const rentalFee = (form.getValues("rentTransponder") && transponderRentalFee) ? transponderRentalFee : 0;
               const purchasesTotal = eventPurchaseOptions
@@ -1436,20 +1428,13 @@ export default function Registrations() {
             })()}
           </div>
 
-          {paymentError && (
-            <div className="bg-destructive/10 border border-destructive/30 text-destructive rounded-md px-3 py-2.5 text-sm flex items-center gap-2">
-              <AlertCircle size={15} className="shrink-0" />{paymentError}
-            </div>
-          )}
-
-          <div className="flex gap-3">
-            <Button variant="outline" className="flex-1 font-heading uppercase" onClick={() => { setPaymentError(null); setStep("pay-method"); }}>
-              ← Back
-            </Button>
-            <Button className="flex-1 font-heading uppercase" onClick={handleCashPayment} disabled={submitting || !cashAmount}>
-              {submitting ? <><Loader2 size={16} className="mr-2 animate-spin" />Recording…</> : "Record Payment"}
-            </Button>
-          </div>
+          <CashTender
+            due={parseFloat(cashAmount) || 0}
+            busy={submitting}
+            error={paymentError}
+            onConfirm={handleCashPayment}
+            onBack={() => { setPaymentError(null); setStep("pay-method"); }}
+          />
         </div>
       );
     }
@@ -1550,6 +1535,18 @@ export default function Registrations() {
               <span className="text-xs text-muted-foreground font-bold uppercase tracking-widest">Method</span>
               <span className="capitalize font-medium">{paymentDone.method}</span>
             </div>
+            {paymentDone.tendered != null && (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-xs text-muted-foreground font-bold uppercase tracking-widest">Tendered</span>
+                  <span className="font-medium">${paymentDone.tendered.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-xs text-muted-foreground font-bold uppercase tracking-widest">Change given</span>
+                  <span className="font-medium">${(paymentDone.change ?? 0).toFixed(2)}</span>
+                </div>
+              </>
+            )}
           </div>
           <div className="flex gap-3">
             <Button variant="outline" className="flex-1 font-heading uppercase" onClick={() => {
