@@ -2011,7 +2011,7 @@ export default function Registrations() {
                       </TableCell>
                       <TableCell className="text-right">
                         {reg.status !== 'confirmed' && (
-                          <Button variant="ghost" size="icon" onClick={() => handleUpdateStatus(reg.id, 'confirmed')} className="text-secondary hover:text-secondary hover:bg-secondary/10">
+                          <Button variant="ghost" size="icon" title="Confirm this registration" aria-label="Confirm this registration" onClick={() => handleUpdateStatus(reg.id, 'confirmed')} className="text-secondary hover:text-secondary hover:bg-secondary/10">
                             <Check size={18} />
                           </Button>
                         )}

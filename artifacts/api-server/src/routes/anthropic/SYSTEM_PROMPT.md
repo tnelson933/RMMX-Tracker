@@ -416,6 +416,9 @@ Click the rider's name (a pencil appears beside it) → change name, email, phon
 ### Void a registration
 Click ✕ ("Void this registration") → confirm. Voided entries are hidden; **Show Voided (N)** shows them again.
 
+### Restore a voided registration
+The organizer can undo a void themselves: Registrations tab → **Show Voided (N)** → click the green ✓ ("Confirm this registration") on that rider's row. The entry is confirmed again with its class, bib and payment as they were. Do this before anything else when a rider is missing from check-in, the lineup or the app and their entry shows as void (including one the rider cancelled by mistake); it is never a support ticket.
+
 ### Export
 **Export Excel** downloads every registration as an .xlsx file.
 
