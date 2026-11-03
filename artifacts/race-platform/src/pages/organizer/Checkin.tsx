@@ -1043,7 +1043,7 @@ export default function Checkin() {
                               return gate ? <span className="ml-1 text-amber-800 font-bold">· ${Number(transponderRentalFee).toFixed(2)} due</span> : null;
                             })()}
                           </button>
-                        ) : transponderRentalEnabled && transponderRentalFee != null && !(checkin as any).rmTrackrPurchased && (
+                        ) : !groupRace && transponderRentalEnabled && transponderRentalFee != null && !(checkin as any).rmTrackrPurchased && (
                             <button
                               onClick={() => setRentalTarget({ registrationId: checkin.registrationId!, riderName: checkin.riderName })}
                               className="flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded hover:bg-red-100 transition-colors"
