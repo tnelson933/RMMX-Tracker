@@ -20,6 +20,10 @@ interface TeamMember {
   /** Chosen at registration: "own", "rent" or "buy". */
   trackrChoice?: string | null;
   rfidPurchased?: boolean;
+  /** Numbers on the rider's profile. */
+  onFile?: { rfidNumber: string | null; trackrNumber: string | null } | null;
+  /** Filled in from the profile on this screen (not saved yet). */
+  fromFile?: boolean;
 }
 
 type SaleItem = "rfid" | "trackr" | "rental";
@@ -78,7 +82,12 @@ export function TeamTranspondersDialog({ eventId, registrationId, teamName, ride
       .then(async res => {
         const json = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(responseErrorMessage(res.status, json));
-        if (!cancelled) setMembers(json.members ?? []);
+        // Empty boxes start with the numbers on the rider's profile (not a rental's: it goes back).
+        if (!cancelled) setMembers((json.members ?? []).map((m: TeamMember) => {
+          const rfid = m.rfidNumber ?? m.onFile?.rfidNumber ?? null;
+          const trackr = m.trackrNumber ?? (m.trackrChoice === "rent" || m.trackrChoice === "buy" ? null : m.onFile?.trackrNumber ?? null);
+          return { ...m, rfidNumber: rfid, trackrNumber: trackr, fromFile: rfid !== m.rfidNumber || trackr !== m.trackrNumber };
+        }));
       })
       .catch(e => { if (!cancelled) setLoadError(e.message); });
     return () => { cancelled = true; };
@@ -251,6 +260,9 @@ export function TeamTranspondersDialog({ eventId, registrationId, teamName, ride
                 </p>
                 {m.email && <p className="text-xs text-muted-foreground truncate">{m.email}</p>}
               </div>
+              {m.fromFile && (
+                <p className="text-xs text-green-800">Numbers filled in from their rider profile. Check them, then Save numbers.</p>
+              )}
               {(m.trackrChoice === "rent" || m.trackrChoice === "buy" || m.rfidPurchased) && (
                 <div className="flex flex-wrap gap-1.5">
                   {m.trackrChoice === "rent" && <span className="text-xs font-semibold rounded border border-amber-300 bg-amber-50 text-amber-800 px-2 py-0.5">Renting a transponder: hand one out and enter its number</span>}

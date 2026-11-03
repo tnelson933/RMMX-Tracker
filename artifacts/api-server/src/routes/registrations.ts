@@ -20,6 +20,8 @@ import { RM_TRACKR_NAME, RM_TRACKR_OPTION_ID } from "@workspace/db";
 import { canManageRider } from "../lib/riderAccess";
 import { riderMobileTokensTable } from "@workspace/db";
 import { reminderAvailability, reminderStatusText, rentalReplacementCharge, sendRentalReminders, unreturnedRentals, type ReminderStatus } from "../lib/rentalReminders";
+import { teamMembersTable } from "@workspace/db";
+import { isMasked, maskDateOfBirth, maskName, maskPhone, maskStreet, maskZip } from "../lib/privacyMask";
 import { parseTeamInput, parseTeamGear, saveTeamRoster, saveTeamTags, listTeamMembers, teamRegistrationId, teamRegistrationHasRoster, teamTagConflict, teamGearCounts } from "../lib/teams";
 import { eventTrackrPrice } from "../lib/sellItems";
 import { addonIsPaid, confirmAddonPayment, parseCashTendered, recordCardAddonPending, recordCashAddon, type AddonItem } from "../lib/addonPayments";
@@ -147,9 +149,10 @@ function submittedRiderProfile(
   const copy = (source: string, destination = source) => {
     if (!Object.prototype.hasOwnProperty.call(body, source)) return;
     const value = body[source];
-    // A blank field keeps the saved value. The public lookup no longer returns
-    // contact/DOB/address details, so returning riders often leave them empty.
-    if (typeof value === "string" && value.trim()) profile[destination] = value.trim();
+    // A blank field keeps the saved value, and so does one still partly hidden
+    // ("***-***-0100"): the public lookup hides contact details from anyone who
+    // isn't signed in as that rider.
+    if (typeof value === "string" && value.trim() && !isMasked(value)) profile[destination] = value.trim();
   };
 
   copy("firstName");
@@ -229,8 +232,9 @@ router.get("/public/riders/lookup", async (req, res) => {
 
   if (!riders.length) return res.json({ found: false, count: 0, riders: [] });
 
-  // Contact, DOB, address and emergency details only go to a signed-in organizer
-  // or the rider account that owns this email. Anonymous callers get racing info.
+  // Contact, DOB, address and emergency details only go in full to a signed-in
+  // organizer or the rider account that owns this email. Anyone else gets them
+  // partly hidden: enough to recognize their own details, not to learn someone else's.
   let canSeePrivate = !!(req.session as any)?.userId;
   const riderAccountId = (req.session as any)?.riderAccountId as number | undefined;
   if (!canSeePrivate && riderAccountId) {
@@ -238,7 +242,7 @@ router.get("/public/riders/lookup", async (req, res) => {
       .from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
     canSeePrivate = account?.email?.trim().toLowerCase() === email;
   }
-  const priv = (v: string | null | undefined) => (canSeePrivate ? v ?? "" : "");
+  const priv = (v: string | null | undefined, mask: (v: string | null | undefined) => string) => (canSeePrivate ? v ?? "" : mask(v));
 
   const riderIds = riders.map(r => r.id);
 
@@ -258,6 +262,19 @@ router.get("/public/riders/lookup", async (req, res) => {
     .where(inArray(registrationsTable.riderId, riderIds))
     .orderBy(desc(registrationsTable.createdAt), desc(registrationsTable.id));
 
+  // Numbers a rider used on a group race team (filed on the team, not their entry).
+  const teamRows = await db.select({ riderId: teamMembersTable.riderId, rfidNumber: teamMembersTable.rfidNumber, trackrNumber: teamMembersTable.trackrNumber, trackrChoice: teamMembersTable.trackrChoice })
+    .from(teamMembersTable)
+    .where(inArray(teamMembersTable.riderId, riderIds))
+    .orderBy(desc(teamMembersTable.updatedAt), desc(teamMembersTable.id));
+  const lastTeamByRider = new Map<number, { rfidNumber: string | null; trackrNumber: string | null }>();
+  for (const t of teamRows) {
+    const prev = lastTeamByRider.get(t.riderId!) ?? { rfidNumber: null, trackrNumber: null };
+    // A rented transponder went back after that event.
+    const ownTrackr = t.trackrChoice === "rent" ? null : t.trackrNumber;
+    lastTeamByRider.set(t.riderId!, { rfidNumber: prev.rfidNumber ?? t.rfidNumber, trackrNumber: prev.trackrNumber ?? ownTrackr });
+  }
+
   const lastRegByRider = new Map<number, typeof allLastRegs[0]>();
   for (const reg of allLastRegs) {
     if (reg.riderId != null && !lastRegByRider.has(reg.riderId)) {
@@ -272,14 +289,16 @@ router.get("/public/riders/lookup", async (req, res) => {
       firstName: rider.firstName ?? "",
       lastName: rider.lastName ?? "",
       email: rider.email ?? "",
-      phone: priv(rider.phone),
-      dateOfBirth: priv(rider.dateOfBirth),
-      emergencyContact: priv(rider.emergencyContact),
-      emergencyPhone: priv(rider.emergencyPhone),
-      streetAddress: priv(rider.streetAddress),
-      city: priv(rider.city),
+      phone: priv(rider.phone, maskPhone),
+      dateOfBirth: priv(rider.dateOfBirth, maskDateOfBirth),
+      emergencyContact: priv(rider.emergencyContact, maskName),
+      emergencyPhone: priv(rider.emergencyPhone, maskPhone),
+      streetAddress: priv(rider.streetAddress, maskStreet),
+      city: rider.city ?? "",
       homeState: rider.homeState ?? "",
-      zip: priv(rider.zip),
+      zip: priv(rider.zip, maskZip),
+      /** Some details are partly hidden ("*"); sending them back keeps what's on file. */
+      detailsHidden: !canSeePrivate,
       amaNumber: lastReg?.amaNumber ?? rider.amaNumber ?? "",
       clubIdNumber: lastReg?.clubIdNumber ?? "",
       bikeBrand: lastReg?.bikeBrand ?? rider.bikeManufacturer ?? "",
@@ -287,7 +306,8 @@ router.get("/public/riders/lookup", async (req, res) => {
       bikeYear: lastReg?.bikeYear ?? rider.bikeYear ?? "",
       bibNumber: lastReg?.bibNumber?.toString() ?? rider.bibNumber ?? "",
       sponsors: lastReg?.sponsors ?? rider.sponsors ?? "",
-      myLapsTransponderNumber: lastReg?.myLapsTransponderNumber ?? rider.mylapsTransponderId ?? "",
+      myLapsTransponderNumber: lastReg?.myLapsTransponderNumber || rider.mylapsTransponderId || lastTeamByRider.get(rider.id)?.trackrNumber || "",
+      rfidNumber: rider.rfidNumber || lastTeamByRider.get(rider.id)?.rfidNumber || "",
     };
   });
 
@@ -856,6 +876,12 @@ router.get("/events/:eventId/registrations/:regId/team", async (req, res) => {
   if (!event?.groupRace) return res.status(400).json({ error: "This event isn't a group race." });
   const teamRegId = await teamRegistrationId(eventId, reg.riderId) ?? reg.id;
   const members = await listTeamMembers(teamRegId);
+  // Numbers already on a member's rider profile, to fill in what the team hasn't entered.
+  const memberRiderIds = members.map(m => m.riderId).filter((id): id is number => id != null);
+  const profiles = memberRiderIds.length
+    ? await db.select({ id: ridersTable.id, rfidNumber: ridersTable.rfidNumber, trackr: ridersTable.mylapsTransponderId }).from(ridersTable).where(inArray(ridersTable.id, memberRiderIds))
+    : [];
+  const onFile = new Map(profiles.map(p => [p.id, p]));
   return res.json({
     registrationId: teamRegId,
     teamName: reg.teamName,
@@ -864,6 +890,9 @@ router.get("/events/:eventId/registrations/:regId/team", async (req, res) => {
       id: m.id, position: m.position, firstName: m.firstName, lastName: m.lastName, email: m.email,
       rfidNumber: m.rfidNumber, trackrNumber: m.trackrNumber,
       trackrChoice: m.trackrChoice, rfidPurchased: m.rfidPurchased,
+      onFile: m.riderId != null && onFile.has(m.riderId)
+        ? { rfidNumber: onFile.get(m.riderId)!.rfidNumber ?? null, trackrNumber: onFile.get(m.riderId)!.trackr ?? null }
+        : null,
     })),
   });
 });

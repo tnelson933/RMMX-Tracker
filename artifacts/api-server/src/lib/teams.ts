@@ -135,6 +135,9 @@ export async function saveTeamRoster(
   const gearFields = (i: number) => ({ rfidNumber: g(i).rfidNumber, trackrNumber: g(i).trackrNumber, trackrChoice: g(i).trackrChoice, rfidPurchased: g(i).buyRfid });
   const memberRiderIds: number[] = [];
   for (const m of members) memberRiderIds.push(await teamMemberRiderId(m));
+  // Numbers entered at registration go on each rider's profile too.
+  await rememberMemberNumbers(captain.riderId, g(0).rfidNumber, g(0).trackrNumber);
+  for (let i = 0; i < members.length; i++) await rememberMemberNumbers(memberRiderIds[i], g(i + 1).rfidNumber, g(i + 1).trackrNumber);
   await db.insert(teamMembersTable).values([
     { eventId, registrationId, position: 1, riderId: captain.riderId, firstName: captain.firstName, lastName: captain.lastName, email: captain.email, ...gearFields(0) },
     ...members.map((m, i) => ({ eventId, registrationId, position: i + 2, riderId: memberRiderIds[i], firstName: m.firstName, lastName: m.lastName, email: m.email, ...gearFields(i + 1) })),
@@ -293,7 +296,21 @@ export async function saveTeamTags(eventId: number, registrationId: number, capt
   for (const [id, p] of planned) {
     await db.update(teamMembersTable).set({ ...p, updatedAt: new Date() }).where(eq(teamMembersTable.id, id));
   }
+  // Keep each member's rider profile up to date, so the numbers are on file next time.
+  for (const m of members) {
+    const p = planned.get(m.id);
+    // A rental goes back after the event, so it isn't the rider's own number.
+    if (p && m.riderId != null) await rememberMemberNumbers(m.riderId, p.rfidNumber, m.trackrChoice === "rent" ? null : p.trackrNumber);
+  }
   return null;
+}
+
+/** Save a team member's numbers on their rider profile (only the ones they have). */
+export async function rememberMemberNumbers(riderId: number, rfidNumber: string | null, trackrNumber: string | null): Promise<void> {
+  const set: { rfidNumber?: string; mylapsTransponderId?: string } = {};
+  if (rfidNumber) set.rfidNumber = rfidNumber;
+  if (trackrNumber) set.mylapsTransponderId = trackrNumber;
+  if (Object.keys(set).length) await db.update(ridersTable).set(set).where(eq(ridersTable.id, riderId));
 }
 
 export interface TeamLink { eventId: number; captainRiderId: number; registrationId: number; teamName: string | null; memberRiderId: number }

@@ -369,7 +369,16 @@ interface RiderOption {
   bibNumber: string;
   sponsors: string;
   myLapsTransponderNumber: string;
+  /** RFID tag on file (profile, or the last group race team they rode on). */
+  rfidNumber?: string;
+  /** Contact details came back partly hidden ("***-***-0100"): the caller isn't signed in as this rider. */
+  detailsHidden?: boolean;
 }
+
+/** A partly hidden detail from the lookup: tapping it selects it, so typing replaces it. */
+const selectIfHidden = (e: React.FocusEvent<HTMLInputElement>) => {
+  if (e.target.value.includes("*")) e.target.select();
+};
 
 const DESKTOP_CLOUD_URL = import.meta.env.VITE_CLOUD_URL as string | undefined;
 
@@ -426,6 +435,13 @@ export default function Register() {
   const [teamMembers, setTeamMembers] = useState<TeamMemberEntry[]>([]);
   // Group race: each rider's transponder (index 0 is the captain).
   const [teamGear, setTeamGear] = useState<TeamGearEntry[]>([]);
+  // The captain's RFID tag on file (the RM TrackR number is in the form).
+  const [captainRfid, setCaptainRfid] = useState("");
+  // Saved contact details shown partly hidden (not signed in as this rider).
+  const [detailsHidden, setDetailsHidden] = useState(false);
+  // Team members found on file by email: their name, and profiles to pick from when an email has several.
+  const [memberLookup, setMemberLookup] = useState<Record<number, { status: "found" | "pick" | "none"; options: RiderOption[] }>>({});
+  const memberLookupRef = useRef<Record<number, number>>({});
   // Set when the rider taps Edit on the review, so Next goes straight back to it.
   const [returnToReview, setReturnToReview] = useState(false);
   const [stepError, setStepError] = useState<string | null>(null);
@@ -869,7 +885,73 @@ export default function Register() {
     return () => clearInterval(id);
   }, [pendingPayment?.sessionId, pendingPayment?.registrationId, !!success]);
 
+  /** Gear for a rider from what's on file: their own RM TrackR number and RFID tag. */
+  const gearFromFile = (trackr: string | undefined, rfid: string | undefined): TeamGearEntry => ({
+    trackrChoice: trackr?.trim() ? "own" : "",
+    trackrNumber: trackr?.trim() ?? "",
+    rfidNumber: rfid?.trim() ?? "",
+    buyRfid: false,
+  });
+
+  /** Fill team member i (0-based, not the captain) from a profile on file. */
+  const applyMemberProfile = (i: number, rider: RiderOption) => {
+    setTeamMembers(prev => {
+      const next = [...prev];
+      while (next.length <= i) next.push({ firstName: "", lastName: "", email: "" });
+      next[i] = { ...next[i], firstName: rider.firstName || next[i].firstName, lastName: rider.lastName || next[i].lastName };
+      return next;
+    });
+    // Their numbers go on the Add-ons step, unless someone already chose there.
+    setTeamGear(prev => {
+      if (prev[i + 1]) return prev;
+      const next = [...prev];
+      while (next.length <= i + 1) next.push(undefined as unknown as TeamGearEntry);
+      next[i + 1] = gearFromFile(rider.myLapsTransponderNumber, rider.rfidNumber);
+      return next;
+    });
+    setMemberLookup(prev => ({ ...prev, [i]: { status: "found", options: [] } }));
+  };
+
+  /** A team member's email: look them up and fill in what's on file. */
+  const lookupMember = async (i: number, email: string) => {
+    const trimmed = email.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return;
+    const request = (memberLookupRef.current[i] ?? 0) + 1;
+    memberLookupRef.current[i] = request;
+    try {
+      const res = await fetch(`/api/public/riders/lookup?email=${encodeURIComponent(trimmed)}`);
+      const data = res.ok ? await res.json() : { found: false, riders: [] };
+      if (memberLookupRef.current[i] !== request) return;
+      const riders: RiderOption[] = data.riders ?? [];
+      if (!riders.length) { setMemberLookup(prev => ({ ...prev, [i]: { status: "none", options: [] } })); return; }
+      const typed = teamMembers[i];
+      const same = (a?: string, b?: string) => (a ?? "").trim().toLowerCase() === (b ?? "").trim().toLowerCase();
+      const byName = typed?.firstName.trim() && typed?.lastName.trim()
+        ? riders.filter(rd => same(rd.firstName, typed.firstName) && same(rd.lastName, typed.lastName))
+        : [];
+      if (byName.length === 1) applyMemberProfile(i, byName[0]);
+      else if (riders.length === 1 && !(typed?.firstName.trim() && typed?.lastName.trim())) applyMemberProfile(i, riders[0]);
+      else if (riders.length > 1 && byName.length === 0 && !(typed?.firstName.trim() && typed?.lastName.trim())) setMemberLookup(prev => ({ ...prev, [i]: { status: "pick", options: riders } }));
+      else setMemberLookup(prev => ({ ...prev, [i]: { status: "none", options: [] } }));
+    } catch { /* lookup is a convenience; typing still works */ }
+  };
+
+  // Group race: the captain's numbers on file start the Add-ons step filled in.
+  useEffect(() => {
+    if (step !== "addons" || !event?.groupRace || teamGear[0]) return;
+    const trackr = form.getValues("myLapsTransponderNumber");
+    if (!trackr?.trim() && !captainRfid.trim()) return;
+    setTeamGear(prev => {
+      if (prev[0]) return prev;
+      const next = [...prev];
+      next[0] = gearFromFile(trackr, captainRfid);
+      return next;
+    });
+  }, [step, event?.groupRace]);
+
   const populateFromRider = (rider: RiderOption) => {
+    setCaptainRfid(rider.rfidNumber ?? "");
+    setDetailsHidden(!!rider.detailsHidden);
     const profileValues: Partial<RegisterForm> = {
       firstName: rider.firstName ?? "",
       lastName: rider.lastName ?? "",
@@ -925,6 +1007,7 @@ export default function Register() {
     for (const name of ["firstName", "lastName", "dateOfBirth", "bibNumber", "amaNumber", "clubIdNumber", "myLapsTransponderNumber", "bikeBrand", "bikeModel", "bikeYear", "sponsors"] as const) {
       form.setValue(name, "", { shouldDirty: false });
     }
+    setDetailsHidden(false);
     setLookupState("new_rider");
   };
 
@@ -1538,6 +1621,7 @@ export default function Register() {
                             <CheckCircle2 size={16} className="shrink-0 text-green-600" />
                             <span>
                               Welcome back, <strong>{lookedUpName}</strong>! Your info has been pre-filled — review and update anything that's changed.{" "}
+                              {detailsHidden && <>For your privacy, saved contact details are partly hidden (***). Leave them as they are to keep what's on file, or sign in to see them in full.{" "}</>}
                               <button type="button" onClick={startNewRiderOnEmail} className="underline font-semibold">Not {lookedUpName.split(" ")[0]}? Register a different rider on this email</button>
                             </span>
                           </div>
@@ -1621,14 +1705,14 @@ export default function Register() {
                           <FormField control={form.control} name="phone" render={({ field }) => (
                             <FormItem>
                               <FormLabel>Phone <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
-                              <FormControl><Input placeholder="602-555-0100" {...field} /></FormControl>
+                              <FormControl><Input placeholder="602-555-0100" {...field} onFocus={selectIfHidden} /></FormControl>
                               <FormMessage />
                             </FormItem>
                           )} />
                           <FormField control={form.control} name="dateOfBirth" render={({ field }) => (
                             <FormItem>
                               <FormLabel>Date of Birth <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
-                              <FormControl><Input type="text" inputMode="numeric" placeholder="MM/DD/YYYY" {...field} /></FormControl>
+                              <FormControl><Input type="text" inputMode="numeric" placeholder="MM/DD/YYYY" {...field} onFocus={selectIfHidden} /></FormControl>
                               <FormMessage />
                             </FormItem>
                           )} />
@@ -1684,7 +1768,7 @@ export default function Register() {
                         <FormField control={form.control} name="streetAddress" render={({ field }) => (
                           <FormItem>
                             <FormLabel>Street Address <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
-                            <FormControl><Input placeholder="123 Dirt Track Rd" {...field} /></FormControl>
+                            <FormControl><Input placeholder="123 Dirt Track Rd" {...field} onFocus={selectIfHidden} /></FormControl>
                             <p className="text-xs text-muted-foreground">Saved to your profile for next time.</p>
                             <FormMessage />
                           </FormItem>
@@ -1707,7 +1791,7 @@ export default function Register() {
                           <FormField control={form.control} name="zip" render={({ field }) => (
                             <FormItem>
                               <FormLabel>ZIP <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
-                              <FormControl><Input placeholder="85701" maxLength={10} {...field} /></FormControl>
+                              <FormControl><Input placeholder="85701" maxLength={10} {...field} onFocus={selectIfHidden} /></FormControl>
                               <FormMessage />
                             </FormItem>
                           )} />
@@ -1722,14 +1806,14 @@ export default function Register() {
                           <FormField control={form.control} name="emergencyContact" render={({ field }) => (
                             <FormItem>
                               <FormLabel>Contact Name <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
-                              <FormControl><Input placeholder="Jane Morrison" {...field} /></FormControl>
+                              <FormControl><Input placeholder="Jane Morrison" {...field} onFocus={selectIfHidden} /></FormControl>
                               <FormMessage />
                             </FormItem>
                           )} />
                           <FormField control={form.control} name="emergencyPhone" render={({ field }) => (
                             <FormItem>
                               <FormLabel>Contact Phone <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
-                              <FormControl><Input placeholder="602-555-0200" {...field} /></FormControl>
+                              <FormControl><Input placeholder="602-555-0200" {...field} onFocus={selectIfHidden} /></FormControl>
                               <FormMessage />
                             </FormItem>
                           )} />
@@ -1799,7 +1883,27 @@ export default function Register() {
                               <Input aria-label={`Rider ${i + 2} first name`} placeholder="First name *" value={m.firstName} onChange={e => set({ firstName: e.target.value })} />
                               <Input aria-label={`Rider ${i + 2} last name`} placeholder="Last name *" value={m.lastName} onChange={e => set({ lastName: e.target.value })} />
                             </div>
-                            <Input aria-label={`Rider ${i + 2} email`} type="email" placeholder="Email *" value={m.email} onChange={e => set({ email: e.target.value })} />
+                            <Input aria-label={`Rider ${i + 2} email`} type="email" placeholder="Email *" value={m.email}
+                              onChange={e => { set({ email: e.target.value }); setMemberLookup(prev => { const n = { ...prev }; delete n[i]; return n; }); }}
+                              onBlur={e => lookupMember(i, e.target.value)} />
+                            {memberLookup[i]?.status === "found" && (
+                              <p className="text-xs text-green-800">Found on file. Their details{event.groupRace ? " and transponder numbers" : ""} are filled in.</p>
+                            )}
+                            {memberLookup[i]?.status === "pick" && (
+                              <div className="space-y-1.5">
+                                <p className="text-xs text-muted-foreground">More than one rider uses this email. Which one is on your team?</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {memberLookup[i].options.map(o => (
+                                    <Button key={o.id} type="button" size="sm" variant="outline" onClick={() => applyMemberProfile(i, o)}>
+                                      {o.firstName} {o.lastName}
+                                    </Button>
+                                  ))}
+                                  <Button type="button" size="sm" variant="ghost" onClick={() => setMemberLookup(prev => ({ ...prev, [i]: { status: "none", options: [] } }))}>
+                                    Someone else
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -1903,7 +2007,7 @@ export default function Register() {
                             const set = (patch: Partial<TeamGearEntry>) => setTeamGear(prev => {
                               const next = [...prev];
                               while (next.length <= i) next.push({ ...EMPTY_GEAR });
-                              next[i] = { ...next[i], ...patch };
+                              next[i] = { ...EMPTY_GEAR, ...next[i], ...patch };
                               return next;
                             });
                             const who = i === 0

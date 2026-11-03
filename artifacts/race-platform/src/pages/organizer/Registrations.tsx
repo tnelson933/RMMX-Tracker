@@ -874,7 +874,17 @@ export default function Registrations() {
                         <div key={i} className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                           <Input aria-label={`Rider ${i + 2} first name`} placeholder={`Rider ${i + 2} first name *`} value={m.firstName} onChange={e => set({ firstName: e.target.value })} />
                           <Input aria-label={`Rider ${i + 2} last name`} placeholder="Last name *" value={m.lastName} onChange={e => set({ lastName: e.target.value })} />
-                          <Input aria-label={`Rider ${i + 2} email`} type="email" placeholder="Email *" value={m.email} onChange={e => set({ email: e.target.value })} />
+                          <Input aria-label={`Rider ${i + 2} email`} type="email" placeholder="Email *" value={m.email} onChange={e => set({ email: e.target.value })}
+                            onBlur={async e => {
+                              // A rider on file: fill in their name (their numbers come up at check-in).
+                              const email = e.target.value.trim();
+                              if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || (m.firstName.trim() && m.lastName.trim())) return;
+                              try {
+                                const data = await fetch(`/api/public/riders/lookup?email=${encodeURIComponent(email)}`).then(r => (r.ok ? r.json() : null));
+                                const only = data?.riders?.length === 1 ? data.riders[0] : null;
+                                if (only) set({ firstName: m.firstName.trim() || only.firstName, lastName: m.lastName.trim() || only.lastName });
+                              } catch { /* typing still works */ }
+                            }} />
                         </div>
                       );
                     })}
