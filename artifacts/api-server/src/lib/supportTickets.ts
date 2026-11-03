@@ -196,7 +196,15 @@ export async function decideTicket(ticketId: number, decision: TicketDecision, d
   return ticket;
 }
 
-/** Mark a ticket fixed and tell the organizer. */
+/** The site's address, for links in support emails and texts. */
+export function supportAppUrl(): string {
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
+  const domains = process.env.REPLIT_DOMAINS;
+  if (domains) return `https://${domains.split(",")[0]}`;
+  return "http://localhost:80";
+}
+
+/** Mark a ticket fixed, tell the organizer, and text the team that it's closed. */
 export async function resolveTicket(ticketId: number, resolution: string, byUserId: number | null): Promise<SupportTicket | null> {
   const [ticket] = await db.update(supportTicketsTable)
     .set({
@@ -213,5 +221,12 @@ export async function resolveTicket(ticketId: number, resolution: string, byUser
     .returning();
   if (!ticket) return null;
   await postTicketUpdate(ticket, `**Fixed: "${ticket.summary}"**\n\n${resolution}\n\nTry again, and tell me if anything still isn't working.`);
+  // The closing text links to the ticket, which shows what was wrong and exactly how it was fixed.
+  try {
+    const text = `RM Roost support #${ticket.id} resolved: ${ticket.summary.slice(0, 90)}. What was fixed and how: ${supportAppUrl()}/admin/support?ticket=${ticket.id}`;
+    for (const phone of await alertPhones()) await sendSms(phone, text);
+  } catch (err) {
+    logger.error({ err, ticketId }, "support ticket: resolved text failed");
+  }
   return ticket;
 }

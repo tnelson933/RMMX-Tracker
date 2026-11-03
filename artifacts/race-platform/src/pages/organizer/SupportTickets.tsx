@@ -176,6 +176,40 @@ export default function SupportTickets() {
                   {selected.urgency === "urgent" && <span className="inline-flex items-center gap-1 font-bold text-red-700"><AlertTriangle size={11} /> Urgent</span>}
                 </div>
                 <h2 className="font-heading font-bold text-xl leading-snug">{selected.summary}</h2>
+                {selected.status === "resolved" && (() => {
+                  // The "resolved" text links here: what was wrong and exactly how it was fixed.
+                  const fix = selected.proposedFix;
+                  const fixUsed = fix && (selected.fixStatus === "applied" || selected.fixStatus === "pr_opened");
+                  return (
+                    <div className="rounded-md border border-green-600/30 bg-green-500/5 p-3 text-sm space-y-2">
+                      <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-green-700">
+                        <Check size={13} /> Resolved{selected.resolvedAt ? ` ${new Date(selected.resolvedAt).toLocaleString()}` : ""}
+                      </p>
+                      {fixUsed && (
+                        <>
+                          <div>
+                            <p className="text-xs font-semibold text-muted-foreground">What was wrong</p>
+                            <p className="whitespace-pre-wrap">{fix.rootCause}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold text-muted-foreground">How it was fixed</p>
+                            <p>{fix.summary}</p>
+                            {fix.sql && <pre className="mt-1 rounded bg-muted p-2 text-xs whitespace-pre-wrap break-all">{fix.sql}</pre>}
+                            {(fix.files ?? []).length > 0 && <p className="text-xs mt-1">Changed: {(fix.files ?? []).map(f => f.path).join(", ")}</p>}
+                            {selected.fixResult && <p className="text-xs mt-1">{selected.fixResult}</p>}
+                            {selected.fixPrUrl && <a href={selected.fixPrUrl} target="_blank" rel="noreferrer" className="text-xs underline">Open the pull request</a>}
+                          </div>
+                        </>
+                      )}
+                      {selected.resolution && (
+                        <div>
+                          <p className="text-xs font-semibold text-muted-foreground">{fixUsed ? "The organizer was told" : "Resolution"}</p>
+                          <p className="whitespace-pre-wrap">{selected.resolution}</p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
                   <dt className="text-muted-foreground">Club</dt><dd>{selected.clubName ?? "—"}</dd>
                   <dt className="text-muted-foreground">Event</dt><dd>{selected.eventName ? `${selected.eventName} (${selected.eventDate})` : "—"}</dd>
@@ -263,13 +297,6 @@ export default function SupportTickets() {
                         )}
                       </div>
                     )}
-                  </div>
-                )}
-
-                {selected.resolution && (
-                  <div className="rounded-md border border-green-600/30 bg-green-500/5 p-3 text-sm">
-                    <p className="text-xs font-bold uppercase tracking-wider text-green-700 mb-1">Resolution</p>
-                    <p className="whitespace-pre-wrap">{selected.resolution}</p>
                   </div>
                 )}
 

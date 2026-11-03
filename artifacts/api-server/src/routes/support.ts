@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, clubsTable, eventsTable, supportTicketsTable, usersTable } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
-import { checkApprovalToken, decideTicket, resolveTicket, type TicketDecision } from "../lib/supportTickets";
+import { checkApprovalToken, decideTicket, resolveTicket, supportAppUrl as getAppUrl, type TicketDecision } from "../lib/supportTickets";
 import { checkFixToken, decideFix, startInvestigation } from "../lib/supportInvestigation";
 
 /**
@@ -11,13 +11,6 @@ import { checkFixToken, decideFix, startInvestigation } from "../lib/supportInve
  * for super admins only (Admin → Support).
  */
 const router = Router();
-
-function getAppUrl(): string {
-  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
-  const domains = process.env.REPLIT_DOMAINS;
-  if (domains) return `https://${domains.split(",")[0]}`;
-  return "http://localhost:80";
-}
 
 async function superAdminId(req: any, res: any): Promise<number | null> {
   const userId = (req.session as any)?.userId;
