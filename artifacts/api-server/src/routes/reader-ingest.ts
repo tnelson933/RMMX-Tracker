@@ -16,6 +16,7 @@
  *                    (expecting a finish toggle)
  *   time_check     → records an arrival note (split time) against the check
  */
+import { teamTagRider } from "../lib/teams";
 import express, { Router } from "express";
 import { db } from "@workspace/db";
 import {
@@ -64,6 +65,10 @@ async function resolveRider(
   isActiveTransponderReader: boolean,
 ): Promise<number | null> {
   const tagNumber = rfidNumber.trim();
+
+  // Group race: any team member's tag counts for the team (its captain's rider id).
+  const teamRider = await teamTagRider(tagNumber, eventId);
+  if (teamRider) return teamRider;
 
   // Active IDs assigned for this event take priority over the rider's global
   // identifier, allowing a rider to use different transponders at different

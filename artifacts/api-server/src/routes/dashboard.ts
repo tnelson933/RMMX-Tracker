@@ -79,6 +79,8 @@ router.get("/dashboard/club/:clubId", async (req, res) => {
     requireWaiver: eventsTable.requireWaiver,
     requireLiabilityWaiver: eventsTable.requireLiabilityWaiver,
     requireTransponder: eventsTable.requireTransponder,
+    groupRace: eventsTable.groupRace,
+    ridersPerGroup: eventsTable.ridersPerGroup,
     entryFee: eventsTable.entryFee,
     maxRiders: eventsTable.maxRiders,
     endDate: eventsTable.endDate,

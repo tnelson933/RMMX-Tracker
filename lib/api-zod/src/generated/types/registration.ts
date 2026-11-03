@@ -14,6 +14,8 @@ export interface Registration {
   eventId: number;
   riderId: number;
   riderName: string;
+  /** Group races only, the team this entry registers */
+  teamName?: string | null;
   raceClass: string;
   status: RegistrationStatus;
   paymentStatus?: RegistrationPaymentStatus;

@@ -137,12 +137,27 @@ function SectionHeader({ children, action }: { children: React.ReactNode; action
   );
 }
 
+// Group race team members besides the captain.
+interface TeamMemberEntry { firstName: string; lastName: string; email: string }
+const teamSize = (ridersPerGroup: number | null | undefined) => Math.max(2, ridersPerGroup ?? 2);
+/** What's missing on the Team step, or null when the team is complete. */
+function teamProblem(teamName: string, members: TeamMemberEntry[], ridersPerGroup: number | null | undefined): string | null {
+  if (!teamName.trim()) return "Enter a team name.";
+  for (let i = 0; i < teamSize(ridersPerGroup) - 1; i++) {
+    const m = members[i];
+    if (!m?.firstName.trim() || !m?.lastName.trim()) return `Enter rider ${i + 2}'s first and last name.`;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m.email.trim())) return `Enter a valid email address for rider ${i + 2}.`;
+  }
+  return null;
+}
+
 // The registration wizard: one group of fields per step, then a review.
-type StepId = "rider" | "contact" | "classes" | "addons" | "bike" | "waiver" | "review";
+type StepId = "rider" | "contact" | "team" | "classes" | "addons" | "bike" | "waiver" | "review";
 
 const STEP_LABELS: Record<StepId, string> = {
   rider: "Rider",
   contact: "Contact",
+  team: "Team",
   classes: "Classes",
   addons: "Add-ons",
   bike: "Bike",
@@ -285,6 +300,9 @@ interface EventInfo {
   requireWaiver: boolean;
   requireLiabilityWaiver: boolean;
   requireTransponder: boolean;
+  /** Group race: the rider registering is a team captain and enters the whole team. */
+  groupRace?: boolean;
+  ridersPerGroup?: number | null;
   waiverText: string | null;
   waiverPdfUrl?: string | null;
   liabilityWaiverText?: string | null;
@@ -400,6 +418,9 @@ export default function Register() {
 
   // Wizard state
   const [step, setStep] = useState<StepId>("rider");
+  // Group race: the team name and every member besides the captain (the rider on this form).
+  const [teamName, setTeamName] = useState("");
+  const [teamMembers, setTeamMembers] = useState<TeamMemberEntry[]>([]);
   // Set when the rider taps Edit on the review, so Next goes straight back to it.
   const [returnToReview, setReturnToReview] = useState(false);
   const [stepError, setStepError] = useState<string | null>(null);
@@ -921,6 +942,12 @@ export default function Register() {
       });
       return;
     }
+    const teamIssue = event?.groupRace ? teamProblem(teamName, teamMembers, event.ridersPerGroup) : null;
+    if (teamIssue) {
+      setStep("team");
+      setStepError(teamIssue);
+      return;
+    }
     if (event?.requireWaiver && !waiverAccepted) {
       setSubmitError("You must read and accept the rider acknowledgement form before registering.");
       return;
@@ -942,6 +969,7 @@ export default function Register() {
           // Show Stripe's payment form in this page instead of a new window.
           embeddedCheckout: true,
           raceClasses: selectedClasses,
+          ...(event?.groupRace ? { teamName: teamName.trim(), teamMembers: teamMembers.slice(0, teamSize(event.ridersPerGroup) - 1) } : {}),
           selectedPurchaseOptions: (event?.purchaseOptions ?? []).filter(o => data.selectedPurchaseOptions.includes(o.id)),
           compCode: appliedComp?.code ?? null,
           waiverAcknowledgedAt: waiverAccepted ? waiverTimestamp : null,
@@ -1166,6 +1194,7 @@ export default function Register() {
   const steps: StepId[] = [
     "rider",
     "contact",
+    ...(event.groupRace ? ["team" as const] : []),
     "classes",
     ...(showTransponderSection || event.rfidStickerFee != null || addOnOptions.length > 0 ? ["addons" as const] : []),
     "bike",
@@ -1174,7 +1203,7 @@ export default function Register() {
   ];
   const stepIndex = Math.max(0, steps.indexOf(step));
   // Drives the "* Required" note; must match what validateStep enforces.
-  const stepHasRequired = step === "rider" || step === "classes" || step === "waiver"
+  const stepHasRequired = step === "rider" || step === "team" || step === "classes" || step === "waiver"
     || (step === "addons" && event.requireTransponder && !gettingTransponder);
   const v = form.getValues();
 
@@ -1207,6 +1236,10 @@ export default function Register() {
         setStepError(`#${form.getValues("bibNumber")} is already taken for this event. Choose another number.`);
         return false;
       }
+    }
+    if (id === "team") {
+      const problem = teamProblem(teamName, teamMembers, event.ridersPerGroup);
+      if (problem) { setStepError(problem); return false; }
     }
     if (id === "classes") return form.trigger("selectedClasses");
     if (id === "addons" && event.requireTransponder) {
@@ -1669,6 +1702,42 @@ export default function Register() {
                       )}
                     />
                   </>
+                )}
+
+                {step === "team" && (
+                  <Card>
+                    <SectionHeader>Your Team</SectionHeader>
+                    <CardContent className="p-6 space-y-5">
+                      <p className="text-sm text-muted-foreground">
+                        This is a group race: you're registering a whole team of {teamSize(event.ridersPerGroup)} riders, and their laps add up to one team total.
+                        You ({`${v.firstName} ${v.lastName}`.trim() || "the rider on this form"}) are the team captain, rider 1. Add everyone else below.
+                        Each rider can use their own RFID tag or RM TrackR; the gate records every rider's number at check-in.
+                      </p>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium" htmlFor="team-name">Team Name <span className="text-primary">*</span></label>
+                        <Input id="team-name" value={teamName} maxLength={80} placeholder="Team name" onChange={e => setTeamName(e.target.value)} />
+                      </div>
+                      {Array.from({ length: teamSize(event.ridersPerGroup) - 1 }, (_, i) => {
+                        const m = teamMembers[i] ?? { firstName: "", lastName: "", email: "" };
+                        const set = (patch: Partial<TeamMemberEntry>) => setTeamMembers(prev => {
+                          const next = [...prev];
+                          while (next.length <= i) next.push({ firstName: "", lastName: "", email: "" });
+                          next[i] = { ...next[i], ...patch };
+                          return next;
+                        });
+                        return (
+                          <div key={i} className="rounded-lg border p-4 space-y-3">
+                            <p className="text-sm font-heading font-semibold uppercase tracking-wide">Rider {i + 2}</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <Input aria-label={`Rider ${i + 2} first name`} placeholder="First name *" value={m.firstName} onChange={e => set({ firstName: e.target.value })} />
+                              <Input aria-label={`Rider ${i + 2} last name`} placeholder="Last name *" value={m.lastName} onChange={e => set({ lastName: e.target.value })} />
+                            </div>
+                            <Input aria-label={`Rider ${i + 2} email`} type="email" placeholder="Email *" value={m.email} onChange={e => set({ email: e.target.value })} />
+                          </div>
+                        );
+                      })}
+                    </CardContent>
+                  </Card>
                 )}
 
                 {step === "classes" && (
@@ -2169,6 +2238,16 @@ export default function Register() {
                       <ReviewRow label="Emergency Contact" value={[v.emergencyContact, v.emergencyPhone].filter(Boolean).join(" · ")} />
                       <ReviewRow label="Race Day Stats" value={v.statsEmailOptIn ? "Email them to me" : "No"} />
                     </ReviewSection>
+
+                    {event.groupRace && (
+                      <ReviewSection title="Team" onEdit={() => editStep("team")}>
+                        <ReviewRow label="Team Name" value={teamName.trim()} />
+                        <ReviewRow label="Rider 1 (captain)" value={`${v.firstName} ${v.lastName}`.trim()} />
+                        {teamMembers.slice(0, teamSize(event.ridersPerGroup) - 1).map((m, i) => (
+                          <ReviewRow key={i} label={`Rider ${i + 2}`} value={`${m.firstName} ${m.lastName} · ${m.email}`.trim()} />
+                        ))}
+                      </ReviewSection>
+                    )}
 
                     <ReviewSection title={v.selectedClasses.length > 1 ? "Classes" : "Class"} onEdit={() => editStep("classes")}>
                       {v.selectedClasses.map(cls => (

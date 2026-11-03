@@ -1,3 +1,4 @@
+import { teamNamesByRider } from "../lib/teams";
 import { Router } from "express";
 import { computeEnduroEventOverall, computeEventOverall, eventLowerIsBetter } from "../lib/eventOverall";
 import { buildContingencyReport } from "../lib/contingencyReport";
@@ -298,6 +299,8 @@ router.get("/events/:eventId/results", async (req, res) => {
     .where(eq(raceResultsTable.eventId, eventId))
     .orderBy(raceResultsTable.position);
   const regDetails = await registrationDetailsLookup(eventId);
+  // Group race: the team's result is filed under its captain; show the team.
+  const teamNames = await teamNamesByRider(eventId);
   // Olympic tables rank the overall lowest first; the pages need to know.
   const lowerIsBetter = await eventLowerIsBetter(eventId);
 
@@ -311,7 +314,7 @@ router.get("/events/:eventId/results", async (req, res) => {
     lowerIsBetter,
     motoName: r.motoName || "",
     riderId: r.riderId,
-    riderName: `${r.firstName} ${r.lastName}`,
+    riderName: teamNames.get(r.riderId) ?? `${r.firstName} ${r.lastName}`,
     raceClass: r.raceClass,
     position: r.position,
     totalTime: r.totalTime,
@@ -708,11 +711,13 @@ router.get("/events/:eventId/contingency-report", async (req, res) => {
     .innerJoin(ridersTable, eq(registrationsTable.riderId, ridersTable.id))
     .where(and(eq(registrationsTable.eventId, eventId), ne(registrationsTable.status, "void")))
     .orderBy(registrationsTable.id);
+  const teamNames = await teamNamesByRider(eventId);
   // The entry in the result's class, else the rider's first entry.
   const details = (riderId: number, raceClass: string) => {
     const r = regs.find(x => x.riderId === riderId && x.raceClass === raceClass) ?? regs.find(x => x.riderId === riderId);
+    const team = teamNames.get(riderId);
     return r ? {
-      firstName: r.firstName ?? "", lastName: r.lastName ?? "", amaNumber: r.amaNumber ?? null,
+      firstName: team ?? r.firstName ?? "", lastName: team ? "" : r.lastName ?? "", amaNumber: r.amaNumber ?? null,
       bikeBrand: r.bikeBrand, bikeModel: r.bikeModel ?? null, bikeYear: r.bikeYear ?? null, sponsors: r.sponsors,
     } : null;
   };

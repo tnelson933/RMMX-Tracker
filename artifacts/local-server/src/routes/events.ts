@@ -1,3 +1,4 @@
+import { parseTeamInput, saveTeamRoster, teamRegistrationId, listTeamMembers } from "../lib/group-teams";
 import { Router } from "express";
 import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
 import { getDb } from "../db";
@@ -158,6 +159,8 @@ function serializeEvent(e: any) {
     // (POST /public/events/:id/liability-waiver/sign, routes/waivers.ts).
     requireLiabilityWaiver: e.require_liability_waiver === 1,
     requireTransponder: e.require_transponder === 1,
+    groupRace: e.group_race === 1,
+    ridersPerGroup: e.riders_per_group ?? null,
     raceClassDetails: (() => { try { return JSON.parse(e.race_class_details || "{}"); } catch { return {}; } })(),
     enduroPenaltyConfig: (() => { try { return e.enduro_penalty_config ? JSON.parse(e.enduro_penalty_config) : null; } catch { return null; } })(),
     scoringTableId: e.scoring_table_id ?? null,
@@ -361,6 +364,8 @@ router.patch("/events/:eventId", (req, res) => {
     amaEventId: "ama_event_id",
     raceStyle: "race_style",
     endDate: "end_date",
+    groupRace: "group_race",
+    ridersPerGroup: "riders_per_group",
   };
 
   const jsonFields: Record<string, string> = {
@@ -375,6 +380,7 @@ router.patch("/events/:eventId", (req, res) => {
     transponderRentalEnabled: "transponder_rental_enabled",
     noDuplicateBibs: "no_duplicate_bibs",
     requireClubId: "require_club_id",
+    groupRace: "group_race",
   };
 
   const fields: string[] = [];
@@ -484,6 +490,12 @@ router.post("/events/:eventId/registrations", (req, res) => {
     });
   }
 
+  // Group race: a new team comes with its name and members.
+  const groupEvent = db.prepare("SELECT group_race, riders_per_group FROM events WHERE id = ?").get(eventId) as { group_race: number; riders_per_group: number | null } | undefined;
+  const isGroupRace = groupEvent?.group_race === 1;
+  const teamInput = isGroupRace && req.body?.teamName !== undefined ? parseTeamInput(req.body, groupEvent!.riders_per_group) : null;
+  if (teamInput && "error" in teamInput) return res.status(400).json({ error: teamInput.error });
+
   const resolution = resolveRegistrationRider(db, {
     ...req.body,
     riderId: explicitRiderId,
@@ -492,6 +504,15 @@ router.post("/events/:eventId/registrations", (req, res) => {
     return res.status(resolution.status).json({ error: resolution.error });
   }
   const { riderId } = resolution;
+
+  let teamName: string | null = null;
+  if (isGroupRace) {
+    const existingTeam = db.prepare("SELECT team_name FROM registrations WHERE event_id = ? AND rider_id = ? AND status != 'void' LIMIT 1")
+      .get(eventId, riderId) as { team_name: string | null } | undefined;
+    if (existingTeam) teamName = existingTeam.team_name;
+    else if (teamInput) teamName = teamInput.teamName;
+    else return res.status(400).json({ error: "This is a group race. Enter the team name and every team member." });
+  }
 
   const resolvedStatus = status ?? "confirmed";
   // An explicit payment method means the organizer collected payment on-site (cash / waived / other)
@@ -517,6 +538,14 @@ router.post("/events/:eventId/registrations", (req, res) => {
   );
 
   const reg = db.prepare("SELECT * FROM registrations WHERE id = ?").get(Number(result.lastInsertRowid)) as any;
+  if (teamName) {
+    db.prepare("UPDATE registrations SET team_name = ? WHERE id = ?").run(teamName, reg.id);
+    reg.team_name = teamName;
+    if (teamInput && !("error" in teamInput) && teamRegistrationId(eventId, riderId) === reg.id && listTeamMembers(reg.id).length === 0) {
+      const captain = db.prepare("SELECT first_name, last_name, email FROM riders WHERE id = ?").get(riderId) as any;
+      saveTeamRoster(eventId, reg.id, { riderId, firstName: captain?.first_name ?? "", lastName: captain?.last_name ?? "", email: captain?.email ?? null }, teamInput.members);
+    }
+  }
   if (normalizedTransponderNumber) {
     db.prepare(
       "UPDATE riders SET mylaps_transponder_id = ? WHERE id = ?",

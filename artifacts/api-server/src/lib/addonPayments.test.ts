@@ -45,3 +45,15 @@ test("an item with no price set can't be counted as paid with the entry", () => 
   assert.equal(s.rfidTags.unpaid, 1);
   assert.equal(s.rfidTags.collected, 0);
 });
+
+test("a group race team buying several tags in one payment counts each tag", () => {
+  const s = summarizeAddonSales({
+    registrations: [reg(1, { rfidStickerPurchased: true })],
+    ledger: [
+      { registrationId: 1, item: "rfid_sticker", method: "cash", amount: 30, quantity: 3 },
+      { registrationId: 1, item: "rfid_sticker", method: "card", amount: 10, quantity: 1 },
+    ],
+    prices,
+  });
+  assert.deepEqual(s.rfidTags, { count: 4, cash: { count: 3, total: 30 }, card: { count: 1, total: 10 }, unpaid: 0, collected: 40 });
+});

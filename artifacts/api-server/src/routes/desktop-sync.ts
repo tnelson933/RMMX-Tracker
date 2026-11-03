@@ -26,6 +26,7 @@ import {
   riderPushTokensTable,
   eventPublicationTable,
   eventReaderAssignmentsTable,
+  teamMembersTable,
   enduroTimeChecksTable,
   enduroCheckpointArrivalsTable,
   liabilityWaiverSignaturesTable,
@@ -1702,10 +1703,12 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
       inArray(raceResultsTable.eventId, clubEventIds),
     ),
   ]);
-  const [enduroTimeChecks, enduroCheckpointArrivals, eventReaderAssignments] = await Promise.all([
+  const [enduroTimeChecks, enduroCheckpointArrivals, eventReaderAssignments, teamMembers] = await Promise.all([
     db.select().from(enduroTimeChecksTable).where(inArray(enduroTimeChecksTable.eventId, clubEventIds)),
     db.select().from(enduroCheckpointArrivalsTable).where(inArray(enduroCheckpointArrivalsTable.eventId, clubEventIds)),
     db.select().from(eventReaderAssignmentsTable).where(inArray(eventReaderAssignmentsTable.eventId, clubEventIds)),
+    // Group race rosters: every team member's tags, so the desktop times teams offline.
+    db.select().from(teamMembersTable).where(inArray(teamMembersTable.eventId, clubEventIds)),
   ]);
 
   // Riders: return only riders who have a registration for a club event. This
@@ -1799,6 +1802,7 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     enduroTimeChecks,
     enduroCheckpointArrivals,
     eventReaderAssignments,
+    teamMembers,
   });
 });
 

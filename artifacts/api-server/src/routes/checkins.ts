@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { checkinsTable, ridersTable, rfidAssignmentsTable, registrationsTable, eventsTable, motosTable, liabilityWaiverSignaturesTable } from "@workspace/db";
+import { checkinsTable, ridersTable, rfidAssignmentsTable, registrationsTable, eventsTable, motosTable, liabilityWaiverSignaturesTable, teamMembersTable } from "@workspace/db";
 import { eq, and, ne, asc, isNull } from "drizzle-orm";
 import { fulfillRmTrackr } from "../lib/rmTrackr";
 import { splitRegistrationTag } from "../lib/eventTimingTags";
@@ -40,6 +40,7 @@ router.get("/events/:eventId/checkins", async (req, res) => {
     rmTrackrFulfilledAt: registrationsTable.rmTrackrFulfilledAt,
     rmTrackrTransponder: registrationsTable.rmTrackrTransponder,
     paymentStatus: registrationsTable.paymentStatus,
+    teamName: registrationsTable.teamName,
     firstName: ridersTable.firstName,
     lastName: ridersTable.lastName,
     email: ridersTable.email,
@@ -101,6 +102,21 @@ router.get("/events/:eventId/checkins", async (req, res) => {
     for (const i of items) paidByRider.get(r.riderId)!.add(i);
   }
 
+  // Group race teams: how many riders each has and how many have a number entered.
+  const teamRows = regs.some(r => r.teamName)
+    ? await db.select({ registrationId: teamMembersTable.registrationId, rfidNumber: teamMembersTable.rfidNumber, trackrNumber: teamMembersTable.trackrNumber })
+        .from(teamMembersTable).where(eq(teamMembersTable.eventId, eventId))
+    : [];
+  const teamByRider = new Map<number, { riders: number; withNumbers: number }>();
+  for (const t of teamRows) {
+    const riderId = riderOfReg.get(t.registrationId);
+    if (riderId == null) continue;
+    const entry = teamByRider.get(riderId) ?? { riders: 0, withNumbers: 0 };
+    entry.riders++;
+    if (t.rfidNumber || t.trackrNumber) entry.withNumbers++;
+    teamByRider.set(riderId, entry);
+  }
+
   return res.json(regs.map(r => {
     const c = checkinByRider.get(r.riderId);
     const riderEmail = r.email?.toLowerCase() ?? null;
@@ -130,6 +146,9 @@ router.get("/events/:eventId/checkins", async (req, res) => {
       rmTrackrFulfilledAt: r.rmTrackrFulfilledAt?.toISOString() ?? null,
       rmTrackrTransponder: r.rmTrackrTransponder ?? null,
       paymentStatus: r.paymentStatus ?? null,
+      teamName: r.teamName ?? null,
+      teamRiders: teamByRider.get(r.riderId)?.riders ?? 0,
+      teamRidersWithNumbers: teamByRider.get(r.riderId)?.withNumbers ?? 0,
       addonsPaid: [...(paidByRider.get(r.riderId) ?? [])],
       checkedIn: c?.checkedIn ?? false,
       checkedInAt: c?.checkedInAt?.toISOString() ?? null,

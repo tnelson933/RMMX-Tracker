@@ -36,6 +36,8 @@ export const registrationsTable = pgTable("registrations", {
   compDiscount: numeric("comp_discount", { precision: 10, scale: 2 }),
   displayFirstName: text("display_first_name"),
   displayLastName: text("display_last_name"),
+  /** Group races: the team this entry registers (members are in team_members). */
+  teamName: text("team_name"),
   rfidStickerPurchased: boolean("rfid_sticker_purchased").notNull().default(false),
   // RM TrackR sale: set at registration (purchase option) or at check-in (POS);
   // fulfilled once staff assign the rider a transponder.

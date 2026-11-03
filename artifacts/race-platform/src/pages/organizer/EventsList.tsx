@@ -96,6 +96,8 @@ const createEventSchema = z.object({
   trackAddress: z.string().refine(s => s.trim().length > 0, "Street address is required"),
   trackZip: z.string().refine(s => /^\d{5}(-\d{4})?$/.test(s.trim()), "Enter a 5-digit ZIP code"),
   requireTransponder: z.boolean().default(false),
+  groupRace: z.boolean().default(false),
+  ridersPerGroup: z.coerce.number().int().min(2, "At least 2 riders per group").max(20, "At most 20 riders per group").optional().or(z.literal("")),
   raceClasses: z.array(z.object({
     name: z.string().min(1, "Class name is required"),
     maxRiders: z.coerce.number().int().min(1).optional().or(z.literal("")),
@@ -135,6 +137,7 @@ const createEventSchema = z.object({
 ).superRefine((data, ctx) => {
   const problem = eventDateOrderProblem(data);
   if (problem) ctx.addIssue({ code: "custom", path: [problem.path], message: problem.message });
+  if (data.groupRace && !data.ridersPerGroup) ctx.addIssue({ code: "custom", path: ["ridersPerGroup"], message: "Enter how many riders are on each team" });
 });
 
 type CreateEventValues = z.infer<typeof createEventSchema>;
@@ -151,7 +154,7 @@ const CREATE_STEPS = [
 type CreateStepId = typeof CREATE_STEPS[number]["id"];
 
 const CREATE_STEP_FIELDS: Record<CreateStepId, (keyof CreateEventValues)[]> = {
-  basics: ["raceStyle", "clubId", "name", "date", "multiDay", "endDate", "state", "location", "trackName", "trackAddress", "trackZip"],
+  basics: ["raceStyle", "clubId", "name", "date", "multiDay", "endDate", "state", "location", "trackName", "trackAddress", "trackZip", "groupRace", "ridersPerGroup"],
   registration: ["registrationOpen", "registrationClose", "requireAma", "requireClubId", "noDuplicateBibs", "requireWaiver", "requireLiabilityWaiver", "scoringTableId", "amaEventId"],
   classes: ["raceClasses"],
   fees: ["paymentEnabled", "entryFee", "earlyBirdEnabled", "earlyBirdFee", "earlyBirdEndsAt", "rfidStickerFee", "transponderRentalEnabled", "transponderRentalFee", "purchaseOptions"],
@@ -435,6 +438,8 @@ export default function EventsList() {
       noDuplicateBibs: false,
       requireWaiver: false,
       requireLiabilityWaiver: false,
+      groupRace: false,
+      ridersPerGroup: "",
       quickCheckinEnabled: false,
       quickCheckinRequirements: DEFAULT_QUICK_CHECKIN_REQUIREMENTS,
       scoringTableId: undefined,
@@ -624,6 +629,8 @@ export default function EventsList() {
       requireWaiver: data.requireWaiver,
       requireLiabilityWaiver: data.requireLiabilityWaiver,
       requireTransponder: !!data.requireTransponder,
+      groupRace: !!data.groupRace,
+      ridersPerGroup: data.groupRace && data.ridersPerGroup ? Number(data.ridersPerGroup) : null,
       quickCheckinEnabled: data.quickCheckinEnabled,
       quickCheckinRequirements: data.quickCheckinEnabled ? data.quickCheckinRequirements : null,
       scoringTableId: data.scoringTableId ?? null,
@@ -899,6 +906,7 @@ export default function EventsList() {
     ];
     const timing: [string, ReactNode][] = [
       ["Transponder number", v.requireTransponder ? "Required to register" : "Optional"],
+      ["Group race", v.groupRace ? `Yes, ${v.ridersPerGroup || "?"} riders per team. Each team member's transponder counts toward the team` : "No"],
       ["Quick Check-In", v.quickCheckinEnabled ? `On. ${quickCheckinRequirementsSummary(v.quickCheckinRequirements)}` : "Off (staff check riders in at the gate)"],
     ];
 
@@ -1111,6 +1119,40 @@ export default function EventsList() {
                         </FormItem>
                       )}
                     />
+
+                    {/* Group race: each registration is a team that shares one result. */}
+                    <FormField
+                      control={form.control}
+                      name="groupRace"
+                      render={({ field }) => (
+                        <FormItem className="flex items-start gap-2 space-y-0">
+                          <FormControl>
+                            <Checkbox checked={field.value} onCheckedChange={v => {
+                              field.onChange(!!v);
+                              if (v && !form.getValues("ridersPerGroup")) form.setValue("ridersPerGroup", 2, { shouldDirty: true });
+                            }} />
+                          </FormControl>
+                          <div className="space-y-0.5">
+                            <FormLabel className="cursor-pointer font-normal">Group race</FormLabel>
+                            <p className="text-xs text-muted-foreground">Teams register together and take turns riding. Each rider uses their own RFID tag or RM TrackR, and every rider's laps add up to the team's total.</p>
+                          </div>
+                        </FormItem>
+                      )}
+                    />
+                    {form.watch("groupRace") && (
+                      <FormField
+                        control={form.control}
+                        name="ridersPerGroup"
+                        render={({ field }) => (
+                          <FormItem className="pl-6">
+                            <FormLabel>Riders per group</FormLabel>
+                            <FormControl><Input type="number" min={2} max={20} step={1} className="w-28" {...field} value={field.value ?? ""} /></FormControl>
+                            <p className="text-xs text-muted-foreground">How many riders are on each team (2 to 20).</p>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
 
                     {/* Multi-day toggle + end date */}
                     <FormField

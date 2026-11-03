@@ -754,6 +754,10 @@ export function initDb() {
     ["events", "require_transponder      INTEGER NOT NULL DEFAULT 0"],
     ["events", "race_class_details       TEXT NOT NULL DEFAULT '{}'"],
     ["events", "enduro_penalty_config    TEXT"],
+    // events — group races (teams whose members' tags all count for the team)
+    ["events", "group_race               INTEGER NOT NULL DEFAULT 0"],
+    ["events", "riders_per_group         INTEGER"],
+    ["registrations", "team_name          TEXT"],
     // registrations — check-in add-ons, waiver acknowledgment and rider cancellations
     ["registrations", "rfid_sticker_purchased INTEGER NOT NULL DEFAULT 0"],
     ["registrations", "rm_trackr_purchased    INTEGER NOT NULL DEFAULT 0"],
@@ -791,6 +795,25 @@ export function initDb() {
   // Pulled by the desktop sync engine and pushed back through the write queue.
   // Locally created rows get ids far above the cloud's serial range.
   db.exec(`
+    -- Group race rosters: member 1 is the captain (the registration's rider).
+    -- A read of any member's RFID tag or RM TrackR counts for the team.
+    CREATE TABLE IF NOT EXISTS team_members (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id        INTEGER NOT NULL,
+      registration_id INTEGER NOT NULL,
+      position        INTEGER NOT NULL,
+      rider_id        INTEGER,
+      first_name      TEXT NOT NULL,
+      last_name       TEXT NOT NULL,
+      email           TEXT,
+      rfid_number     TEXT,
+      trackr_number   TEXT,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (registration_id, position)
+    );
+    CREATE INDEX IF NOT EXISTS team_members_event_idx ON team_members (event_id);
+
     -- Signed liability waivers are legal records: never deleted locally.
     CREATE TABLE IF NOT EXISTS liability_waiver_signatures (
       id                  INTEGER PRIMARY KEY AUTOINCREMENT,

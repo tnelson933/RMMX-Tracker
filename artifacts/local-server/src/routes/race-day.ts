@@ -1,3 +1,4 @@
+import { listTeamMembers, saveTeamTags, teamRegistrationId } from "../lib/group-teams";
 import { Router } from "express";
 import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
 import { getDb, parseBool, parseJson, parseJsonArr } from "../db";
@@ -43,6 +44,46 @@ function loadEventRegistration(eventId: number, regId: number, res: any): RegRow
   return reg;
 }
 
+/** How many tags a sale is for: group race teams buy up to one per rider; others buy one. */
+function addonQuantity(raw: unknown, event: { group_race: number; riders_per_group: number | null } | undefined): { qty: number } | { error: string } {
+  if (raw === undefined || raw === null || raw === "") return { qty: 1 };
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1) return { error: "Choose how many to sell (1 or more)." };
+  if (n === 1) return { qty: 1 };
+  if (event?.group_race !== 1) return { error: "Only group race teams can buy more than one at a time." };
+  const max = Math.max(2, event.riders_per_group ?? 2);
+  if (n > max) return { error: `A team has ${max} riders, so sell at most ${max} at a time.` };
+  return { qty: n };
+}
+
+// ── Group race: a team's riders and their transponder numbers ────────────────
+router.get("/events/:eventId/registrations/:regId/team", (req, res) => {
+  if (!requireUser(req, res)) return;
+  const eventId = Number(req.params.eventId);
+  const reg = loadEventRegistration(eventId, Number(req.params.regId), res);
+  if (!reg) return;
+  const event = getDb().prepare("SELECT group_race, riders_per_group FROM events WHERE id = ?").get(eventId) as { group_race: number; riders_per_group: number | null } | undefined;
+  if (event?.group_race !== 1) return res.status(400).json({ error: "This event isn't a group race." });
+  const teamRegId = teamRegistrationId(eventId, reg.rider_id) ?? reg.id;
+  const teamName = (getDb().prepare("SELECT team_name FROM registrations WHERE id = ?").get(reg.id) as { team_name: string | null } | undefined)?.team_name ?? null;
+  return res.json({ registrationId: teamRegId, teamName, ridersPerGroup: event.riders_per_group, members: listTeamMembers(teamRegId) });
+});
+
+router.put("/events/:eventId/registrations/:regId/team", (req, res) => {
+  if (!requireUser(req, res)) return;
+  const eventId = Number(req.params.eventId);
+  const reg = loadEventRegistration(eventId, Number(req.params.regId), res);
+  if (!reg) return;
+  if (reg.status === "void") return res.status(400).json({ error: "This registration was cancelled. Restore it on the Registrations page first." });
+  const members = Array.isArray(req.body?.members) ? req.body.members : null;
+  if (!members) return res.status(400).json({ error: "Nothing to save. Enter the team's numbers and try again." });
+  const teamRegId = teamRegistrationId(eventId, reg.rider_id) ?? reg.id;
+  const problem = saveTeamTags(eventId, teamRegId, reg.rider_id, members);
+  if (problem) return res.status(409).json(problem);
+  const teamName = (getDb().prepare("SELECT team_name FROM registrations WHERE id = ?").get(reg.id) as { team_name: string | null } | undefined)?.team_name ?? null;
+  return res.json({ registrationId: teamRegId, teamName, members: listTeamMembers(teamRegId) });
+});
+
 // ── Check-in add-ons (cash locally; card goes to the cloud) ──────────────────
 
 router.post("/events/:eventId/registrations/:regId/add-transponder-rental", (req, res, next) => {
@@ -76,20 +117,21 @@ router.post("/events/:eventId/registrations/:regId/add-rfid-sticker", (req, res,
   const eventId = Number(req.params.eventId);
   const reg = loadEventRegistration(eventId, Number(req.params.regId), res);
   if (!reg) return;
-  if (reg.rfid_sticker_purchased === 1) return res.status(400).json({ error: "Rider already has an RFID sticker" });
-
   const db = getDb();
-  const event = db.prepare("SELECT rfid_sticker_fee FROM events WHERE id = ?")
-    .get(eventId) as { rfid_sticker_fee: string | null } | undefined;
+  const event = db.prepare("SELECT rfid_sticker_fee, group_race, riders_per_group FROM events WHERE id = ?")
+    .get(eventId) as { rfid_sticker_fee: string | null; group_race: number; riders_per_group: number | null } | undefined;
+  const qty = addonQuantity(req.body?.quantity, event);
+  if ("error" in qty) return res.status(400).json({ error: qty.error });
+  if (event?.group_race !== 1 && reg.rfid_sticker_purchased === 1) return res.status(400).json({ error: "Rider already has an RFID sticker" });
   if (!event?.rfid_sticker_fee || !Number(event.rfid_sticker_fee)) {
     return res.status(400).json({ error: "RFID sticker is not enabled for this event" });
   }
-  const stickerFee = Number(event.rfid_sticker_fee);
+  const stickerFee = Math.round(Number(event.rfid_sticker_fee) * qty.qty * 100) / 100;
 
   if (paymentMethod === "cash") {
     db.prepare("UPDATE registrations SET rfid_sticker_purchased = 1 WHERE event_id = ? AND rider_id = ?")
       .run(eventId, reg.rider_id);
-    return res.json({ success: true, stickerFee });
+    return res.json({ success: true, stickerFee, quantity: qty.qty });
   }
   return res.status(400).json({ error: "paymentMethod must be 'cash' or 'card'" });
 });
@@ -102,15 +144,16 @@ router.post("/events/:eventId/registrations/:regId/add-rm-trackr", (req, res, ne
   const reg = loadEventRegistration(eventId, Number(req.params.regId), res);
   if (!reg) return;
   if (reg.status === "void") return res.status(400).json({ error: "This registration was cancelled" });
-  if (reg.rm_trackr_purchased === 1) return res.status(400).json({ error: `Rider already purchased an ${RM_TRACKR_NAME}` });
-
   const db = getDb();
-  const event = db.prepare("SELECT id FROM events WHERE id = ?").get(eventId);
+  const event = db.prepare("SELECT id, group_race, riders_per_group FROM events WHERE id = ?").get(eventId) as { id: number; group_race: number; riders_per_group: number | null } | undefined;
   if (!event) return res.status(404).json({ error: "Event not found" });
+  const qty = addonQuantity(req.body?.quantity, event);
+  if ("error" in qty) return res.status(400).json({ error: qty.error });
+  if (event.group_race !== 1 && reg.rm_trackr_purchased === 1) return res.status(400).json({ error: `Rider already purchased an ${RM_TRACKR_NAME}` });
 
   if (paymentMethod === "cash") {
     markRmTrackrPurchased(db, eventId, reg.rider_id);
-    return res.json({ success: true, price: RM_TRACKR_PRICE });
+    return res.json({ success: true, price: Math.round(RM_TRACKR_PRICE * qty.qty * 100) / 100, quantity: qty.qty });
   }
   return res.status(400).json({ error: "paymentMethod must be 'cash' or 'card'" });
 });

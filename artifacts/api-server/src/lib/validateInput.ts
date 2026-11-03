@@ -1,3 +1,4 @@
+import { groupRaceSettingsError } from "./groupRaceSettings";
 // Small input checks shared by routes. Each returns an error message for the
 // first bad field, or null when the input is acceptable. Fields that are absent,
 // null or "" are left to the route (they usually mean "not set").
@@ -62,6 +63,7 @@ export function validateEventInput(body: Record<string, unknown>): string | null
       ? "maxRiders must be a whole number of 1 or more" : null) ??
     checkEventDateOrder(body) ??
     checkPurchaseOptions(body.purchaseOptions) ??
+    groupRaceSettingsError(body) ??
     (body.quickCheckinRequirements === undefined ? null : quickCheckinRequirementsError(body.quickCheckinRequirements))
   );
 }

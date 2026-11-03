@@ -33,17 +33,17 @@ export function parseCashTendered(raw: unknown, due: number): CashTender | null 
 }
 
 /** Cash taken at check-in: the add-on is paid now, at its price; tendered and change are logged with it. */
-export async function recordCashAddon(eventId: number, registrationId: number, item: AddonItem, amount: number, tender: CashTender | null = null): Promise<void> {
+export async function recordCashAddon(eventId: number, registrationId: number, item: AddonItem, amount: number, tender: CashTender | null = null, quantity = 1): Promise<void> {
   await db.insert(addonPaymentsTable).values({
-    eventId, registrationId, item, amount: amount.toFixed(2), method: "cash", status: "paid", paidAt: new Date(),
+    eventId, registrationId, item, quantity, amount: amount.toFixed(2), method: "cash", status: "paid", paidAt: new Date(),
     ...(tender ? { cashTendered: tender.tendered.toFixed(2), cashChange: tender.change.toFixed(2) } : {}),
   });
 }
 
 /** A card checkout started at check-in: pending until Stripe confirms it. */
-export async function recordCardAddonPending(eventId: number, registrationId: number, item: AddonItem, amount: number, stripeSessionId: string): Promise<void> {
+export async function recordCardAddonPending(eventId: number, registrationId: number, item: AddonItem, amount: number, stripeSessionId: string, quantity = 1): Promise<void> {
   await db.insert(addonPaymentsTable).values({
-    eventId, registrationId, item, amount: amount.toFixed(2), method: "card", status: "pending", stripeSessionId,
+    eventId, registrationId, item, quantity, amount: amount.toFixed(2), method: "card", status: "pending", stripeSessionId,
   });
 }
 
@@ -69,6 +69,7 @@ export async function confirmAddonPayment(
     if (!existing) {
       await db.insert(addonPaymentsTable).values({
         eventId, registrationId, item, method: "card", status: "paid", paidAt: new Date(),
+        quantity: Math.max(1, Number(session.metadata?.quantity) || 1),
         amount: ((session.amount_total ?? 0) / 100).toFixed(2), stripeSessionId: session.id,
       });
     }
@@ -132,8 +133,8 @@ export interface SalesInput {
     paymentStatus: string | null;
     paymentMethod: string | null;
   }>;
-  /** Paid check-in add-ons. */
-  ledger: Array<{ registrationId: number; item: string; method: string; amount: number }>;
+  /** Paid check-in add-ons (quantity: how many one payment bought; group race teams buy several). */
+  ledger: Array<{ registrationId: number; item: string; method: string; amount: number; quantity?: number }>;
   /** What each item cost when bought with the registration (counted in its payment). */
   prices: Record<AddonItem, number | null>;
 }
@@ -147,17 +148,20 @@ export function summarizeAddonSales({ registrations, ledger, prices }: SalesInpu
     const out: AddonLine = { count: 0, cash: { count: 0, total: 0 }, card: { count: 0, total: 0 }, unpaid: 0, collected: 0 };
     for (const reg of registrations) {
       if (!reg[FLAG[item]]) continue;
-      out.count++;
       const atCheckin = ledger.filter(l => l.registrationId === reg.id && l.item === item);
       if (atCheckin.length > 0) {
         for (const l of atCheckin) {
+          const qty = Math.max(1, l.quantity ?? 1);
           const m = l.method === "cash" ? out.cash : out.card;
-          m.count++; m.total += l.amount;
+          m.count += qty; m.total += l.amount;
+          out.count += qty;
         }
       } else if (reg.paymentStatus === "paid" && prices[item] != null) {
+        out.count++;
         const m = reg.paymentMethod === "cash" ? out.cash : out.card;
         m.count++; m.total += prices[item]!;
       } else {
+        out.count++;
         out.unpaid++;
       }
     }
@@ -187,7 +191,7 @@ export async function eventAddonSales(eventId: number): Promise<AddonSales> {
     .where(and(eq(registrationsTable.eventId, eventId), ne(registrationsTable.status, "void")));
   const ledger = await db.select({
     registrationId: addonPaymentsTable.registrationId, item: addonPaymentsTable.item,
-    method: addonPaymentsTable.method, amount: addonPaymentsTable.amount,
+    method: addonPaymentsTable.method, amount: addonPaymentsTable.amount, quantity: addonPaymentsTable.quantity,
   }).from(addonPaymentsTable)
     .where(and(eq(addonPaymentsTable.eventId, eventId), eq(addonPaymentsTable.status, "paid")));
   return summarizeAddonSales({

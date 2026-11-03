@@ -27,6 +27,12 @@ router.get("/events/:eventId/checkins", (req, res) => {
         r.rm_trackr_fulfilled_at AS rmTrackrFulfilledAt,
         r.rm_trackr_transponder AS rmTrackrTransponder,
         r.payment_status AS paymentStatus,
+        r.team_name AS teamName,
+        (SELECT COUNT(*) FROM team_members tm JOIN registrations tr ON tr.id = tm.registration_id
+          WHERE tr.event_id = r.event_id AND tr.rider_id = r.rider_id) AS teamRiders,
+        (SELECT COUNT(*) FROM team_members tm JOIN registrations tr ON tr.id = tm.registration_id
+          WHERE tr.event_id = r.event_id AND tr.rider_id = r.rider_id
+            AND (COALESCE(tm.rfid_number, '') != '' OR COALESCE(tm.trackr_number, '') != '')) AS teamRidersWithNumbers,
         ri.first_name AS firstName,
         ri.last_name  AS lastName,
         ri.email,
@@ -80,6 +86,9 @@ router.get("/events/:eventId/checkins", (req, res) => {
         rmTrackrFulfilledAt: r.rmTrackrFulfilledAt ?? null,
         rmTrackrTransponder: r.rmTrackrTransponder ?? null,
         paymentStatus: r.paymentStatus ?? null,
+        teamName: r.teamName ?? null,
+        teamRiders: Number(r.teamRiders) || 0,
+        teamRidersWithNumbers: Number(r.teamRidersWithNumbers) || 0,
         checkedIn: parseBool(c?.checked_in as number),
         checkedInAt: c?.checked_in_at ?? null,
         rfidNumber: timingNumber,

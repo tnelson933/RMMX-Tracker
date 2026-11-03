@@ -40,3 +40,4 @@ export * from "./support_tickets";
 export * from "./sell_items";
 export * from "./addon_payments";
 export * from "./race_gas_credits";
+export * from "./team_members";

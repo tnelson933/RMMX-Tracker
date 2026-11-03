@@ -1,3 +1,4 @@
+import { teamTagRider } from "../lib/group-teams";
 import { Router } from "express";
 import { compareStandings, computeFinishAt, everyoneFinished, finishGraceMs, flagTimeFor, scoreRider, type ScoringMoto } from "../lib/lapScoring";
 import type { Response } from "express";
@@ -282,6 +283,9 @@ function scoringMotoOf(moto: any): ScoringMoto {
 /** The rider a tag belongs to for this event (tags compare case-insensitively). */
 function resolveRider(tagNumber: string, eventId: number): number | null {
   const db = getDb();
+  // Group race: any team member's tag is a lap for the team (its captain).
+  const teamRider = teamTagRider(tagNumber, eventId);
+  if (teamRider) return teamRider;
   const assignment = db
     .prepare("SELECT rider_id FROM rfid_assignments WHERE rfid_number = ? COLLATE NOCASE AND event_id = ? LIMIT 1")
     .get(tagNumber, eventId) as any;

@@ -184,6 +184,9 @@ export default function Registrations() {
   const [lookedUpName, setLookedUpName] = useState("");
   const [riderOptions, setRiderOptions] = useState<RiderOption[] | null>(null);
   const [selectedRiderId, setSelectedRiderId] = useState<number | null>(null);
+  // Group race walk-up: the team name and every member besides the captain (the rider on the form).
+  const [teamName, setTeamName] = useState("");
+  const [teamMembers, setTeamMembers] = useState<Array<{ firstName: string; lastName: string; email: string }>>([]);
   const lookupRequestRef = useRef(0);
   const [bibCheckState, setBibCheckState] = useState<"idle" | "checking" | "taken" | "available">("idle");
 
@@ -295,6 +298,8 @@ export default function Registrations() {
     if (!isAddOpen) {
       form.reset();
       setStep("form");
+      setTeamName("");
+      setTeamMembers([]);
       setRegSuccess(null);
       setPendingCard(null);
       setPaymentDone(null);
@@ -321,6 +326,11 @@ export default function Registrations() {
 
   const noDuplicateBibs = !!(event as any)?.noDuplicateBibs;
   const requireClubId = !!(event as any)?.requireClubId;
+  const groupRace = !!(event as any)?.groupRace;
+  const teamSize = Math.max(2, Number((event as any)?.ridersPerGroup) || 2);
+  // Another class for a team already entered: the team comes from that entry.
+  const captainHasTeam = groupRace && selectedRiderId != null
+    && (registrations ?? []).some(r => r.riderId === selectedRiderId && r.status !== "void" && !!(r as any).teamName);
   const watchedBib = form.watch("bibNumber");
   useEffect(() => {
     if (!noDuplicateBibs) { setBibCheckState("idle"); return; }
@@ -493,6 +503,14 @@ export default function Registrations() {
       setSubmitError("Select the correct rider profile for this email before registering.");
       return;
     }
+    if (groupRace && !captainHasTeam) {
+      if (!teamName.trim()) { setSubmitError("Enter the team name."); return; }
+      for (let i = 0; i < teamSize - 1; i++) {
+        const m = teamMembers[i];
+        if (!m?.firstName.trim() || !m?.lastName.trim()) { setSubmitError(`Enter rider ${i + 2}'s first and last name.`); return; }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m.email.trim())) { setSubmitError(`Enter a valid email address for rider ${i + 2}.`); return; }
+      }
+    }
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -524,6 +542,10 @@ export default function Registrations() {
         myLapsTransponderNumber: data.myLapsTransponderNumber || undefined,
         selectedPurchaseOptions: eventPurchaseOptions.filter(o => data.selectedPurchaseOptions.includes(o.id)),
       };
+      if (groupRace) {
+        body.teamName = teamName.trim();
+        body.teamMembers = Array.from({ length: teamSize - 1 }, (_, i) => teamMembers[i] ?? { firstName: "", lastName: "", email: "" });
+      }
 
       // On desktop: include payment info inline and confirm the registration immediately
       if (isDesktop) {
@@ -829,6 +851,37 @@ export default function Registrations() {
                 <p className="text-xs text-muted-foreground">No existing profile found — fill in the rider's details below and we'll create one.</p>
               )}
             </div>
+
+            {/* ── Team (group races) ── */}
+            {groupRace && (
+              <div className="space-y-3">
+                <h3 className="font-heading font-bold uppercase tracking-wide text-xs text-muted-foreground border-b pb-1.5">Team</h3>
+                {captainHasTeam ? (
+                  <p className="text-sm text-muted-foreground">This rider is already the captain of a team at this event. This entry joins that team.</p>
+                ) : (
+                  <>
+                    <p className="text-xs text-muted-foreground">Group race: the rider above is the team captain (rider 1). Enter the team name and the other {teamSize - 1} rider{teamSize - 1 === 1 ? "" : "s"}. Their transponder numbers go in at check-in.</p>
+                    <Input aria-label="Team name" placeholder="Team name *" maxLength={80} value={teamName} onChange={e => setTeamName(e.target.value)} />
+                    {Array.from({ length: teamSize - 1 }, (_, i) => {
+                      const m = teamMembers[i] ?? { firstName: "", lastName: "", email: "" };
+                      const set = (patch: Partial<typeof m>) => setTeamMembers(prev => {
+                        const next = [...prev];
+                        while (next.length <= i) next.push({ firstName: "", lastName: "", email: "" });
+                        next[i] = { ...next[i], ...patch };
+                        return next;
+                      });
+                      return (
+                        <div key={i} className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <Input aria-label={`Rider ${i + 2} first name`} placeholder={`Rider ${i + 2} first name *`} value={m.firstName} onChange={e => set({ firstName: e.target.value })} />
+                          <Input aria-label={`Rider ${i + 2} last name`} placeholder="Last name *" value={m.lastName} onChange={e => set({ lastName: e.target.value })} />
+                          <Input aria-label={`Rider ${i + 2} email`} type="email" placeholder="Email *" value={m.email} onChange={e => set({ email: e.target.value })} />
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
+              </div>
+            )}
 
             {/* ── Race class ── */}
             <div className="space-y-2">
@@ -1838,6 +1891,7 @@ export default function Registrations() {
                           {reg.riderName}
                           <Pencil size={12} className="opacity-0 group-hover:opacity-50 transition-opacity shrink-0" />
                         </button>
+                        {reg.teamName && <p className="text-xs text-muted-foreground">Team {reg.teamName} (captain)</p>}
                       </TableCell>
                       <TableCell>
                         {editingClassId === reg.id ? (

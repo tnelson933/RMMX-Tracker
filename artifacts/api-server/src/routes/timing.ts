@@ -1,3 +1,4 @@
+import { teamTagRider, teamNamesByRider } from "../lib/teams";
 import { Router } from "express";
 import { activePracticeForClub, liveMotoForClub } from "../lib/liveSession";
 import { db } from "@workspace/db";
@@ -603,6 +604,8 @@ export async function buildLeaderboard(motoId: number) {
     .where(eq(raceResultsTable.motoId, motoId))
     .orderBy(asc(raceResultsTable.position));
 
+  // Group race: results are filed under each team's captain; show the team.
+  const teamNames = await teamNamesByRider(moto.eventId);
   const leaderboard = results.map((r) => {
     const raw = Array.isArray(r.lapTimes) ? (r.lapTimes as unknown[]) : [];
     const lapMs = raw.map(normalizeLapMs).filter(t => t > 0);
@@ -620,7 +623,7 @@ export async function buildLeaderboard(motoId: number) {
     return {
       position: r.position,
       riderId: r.riderId,
-      riderName: [r.firstName, r.lastName].filter(Boolean).join(" ") || (r.bibNumber ? `#${r.bibNumber}` : "Unknown rider"),
+      riderName: teamNames.get(r.riderId) ?? ([r.firstName, r.lastName].filter(Boolean).join(" ") || (r.bibNumber ? `#${r.bibNumber}` : "Unknown rider")),
       bibNumber: r.bibNumber,
       laps: lapMs.length,
       lapTimes: lapMs.map(formatLapTime),
@@ -906,6 +909,9 @@ export async function completeTimedMotoIfFinished(motoId: number, nowMs = Date.n
  */
 export async function resolveCrossingRider(rfidNumber: string, eventId: number, motoType: string): Promise<number | null> {
   const tag = rfidNumber.trim();
+  // Group race: any team member's tag is a lap for the team (its captain's rider id).
+  const teamRider = await teamTagRider(tag, eventId);
+  if (teamRider) return teamRider;
   const [assignment] = await db
     .select({ riderId: rfidAssignmentsTable.riderId })
     .from(rfidAssignmentsTable)

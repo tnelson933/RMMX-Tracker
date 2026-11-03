@@ -19,6 +19,7 @@ import { isInvalidAssignedActiveTransponderIdentifier } from "@/lib/activeTransp
 import { RM_TRACKR_NAME, RM_TRACKR_PRICE } from "@/lib/rmTrackr";
 import { eventTimingTags, offeredTags, splitRegistrationTag, type TimingTags } from "@/components/organizer/timingTags";
 import { CashTender } from "@/components/organizer/CashTender";
+import { TeamTranspondersDialog } from "@/components/organizer/TeamTransponders";
 
 // RFID tags: alphanumeric + dashes, 1–32 characters.
 function isInvalidRfid(val: string | null | undefined): boolean {
@@ -297,6 +298,8 @@ export default function Checkin() {
   interface StickerTarget { registrationId: number; riderName: string; }
   interface StickerCard extends CardStarted { regId: number; stickerFee: number; }
   const [stickerTarget, setStickerTarget] = useState<StickerTarget | null>(null);
+  // Group race: the team whose riders' numbers are being entered.
+  const [teamTarget, setTeamTarget] = useState<{ registrationId: number; teamName: string | null } | null>(null);
   const [stickerStep, setStickerStep] = useState<StickerStep>("method");
   const [stickerCard, setStickerCard] = useState<StickerCard | null>(null);
   const [stickerSubmitting, setStickerSubmitting] = useState(false);
@@ -364,6 +367,7 @@ export default function Checkin() {
   const eventStickerFee: number | null = (event as any)?.rfidStickerFee != null && Number((event as any).rfidStickerFee) > 0 ? Number((event as any).rfidStickerFee) : null;
   const rfidStickerFee: number | null = sellPrices?.rfidTag ?? eventStickerFee;
   const trackrPrice: number | null = sellPrices ? sellPrices.rmTrackr : RM_TRACKR_PRICE;
+  const groupRace = !!(event as any)?.groupRace;
   const requireLiabilityWaiver = !!(event as any)?.requireLiabilityWaiver;
 
   const { pendingRiderIds, pendingCount, isSyncing, syncError, queueCheckin } = useSyncQueue(eventId);
@@ -712,12 +716,16 @@ export default function Checkin() {
   })();
 
   const allCheckins = checkins ?? [];
+  // Group race: a team is missing tags until every rider has a number.
+  const missingTags = (c: (typeof allCheckins)[number]) => groupRace
+    ? !((Number((c as any).teamRiders) || 0) > 0 && (Number((c as any).teamRidersWithNumbers) || 0) >= Number((c as any).teamRiders))
+    : !hasNeededTags(tags, riderTags(c, tags));
 
   const filterCounts = {
     all: allCheckins.length,
     not_checked_in: allCheckins.filter(c => !c.checkedIn).length,
     checked_in: allCheckins.filter(c => c.checkedIn === true).length,
-    no_rfid: allCheckins.filter(c => !hasNeededTags(tags, riderTags(c, tags))).length,
+    no_rfid: allCheckins.filter(c => missingTags(c)).length,
   };
 
   const q = search.trim().toLowerCase();
@@ -725,7 +733,7 @@ export default function Checkin() {
   const statusFiltered = allCheckins.filter(c => {
     if (statusFilter === "checked_in") return c.checkedIn === true;
     if (statusFilter === "not_checked_in") return c.checkedIn !== true;
-    if (statusFilter === "no_rfid") return !hasNeededTags(tags, riderTags(c, tags));
+    if (statusFilter === "no_rfid") return missingTags(c);
     return true;
   });
 
@@ -985,7 +993,10 @@ export default function Checkin() {
                   <div className="p-3 flex-1 flex flex-col justify-between">
                     <div>
                       <div className="flex justify-between items-start mb-1.5">
-                        <h3 className="font-heading font-bold text-base md:text-2xl uppercase leading-tight">{checkin.riderName}</h3>
+                        <div>
+                          <h3 className="font-heading font-bold text-base md:text-2xl uppercase leading-tight">{checkin.riderName}</h3>
+                          {(checkin as any).teamName && <p className="text-xs md:text-sm font-semibold text-muted-foreground">Team {(checkin as any).teamName} · captain</p>}
+                        </div>
                       </div>
                       <div className="flex items-center gap-2 text-xs md:text-sm font-medium mb-3 flex-wrap">
                         <span className="bg-primary/10 text-primary px-2 py-0.5 rounded uppercase tracking-wider">{checkin.raceClass}</span>
@@ -1070,9 +1081,26 @@ export default function Checkin() {
                             <CheckCircle2 size={12} /> RFID Tag Purchased
                           </span>
                         )}
+                        {/* Group race: every team member's numbers (and team tag sales) on one page */}
+                        {groupRace && checkin.registrationId != null && !isOffline && (() => {
+                          const riders = Number((checkin as any).teamRiders) || 0;
+                          const done = Number((checkin as any).teamRidersWithNumbers) || 0;
+                          const complete = riders > 0 && done >= riders;
+                          return (
+                            <button
+                              onClick={() => setTeamTarget({ registrationId: checkin.registrationId!, teamName: (checkin as any).teamName ?? null })}
+                              className={`flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded border transition-colors ${complete
+                                ? "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100"
+                                : "text-primary bg-primary/5 border-primary/30 hover:bg-primary/10"}`}
+                            >
+                              <Tag size={12} /> Team transponder numbers
+                              {riders > 0 && <span className="ml-1 font-bold">· {done}/{riders}</span>}
+                            </button>
+                          );
+                        })()}
                         {/* One button sells whichever of the RM TrackR and RFID tag this rider can still buy */}
                         {(() => {
-                          if (isOffline || checkin.registrationId == null) return null;
+                          if (isOffline || checkin.registrationId == null || groupRace) return null;
                           const regId = checkin.registrationId;
                           const canSellTrackr = offered.transponder && trackrPrice != null && !held.transponder
                             && !(checkin as any).transponderRental && !(checkin as any).rmTrackrPurchased;
@@ -1102,7 +1130,7 @@ export default function Checkin() {
                             </DropdownMenu>
                           );
                         })()}
-                        {([
+                        {(groupRace ? [] : [
                           // Also when the event asks for or rents transponders, or the rider has one.
                           (offered.transponder || !!held.transponder || !!(event as any)?.requireTransponder || transponderRentalEnabled)
                             && { kind: "transponder" as const, name: RM_TRACKR_NAME, value: held.transponder, invalid: transponderInvalid,
@@ -1440,6 +1468,18 @@ export default function Checkin() {
         )}
       </DialogContent>
     </Dialog>
+
+    {/* ── Group race: Team transponder numbers ── */}
+    <TeamTranspondersDialog
+      eventId={eventId}
+      registrationId={teamTarget?.registrationId ?? null}
+      teamName={teamTarget?.teamName ?? null}
+      ridersPerGroup={Math.max(2, Number((event as any)?.ridersPerGroup) || 2)}
+      rfidPrice={rfidStickerFee}
+      trackrPrice={trackrPrice}
+      onClose={() => setTeamTarget(null)}
+      onChanged={() => queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) })}
+    />
 
     {/* ── RM TrackR Sale (POS) Modal ── */}
     <Dialog open={!!trackrTarget} onOpenChange={open => { if (!open) closeTrackrModal(); }}>

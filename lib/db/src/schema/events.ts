@@ -61,6 +61,9 @@ export const eventsTable = pgTable("events", {
   requireWaiver: boolean("require_waiver").notNull().default(false),
   requireLiabilityWaiver: boolean("require_liability_waiver").notNull().default(false),
   requireTransponder: boolean("require_transponder").notNull().default(false),
+  /** Group race: each registration is a team whose members take turns; every member's laps count toward the team. */
+  groupRace: boolean("group_race").notNull().default(false),
+  ridersPerGroup: integer("riders_per_group"),
   scoringTableId: integer("scoring_table_id"),
   entryFeeCategoryId: integer("entry_fee_category_id").references(() => discountCategoriesTable.id),
   minLapMs: integer("min_lap_ms"),

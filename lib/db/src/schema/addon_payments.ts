@@ -14,6 +14,8 @@ export const addonPaymentsTable = pgTable("addon_payments", {
   /** "transponder_rental" | "rm_trackr" | "rfid_sticker" */
   item: text("item").notNull(),
   amount: numeric("amount", { precision: 10, scale: 2 }).notNull(),
+  /** How many were bought in this payment (group races buy one per team member); amount is the total. */
+  quantity: integer("quantity").notNull().default(1),
   /** "cash" | "card" */
   method: text("method").notNull(),
   /** "paid" | "pending" */

@@ -123,6 +123,8 @@ const updateEventSchema = z.object({
   requireWaiver: z.boolean().default(false),
   requireLiabilityWaiver: z.boolean().default(false),
   requireTransponder: z.boolean().default(false),
+  groupRace: z.boolean().default(false),
+  ridersPerGroup: z.coerce.number().int().min(2, "At least 2 riders per group").max(20, "At most 20 riders per group").optional().or(z.literal("")),
   quickCheckinEnabled: z.boolean().default(false),
   quickCheckinRequirements: z.object({
     paid: z.boolean(), timing: z.boolean(), waiver: z.boolean(), pickup: z.boolean(), atTrack: z.boolean(),
@@ -137,6 +139,9 @@ const updateEventSchema = z.object({
 }).refine(
   (data) => !data.multiDay || !data.endDate || data.endDate >= data.date,
   { message: "End date must be on or after start date", path: ["endDate"] },
+).refine(
+  (data) => !data.groupRace || !!data.ridersPerGroup,
+  { message: "Enter how many riders are on each team", path: ["ridersPerGroup"] },
 );
 
 type FormValues = z.infer<typeof updateEventSchema>;
@@ -417,6 +422,8 @@ export default function EventDetail() {
       requireWaiver: false,
       requireLiabilityWaiver: false,
       requireTransponder: false,
+      groupRace: false,
+      ridersPerGroup: "",
       quickCheckinEnabled: false,
       quickCheckinRequirements: DEFAULT_QUICK_CHECKIN_REQUIREMENTS,
       scoringTableId: undefined,
@@ -484,6 +491,8 @@ export default function EventDetail() {
       requireWaiver: (evt as any).requireWaiver ?? false,
       requireLiabilityWaiver: (evt as any).requireLiabilityWaiver ?? false,
       requireTransponder: (evt as any).requireTransponder ?? false,
+      groupRace: (evt as any).groupRace ?? false,
+      ridersPerGroup: (evt as any).ridersPerGroup ?? "",
       quickCheckinEnabled: (evt as any).quickCheckinEnabled ?? false,
       quickCheckinRequirements: toQuickCheckinRequirements((evt as any).quickCheckinRequirements),
       scoringTableId: (evt as any).scoringTableId ?? undefined,
@@ -597,6 +606,8 @@ export default function EventDetail() {
         requireWaiver: data.requireWaiver,
         requireLiabilityWaiver: data.requireLiabilityWaiver,
         requireTransponder: data.requireTransponder,
+        groupRace: !!data.groupRace,
+        ridersPerGroup: data.groupRace && data.ridersPerGroup ? Number(data.ridersPerGroup) : null,
         quickCheckinEnabled: data.quickCheckinEnabled,
         quickCheckinRequirements: data.quickCheckinRequirements,
         scoringTableId: data.scoringTableId ?? null,
@@ -985,6 +996,40 @@ export default function EventDetail() {
                     <div className="rounded-md border bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground">
                       <span className="font-semibold text-foreground">Timing:</span> use RM TrackR loops, RFID readers, or both. Set up your readers in Reader Setup and place them on the event's Course Map; riders need a tag for each kind of reader you use.
                     </div>
+
+                    {/* Group race: each registration is a team that shares one result. */}
+                    <FormField
+                      control={form.control}
+                      name="groupRace"
+                      render={({ field }) => (
+                        <FormItem className="flex items-start gap-2 space-y-0">
+                          <FormControl>
+                            <Checkbox checked={field.value} onCheckedChange={v => {
+                              field.onChange(!!v);
+                              if (v && !form.getValues("ridersPerGroup")) form.setValue("ridersPerGroup", 2, { shouldDirty: true });
+                            }} />
+                          </FormControl>
+                          <div className="space-y-0.5">
+                            <FormLabel className="cursor-pointer font-normal">Group race</FormLabel>
+                            <p className="text-xs text-muted-foreground">Teams register together and take turns riding. Each rider uses their own RFID tag or RM TrackR, and every rider's laps add up to the team's total. Set this before registration opens: entries made before it's on aren't teams.</p>
+                          </div>
+                        </FormItem>
+                      )}
+                    />
+                    {form.watch("groupRace") && (
+                      <FormField
+                        control={form.control}
+                        name="ridersPerGroup"
+                        render={({ field }) => (
+                          <FormItem className="pl-6">
+                            <FormLabel>Riders per group</FormLabel>
+                            <FormControl><Input type="number" min={2} max={20} step={1} className="w-28" {...field} value={field.value ?? ""} /></FormControl>
+                            <p className="text-xs text-muted-foreground">How many riders are on each team (2 to 20).</p>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
 
                     {/* Require transponder (for RM TrackR loops). Riders can rent or buy one instead. */}
                     {(

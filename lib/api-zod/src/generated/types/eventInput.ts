@@ -38,6 +38,10 @@ export interface EventInput {
   requireClubId?: boolean;
   /** When true, active-timing registrations require a personal transponder or an available rental */
   requireTransponder?: boolean;
+  /** When true, each registration is a team whose members take turns; every member's transponder reads count toward the team */
+  groupRace?: boolean;
+  /** Riders on each team in a group race (2 to 20) */
+  ridersPerGroup?: number | null;
   /** When true, riders must read and accept the club waiver before completing registration */
   requireWaiver?: boolean;
   /** @nullable */

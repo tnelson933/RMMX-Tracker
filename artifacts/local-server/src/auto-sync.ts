@@ -333,6 +333,7 @@ type PullResponse = {
   motos?:         PullMoto[];
   checkins?:      PullCheckin[];
   rfidAssignments?: PullRfid[];
+  teamMembers?: Array<Record<string, unknown>>;
   riderAccounts?: PullRiderAccount[];
   riderPushTokens?: PullRiderPushToken[];
   clubs?:         Record<string, unknown>[];
@@ -468,8 +469,8 @@ export async function runPull(): Promise<{ ok: boolean; rows: Record<string, num
         payment_method, amount_paid, bib_number, ama_number, club_id_number,
         bike_brand, bike_model, bike_year, sponsors, stats_email_opt_in,
         transponder_rental, mylaps_transponder_number, selected_purchase_options,
-        comp_code, comp_discount, display_first_name, display_last_name, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        comp_code, comp_discount, display_first_name, display_last_name, team_name, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         rider_id                 = excluded.rider_id,
         status                    = excluded.status,
@@ -490,7 +491,8 @@ export async function runPull(): Promise<{ ok: boolean; rows: Record<string, num
         comp_code                 = excluded.comp_code,
         comp_discount             = excluded.comp_discount,
         display_first_name        = excluded.display_first_name,
-        display_last_name         = excluded.display_last_name
+        display_last_name         = excluded.display_last_name,
+        team_name                 = excluded.team_name
     `);
 
     for (const reg of data.registrations ?? []) {
@@ -508,6 +510,7 @@ export async function runPull(): Promise<{ ok: boolean; rows: Record<string, num
         Array.isArray(spo) ? JSON.stringify(spo) : (spo ?? "[]"),
         reg.compCode ?? null, reg.compDiscount ?? null,
         reg.displayFirstName ?? null, reg.displayLastName ?? null,
+        (reg as any).teamName ?? null,
         toDateStr(reg.createdAt) ?? new Date().toISOString(),
       );
       rows.registrationsPulled++;
@@ -607,8 +610,9 @@ export async function runPull(): Promise<{ ok: boolean; rows: Record<string, num
         race_class_limits, purchase_options, image_url, timing_technology,
         transponder_rental_enabled, transponder_rental_fee,
         no_duplicate_bibs, require_club_id, scoring_table_id,
-        entry_fee_category_id, min_lap_ms, ama_event_id, race_style, require_liability_waiver, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        entry_fee_category_id, min_lap_ms, ama_event_id, race_style, require_liability_waiver,
+        group_race, riders_per_group, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name                       = excluded.name,
         date                       = excluded.date,
@@ -638,7 +642,9 @@ export async function runPull(): Promise<{ ok: boolean; rows: Record<string, num
         min_lap_ms                 = excluded.min_lap_ms,
         ama_event_id               = excluded.ama_event_id,
         race_style                 = excluded.race_style,
-        require_liability_waiver   = excluded.require_liability_waiver
+        require_liability_waiver   = excluded.require_liability_waiver,
+        group_race                 = excluded.group_race,
+        riders_per_group           = excluded.riders_per_group
     `);
 
     for (const ev of data.events ?? []) {
@@ -665,6 +671,8 @@ export async function runPull(): Promise<{ ok: boolean; rows: Record<string, num
         toSQLiteScalar(ev.amaEventId) ?? null,
         toSQLiteScalar(ev.raceStyle) ?? null,
         (ev as any).requireLiabilityWaiver ? 1 : 0,
+        (ev as any).groupRace ? 1 : 0,
+        toSQLiteScalar((ev as any).ridersPerGroup) ?? null,
         toDateStr(ev.createdAt) ?? new Date().toISOString(),
       );
       rows.eventsPulled++;
@@ -769,6 +777,32 @@ export async function runPull(): Promise<{ ok: boolean; rows: Record<string, num
       );
       rows.rfidPulled++;
     }
+
+    // ── Group race rosters ─────────────────────────────────────────────────────
+    // Keyed by (registration, position), so a roster edited here keeps its row.
+    const teamStmt = db.prepare(`
+      INSERT INTO team_members (
+        event_id, registration_id, position, rider_id, first_name, last_name, email, rfid_number, trackr_number
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(registration_id, position) DO UPDATE SET
+        rider_id      = excluded.rider_id,
+        first_name    = excluded.first_name,
+        last_name     = excluded.last_name,
+        email         = excluded.email,
+        rfid_number   = COALESCE(excluded.rfid_number, team_members.rfid_number),
+        trackr_number = COALESCE(excluded.trackr_number, team_members.trackr_number)
+    `);
+    let teamMembersPulled = 0;
+    for (const m of data.teamMembers ?? []) {
+      teamStmt.run(
+        toSQLiteScalar(m.eventId), toSQLiteScalar(m.registrationId), toSQLiteScalar(m.position),
+        m.riderId == null ? null : toSQLiteScalar(localRiderIdForCloud(m.riderId)),
+        toSQLiteScalar(m.firstName) ?? "", toSQLiteScalar(m.lastName) ?? "",
+        toSQLiteScalar(m.email) ?? null, toSQLiteScalar(m.rfidNumber) ?? null, toSQLiteScalar(m.trackrNumber) ?? null,
+      );
+      teamMembersPulled++;
+    }
+    rows.teamMembersPulled = teamMembersPulled;
 
     // ── Rider Accounts (email-only — needed for push token resolution) ─────────
     const riderAccountStmt = db.prepare(`

@@ -20,6 +20,7 @@ import { RM_TRACKR_NAME } from "@workspace/db";
 import { canManageRider } from "../lib/riderAccess";
 import { riderMobileTokensTable } from "@workspace/db";
 import { reminderAvailability, reminderStatusText, rentalReplacementCharge, sendRentalReminders, unreturnedRentals, type ReminderStatus } from "../lib/rentalReminders";
+import { parseTeamInput, saveTeamRoster, saveTeamTags, listTeamMembers, teamRegistrationId, teamRegistrationHasRoster } from "../lib/teams";
 import { addonIsPaid, confirmAddonPayment, parseCashTendered, recordCardAddonPending, recordCashAddon, type AddonItem } from "../lib/addonPayments";
 import { browserAccount, chargeOnReader, embeddedAllowed, checkoutUiParams, clubStripeOf, onClub, onClubOrPlatform, registrationClubStripe, retrievePayment, transferTo } from "../lib/stripePayments";
 import { acknowledgementSnapshot, clubWaiverSettings, waiverPdfOf } from "../lib/waiverSettings";
@@ -330,6 +331,7 @@ router.get("/events/:eventId/registrations", async (req, res) => {
     createdAt: registrationsTable.createdAt,
     displayFirstName: registrationsTable.displayFirstName,
     displayLastName: registrationsTable.displayLastName,
+    teamName: registrationsTable.teamName,
     myLapsTransponderNumber: registrationsTable.myLapsTransponderNumber,
     transponderRental: registrationsTable.transponderRental,
     waiverAcknowledgedAt: registrationsTable.waiverAcknowledgedAt,
@@ -358,6 +360,7 @@ router.get("/events/:eventId/registrations", async (req, res) => {
     eventId: r.eventId,
     riderId: r.riderId,
     riderName: `${firstName} ${lastName}`,
+    teamName: r.teamName ?? null,
     firstName,
     lastName,
     email: r.email ?? "",
@@ -419,6 +422,12 @@ router.post("/events/:eventId/registrations", async (req, res) => {
     });
   }
 
+  // Group race: a new team comes with its name and members; checked before any
+  // rider profile is made. Another class for a team already entered reuses it.
+  const teamInput = eventData?.groupRace && req.body?.teamName !== undefined
+    ? parseTeamInput(req.body ?? {}, eventData.ridersPerGroup) : null;
+  if (teamInput && "error" in teamInput) return res.status(400).json({ error: teamInput.error });
+
   let resolvedRiderId: number;
   let rider: RiderRow;
 
@@ -455,6 +464,18 @@ router.post("/events/:eventId/registrations", async (req, res) => {
     }
   } else {
     return res.status(400).json({ error: "Pick a rider, or enter a new rider's first name, last name and email." });
+  }
+
+  let teamName: string | null = null;
+  if (eventData?.groupRace) {
+    const [existingTeam] = await db.select({ teamName: registrationsTable.teamName }).from(registrationsTable).where(and(
+      eq(registrationsTable.eventId, eventId),
+      eq(registrationsTable.riderId, resolvedRiderId),
+      ne(registrationsTable.status, "void"),
+    )).limit(1);
+    if (existingTeam) teamName = existingTeam.teamName;
+    else if (teamInput) teamName = teamInput.teamName;
+    else return res.status(400).json({ error: "This is a group race. Enter the team name and every team member." });
   }
 
   // Determine if payment is required — on-site registrations start pending when the event has a fee
@@ -499,7 +520,12 @@ router.post("/events/:eventId/registrations", async (req, res) => {
     myLapsTransponderNumber: normalizedTransponderNumber,
     selectedPurchaseOptions: resolvePurchaseOptions(selectedPurchaseOptions, eventData?.purchaseOptions),
     rmTrackrPurchased: includesRmTrackr(resolvePurchaseOptions(selectedPurchaseOptions, eventData?.purchaseOptions)),
+    teamName,
   }).returning();
+
+  if (eventData?.groupRace && teamInput && !(await teamRegistrationHasRoster(eventId, resolvedRiderId))) {
+    await saveTeamRoster(eventId, reg.id, { riderId: resolvedRiderId, firstName: rider.firstName, lastName: rider.lastName, email: rider.email ?? null }, teamInput.members);
+  }
 
   // Only create the check-in record immediately for free events.
   // For paid events, check-in is created when payment is confirmed.
@@ -787,7 +813,7 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
 });
 
 /** Charge a check-in add-on on the club's card reader; the dialog polls until it's paid. */
-async function addonOnReader(req: any, eventId: number, regId: number, item: AddonItem, amount: number, label: string): Promise<{ status: number; body: unknown }> {
+async function addonOnReader(req: any, eventId: number, regId: number, item: AddonItem, amount: number, label: string, quantity = 1): Promise<{ status: number; body: unknown }> {
   const readerId = typeof req.body?.readerId === "string" ? req.body.readerId : "";
   const [event] = await db.select({ clubId: eventsTable.clubId, name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, eventId));
   const [club] = event ? await db.select({ stripeAccountId: clubsTable.stripeAccountId, stripeDirectCharges: clubsTable.stripeDirectCharges }).from(clubsTable).where(eq(clubsTable.id, event.clubId)) : [];
@@ -796,16 +822,71 @@ async function addonOnReader(req: any, eventId: number, regId: number, item: Add
     const stripe = await getUncachableStripeClient();
     const charged = await chargeOnReader(stripe, {
       clubId: event.clubId, club: clubStripeOf(club)!, readerId, amountCents: Math.round(amount * 100),
-      description: `${event.name}: ${label}`, metadata: { registrationId: String(regId), type: item, eventId: String(eventId) },
+      description: `${event.name}: ${quantity > 1 ? `${quantity} × ` : ""}${label}`, metadata: { registrationId: String(regId), type: item, eventId: String(eventId), quantity: String(quantity) },
     });
     if (!charged.ok) return { status: 409, body: { error: charged.error } };
-    await recordCardAddonPending(eventId, regId, item, amount, charged.paymentIntentId);
+    await recordCardAddonPending(eventId, regId, item, amount, charged.paymentIntentId, quantity);
     return { status: 200, body: { sessionId: charged.paymentIntentId, paymentIntentId: charged.paymentIntentId, amount } };
   } catch (err: any) {
     req.log?.error({ err: err?.message }, "[addon reader] Error");
     return { status: 500, body: { error: organizerCardError(err) } };
   }
 }
+
+/** How many tags a check-in sale is for: group race teams can buy up to one per member; others buy one. */
+function addonQuantity(raw: unknown, event: { groupRace: boolean; ridersPerGroup: number | null } | undefined): { qty: number } | { error: string } {
+  if (raw === undefined || raw === null || raw === "") return { qty: 1 };
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1) return { error: "Choose how many to sell (1 or more)." };
+  if (n === 1) return { qty: 1 };
+  if (!event?.groupRace) return { error: "Only group race teams can buy more than one at a time." };
+  const max = Math.max(2, event.ridersPerGroup ?? 2);
+  if (n > max) return { error: `A team has ${max} riders, so sell at most ${max} at a time.` };
+  return { qty: n };
+}
+
+// ── Organizer: a group race team's riders and their transponder numbers ──────
+router.get("/events/:eventId/registrations/:regId/team", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
+  const [reg] = await db.select().from(registrationsTable).where(eq(registrationsTable.id, Number(req.params.regId)));
+  if (!reg || reg.eventId !== eventId) return res.status(404).json({ error: "This registration couldn't be found. It may have been cancelled. Refresh the page and try again." });
+  const [event] = await db.select({ groupRace: eventsTable.groupRace, ridersPerGroup: eventsTable.ridersPerGroup }).from(eventsTable).where(eq(eventsTable.id, eventId));
+  if (!event?.groupRace) return res.status(400).json({ error: "This event isn't a group race." });
+  const teamRegId = await teamRegistrationId(eventId, reg.riderId) ?? reg.id;
+  const members = await listTeamMembers(teamRegId);
+  return res.json({
+    registrationId: teamRegId,
+    teamName: reg.teamName,
+    ridersPerGroup: event.ridersPerGroup,
+    members: members.map(m => ({
+      id: m.id, position: m.position, firstName: m.firstName, lastName: m.lastName, email: m.email,
+      rfidNumber: m.rfidNumber, trackrNumber: m.trackrNumber,
+    })),
+  });
+});
+
+router.put("/events/:eventId/registrations/:regId/team", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
+  const [reg] = await db.select().from(registrationsTable).where(eq(registrationsTable.id, Number(req.params.regId)));
+  if (!reg || reg.eventId !== eventId) return res.status(404).json({ error: "This registration couldn't be found. It may have been cancelled. Refresh the page and try again." });
+  if (reg.status === "void") return res.status(400).json({ error: "This registration was cancelled. Restore it on the Registrations page first." });
+  const members = Array.isArray(req.body?.members) ? req.body.members : null;
+  if (!members) return res.status(400).json({ error: "Nothing to save. Enter the team's numbers and try again." });
+  const teamRegId = await teamRegistrationId(eventId, reg.riderId) ?? reg.id;
+  const problem = await saveTeamTags(eventId, teamRegId, reg.riderId, members);
+  if (problem) return res.status(409).json(problem);
+  const saved = await listTeamMembers(teamRegId);
+  return res.json({
+    registrationId: teamRegId,
+    teamName: reg.teamName,
+    members: saved.map(m => ({
+      id: m.id, position: m.position, firstName: m.firstName, lastName: m.lastName, email: m.email,
+      rfidNumber: m.rfidNumber, trackrNumber: m.trackrNumber,
+    })),
+  });
+});
 
 // ── Organizer: add transponder rental to an existing registration (on-site) ───
 router.post("/events/:eventId/registrations/:regId/add-transponder-rental", async (req, res) => {
@@ -897,16 +978,21 @@ router.post("/events/:eventId/registrations/:regId/add-rfid-sticker", async (req
   const [reg] = await db.select().from(registrationsTable).where(eq(registrationsTable.id, regId));
   if (!reg) return res.status(404).json({ error: "This registration couldn't be found. It may have been cancelled. Refresh the page and try again." });
   if (reg.eventId !== eventId) return res.status(403).json({ error: "This registration is for a different event. Refresh the page and try again." });
-  if (reg.rfidStickerPurchased && await addonIsPaid(reg, "rfid_sticker")) {
+  const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
+  // Group race teams buy one per member, as often as they need; anyone else buys one.
+  const quantity = addonQuantity(req.body?.quantity, event);
+  if ("error" in quantity) return res.status(400).json({ error: quantity.error });
+  const qty = quantity.qty;
+  if (!event?.groupRace && reg.rfidStickerPurchased && await addonIsPaid(reg, "rfid_sticker")) {
     return res.status(400).json({ error: "This rider's RFID tag is already paid." });
   }
 
-  const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
   // The event's sticker fee, or the club's RFID Tag price (Admin → Sell Items).
-  const stickerFee = event ? checkinSellPrices(event, await listClubSellItems(event.clubId)).rfidTag : null;
-  if (!event || stickerFee == null) {
+  const unitFee = event ? checkinSellPrices(event, await listClubSellItems(event.clubId)).rfidTag : null;
+  if (!event || unitFee == null) {
     return res.status(400).json({ error: "RFID tags have no price yet. Set one in Admin → Sell Items, or turn on RFID stickers in the event's settings." });
   }
+  const stickerFee = Math.round(unitFee * qty * 100) / 100;
 
   if (paymentMethod === "cash") {
     const tender = parseCashTendered(req.body.cashTendered, stickerFee);
@@ -914,12 +1000,12 @@ router.post("/events/:eventId/registrations/:regId/add-rfid-sticker", async (req
     await db.update(registrationsTable)
       .set({ rfidStickerPurchased: true })
       .where(and(eq(registrationsTable.eventId, eventId), eq(registrationsTable.riderId, reg.riderId)));
-    await recordCashAddon(eventId, regId, "rfid_sticker", stickerFee, tender);
-    return res.json({ success: true, stickerFee, cashTendered: tender?.tendered ?? null, cashChange: tender?.change ?? null });
+    await recordCashAddon(eventId, regId, "rfid_sticker", stickerFee, tender, qty);
+    return res.json({ success: true, stickerFee, quantity: qty, cashTendered: tender?.tendered ?? null, cashChange: tender?.change ?? null });
   }
 
   if (paymentMethod === "reader") {
-    const readerResult = await addonOnReader(req, eventId, regId, "rfid_sticker", stickerFee, "RFID tag");
+    const readerResult = await addonOnReader(req, eventId, regId, "rfid_sticker", stickerFee, qty > 1 ? "RFID tags" : "RFID tag", qty);
     return res.status(readerResult.status).json(readerResult.body);
   }
 
@@ -940,22 +1026,22 @@ router.post("/events/:eventId/registrations/:regId/add-rfid-sticker", async (req
           price_data: {
             currency: "usd",
             product_data: { name: "RFID Tag" },
-            unit_amount: Math.round(stickerFee * 100),
+            unit_amount: Math.round(unitFee * 100),
           },
-          quantity: 1,
+          quantity: qty,
         }],
         customer_email: rider?.email ?? undefined,
         payment_intent_data: {
           ...transferTo(clubStripeOf(club)!),
         },
-        metadata: { registrationId: String(regId), type: "rfid_sticker" },
+        metadata: { registrationId: String(regId), type: "rfid_sticker", quantity: String(qty) },
         ...checkoutUiParams(await embeddedAllowed(req.body?.embedded === true), {
           success_url: `${appUrl}/events/${eventId}/checkin`,
           cancel_url: `${appUrl}/events/${eventId}/checkin`,
         }),
       }, onClub(clubStripeOf(club)!));
 
-      await recordCardAddonPending(eventId, regId, "rfid_sticker", stickerFee, session.id);
+      await recordCardAddonPending(eventId, regId, "rfid_sticker", stickerFee, session.id, qty);
       return res.json({ checkoutUrl: session.url, clientSecret: session.client_secret ?? null, stripeAccount: browserAccount(clubStripeOf(club)!), sessionId: session.id, stickerFee });
     } catch (err: any) {
       req.log?.error({ err: err?.message }, "[add-rfid-sticker] Error");
@@ -990,26 +1076,30 @@ router.post("/events/:eventId/registrations/:regId/add-rm-trackr", async (req, r
   if (reg.eventId !== eventId) return res.status(403).json({ error: "This registration is for a different event. Refresh the page and try again." });
   if (reg.status === "void") return res.status(400).json({ error: "This registration was cancelled" });
   // Chosen at registration on a pay-at-gate event: collect the price now.
-  if (reg.rmTrackrPurchased && await addonIsPaid(reg, "rm_trackr")) {
-    return res.status(400).json({ error: `This rider's ${RM_TRACKR_NAME} is already paid.` });
-  }
-
   const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
   if (!event) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
+  // Group race teams buy one per member, as often as they need; anyone else buys one.
+  const quantity = addonQuantity(req.body?.quantity, event);
+  if ("error" in quantity) return res.status(400).json({ error: quantity.error });
+  const qty = quantity.qty;
+  if (!event.groupRace && reg.rmTrackrPurchased && await addonIsPaid(reg, "rm_trackr")) {
+    return res.status(400).json({ error: `This rider's ${RM_TRACKR_NAME} is already paid.` });
+  }
   // The event's RM TrackR price, or the club's (Admin → Sell Items).
-  const price = checkinSellPrices(event, await listClubSellItems(event.clubId)).rmTrackr;
-  if (price == null) return res.status(400).json({ error: `Your club has hidden the ${RM_TRACKR_NAME} in Admin → Sell Items. Show it there to sell it.` });
+  const unitPrice = checkinSellPrices(event, await listClubSellItems(event.clubId)).rmTrackr;
+  if (unitPrice == null) return res.status(400).json({ error: `Your club has hidden the ${RM_TRACKR_NAME} in Admin → Sell Items. Show it there to sell it.` });
+  const price = Math.round(unitPrice * qty * 100) / 100;
 
   if (paymentMethod === "cash") {
     const tender = parseCashTendered(req.body.cashTendered, price);
     if (tender && "error" in tender) return res.status(400).json({ error: tender.error });
     await markRmTrackrPurchased(eventId, reg.riderId);
-    await recordCashAddon(eventId, regId, "rm_trackr", price, tender);
-    return res.json({ success: true, price, cashTendered: tender?.tendered ?? null, cashChange: tender?.change ?? null });
+    await recordCashAddon(eventId, regId, "rm_trackr", price, tender, qty);
+    return res.json({ success: true, price, quantity: qty, cashTendered: tender?.tendered ?? null, cashChange: tender?.change ?? null });
   }
 
   if (paymentMethod === "reader") {
-    const readerResult = await addonOnReader(req, eventId, regId, "rm_trackr", price, RM_TRACKR_NAME);
+    const readerResult = await addonOnReader(req, eventId, regId, "rm_trackr", price, RM_TRACKR_NAME, qty);
     return res.status(readerResult.status).json(readerResult.body);
   }
 
@@ -1030,22 +1120,22 @@ router.post("/events/:eventId/registrations/:regId/add-rm-trackr", async (req, r
           price_data: {
             currency: "usd",
             product_data: { name: RM_TRACKR_NAME },
-            unit_amount: Math.round(price * 100),
+            unit_amount: Math.round(unitPrice * 100),
           },
-          quantity: 1,
+          quantity: qty,
         }],
         customer_email: rider?.email ?? undefined,
         payment_intent_data: {
           ...transferTo(clubStripeOf(club)!),
         },
-        metadata: { registrationId: String(regId), type: "rm_trackr" },
+        metadata: { registrationId: String(regId), type: "rm_trackr", quantity: String(qty) },
         ...checkoutUiParams(await embeddedAllowed(req.body?.embedded === true), {
           success_url: `${appUrl}/events/${eventId}/checkin`,
           cancel_url: `${appUrl}/events/${eventId}/checkin`,
         }),
       }, onClub(clubStripeOf(club)!));
 
-      await recordCardAddonPending(eventId, regId, "rm_trackr", price, session.id);
+      await recordCardAddonPending(eventId, regId, "rm_trackr", price, session.id, qty);
       return res.json({ checkoutUrl: session.url, clientSecret: session.client_secret ?? null, stripeAccount: browserAccount(clubStripeOf(club)!), sessionId: session.id, price });
     } catch (err: any) {
       req.log?.error({ err: err?.message }, "[add-rm-trackr] Error");
@@ -1294,6 +1384,8 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
     requireWaiver: eventsTable.requireWaiver,
     requireLiabilityWaiver: eventsTable.requireLiabilityWaiver,
     requireTransponder: eventsTable.requireTransponder,
+    groupRace: eventsTable.groupRace,
+    ridersPerGroup: eventsTable.ridersPerGroup,
     earlyBirdFee: eventsTable.earlyBirdFee,
     earlyBirdEndsAt: eventsTable.earlyBirdEndsAt,
   }).from(eventsTable)
@@ -1456,6 +1548,11 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     }
   }
 
+  // Group race: the registration is a team. The rider registering is the captain
+  // (member 1); the form also gives the team name and every other member.
+  const team = events[0].groupRace ? parseTeamInput(req.body ?? {}, events[0].ridersPerGroup) : null;
+  if (team && "error" in team) return res.status(400).json({ error: team.error });
+
   // Resolve identity before duplicate-bib checks. A selected profile is authoritative
   // as long as its email matches; typed names are profile edits, not identity checks.
   // "Register a different rider on this email" (a family's second child) makes a
@@ -1502,6 +1599,18 @@ router.post("/public/events/:eventId/register", async (req, res) => {
       // The abandoned checkout no longer uses its discount code.
       for (const code of new Set(abandoned.map(r => r.compCode).filter((c): c is string => !!c))) {
         await releaseCompCodeIfCheckoutInactive(eventId, resolvedExistingRider.id, code);
+      }
+    }
+    // Timing counts a team under its captain, so a captain leads one team per event.
+    if (team) {
+      const [otherTeam] = await db.select({ teamName: registrationsTable.teamName }).from(registrationsTable).where(and(
+        eq(registrationsTable.eventId, eventId),
+        eq(registrationsTable.riderId, resolvedExistingRider.id),
+        ne(registrationsTable.status, "void"),
+      )).limit(1);
+      if (otherTeam) {
+        const which = otherTeam.teamName ? `team ${otherTeam.teamName}` : "a team";
+        return res.status(409).json({ error: `${firstName} ${lastName} already registered ${which} at this event. Each team needs its own captain: have another team member register this team.` });
       }
     }
   }
@@ -1729,6 +1838,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     compCode: validatedCompCode,
     waiverAcknowledgedAt: waiverAcknowledgedAt ? new Date() : null,
     waiverSnapshot: serverWaiverSnapshot,
+    teamName: team ? team.teamName : null,
   };
   const insertedRegs = await db.insert(registrationsTable).values(
     raceClassList.map((cls, idx) => ({
@@ -1761,6 +1871,10 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     await db.delete(registrationsTable).where(inArray(registrationsTable.id, insertedRegs.map(r => r.id)));
     await releaseCompCodeUse();
     return res.status(409).json({ error: lostRace[0] });
+  }
+
+  if (team && insertedRegs[0]) {
+    await saveTeamRoster(eventId, insertedRegs[0].id, { riderId: rider.id, firstName: String(firstName).trim(), lastName: String(lastName).trim(), email: String(email).trim().toLowerCase() }, team.members);
   }
 
   // Link liability waiver signature to the registration

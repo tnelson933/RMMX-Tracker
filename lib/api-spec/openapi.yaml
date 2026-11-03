@@ -3648,6 +3648,13 @@ components:
         requireTransponder:
           type: boolean
           description: When true, active-timing registrations require a personal transponder or an available rental
+        groupRace:
+          type: boolean
+          description: When true, each registration is a team whose members take turns; every member's transponder reads count toward the team
+        ridersPerGroup:
+          type: integer
+          nullable: true
+          description: Riders on each team in a group race (2 to 20)
         requireWaiver:
           type: boolean
           description: When true, riders must read and accept the club waiver before completing registration
@@ -3796,6 +3803,13 @@ components:
         requireTransponder:
           type: boolean
           description: When true, active-timing registrations require a personal transponder or an available rental
+        groupRace:
+          type: boolean
+          description: When true, each registration is a team whose members take turns; every member's transponder reads count toward the team
+        ridersPerGroup:
+          type: integer
+          nullable: true
+          description: Riders on each team in a group race (2 to 20)
         requireWaiver:
           type: boolean
           description: When true, riders must read and accept the club waiver before completing registration
@@ -3928,6 +3942,13 @@ components:
         requireTransponder:
           type: boolean
           description: When true, active-timing registrations require a personal transponder or an available rental
+        groupRace:
+          type: boolean
+          description: When true, each registration is a team whose members take turns; every member's transponder reads count toward the team
+        ridersPerGroup:
+          type: integer
+          nullable: true
+          description: Riders on each team in a group race (2 to 20)
         requireWaiver:
           type: boolean
           description: When true, riders must read and accept the club waiver before completing registration
@@ -4300,6 +4321,10 @@ components:
           type: integer
         riderName:
           type: string
+        teamName:
+          type: string
+          nullable: true
+          description: Group races only, the team this entry registers
         raceClass:
           type: string
         status:
