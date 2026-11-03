@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search, Clock, LayoutList, LayoutGrid, Trophy, Printer, ChevronLeft, ChevronRight, Wand2, Link2, Pencil, X, Pause, BadgeCheck } from "lucide-react";
+import { Settings, Play, CheckCircle, Flag, RefreshCw, Radio, ExternalLink, Copy, Check, Trash2, Video, PlusCircle, Plus, Users, Zap, GripVertical, Maximize2, Timer, Search, Clock, LayoutList, LayoutGrid, Trophy, Printer, ChevronLeft, ChevronRight, Wand2, Link2, Pencil, X, Pause, BadgeCheck, RotateCcw } from "lucide-react";
 import {
   DndContext, DragOverlay, useDraggable, useDroppable,
   PointerSensor, useSensor, useSensors,
@@ -2050,9 +2050,11 @@ export default function Motos() {
       return;
     }
     if (moto.type === "practice") {
+      // A Countdown practice from Add Practice brings its duration as the time limit.
+      const countdownSeconds = (moto as any).practiceMode === "countdown" ? (moto as any).countdownSeconds as number | null : null;
       const existingMinutes = (moto as any).timeLimitMs
         ? String(Math.round((moto as any).timeLimitMs / 60000))
-        : "";
+        : countdownSeconds ? String(Math.round(countdownSeconds / 60)) : "";
       setPracticeStartDialog({ open: true, moto, timeLimitMinutes: existingMinutes });
       return;
     }
@@ -2082,6 +2084,20 @@ export default function Motos() {
     setPoolDropMismatch(p => ({ ...p, open: false }));
     if (riderId === null || targetMotoId === null) return;
     addPoolRiderToMoto(riderId, targetMotoId);
+  };
+
+  // A finished moto or enduro test back to running (laps kept, results unofficial again).
+  const handleReopen = async (moto: Moto) => {
+    if (!window.confirm(`Reopen "${moto.name}"? It goes back to running with its laps kept, so missed laps or runs can be recorded. Its results go back to unofficial; finish it again when done.`)) return;
+    try {
+      const res = await fetch(`/api/motos/${moto.id}/reopen`, { method: "POST", credentials: "include" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Couldn't reopen it. Try again.");
+      queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
+      toast({ title: `${moto.name} reopened`, description: "Record the missing laps or runs, then finish it again." });
+    } catch (err) {
+      toast({ title: "Couldn't reopen", description: (err as Error).message, variant: "destructive" });
+    }
   };
 
   const handleRestartConfirm = async () => {
@@ -3382,6 +3398,12 @@ export default function Motos() {
                     <Button size="sm" variant={(moto as any).resultsFinalizedAt ? "ghost" : "default"} onClick={() => setReviewMotoId(moto.id)}
                       className={`font-heading uppercase text-xs h-7 px-2.5 gap-1 ${(moto as any).resultsFinalizedAt ? "text-sidebar-foreground/70 hover:text-white" : "bg-green-700 hover:bg-green-800 text-white"}`}>
                       <BadgeCheck size={12} /> {(moto as any).resultsFinalizedAt ? "Results" : "Review & finalize"}
+                    </Button>
+                  )}
+                  {moto.status === "completed" && ((moto as any).timeLimitMs == null || moto.type === "enduro_test") && (
+                    <Button size="icon" variant="ghost" title="Reopen" aria-label="Reopen" onClick={() => handleReopen(moto)}
+                      className="h-7 w-7 text-sidebar-foreground/70 hover:text-white">
+                      <RotateCcw size={13} />
                     </Button>
                   )}
                   {/* Start/Finish/Restart — compact pill in header */}

@@ -90,7 +90,8 @@ function FeaturedMotoCard({ moto, results, runOrderNum }: { moto: Moto; results:
 
   const lineup = useMemo<LineupEntry[]>(() => {
     if (!Array.isArray(moto.lineup)) return [];
-    return [...(moto.lineup as LineupEntry[])].sort((a, b) => a.position - b.position);
+    // Only riders who checked in, as on Race Day Management (pending riders carry checkedIn:false).
+    return (moto.lineup as LineupEntry[]).filter(e => (e as any).checkedIn !== false).sort((a, b) => a.position - b.position);
   }, [moto.lineup]);
 
   const sortedResults = useMemo(() => {
@@ -167,7 +168,8 @@ function UpcomingMotoCard({ moto, runOrderNum }: { moto: Moto; runOrderNum: numb
 
   const lineup = useMemo<LineupEntry[]>(() => {
     if (!Array.isArray(moto.lineup)) return [];
-    return [...(moto.lineup as LineupEntry[])].sort((a, b) => a.position - b.position);
+    // Only riders who checked in, as on Race Day Management (pending riders carry checkedIn:false).
+    return (moto.lineup as LineupEntry[]).filter(e => (e as any).checkedIn !== false).sort((a, b) => a.position - b.position);
   }, [moto.lineup]);
 
   const className = moto.raceClasses?.length

@@ -109,6 +109,27 @@ for (const action of ["finalize", "unfinalize"] as const) {
   });
 }
 
+// POST /motos/:motoId/reopen — a finished moto or enduro test goes back to
+// running, keeping its laps; results go back to unofficial. Not a timed race:
+// its clock has run out and would finish it again. Matches the cloud API.
+router.post("/motos/:motoId/reopen", (req, res) => {
+  const session = req.session as any;
+  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  const db = getDb();
+  const motoId = Number(req.params.motoId);
+  const moto = db.prepare("SELECT * FROM motos WHERE id = ?").get(motoId) as any;
+  if (!moto) return res.status(404).json({ error: "Moto not found" });
+  if (moto.status !== "completed") return res.status(409).json({ error: "Only a finished moto can be reopened." });
+  if (moto.time_limit_ms != null && moto.type !== "enduro_test") {
+    return res.status(409).json({ error: "A timed race can't be reopened: its clock has run out and would finish it again. Fix its results in Review & finalize instead." });
+  }
+  db.prepare("UPDATE motos SET status = 'in_progress', completed_at = NULL, results_finalized_at = NULL WHERE id = ? AND status = 'completed'").run(motoId);
+  syncEventPublication(moto.event_id);
+  const snapshot = buildLeaderboard(motoId);
+  if (snapshot) sseBroadcast(motoId, snapshot);
+  return res.json({ ok: true, motoId, status: "in_progress" });
+});
+
 // GET /events/:eventId/motos
 router.get("/events/:eventId/motos", (req, res) => {
   const db = getDb();
@@ -739,6 +760,14 @@ router.post("/events/:eventId/generate-lineups", (req, res) => {
       return true;
     })
     .map((m: any) => m.id);
+
+  // Never throw away a moto that's racing right now (its laps would go with it).
+  const running = existingMotos.filter((m: any) => idsToDelete.includes(m.id) && m.status === "in_progress");
+  if (running.length > 0) {
+    return res.status(409).json({
+      error: `${running.map((m: any) => m.name).join(", ")} ${running.length === 1 ? "is" : "are"} running right now. Finish ${running.length === 1 ? "it" : "them"} first, or untick ${running.length === 1 ? "its round" : "those rounds"} under Generate Moto(s).`,
+    });
+  }
 
   if (idsToDelete.length > 0) {
     idsToDelete.forEach((id: number) => deletedMotoIds.add(id));

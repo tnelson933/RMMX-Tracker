@@ -216,7 +216,7 @@ router.patch("/riders/:riderId", async (req, res) => {
     const next = (req.body.email == null ? "" : String(req.body.email)).trim().toLowerCase();
     if (existing.clubId !== scopedClubId && next !== current) {
       return res.status(400).json({
-        error: "This rider's email can't be changed here because the rider was not added by your club. The rider can update it from their own account.",
+        error: "This rider's email can't be changed here: it links the rider's own app account, and your club didn't add this rider. To give another email access, the rider adds it in the app under Profile → My Profiles → Stats & managers. To move the profile to a new email, send a support request through Rocky.",
       });
     }
   }

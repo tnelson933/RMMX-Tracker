@@ -381,7 +381,8 @@ export default function Register() {
   const [pendingPayment, setPendingPayment] = useState<PendingPayment | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [paymentCancelled, setPaymentCancelled] = useState(false);
-  const [lookupState, setLookupState] = useState<"idle" | "loading" | "found" | "not_found" | "pick">("idle");
+  // "new_rider": a different rider (e.g. a second child) on an email that already has a profile.
+  const [lookupState, setLookupState] = useState<"idle" | "loading" | "found" | "not_found" | "pick" | "new_rider">("idle");
   const [lookedUpName, setLookedUpName] = useState<string>("");
   const [riderOptions, setRiderOptions] = useState<RiderOption[] | null>(null);
   const autoLookupFiredRef = useRef(false);
@@ -851,6 +852,21 @@ export default function Register() {
     }
   };
 
+  // Register someone else on this email: a new profile, with the other rider's
+  // personal details cleared (shared ones like address and emergency contact stay).
+  const startNewRiderOnEmail = () => {
+    lookupRequestRef.current++;
+    riderClassesRequestRef.current++;
+    setSelectedRiderId(null);
+    setRiderOptions(null);
+    setLookedUpName("");
+    setAlreadyRegisteredClasses(new Set());
+    for (const name of ["firstName", "lastName", "dateOfBirth", "bibNumber", "amaNumber", "clubIdNumber", "myLapsTransponderNumber", "bikeBrand", "bikeModel", "bikeYear", "sponsors"] as const) {
+      form.setValue(name, "", { shouldDirty: false });
+    }
+    setLookupState("new_rider");
+  };
+
   const lookupByEmail = async (email: string) => {
     const trimmed = email.trim();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -932,6 +948,7 @@ export default function Register() {
           waiverSnapshot: waiverAccepted ? (event?.waiverText ?? null) : null,
           liabilityWaiverSignatureId: liabilityWaiverSignatureId,
           ...(selectedRiderId ? { riderId: selectedRiderId } : {}),
+          ...(lookupState === "new_rider" ? { newRider: true } : {}),
         }),
       });
       const json = await res.json().catch(() => ({}));
@@ -1419,8 +1436,14 @@ export default function Register() {
                         {lookupState === "found" && (
                           <div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 text-green-800 px-4 py-3 text-sm">
                             <CheckCircle2 size={16} className="shrink-0 text-green-600" />
-                            <span>Welcome back, <strong>{lookedUpName}</strong>! Your info has been pre-filled — review and update anything that's changed.</span>
+                            <span>
+                              Welcome back, <strong>{lookedUpName}</strong>! Your info has been pre-filled — review and update anything that's changed.{" "}
+                              <button type="button" onClick={startNewRiderOnEmail} className="underline font-semibold">Not {lookedUpName.split(" ")[0]}? Register a different rider on this email</button>
+                            </span>
                           </div>
+                        )}
+                        {lookupState === "new_rider" && (
+                          <p className="text-xs text-muted-foreground">Registering a new rider on this email: fill in their details below and we'll create their own profile.</p>
                         )}
                         {lookupState === "pick" && riderOptions && (
                           <div className="rounded-md border border-primary/30 bg-primary/5 p-4 space-y-3">
@@ -1447,6 +1470,13 @@ export default function Register() {
                                   </div>
                                 </button>
                               ))}
+                              <button
+                                type="button"
+                                onClick={startNewRiderOnEmail}
+                                className="w-full text-left rounded-lg border border-dashed border-border bg-background px-4 py-3 text-sm font-semibold hover:border-primary hover:bg-primary/5 transition-colors focus:outline-none focus:ring-2 focus:ring-ring"
+                              >
+                                + Someone else (a new rider on this email)
+                              </button>
                             </div>
                           </div>
                         )}

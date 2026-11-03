@@ -519,6 +519,30 @@ for (const action of ["finalize", "unfinalize"] as const) {
   });
 }
 
+// POST /motos/:motoId/reopen — a finished moto or enduro test goes back to
+// running, keeping its laps, so missed runs or laps can still be recorded.
+// Its results go back to unofficial. A timed race can't: its clock has expired
+// and would finish it again straight away.
+router.post("/motos/:motoId/reopen", async (req, res) => {
+  const id = Number(req.params.motoId);
+  const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, id));
+  if (!moto) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
+  if (!callerOwnsClub(res, await getEventClubId(moto.eventId))) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
+  if (moto.status !== "completed") return res.status(409).json({ error: "Only a finished moto can be reopened." });
+  if (moto.timeLimitMs != null && moto.type !== "enduro_test") {
+    return res.status(409).json({ error: "A timed race can't be reopened: its clock has run out and would finish it again. Fix its results in Review & finalize instead." });
+  }
+  const [updated] = await db.update(motosTable)
+    .set({ status: "in_progress", completedAt: null, resultsFinalizedAt: null })
+    .where(and(eq(motosTable.id, id), eq(motosTable.status, "completed")))
+    .returning();
+  if (!updated) return res.status(409).json({ error: "Only a finished moto can be reopened." });
+  await syncEventPublication(moto.eventId);
+  notifyConnectors(updated, "start_moto").catch(() => {});
+  buildLeaderboard(id).then(snapshot => { if (snapshot) publishTimingSnapshot(snapshot); }).catch(() => {});
+  return res.json({ ok: true, motoId: id, status: updated.status });
+});
+
 // POST /motos/:motoId/restart — wipe all crossings and restart the clock
 router.post("/motos/:motoId/restart", async (req, res) => {
   const id = Number(req.params.motoId);
@@ -880,6 +904,13 @@ router.post("/events/:eventId/generate-lineups", async (req, res) => {
       return true;
     })
     .map(m => m.id);
+  // Never throw away a moto that's racing right now (its laps would go with it).
+  const running = existingMotos.filter(m => idsToDelete.includes(m.id) && m.status === "in_progress");
+  if (running.length > 0) {
+    return res.status(409).json({
+      error: `${running.map(m => m.name).join(", ")} ${running.length === 1 ? "is" : "are"} running right now. Finish ${running.length === 1 ? "it" : "them"} first, or untick ${running.length === 1 ? "its round" : "those rounds"} under Generate Moto(s).`,
+    });
+  }
   if (idsToDelete.length > 0) {
     idsToDelete.forEach(id => deletedMotoIds.add(id));
     await db.delete(motosTable).where(inArray(motosTable.id, idsToDelete));

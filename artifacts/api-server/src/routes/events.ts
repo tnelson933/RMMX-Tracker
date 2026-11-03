@@ -464,7 +464,7 @@ router.delete("/events/:eventId", async (req, res) => {
     .limit(1);
   if (signedWaiver) {
     return res.status(409).json({
-      error: "This event has signed liability waivers, which must be kept, so it can't be deleted. Cancel the event or mark it completed instead.",
+      error: "This event has signed liability waivers, which must be kept, so it can't be deleted. Set its status to Completed instead, or move the Registration Opens date to the future to make it private.",
     });
   }
   await db.transaction(async (tx) => {

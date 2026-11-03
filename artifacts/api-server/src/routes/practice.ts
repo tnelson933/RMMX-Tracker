@@ -589,7 +589,7 @@ router.post("/practice/:id/crossing", async (req, res) => {
   if (callerClubId !== null && session.clubId !== callerClubId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   // Same reader check as the club's other ingest routes: no anonymous laps.
   if (callerClubId === null && !(await authorizeIngest(req, res, session.clubId, "practice_session_crossing"))) return;
-  if (session.status !== "active") return res.status(409).json({ error: "This payment session has ended. Start the payment again." });
+  if (session.status !== "active") return res.status(409).json({ error: "This practice session has ended. Start a new session on the Practice page." });
 
   const rawTime: string | undefined =
     body?.crossingTime ?? body?.passingTime ?? body?.timestamp;

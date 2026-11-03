@@ -523,7 +523,8 @@ export default function GateSchedulePage() {
       }
       if (moto.status === "in_progress") return [];
     }
-    const lineup = Array.isArray(moto.lineup) ? [...moto.lineup] : [];
+    // Only riders who checked in, as on Race Day Management (pending riders carry checkedIn:false).
+    const lineup = Array.isArray(moto.lineup) ? moto.lineup.filter((e: any) => e.checkedIn !== false) : [];
     lineup.sort((a, b) => a.position - b.position);
     const raceClass = (moto.raceClasses?.length ? moto.raceClasses[0] : moto.raceClass) ?? null;
     return lineup.map((entry, i) => ({

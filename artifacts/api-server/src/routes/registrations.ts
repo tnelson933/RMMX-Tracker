@@ -1446,10 +1446,11 @@ router.post("/public/events/:eventId/register", async (req, res) => {
 
   // Resolve identity before duplicate-bib checks. A selected profile is authoritative
   // as long as its email matches; typed names are profile edits, not identity checks.
-  const riderResolution = await resolveRegistrationRider(
-    String(email),
-    hintedRiderId,
-  );
+  // "Register a different rider on this email" (a family's second child) makes a
+  // new profile, so the entry never lands on the profile already on that email.
+  const riderResolution: RiderResolution = req.body.newRider === true && !hintedRiderId
+    ? { rider: null }
+    : await resolveRegistrationRider(String(email), hintedRiderId);
   if ("error" in riderResolution) {
     return res.status(riderResolution.status).json({ error: riderResolution.error });
   }

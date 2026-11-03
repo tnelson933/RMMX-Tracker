@@ -307,6 +307,14 @@ export default function Registrations() {
     }
   }, [isAddOpen]);
 
+  // A walk-up saved as Pending Payment: open the payment steps for that entry.
+  const openCollectPayment = (reg: { id: number; riderName: string; raceClass: string }) => {
+    setRegSuccess({ id: reg.id, riderName: reg.riderName, raceClass: reg.raceClass });
+    setCashAmount(eventEntryFee ? eventEntryFee.toFixed(2) : "");
+    setStep("pay-method");
+    setIsAddOpen(true);
+  };
+
   const noDuplicateBibs = !!(event as any)?.noDuplicateBibs;
   const requireClubId = !!(event as any)?.requireClubId;
   const watchedBib = form.watch("bibNumber");
@@ -1235,7 +1243,7 @@ export default function Registrations() {
           <div>
             <h3 className="text-xl font-heading font-bold uppercase">Registration Pending</h3>
             <p className="text-muted-foreground mt-1">
-              Spot is <strong>not confirmed</strong> until payment is collected. You can collect payment from the registrations list.
+              Spot is <strong>not confirmed</strong> until payment is collected. Collect it later with the card button on the rider's row in the registrations list.
             </p>
           </div>
           {regSuccess && (
@@ -2010,6 +2018,11 @@ export default function Registrations() {
                         })()}
                       </TableCell>
                       <TableCell className="text-right">
+                        {reg.status === 'pending' && eventEntryFee && (
+                          <Button variant="ghost" size="icon" title="Collect payment" aria-label="Collect payment" onClick={() => openCollectPayment(reg)} className="text-primary hover:text-primary hover:bg-primary/10">
+                            <CreditCard size={18} />
+                          </Button>
+                        )}
                         {reg.status !== 'confirmed' && (
                           <Button variant="ghost" size="icon" title="Confirm this registration" aria-label="Confirm this registration" onClick={() => handleUpdateStatus(reg.id, 'confirmed')} className="text-secondary hover:text-secondary hover:bg-secondary/10">
                             <Check size={18} />
