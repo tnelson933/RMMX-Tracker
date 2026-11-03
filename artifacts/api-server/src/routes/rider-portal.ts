@@ -1,3 +1,4 @@
+import { teamsForRiders, teamMotoBreakdown, teamRegistrationId } from "../lib/teams";
 import { checkBirthDate, isEmail } from "../lib/validateInput";
 import { releaseCompCodeIfCheckoutInactive } from "./registrations";
 import { isLowerBetter } from "../lib/overallOrder";
@@ -66,7 +67,7 @@ import {
   compCodesTable,
   riderProfileManagersTable,
 } from "@workspace/db";
-import { eq, desc, asc, or, and, ne, inArray, sql, ilike, isNull } from "drizzle-orm";
+import { eq, desc, asc, or, and, ne, inArray, sql, ilike, isNull, isNotNull } from "drizzle-orm";
 import { canManageRider, managedRiderIds, managedRiderWhere, ownsRider } from "../lib/riderAccess";
 import { EXPO_PUSH_TOKEN_RE } from "../lib/push";
 import { eventsTimingTags, type TimingTags } from "../lib/eventTimingTags";
@@ -539,8 +540,10 @@ router.get("/rider/my-event-ids", requireRiderAuth, async (req, res) => {
       inArray(registrationsTable.riderId, familyRiderIds),
       ne(registrationsTable.status, "void"),
     ));
+  // Group races the account's riders are on as team members.
+  const teamEventIds = (await teamsForRiders(familyRiderIds)).map(t => t.eventId);
 
-  return res.json({ eventIds: regs.map(r => r.eventId) });
+  return res.json({ eventIds: [...new Set([...regs.map(r => r.eventId), ...teamEventIds])] });
 });
 
 // GET /rider/events/:eventId/my-registrations — classes this account's riders are registered for
@@ -784,7 +787,11 @@ router.get("/rider/profiles", requireRiderAuth, async (req, res) => {
         })
         .from(raceResultsTable)
         .leftJoin(eventsTable, eq(raceResultsTable.eventId, eventsTable.id))
-        .where(eq(raceResultsTable.riderId, rider.id));
+        .where(or(
+          eq(raceResultsTable.riderId, rider.id),
+          // Group races this rider rode on as a team member (filed under the captain).
+          ...(await teamsForRiders([rider.id])).map(t => and(eq(raceResultsTable.riderId, t.captainRiderId), eq(raceResultsTable.eventId, t.eventId))),
+        ));
 
       const uniqueEvents = new Set(results.map((r) => r.eventId));
       const finishes = results.filter((r) => !r.dnf && !r.dns);
@@ -846,13 +853,21 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
   }
 
   const eventIdFilter = req.query.eventId ? parseInt(req.query.eventId as string, 10) : null;
+  // Group races: a team's results are filed under its captain, so a team member
+  // also sees the captain's results at that event.
+  const teamLinks = await teamsForRiders([riderId]);
+  const ownOrTeam = or(
+    eq(raceResultsTable.riderId, riderId),
+    ...teamLinks.map(t => and(eq(raceResultsTable.riderId, t.captainRiderId), eq(raceResultsTable.eventId, t.eventId))),
+  )!;
   const historyWhere = eventIdFilter && !isNaN(eventIdFilter)
-    ? and(eq(raceResultsTable.riderId, riderId), eq(raceResultsTable.eventId, eventIdFilter))
-    : eq(raceResultsTable.riderId, riderId);
+    ? and(ownOrTeam, eq(raceResultsTable.eventId, eventIdFilter))
+    : ownOrTeam;
 
   const rows = await db
     .select({
       resultId: raceResultsTable.id,
+      resultRiderId: raceResultsTable.riderId,
       eventId: raceResultsTable.eventId,
       eventName: eventsTable.name,
       eventDate: eventsTable.date,
@@ -921,9 +936,9 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
   }
 
   /** Gap (ms) to leader and to the rider directly ahead at the end of each lap. */
-  const computeLapGaps = (motoId: number, lapCount: number): Array<{ leader: number | null; ahead: number | null }> => {
+  const computeLapGaps = (motoId: number, lapCount: number, resultRiderId: number): Array<{ leader: number | null; ahead: number | null }> => {
     const field = cumByMoto.get(motoId) ?? [];
-    const me = field.find((f) => f.riderId === riderId);
+    const me = field.find((f) => f.riderId === resultRiderId);
     const gaps: Array<{ leader: number | null; ahead: number | null }> = [];
     for (let i = 0; i < lapCount; i++) {
       if (!me || me.cum[i] == null) { gaps.push({ leader: null, ahead: null }); continue; }
@@ -954,6 +969,8 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
     timingTags?: TimingTags;
     raceStyle: string | null;
     raceClass: string;
+    /** Group races: the team this rider rode on. */
+    teamName: string | null;
     motos: Array<{
       motoId: number;
       motoName: string;
@@ -971,18 +988,24 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
       official: boolean;
       /** This rider's sector (split) times per lap, when the course had split readers. */
       sectors: RiderMotoSectors | null;
+      /** Group races: the team's riders and the laps each of them rode. */
+      team: {
+        name: string | null;
+        members: Array<{ position: number; name: string; isYou: boolean; lapCount: number; lapTimes: string[]; totalTime: string | null; bestLap: string | null }>;
+      } | null;
     }>;
   }>();
 
   // Sector times only for the races where this rider was read at a split.
   const splitMotoIds = motoIds.length
     ? new Set((await db.selectDistinct({ motoId: splitCrossingsTable.motoId }).from(splitCrossingsTable)
-      .where(and(eq(splitCrossingsTable.riderId, riderId), inArray(splitCrossingsTable.motoId, motoIds)))).map(r => r.motoId))
+      .where(and(inArray(splitCrossingsTable.riderId, [riderId, ...teamLinks.map(t => t.captainRiderId)]), inArray(splitCrossingsTable.motoId, motoIds)))).map(r => r.motoId))
     : new Set<number>();
+  const resultRiderByMoto = new Map(rows.map(r => [r.motoId, r.resultRiderId]));
   const sectorsByMoto = new Map<number, RiderMotoSectors | null>();
   for (const motoId of splitMotoIds) {
     const moto = await computeMotoSectors(motoId).catch(() => null);
-    const mine = moto?.byRider.get(riderId);
+    const mine = moto?.byRider.get(resultRiderByMoto.get(motoId) ?? riderId);
     sectorsByMoto.set(motoId, moto && mine ? {
       names: moto.names,
       laps: mine.laps.filter(l => l.complete).map(l => ({ lapNumber: l.lapNumber, sectorsMs: l.sectorsMs })),
@@ -990,6 +1013,39 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
       fieldBestMs: moto.fieldBest,
     } : null);
   }
+
+  // Team breakdowns: the roster for each team result (this rider's own team, or one they rode on).
+  const teamNames = new Map<string, string>();
+  const teamRosterReg = new Map<string, number>();
+  for (const key of new Set(rows.map(r => `${r.eventId}:${r.resultRiderId}`))) {
+    const [eventId, resultRiderId] = key.split(":").map(Number);
+    const [teamReg] = await db.select({ teamName: registrationsTable.teamName }).from(registrationsTable)
+      .where(and(eq(registrationsTable.eventId, eventId), eq(registrationsTable.riderId, resultRiderId), ne(registrationsTable.status, "void"), isNotNull(registrationsTable.teamName)))
+      .limit(1);
+    if (!teamReg) continue;
+    teamNames.set(key, teamReg.teamName!);
+    const rosterReg = await teamRegistrationId(eventId, resultRiderId);
+    if (rosterReg) teamRosterReg.set(key, rosterReg);
+  }
+  const msOrNull = (laps: number[]) => (laps.length ? formatLapTime(laps.reduce((a, b) => a + b, 0)) : null);
+  const teamBreakdown = async (row: (typeof rows)[number]) => {
+    const key = `${row.eventId}:${row.resultRiderId}`;
+    const rosterReg = teamRosterReg.get(key);
+    if (!teamNames.has(key)) return null;
+    const members = rosterReg ? await teamMotoBreakdown(row.motoId, rosterReg, row.resultRiderId) : [];
+    return {
+      name: teamNames.get(key) ?? null,
+      members: members.map(m => ({
+        position: m.position,
+        name: m.name,
+        isYou: m.riderId === riderId,
+        lapCount: m.lapsMs.length,
+        lapTimes: m.lapsMs.map(formatLapTime),
+        totalTime: msOrNull(m.lapsMs),
+        bestLap: m.lapsMs.length ? formatLapTime(Math.min(...m.lapsMs)) : null,
+      })),
+    };
+  };
 
   for (const row of rows) {
     if (!eventMap.has(row.eventId)) {
@@ -1003,6 +1059,7 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
         timingTechnology: row.timingTechnology ?? null,
         raceStyle: row.raceStyle ?? null,
         raceClass: row.raceClass,
+        teamName: teamNames.get(`${row.eventId}:${row.resultRiderId}`) ?? null,
         motos: [],
       });
     }
@@ -1020,12 +1077,13 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
       points: row.points,
       totalTime: row.totalTime,
       lapTimes: lapTimesFormatted,
-      lapGaps: computeLapGaps(row.motoId, lapTimesFormatted.length),
+      lapGaps: computeLapGaps(row.motoId, lapTimesFormatted.length, row.resultRiderId),
       dnf: row.dnf,
       dns: row.dns,
       bibNumber: row.bibNumber,
       official: row.resultsFinalizedAt != null || row.motoType === "practice",
       sectors: sectorsByMoto.get(row.motoId) ?? null,
+      team: await teamBreakdown(row),
     });
   }
 
@@ -1818,6 +1876,16 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
   // Every rider on the account: the app asks with its first selected profile and shows
   // the whole family's races (each registration carries the rider's name).
   const scheduleRiderIds = [...new Set([riderId, ...familyRiderIds])];
+  // Group races the account's riders ride on as team members: the team's entry
+  // (under its captain) is theirs too, and its motos are theirs.
+  const scheduleTeams = await teamsForRiders(scheduleRiderIds);
+  const teamCaptainByEvent = new Map<number, Set<number>>();
+  for (const t of scheduleTeams) {
+    if (!teamCaptainByEvent.has(t.eventId)) teamCaptainByEvent.set(t.eventId, new Set());
+    teamCaptainByEvent.get(t.eventId)!.add(t.captainRiderId);
+    if (!familyRiderMap.has(t.captainRiderId)) familyRiderMap.set(t.captainRiderId, `Team ${t.teamName ?? ""}`.trim());
+  }
+  const isMine = (eventId: number, id: number) => id === riderId || !!teamCaptainByEvent.get(eventId)?.has(id);
 
   // Confirmed registrations of the account's riders
   const regs = await db
@@ -1830,7 +1898,10 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
     })
     .from(registrationsTable)
     .where(and(
-      inArray(registrationsTable.riderId, scheduleRiderIds),
+      or(
+        inArray(registrationsTable.riderId, scheduleRiderIds),
+        ...scheduleTeams.map(t => and(eq(registrationsTable.riderId, t.captainRiderId), eq(registrationsTable.eventId, t.eventId))),
+      ),
       eq(registrationsTable.status, "confirmed"),
     ));
 
@@ -2047,7 +2118,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
       const lineup = (Array.isArray(moto.lineup) ? moto.lineup : []) as Array<{
         position: number; riderId: number; riderName: string; bibNumber?: string | null;
       }>;
-      const familyInLineup = lineup.filter(e => e.riderId === riderId);
+      const familyInLineup = lineup.filter(e => isMine(event.id, e.riderId));
 
       return {
         motoId: moto.id,
@@ -2071,7 +2142,7 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
             riderId: e.riderId,
             riderName: e.riderName,
             bibNumber: e.bibNumber ?? null,
-            isFamilyMember: e.riderId === riderId,
+            isFamilyMember: isMine(event.id, e.riderId),
           })),
       };
     });

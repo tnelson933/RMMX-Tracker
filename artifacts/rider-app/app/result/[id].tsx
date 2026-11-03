@@ -1,3 +1,4 @@
+import { TeamLaps, type TeamBreakdown } from "@/components/TeamLaps";
 import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
@@ -53,6 +54,8 @@ interface MotoResult {
   totalTime: string | null;
   lapTimes: string[];
   bibNumber: string | null;
+  /** Group races: each team rider's own laps. */
+  team?: TeamBreakdown | null;
   /** Finalized by the organizer; otherwise unofficial results. */
   official?: boolean;
 }
@@ -261,6 +264,7 @@ export default function ResultDetailScreen() {
                     <PositionBadge position={moto.position} dnf={moto.dnf} dns={moto.dns} />
                   </View>
 
+                  {moto.team ? <TeamLaps team={moto.team} /> : null}
                   {/* Lap table */}
                   {hasTimes ? (
                     <View>

@@ -67,6 +67,13 @@ export interface MotoResult {
   bibNumber: string | null;
   /** Finalized by the organizer; otherwise unofficial results. */
   official?: boolean;
+  /** Group races: the team's riders and the laps each of them rode. */
+  team?: TeamBreakdown | null;
+}
+
+export interface TeamBreakdown {
+  name: string | null;
+  members: Array<{ position: number; name: string; isYou: boolean; lapCount: number; lapTimes: string[]; totalTime: string | null; bestLap: string | null }>;
 }
 
 export interface EventHistory {
@@ -76,6 +83,8 @@ export interface EventHistory {
   eventState: string;
   eventLocation: string | null;
   timingTechnology: string | null;
+  /** Group races: the team this rider rode on. */
+  teamName?: string | null;
   /** Which kinds of tag the event's readers used (RM TrackR, RFID or both). */
   timingTags?: { transponder: boolean; rfid: boolean; fromReaders: boolean };
   raceStyle?: string | null;

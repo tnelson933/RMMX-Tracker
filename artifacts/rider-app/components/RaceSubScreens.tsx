@@ -1,3 +1,4 @@
+import { TeamLaps, type TeamBreakdown } from "@/components/TeamLaps";
 import { Feather } from "@expo/vector-icons";
 import React, { useEffect, useState } from "react";
 import {
@@ -66,6 +67,8 @@ export interface MotoResult {
   lapTimes: string[];
   lapGaps?: Array<{ leader: number | null; ahead: number | null }>;
   bibNumber: string | null;
+  /** Group races: each team rider's own laps. */
+  team?: TeamBreakdown | null;
   /** Split (sector) times per lap, when the course had split readers. */
   sectors?: {
     names: string[];
@@ -308,6 +311,7 @@ export function EventDetailScreen({
                 <PositionBadge position={moto.position} dnf={moto.dnf} dns={moto.dns} />
               </View>
 
+              {moto.team ? <TeamLaps team={moto.team} /> : null}
               {/* Lap table */}
               {hasTimes ? (
                 <View>

@@ -1,4 +1,4 @@
-import { eventToday } from "@workspace/api-zod";
+import { eventToday, normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
 import { localDateString } from "@/lib/eventDates";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { StateSelect } from "@/components/ui/StateSelect";
@@ -139,6 +139,9 @@ function SectionHeader({ children, action }: { children: React.ReactNode; action
 
 // Group race team members besides the captain.
 interface TeamMemberEntry { firstName: string; lastName: string; email: string }
+/** One rider's timing at a group race: their own numbers, or a rental / purchase. */
+interface TeamGearEntry { trackrChoice: "" | "own" | "rent" | "buy"; trackrNumber: string; rfidNumber: string; buyRfid: boolean }
+const EMPTY_GEAR: TeamGearEntry = { trackrChoice: "", trackrNumber: "", rfidNumber: "", buyRfid: false };
 const teamSize = (ridersPerGroup: number | null | undefined) => Math.max(2, ridersPerGroup ?? 2);
 /** What's missing on the Team step, or null when the team is complete. */
 function teamProblem(teamName: string, members: TeamMemberEntry[], ridersPerGroup: number | null | undefined): string | null {
@@ -421,6 +424,8 @@ export default function Register() {
   // Group race: the team name and every member besides the captain (the rider on this form).
   const [teamName, setTeamName] = useState("");
   const [teamMembers, setTeamMembers] = useState<TeamMemberEntry[]>([]);
+  // Group race: each rider's transponder (index 0 is the captain).
+  const [teamGear, setTeamGear] = useState<TeamGearEntry[]>([]);
   // Set when the rider taps Edit on the review, so Next goes straight back to it.
   const [returnToReview, setReturnToReview] = useState(false);
   const [stepError, setStepError] = useState<string | null>(null);
@@ -695,16 +700,51 @@ export default function Register() {
       form.clearErrors("myLapsTransponderNumber");
     }
   };
+  /** Group race: a rider's own RM TrackR number that isn't a valid ID, or a missing transponder when one is required. */
+  const teamGearProblem = (): string | null => {
+    if (!event?.groupRace) return null;
+    const size = teamSize(event.ridersPerGroup);
+    for (let i = 0; i < size; i++) {
+      const g = teamGear[i] ?? EMPTY_GEAR;
+      const who = i === 0 ? "your" : `rider ${i + 1}'s`;
+      if (g.trackrChoice === "own" && !normalizeActiveTransponderIdentifier(g.trackrNumber)) {
+        return `Enter ${who} RM TrackR number as printed on it (up to 9 numbers or letters A–F), or pick another option.`;
+      }
+      if (event.requireTransponder && !g.trackrChoice) {
+        return `This event needs a transponder for every rider. Choose one for ${i === 0 ? "yourself" : `rider ${i + 1}`}.`;
+      }
+    }
+    const seen = new Set<string>();
+    for (let i = 0; i < size; i++) {
+      const g = teamGear[i] ?? EMPTY_GEAR;
+      for (const t of [g.rfidNumber.trim(), g.trackrChoice === "own" ? g.trackrNumber.trim() : ""]) {
+        if (!t) continue;
+        if (seen.has(t.toLowerCase())) return `Number ${t} is entered twice. Each rider needs their own.`;
+        seen.add(t.toLowerCase());
+      }
+    }
+    return null;
+  };
   const numSelectedClasses = (watchedSelectedClasses ?? []).length;
+  const groupSize = event?.groupRace ? teamSize(event.ridersPerGroup) : 0;
+  const gearOf = (i: number) => teamGear[i] ?? EMPTY_GEAR;
+  const teamRentals = event?.groupRace ? Array.from({ length: groupSize }, (_, i) => gearOf(i)).filter(g => g.trackrChoice === "rent").length : 0;
+  const teamTrackrs = event?.groupRace ? Array.from({ length: groupSize }, (_, i) => gearOf(i)).filter(g => g.trackrChoice === "buy").length : 0;
+  const teamRfidTags = event?.groupRace ? Array.from({ length: groupSize }, (_, i) => gearOf(i)).filter(g => g.buyRfid && !g.rfidNumber.trim()).length : 0;
   const selectedPurchasesTotal = (event?.purchaseOptions ?? [])
-    .filter(o => (watchedPurchaseOptions ?? []).includes(o.id))
-    .reduce((sum, o) => sum + Number(o.amount), 0);
-  const rentalTotal = (watchedRentTransponder && event?.transponderRentalEnabled && event?.transponderRentalFee != null)
-    ? Number(event.transponderRentalFee)
-    : 0;
-  const rfidStickerTotal = (watchedPurchaseRfidSticker && event?.rfidStickerFee != null)
-    ? Number(event.rfidStickerFee)
-    : 0;
+    .filter(o => (watchedPurchaseOptions ?? []).includes(o.id) && !(event?.groupRace && o.id === RM_TRACKR_OPTION_ID))
+    .reduce((sum, o) => sum + Number(o.amount), 0)
+    + (event?.groupRace && trackrOption ? Number(trackrOption.amount) * teamTrackrs : 0);
+  const rentalTotal = event?.groupRace
+    ? (event.transponderRentalEnabled && event.transponderRentalFee != null ? Number(event.transponderRentalFee) * teamRentals : 0)
+    : (watchedRentTransponder && event?.transponderRentalEnabled && event?.transponderRentalFee != null)
+      ? Number(event.transponderRentalFee)
+      : 0;
+  const rfidStickerTotal = event?.groupRace
+    ? (event.rfidStickerFee != null ? Number(event.rfidStickerFee) * teamRfidTags : 0)
+    : (watchedPurchaseRfidSticker && event?.rfidStickerFee != null)
+      ? Number(event.rfidStickerFee)
+      : 0;
   // Early-bird pricing ends by the track's local date (same rule as the server).
   const today = event ? eventToday(event as any) : localDateString();
   const earlyBirdActive = !!(event?.earlyBirdEndsAt && today <= event.earlyBirdEndsAt && event?.earlyBirdFee != null);
@@ -933,7 +973,13 @@ export default function Register() {
       form.setError("clubIdNumber", { message: "Club ID # is required for this event" });
       return;
     }
-    if (event?.requireTransponder
+    const gearIssue = event?.groupRace ? teamGearProblem() : null;
+    if (gearIssue) {
+      setStep("addons");
+      setStepError(gearIssue);
+      return;
+    }
+    if (!event?.groupRace && event?.requireTransponder
       && !data.myLapsTransponderNumber?.trim() && !data.rentTransponder && !data.selectedPurchaseOptions.includes(RM_TRACKR_OPTION_ID)) {
       const canGetOne = !!event.transponderRentalEnabled || (event.purchaseOptions ?? []).some(o => o.id === RM_TRACKR_OPTION_ID);
       setStep("addons");
@@ -969,8 +1015,23 @@ export default function Register() {
           // Show Stripe's payment form in this page instead of a new window.
           embeddedCheckout: true,
           raceClasses: selectedClasses,
-          ...(event?.groupRace ? { teamName: teamName.trim(), teamMembers: teamMembers.slice(0, teamSize(event.ridersPerGroup) - 1) } : {}),
-          selectedPurchaseOptions: (event?.purchaseOptions ?? []).filter(o => data.selectedPurchaseOptions.includes(o.id)),
+          ...(event?.groupRace ? {
+            teamName: teamName.trim(),
+            teamMembers: teamMembers.slice(0, teamSize(event.ridersPerGroup) - 1),
+            teamGear: Array.from({ length: teamSize(event.ridersPerGroup) }, (_, i) => {
+              const g = teamGear[i] ?? EMPTY_GEAR;
+              return {
+                trackrChoice: g.trackrChoice || null,
+                trackrNumber: g.trackrChoice === "own" ? g.trackrNumber.trim() : "",
+                rfidNumber: g.rfidNumber.trim(),
+                buyRfid: g.buyRfid && !g.rfidNumber.trim(),
+              };
+            }),
+            rentTransponder: false,
+            purchaseRfidSticker: false,
+            myLapsTransponderNumber: "",
+          } : {}),
+          selectedPurchaseOptions: (event?.purchaseOptions ?? []).filter(o => data.selectedPurchaseOptions.includes(o.id) && !(event?.groupRace && o.id === RM_TRACKR_OPTION_ID)),
           compCode: appliedComp?.code ?? null,
           waiverAcknowledgedAt: waiverAccepted ? waiverTimestamp : null,
           waiverSnapshot: waiverAccepted ? (event?.waiverText ?? null) : null,
@@ -1196,7 +1257,8 @@ export default function Register() {
     "contact",
     ...(event.groupRace ? ["team" as const] : []),
     "classes",
-    ...(showTransponderSection || event.rfidStickerFee != null || addOnOptions.length > 0 ? ["addons" as const] : []),
+    ...(showTransponderSection || event.rfidStickerFee != null || addOnOptions.length > 0
+      || (event.groupRace && eventTimingTags(event).rfid) ? ["addons" as const] : []),
     "bike",
     ...(hasLiabilityWaiver || hasAcknowledgement ? ["waiver" as const] : []),
     "review",
@@ -1204,7 +1266,7 @@ export default function Register() {
   const stepIndex = Math.max(0, steps.indexOf(step));
   // Drives the "* Required" note; must match what validateStep enforces.
   const stepHasRequired = step === "rider" || step === "team" || step === "classes" || step === "waiver"
-    || (step === "addons" && event.requireTransponder && !gettingTransponder);
+    || (step === "addons" && event.requireTransponder && (!!event.groupRace || !gettingTransponder));
   const v = form.getValues();
 
   const goTo = (id: StepId) => {
@@ -1242,6 +1304,11 @@ export default function Register() {
       if (problem) { setStepError(problem); return false; }
     }
     if (id === "classes") return form.trigger("selectedClasses");
+    if (id === "addons" && event.groupRace) {
+      const problem = teamGearProblem();
+      if (problem) { setStepError(problem); return false; }
+      return true;
+    }
     if (id === "addons" && event.requireTransponder) {
       const d = form.getValues();
       if (!d.myLapsTransponderNumber?.trim() && !d.rentTransponder && !d.selectedPurchaseOptions.includes(RM_TRACKR_OPTION_ID)) {
@@ -1823,7 +1890,77 @@ export default function Register() {
 
                 {step === "addons" && (
                   <>
-                    {showTransponderSection && (
+                    {event.groupRace && (
+                      <Card>
+                        <SectionHeader>Team Transponders</SectionHeader>
+                        <CardContent className="p-6 space-y-4">
+                          <p className="text-sm text-muted-foreground">
+                            Each rider is timed with their own tag. Enter the numbers you have now; anything you don't have can be added at check-in.
+                            {(offersRental || trackrOption) && " Riders without a transponder can rent or buy one here."}
+                          </p>
+                          {Array.from({ length: teamSize(event.ridersPerGroup) }, (_, i) => {
+                            const g = teamGear[i] ?? EMPTY_GEAR;
+                            const set = (patch: Partial<TeamGearEntry>) => setTeamGear(prev => {
+                              const next = [...prev];
+                              while (next.length <= i) next.push({ ...EMPTY_GEAR });
+                              next[i] = { ...next[i], ...patch };
+                              return next;
+                            });
+                            const who = i === 0
+                              ? `${`${v.firstName} ${v.lastName}`.trim() || "You"} (captain)`
+                              : `${teamMembers[i - 1]?.firstName ?? ""} ${teamMembers[i - 1]?.lastName ?? ""}`.trim() || `Rider ${i + 1}`;
+                            const showRfid = eventTimingTags(event).rfid || event.rfidStickerFee != null;
+                            const choices: Array<{ id: TeamGearEntry["trackrChoice"]; label: string }> = [
+                              { id: "own", label: "I have one" },
+                              ...(offersRental ? [{ id: "rent" as const, label: `Rent${event.transponderRentalFee != null ? ` $${Number(event.transponderRentalFee).toFixed(2)}` : ""}` }] : []),
+                              ...(trackrOption ? [{ id: "buy" as const, label: `Buy $${Number(trackrOption.amount).toFixed(2)}` }] : []),
+                              ...(!event.requireTransponder ? [{ id: "" as const, label: "Not now" }] : []),
+                            ];
+                            return (
+                              <div key={i} className="rounded-lg border p-4 space-y-3">
+                                <p className="text-sm font-heading font-semibold uppercase tracking-wide">Rider {i + 1}: {who}</p>
+                                {showTransponderSection && (
+                                  <div className="space-y-2">
+                                    <p className="text-xs font-medium">RM TrackR Transponder{event.requireTransponder && <span className="text-destructive"> *</span>}</p>
+                                    <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={`Rider ${i + 1} transponder`}>
+                                      {choices.map(c => (
+                                        <Button key={c.id || "none"} type="button" size="sm" role="radio" aria-checked={g.trackrChoice === c.id}
+                                          variant={g.trackrChoice === c.id ? "default" : "outline"}
+                                          onClick={() => set({ trackrChoice: c.id, ...(c.id !== "own" ? { trackrNumber: "" } : {}) })}>
+                                          {c.label}
+                                        </Button>
+                                      ))}
+                                    </div>
+                                    {g.trackrChoice === "own" && (
+                                      <Input aria-label={`Rider ${i + 1} RM TrackR number`} className="font-mono uppercase" placeholder="ID printed on the transponder"
+                                        value={g.trackrNumber} onChange={e => set({ trackrNumber: e.target.value })} />
+                                    )}
+                                    {(g.trackrChoice === "rent" || g.trackrChoice === "buy") && (
+                                      <p className="text-xs text-muted-foreground">Picked up at check-in{!event.paymentEnabled ? "; paid at the gate" : ""}.</p>
+                                    )}
+                                  </div>
+                                )}
+                                {showRfid && (
+                                  <div className="space-y-2">
+                                    <p className="text-xs font-medium">RFID Tag <span className="text-muted-foreground font-normal">(optional)</span></p>
+                                    <Input aria-label={`Rider ${i + 1} RFID tag`} className="font-mono" placeholder="RFID tag number, if you have one"
+                                      value={g.rfidNumber} onChange={e => set({ rfidNumber: e.target.value, ...(e.target.value.trim() ? { buyRfid: false } : {}) })} />
+                                    {event.rfidStickerFee != null && !g.rfidNumber.trim() && (
+                                      <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                        <Checkbox checked={g.buyRfid} onCheckedChange={val => set({ buyRfid: val === true })} />
+                                        Buy an RFID tag — <span className="text-primary">${Number(event.rfidStickerFee).toFixed(2)}</span>
+                                      </label>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </CardContent>
+                      </Card>
+                    )}
+
+                    {!event.groupRace && showTransponderSection && (
                       <Card>
                         <SectionHeader>RM TrackR Transponder</SectionHeader>
                         <CardContent className="p-6 space-y-4">
@@ -1917,7 +2054,7 @@ export default function Register() {
                     )}
 
                     {/* RFID Sticker */}
-                    {event.rfidStickerFee != null && (
+                    {!event.groupRace && event.rfidStickerFee != null && (
                       <Card>
                         <SectionHeader>RFID Sticker</SectionHeader>
                         <CardContent className="p-6">
@@ -2261,7 +2398,16 @@ export default function Register() {
 
                     {steps.includes("addons") && (
                       <ReviewSection title="Add-ons" onEdit={() => editStep("addons")}>
-                        {showTransponderSection && (
+                        {event.groupRace && Array.from({ length: teamSize(event.ridersPerGroup) }, (_, i) => {
+                          const g = teamGear[i] ?? EMPTY_GEAR;
+                          const name = i === 0 ? `${v.firstName} ${v.lastName}`.trim() : `${teamMembers[i - 1]?.firstName ?? ""} ${teamMembers[i - 1]?.lastName ?? ""}`.trim();
+                          const trackr = g.trackrChoice === "own" ? `RM TrackR ${g.trackrNumber.trim().toUpperCase()}`
+                            : g.trackrChoice === "rent" ? "Renting a transponder"
+                            : g.trackrChoice === "buy" ? "Buying an RM TrackR" : null;
+                          const rfid = g.rfidNumber.trim() ? `RFID ${g.rfidNumber.trim()}` : g.buyRfid ? "Buying an RFID tag" : null;
+                          return <ReviewRow key={i} label={`Rider ${i + 1}${name ? `: ${name}` : ""}`} value={[trackr, rfid].filter(Boolean).join(" · ") || "Added at check-in"} />;
+                        })}
+                        {!event.groupRace && showTransponderSection && (
                           <ReviewRow
                             label="Transponder"
                             value={buyingTrackr && trackrOption
@@ -2271,7 +2417,7 @@ export default function Register() {
                                 : v.myLapsTransponderNumber?.trim() ? `My own: ${v.myLapsTransponderNumber.trim()}` : "None"}
                           />
                         )}
-                        {event.rfidStickerFee != null && (
+                        {!event.groupRace && event.rfidStickerFee != null && (
                           <ReviewRow
                             label="RFID Sticker"
                             value={v.purchaseRfidSticker ? `Yes — $${Number(event.rfidStickerFee).toFixed(2)}` : "No"}
@@ -2284,7 +2430,7 @@ export default function Register() {
                               .map(o => `${o.name} — $${Number(o.amount).toFixed(2)}`).join(", ") || "None"}
                           />
                         )}
-                        {!event.paymentEnabled && (gettingTransponder || v.purchaseRfidSticker) && (
+                        {!event.paymentEnabled && (gettingTransponder || v.purchaseRfidSticker || teamRentals + teamTrackrs + teamRfidTags > 0) && (
                           <p className="py-2.5 text-[13px] text-muted-foreground">You pay for these at the gate.</p>
                         )}
                       </ReviewSection>
@@ -2327,19 +2473,24 @@ export default function Register() {
                               </dt>
                               <dd>${(effectiveEntryFee * Math.max(1, numSelectedClasses)).toFixed(2)}</dd>
                             </div>
-                            {(event.purchaseOptions ?? []).filter(o => (watchedPurchaseOptions ?? []).includes(o.id)).map(o => (
+                            {(event.purchaseOptions ?? []).filter(o => (watchedPurchaseOptions ?? []).includes(o.id) && !(event.groupRace && o.id === RM_TRACKR_OPTION_ID)).map(o => (
                               <div key={o.id} className="flex justify-between gap-4">
                                 <dt>{o.name}</dt><dd>${Number(o.amount).toFixed(2)}</dd>
                               </div>
                             ))}
+                            {event.groupRace && trackrOption && teamTrackrs > 0 && (
+                              <div className="flex justify-between gap-4">
+                                <dt>{trackrOption.name}{teamTrackrs > 1 ? ` × ${teamTrackrs}` : ""}</dt><dd>${(Number(trackrOption.amount) * teamTrackrs).toFixed(2)}</dd>
+                              </div>
+                            )}
                             {rentalTotal > 0 && (
                               <div className="flex justify-between gap-4">
-                                <dt>Transponder rental</dt><dd>${rentalTotal.toFixed(2)}</dd>
+                                <dt>Transponder rental{teamRentals > 1 ? ` × ${teamRentals}` : ""}</dt><dd>${rentalTotal.toFixed(2)}</dd>
                               </div>
                             )}
                             {rfidStickerTotal > 0 && (
                               <div className="flex justify-between gap-4">
-                                <dt>RFID sticker</dt><dd>${rfidStickerTotal.toFixed(2)}</dd>
+                                <dt>RFID sticker{teamRfidTags > 1 ? ` × ${teamRfidTags}` : ""}</dt><dd>${rfidStickerTotal.toFixed(2)}</dd>
                               </div>
                             )}
                             {appliedComp && (

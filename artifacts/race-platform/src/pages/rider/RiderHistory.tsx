@@ -663,6 +663,45 @@ function MotoRow({ moto, raceStyle }: { moto: MotoResult; raceStyle?: string | n
           </div>
         </div>
       )}
+      {moto.team && moto.team.members.length > 0 && <TeamLaps team={moto.team} />}
+    </div>
+  );
+}
+
+/** Group race: the team's total above, and each rider's own laps to compare. */
+function TeamLaps({ team }: { team: NonNullable<MotoResult["team"]> }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="px-4 pb-3">
+      <button type="button" className="text-xs font-semibold text-primary hover:underline" onClick={() => setOpen(o => !o)}>
+        {open ? "Hide" : "Show"} each rider's laps{team.name ? ` (Team ${team.name})` : ""}
+      </button>
+      {open && (
+        <div className="mt-2 overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-muted-foreground text-left">
+                <th className="py-1 pr-3 font-medium">Rider</th>
+                <th className="py-1 pr-3 font-medium">Laps</th>
+                <th className="py-1 pr-3 font-medium">Best</th>
+                <th className="py-1 pr-3 font-medium">Riding time</th>
+                <th className="py-1 font-medium">Lap times</th>
+              </tr>
+            </thead>
+            <tbody>
+              {team.members.map(m => (
+                <tr key={m.position} className={`border-t ${m.isYou ? "bg-primary/5 font-semibold" : ""}`}>
+                  <td className="py-1.5 pr-3 whitespace-nowrap">{m.name}{m.isYou ? " (you)" : ""}</td>
+                  <td className="py-1.5 pr-3 font-mono">{m.lapCount}</td>
+                  <td className="py-1.5 pr-3 font-mono">{m.bestLap ?? "—"}</td>
+                  <td className="py-1.5 pr-3 font-mono">{m.totalTime ?? "—"}</td>
+                  <td className="py-1.5 font-mono text-muted-foreground">{m.lapTimes.join("  ") || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -693,6 +732,7 @@ function EventCard({ event }: { event: EventHistory }) {
                 </span>
               )}
               <Badge variant="secondary" className="text-xs">{event.raceClass}</Badge>
+              {event.teamName && <Badge variant="outline" className="text-xs">Team {event.teamName}</Badge>}
               {(
                 <span className="flex items-center gap-1 text-xs text-muted-foreground">
                   <Timer size={11} />

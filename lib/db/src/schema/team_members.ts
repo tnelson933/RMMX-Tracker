@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, index, uniqueIndex, boolean } from "drizzle-orm/pg-core";
 import { eventsTable } from "./events";
 import { registrationsTable } from "./registrations";
 import { ridersTable } from "./riders";
@@ -20,6 +20,10 @@ export const teamMembersTable = pgTable("team_members", {
   email: text("email"),
   rfidNumber: text("rfid_number"),
   trackrNumber: text("trackr_number"),
+  /** Chosen at registration: "own" (number entered), "rent" or "buy"; null when none. */
+  trackrChoice: text("trackr_choice"),
+  /** Bought an RFID tag at registration. */
+  rfidPurchased: boolean("rfid_purchased").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [

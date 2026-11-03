@@ -782,15 +782,18 @@ export async function runPull(): Promise<{ ok: boolean; rows: Record<string, num
     // Keyed by (registration, position), so a roster edited here keeps its row.
     const teamStmt = db.prepare(`
       INSERT INTO team_members (
-        event_id, registration_id, position, rider_id, first_name, last_name, email, rfid_number, trackr_number
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        event_id, registration_id, position, rider_id, first_name, last_name, email, rfid_number, trackr_number,
+        trackr_choice, rfid_purchased
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(registration_id, position) DO UPDATE SET
         rider_id      = excluded.rider_id,
         first_name    = excluded.first_name,
         last_name     = excluded.last_name,
         email         = excluded.email,
         rfid_number   = COALESCE(excluded.rfid_number, team_members.rfid_number),
-        trackr_number = COALESCE(excluded.trackr_number, team_members.trackr_number)
+        trackr_number = COALESCE(excluded.trackr_number, team_members.trackr_number),
+        trackr_choice = excluded.trackr_choice,
+        rfid_purchased = excluded.rfid_purchased
     `);
     let teamMembersPulled = 0;
     for (const m of data.teamMembers ?? []) {
@@ -799,6 +802,7 @@ export async function runPull(): Promise<{ ok: boolean; rows: Record<string, num
         m.riderId == null ? null : toSQLiteScalar(localRiderIdForCloud(m.riderId)),
         toSQLiteScalar(m.firstName) ?? "", toSQLiteScalar(m.lastName) ?? "",
         toSQLiteScalar(m.email) ?? null, toSQLiteScalar(m.rfidNumber) ?? null, toSQLiteScalar(m.trackrNumber) ?? null,
+        toSQLiteScalar(m.trackrChoice) ?? null, m.rfidPurchased ? 1 : 0,
       );
       teamMembersPulled++;
     }

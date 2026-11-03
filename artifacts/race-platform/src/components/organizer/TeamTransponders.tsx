@@ -17,10 +17,14 @@ interface TeamMember {
   email: string | null;
   rfidNumber: string | null;
   trackrNumber: string | null;
+  /** Chosen at registration: "own", "rent" or "buy". */
+  trackrChoice?: string | null;
+  rfidPurchased?: boolean;
 }
 
-type SaleItem = "rfid" | "trackr";
+type SaleItem = "rfid" | "trackr" | "rental";
 const SALE: Record<SaleItem, { action: string; verify: string; label: string; amountKey: string }> = {
+  rental: { action: "add-transponder-rental", verify: "verify-transponder-rental", label: "Transponder rental", amountKey: "rentalFee" },
   rfid: { action: "add-rfid-sticker", verify: "verify-rfid-sticker", label: "RFID tag", amountKey: "stickerFee" },
   trackr: { action: "add-rm-trackr", verify: "verify-rm-trackr", label: RM_TRACKR_NAME, amountKey: "price" },
 };
@@ -31,7 +35,7 @@ const money = (n: number) => `$${n.toFixed(2)}`;
  * Group race check-in: every team member's RFID tag and/or RM TrackR number,
  * plus selling the team as many tags as it needs (one per rider at most per sale).
  */
-export function TeamTranspondersDialog({ eventId, registrationId, teamName, ridersPerGroup, rfidPrice, trackrPrice, onClose, onChanged }: {
+export function TeamTranspondersDialog({ eventId, registrationId, teamName, ridersPerGroup, rfidPrice, trackrPrice, rentalPrice, onClose, onChanged }: {
   eventId: number;
   /** null closes the dialog. */
   registrationId: number | null;
@@ -40,6 +44,7 @@ export function TeamTranspondersDialog({ eventId, registrationId, teamName, ride
   /** Price per tag, or null when it isn't sold at this event. */
   rfidPrice: number | null;
   trackrPrice: number | null;
+  rentalPrice: number | null;
   onClose: () => void;
   /** Something was saved or sold: refresh check-in. */
   onChanged: () => void;
@@ -50,7 +55,8 @@ export function TeamTranspondersDialog({ eventId, registrationId, teamName, ride
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const sellable = (["trackr", "rfid"] as SaleItem[]).filter(i => (i === "rfid" ? rfidPrice : trackrPrice) != null);
+  const priceOf = (i: SaleItem) => (i === "rfid" ? rfidPrice : i === "trackr" ? trackrPrice : rentalPrice);
+  const sellable = (["trackr", "rental", "rfid"] as SaleItem[]).filter(i => priceOf(i) != null);
   const [item, setItem] = useState<SaleItem>(sellable[0] ?? "rfid");
   const [qty, setQty] = useState(1);
   const [saleStep, setSaleStep] = useState<"pick" | "cash" | "card">("pick");
@@ -59,7 +65,7 @@ export function TeamTranspondersDialog({ eventId, registrationId, teamName, ride
   const [card, setCard] = useState<(CardStarted & { regId: number }) | null>(null);
 
   const open = registrationId != null;
-  const unit = item === "rfid" ? rfidPrice : trackrPrice;
+  const unit = priceOf(item);
   const total = Math.round((unit ?? 0) * qty * 100) / 100;
 
   useEffect(() => {
@@ -185,7 +191,7 @@ export function TeamTranspondersDialog({ eventId, registrationId, teamName, ride
                 <div className="flex flex-wrap gap-2">
                   {sellable.map(i => (
                     <Button key={i} type="button" size="sm" variant={item === i ? "default" : "outline"} onClick={() => setItem(i)}>
-                      {SALE[i].label} · {money((i === "rfid" ? rfidPrice : trackrPrice) ?? 0)} each
+                      {SALE[i].label} · {money(priceOf(i) ?? 0)} each
                     </Button>
                   ))}
                 </div>
@@ -245,6 +251,13 @@ export function TeamTranspondersDialog({ eventId, registrationId, teamName, ride
                 </p>
                 {m.email && <p className="text-xs text-muted-foreground truncate">{m.email}</p>}
               </div>
+              {(m.trackrChoice === "rent" || m.trackrChoice === "buy" || m.rfidPurchased) && (
+                <div className="flex flex-wrap gap-1.5">
+                  {m.trackrChoice === "rent" && <span className="text-xs font-semibold rounded border border-amber-300 bg-amber-50 text-amber-800 px-2 py-0.5">Renting a transponder: hand one out and enter its number</span>}
+                  {m.trackrChoice === "buy" && <span className="text-xs font-semibold rounded border border-amber-300 bg-amber-50 text-amber-800 px-2 py-0.5">Bought an {RM_TRACKR_NAME}: hand one out and enter its number</span>}
+                  {m.rfidPurchased && <span className="text-xs font-semibold rounded border border-amber-300 bg-amber-50 text-amber-800 px-2 py-0.5">Bought an RFID tag: stick one on and enter its number</span>}
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <label className="space-y-1">
                   <span className="text-xs text-muted-foreground">RFID tag</span>

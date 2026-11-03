@@ -1,4 +1,4 @@
-import { db, addonPaymentsTable, eventsTable, registrationsTable, RM_TRACKR_PRICE } from "@workspace/db";
+import { db, addonPaymentsTable, eventsTable, registrationsTable, teamMembersTable, RM_TRACKR_PRICE } from "@workspace/db";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { eventTrackrPrice } from "./sellItems";
 
@@ -132,6 +132,8 @@ export interface SalesInput {
     rfidStickerPurchased: boolean;
     paymentStatus: string | null;
     paymentMethod: string | null;
+    /** Group races: how many of each the team chose at registration (default 1). */
+    qty?: Partial<Record<AddonItem, number>>;
   }>;
   /** Paid check-in add-ons (quantity: how many one payment bought; group race teams buy several). */
   ledger: Array<{ registrationId: number; item: string; method: string; amount: number; quantity?: number }>;
@@ -157,12 +159,14 @@ export function summarizeAddonSales({ registrations, ledger, prices }: SalesInpu
           out.count += qty;
         }
       } else if (reg.paymentStatus === "paid" && prices[item] != null) {
-        out.count++;
+        const qty = Math.max(1, reg.qty?.[item] ?? 1);
+        out.count += qty;
         const m = reg.paymentMethod === "cash" ? out.cash : out.card;
-        m.count++; m.total += prices[item]!;
+        m.count += qty; m.total += prices[item]! * qty;
       } else {
-        out.count++;
-        out.unpaid++;
+        const qty = Math.max(1, reg.qty?.[item] ?? 1);
+        out.count += qty;
+        out.unpaid += qty;
       }
     }
     out.cash.total = Math.round(out.cash.total * 100) / 100;
@@ -194,8 +198,21 @@ export async function eventAddonSales(eventId: number): Promise<AddonSales> {
     method: addonPaymentsTable.method, amount: addonPaymentsTable.amount, quantity: addonPaymentsTable.quantity,
   }).from(addonPaymentsTable)
     .where(and(eq(addonPaymentsTable.eventId, eventId), eq(addonPaymentsTable.status, "paid")));
+  // Group race teams choose rentals, RM TrackRs and RFID tags per rider.
+  const teamGear = registrations.length
+    ? await db.select({ registrationId: teamMembersTable.registrationId, trackrChoice: teamMembersTable.trackrChoice, rfidPurchased: teamMembersTable.rfidPurchased })
+        .from(teamMembersTable).where(eq(teamMembersTable.eventId, eventId))
+    : [];
+  const qtyByReg = new Map<number, Partial<Record<AddonItem, number>>>();
+  for (const g of teamGear) {
+    const q = qtyByReg.get(g.registrationId) ?? {};
+    if (g.trackrChoice === "rent") q.transponder_rental = (q.transponder_rental ?? 0) + 1;
+    if (g.trackrChoice === "buy") q.rm_trackr = (q.rm_trackr ?? 0) + 1;
+    if (g.rfidPurchased) q.rfid_sticker = (q.rfid_sticker ?? 0) + 1;
+    qtyByReg.set(g.registrationId, q);
+  }
   return summarizeAddonSales({
-    registrations: registrations.map(r => ({ ...r, rmTrackrPurchased: !!r.rmTrackrPurchased, rfidStickerPurchased: !!r.rfidStickerPurchased, transponderRental: !!r.transponderRental })),
+    registrations: registrations.map(r => ({ ...r, qty: qtyByReg.get(r.id), rmTrackrPurchased: !!r.rmTrackrPurchased, rfidStickerPurchased: !!r.rfidStickerPurchased, transponderRental: !!r.transponderRental })),
     ledger: ledger.map(l => ({ ...l, amount: Number(l.amount) })),
     prices: {
       transponder_rental: event?.rentalFee != null ? Number(event.rentalFee) : null,

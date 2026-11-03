@@ -48,7 +48,8 @@ export function teamRegistrationId(eventId: number, riderId: number): number | n
 
 export function listTeamMembers(registrationId: number) {
   return getDb().prepare(`SELECT id, position, first_name AS firstName, last_name AS lastName, email,
-      rfid_number AS rfidNumber, trackr_number AS trackrNumber
+      rfid_number AS rfidNumber, trackr_number AS trackrNumber,
+      trackr_choice AS trackrChoice, rfid_purchased = 1 AS rfidPurchased
     FROM team_members WHERE registration_id = ? ORDER BY position`).all(registrationId) as Array<{
       id: number; position: number; firstName: string; lastName: string; email: string | null; rfidNumber: string | null; trackrNumber: string | null;
     }>;

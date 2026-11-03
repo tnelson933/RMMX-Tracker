@@ -16,11 +16,12 @@ import { includesRmTrackr, markRmTrackrPurchased, fulfillRmTrackr } from "../lib
 import { eventTimingTags } from "../lib/eventTimingTags";
 import { ORGANIZER_NO_STRIPE, organizerCardError, riderCardError } from "../lib/stripeErrors";
 import { checkinSellPrices, listClubSellItems } from "../lib/sellItems";
-import { RM_TRACKR_NAME } from "@workspace/db";
+import { RM_TRACKR_NAME, RM_TRACKR_OPTION_ID } from "@workspace/db";
 import { canManageRider } from "../lib/riderAccess";
 import { riderMobileTokensTable } from "@workspace/db";
 import { reminderAvailability, reminderStatusText, rentalReplacementCharge, sendRentalReminders, unreturnedRentals, type ReminderStatus } from "../lib/rentalReminders";
-import { parseTeamInput, saveTeamRoster, saveTeamTags, listTeamMembers, teamRegistrationId, teamRegistrationHasRoster } from "../lib/teams";
+import { parseTeamInput, parseTeamGear, saveTeamRoster, saveTeamTags, listTeamMembers, teamRegistrationId, teamRegistrationHasRoster, teamTagConflict, teamGearCounts } from "../lib/teams";
+import { eventTrackrPrice } from "../lib/sellItems";
 import { addonIsPaid, confirmAddonPayment, parseCashTendered, recordCardAddonPending, recordCashAddon, type AddonItem } from "../lib/addonPayments";
 import { browserAccount, chargeOnReader, embeddedAllowed, checkoutUiParams, clubStripeOf, onClub, onClubOrPlatform, registrationClubStripe, retrievePayment, transferTo } from "../lib/stripePayments";
 import { acknowledgementSnapshot, clubWaiverSettings, waiverPdfOf } from "../lib/waiverSettings";
@@ -862,6 +863,7 @@ router.get("/events/:eventId/registrations/:regId/team", async (req, res) => {
     members: members.map(m => ({
       id: m.id, position: m.position, firstName: m.firstName, lastName: m.lastName, email: m.email,
       rfidNumber: m.rfidNumber, trackrNumber: m.trackrNumber,
+      trackrChoice: m.trackrChoice, rfidPurchased: m.rfidPurchased,
     })),
   });
 });
@@ -884,6 +886,7 @@ router.put("/events/:eventId/registrations/:regId/team", async (req, res) => {
     members: saved.map(m => ({
       id: m.id, position: m.position, firstName: m.firstName, lastName: m.lastName, email: m.email,
       rfidNumber: m.rfidNumber, trackrNumber: m.trackrNumber,
+      trackrChoice: m.trackrChoice, rfidPurchased: m.rfidPurchased,
     })),
   });
 });
@@ -898,17 +901,21 @@ router.post("/events/:eventId/registrations/:regId/add-transponder-rental", asyn
   const [reg] = await db.select().from(registrationsTable).where(eq(registrationsTable.id, regId));
   if (!reg) return res.status(404).json({ error: "This registration couldn't be found. It may have been cancelled. Refresh the page and try again." });
   if (reg.eventId !== eventId) return res.status(403).json({ error: "This registration is for a different event. Refresh the page and try again." });
+  const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
+  // Group race teams rent one per rider, as often as they need; anyone else rents one.
+  const quantity = addonQuantity(req.body?.quantity, event);
+  if ("error" in quantity) return res.status(400).json({ error: quantity.error });
+  const qty = quantity.qty;
   // Rented at registration on a pay-at-gate event: collect the fee now.
-  if (reg.transponderRental && await addonIsPaid(reg, "transponder_rental")) {
+  if (!event?.groupRace && reg.transponderRental && await addonIsPaid(reg, "transponder_rental")) {
     return res.status(400).json({ error: "This rider's transponder rental is already paid." });
   }
-
-  const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, eventId));
   if (!event?.transponderRentalEnabled || !event.transponderRentalFee) {
     return res.status(400).json({ error: "Transponder rentals aren't turned on for this event. Turn them on in the event's settings first." });
   }
 
-  const rentalFee = Number(event.transponderRentalFee);
+  const unitRentalFee = Number(event.transponderRentalFee);
+  const rentalFee = Math.round(unitRentalFee * qty * 100) / 100;
 
   if (paymentMethod === "cash") {
     const tender = parseCashTendered(req.body.cashTendered, rentalFee);
@@ -916,12 +923,12 @@ router.post("/events/:eventId/registrations/:regId/add-transponder-rental", asyn
     await db.update(registrationsTable)
       .set({ transponderRental: true })
       .where(eq(registrationsTable.id, regId));
-    await recordCashAddon(eventId, regId, "transponder_rental", rentalFee, tender);
-    return res.json({ success: true, rentalFee, cashTendered: tender?.tendered ?? null, cashChange: tender?.change ?? null });
+    await recordCashAddon(eventId, regId, "transponder_rental", rentalFee, tender, qty);
+    return res.json({ success: true, rentalFee, quantity: qty, cashTendered: tender?.tendered ?? null, cashChange: tender?.change ?? null });
   }
 
   if (paymentMethod === "reader") {
-    const readerResult = await addonOnReader(req, eventId, regId, "transponder_rental", rentalFee, "Transponder rental");
+    const readerResult = await addonOnReader(req, eventId, regId, "transponder_rental", rentalFee, qty > 1 ? "Transponder rentals" : "Transponder rental", qty);
     return res.status(readerResult.status).json(readerResult.body);
   }
 
@@ -942,22 +949,22 @@ router.post("/events/:eventId/registrations/:regId/add-transponder-rental", asyn
           price_data: {
             currency: "usd",
             product_data: { name: "Active Transponder Rental" },
-            unit_amount: Math.round(rentalFee * 100),
+            unit_amount: Math.round(unitRentalFee * 100),
           },
-          quantity: 1,
+          quantity: qty,
         }],
         customer_email: rider?.email ?? undefined,
         payment_intent_data: {
           ...transferTo(clubStripeOf(club)!),
         },
-        metadata: { registrationId: String(regId), type: "transponder_rental" },
+        metadata: { registrationId: String(regId), type: "transponder_rental", quantity: String(qty) },
         ...checkoutUiParams(await embeddedAllowed(req.body?.embedded === true), {
           success_url: `${appUrl}/events/${eventId}/checkin`,
           cancel_url: `${appUrl}/events/${eventId}/checkin`,
         }),
       }, onClub(clubStripeOf(club)!));
 
-      await recordCardAddonPending(eventId, regId, "transponder_rental", rentalFee, session.id);
+      await recordCardAddonPending(eventId, regId, "transponder_rental", rentalFee, session.id, qty);
       return res.json({ checkoutUrl: session.url, clientSecret: session.client_secret ?? null, stripeAccount: browserAccount(clubStripeOf(club)!), sessionId: session.id, rentalFee });
     } catch (err: any) {
       req.log?.error({ err: err?.message }, "[add-transponder-rental] Error");
@@ -1377,6 +1384,7 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
     timingTechnology: eventsTable.timingTechnology,
     transponderRentalEnabled: eventsTable.transponderRentalEnabled,
     transponderRentalFee: eventsTable.transponderRentalFee,
+    rfidStickerFee: eventsTable.rfidStickerFee,
     purchaseOptions: eventsTable.purchaseOptions,
     contingencyBrands: eventsTable.contingencyBrands,
     noDuplicateBibs: eventsTable.noDuplicateBibs,
@@ -1430,6 +1438,8 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
     earlyBirdFee: e.earlyBirdFee ? Number(e.earlyBirdFee) : null,
     earlyBirdEndsAt: e.earlyBirdEndsAt ?? null,
     transponderRentalFee: e.transponderRentalFee ? Number(e.transponderRentalFee) : null,
+    // The RFID tag riders can buy with their entry (the server charges it only when set above $0).
+    rfidStickerFee: e.rfidStickerFee && Number(e.rfidStickerFee) > 0 ? Number(e.rfidStickerFee) : null,
     classDetails,
     waiverText,
     waiverPdfUrl,
@@ -1468,7 +1478,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
       error: "Enter the ID printed on the transponder (up to 9 numbers or letters A–F).",
     });
   }
-  if (!isRegistrationTransponderRequirementSatisfied(
+  if (!events[0].groupRace && !isRegistrationTransponderRequirementSatisfied(
     events[0],
     {
       transponderNumber: normalizedTransponderNumber,
@@ -1552,6 +1562,24 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   // (member 1); the form also gives the team name and every other member.
   const team = events[0].groupRace ? parseTeamInput(req.body ?? {}, events[0].ridersPerGroup) : null;
   if (team && "error" in team) return res.status(400).json({ error: team.error });
+  // Each rider's own numbers, or a rental / RM TrackR / RFID tag for them.
+  const teamTrackrPrice = eventTrackrPrice(events[0].purchaseOptions);
+  const teamGear = team
+    ? parseTeamGear(req.body?.teamGear, team.members.length + 1,
+        [`${String(firstName).trim()} ${String(lastName).trim()}`, ...team.members.map(m => `${m.firstName} ${m.lastName}`)],
+        { rental: !!events[0].transponderRentalEnabled, trackr: teamTrackrPrice != null, rfidTag: !!(events[0].rfidStickerFee && Number(events[0].rfidStickerFee) > 0) })
+    : null;
+  if (teamGear && "error" in teamGear) return res.status(400).json({ error: teamGear.error });
+  if (teamGear && events[0].requireTransponder && teamGear.some(g => !g.trackrChoice)) {
+    const missing = teamGear.findIndex(g => !g.trackrChoice);
+    return res.status(400).json({ error: `Every rider needs a transponder for this event. Enter rider ${missing + 1}'s RM TrackR number, or choose to rent or buy one.` });
+  }
+  if (teamGear) {
+    const tags = teamGear.flatMap(g => [g.rfidNumber, g.trackrNumber]).filter((t): t is string => !!t);
+    const conflict = await teamTagConflict(eventId, null, null, tags);
+    if (conflict) return res.status(409).json({ error: conflict });
+  }
+  const gearCounts = teamGear ? teamGearCounts(teamGear) : null;
 
   // Resolve identity before duplicate-bib checks. A selected profile is authoritative
   // as long as its email matches; typed names are profile edits, not identity checks.
@@ -1776,8 +1804,12 @@ router.post("/public/events/:eventId/register", async (req, res) => {
 
   // Determine if payment is required (accounting for comp discount and purchase options)
   // A rental is recorded even when the event charges nothing for it.
-  const wantsRental = !!(rentTransponder && events[0].transponderRentalEnabled);
-  const wantsRfidSticker = !!(purchaseRfidSticker && events[0].rfidStickerFee);
+  // Group races rent and buy per rider; anyone else gets one of each at most.
+  const rentalQty = gearCounts ? gearCounts.rentals : (rentTransponder ? 1 : 0);
+  const rfidQty = gearCounts ? gearCounts.rfidTags : (purchaseRfidSticker ? 1 : 0);
+  const trackrQty = gearCounts ? gearCounts.trackrs : 0;
+  const wantsRental = rentalQty > 0 && !!events[0].transponderRentalEnabled;
+  const wantsRfidSticker = rfidQty > 0 && !!events[0].rfidStickerFee;
   const todayStrReg = eventToday(events[0]);
   const earlyBirdActiveReg = !!(events[0].earlyBirdEndsAt && todayStrReg <= events[0].earlyBirdEndsAt && events[0].earlyBirdFee);
   const entryFeeNum = earlyBirdActiveReg
@@ -1785,10 +1817,15 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     : (events[0].entryFee ? Number(events[0].entryFee) : 0);
   const numClasses = raceClassList.length;
   const totalEntryFees = entryFeeNum * numClasses;
-  const rentalFeeNum = wantsRental && events[0].transponderRentalFee ? Number(events[0].transponderRentalFee) : 0;
-  const rfidStickerFeeNum = wantsRfidSticker && events[0].rfidStickerFee ? Number(events[0].rfidStickerFee) : 0;
+  const rentalUnit = wantsRental && events[0].transponderRentalFee ? Number(events[0].transponderRentalFee) : 0;
+  const rfidStickerUnit = wantsRfidSticker && events[0].rfidStickerFee ? Number(events[0].rfidStickerFee) : 0;
+  const rentalFeeNum = rentalUnit * rentalQty;
+  const rfidStickerFeeNum = rfidStickerUnit * rfidQty;
+  const trackrUnitCents = trackrQty > 0 && teamTrackrPrice != null ? Math.round(teamTrackrPrice * 100) : 0;
   // Prices come from the event's configured options, never from the request body.
-  const purchaseOptsList = resolvePurchaseOptions(selectedPurchaseOptions, events[0].purchaseOptions);
+  // A team's RM TrackRs are counted per rider above, not as one purchase option.
+  const purchaseOptsList = resolvePurchaseOptions(selectedPurchaseOptions, events[0].purchaseOptions)
+    .filter(o => !(team && String(o.id) === RM_TRACKR_OPTION_ID));
   const purchaseOptionsTotal = purchaseOptsList.reduce((sum, o) => sum + Number(o.amount), 0);
   // All money below is in whole cents so the Stripe total, each entry's stored
   // amount due and the stored discount always add up to the same figure.
@@ -1812,7 +1849,8 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   const discountShareCents = raceClassList.map((_, idx) =>
     Math.floor(discountCents / numClasses) + (idx === 0 ? discountCents % numClasses : 0));
   const classChargeCents = discountShareCents.map(share => entryCents - share);
-  const addOnCents = Math.round(rentalFeeNum * 100) + Math.round(rfidStickerFeeNum * 100)
+  const addOnCents = Math.round(rentalUnit * 100) * rentalQty + Math.round(rfidStickerUnit * 100) * rfidQty
+    + trackrUnitCents * trackrQty
     + purchaseOptsList.reduce((sum, o) => sum + (Number(o.amount) > 0 ? Math.round(Number(o.amount) * 100) : 0), 0);
   const netCents = classChargeCents.reduce((a, b) => a + b, 0) + addOnCents;
   const netFee = netCents / 100;
@@ -1833,8 +1871,8 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     statsEmailOptIn: !!statsEmailOptIn,
     transponderRental: wantsRental,
     rfidStickerPurchased: wantsRfidSticker,
-    rmTrackrPurchased: includesRmTrackr(purchaseOptsList),
-    myLapsTransponderNumber: normalizedTransponderNumber,
+    rmTrackrPurchased: includesRmTrackr(purchaseOptsList) || trackrQty > 0,
+    myLapsTransponderNumber: team ? null : normalizedTransponderNumber,
     compCode: validatedCompCode,
     waiverAcknowledgedAt: waiverAcknowledgedAt ? new Date() : null,
     waiverSnapshot: serverWaiverSnapshot,
@@ -1874,7 +1912,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   }
 
   if (team && insertedRegs[0]) {
-    await saveTeamRoster(eventId, insertedRegs[0].id, { riderId: rider.id, firstName: String(firstName).trim(), lastName: String(lastName).trim(), email: String(email).trim().toLowerCase() }, team.members);
+    await saveTeamRoster(eventId, insertedRegs[0].id, { riderId: rider.id, firstName: String(firstName).trim(), lastName: String(lastName).trim(), email: String(email).trim().toLowerCase() }, team.members, teamGear && !("error" in teamGear) ? teamGear : []);
   }
 
   // Link liability waiver signature to the registration
@@ -1903,7 +1941,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
       }).onConflictDoNothing();
     }
     // Auto-link transponder if the rider entered their own (not a rental)
-    if (!wantsRental && normalizedTransponderNumber) {
+    if (!team && !wantsRental && normalizedTransponderNumber) {
       await autoLinkTransponder(rider.id, eventId, normalizedTransponderNumber);
     }
   }
@@ -1938,24 +1976,34 @@ router.post("/public/events/:eventId/register", async (req, res) => {
           }
         }
 
-        if (rentalFeeNum > 0) {
+        if (rentalUnit > 0 && rentalQty > 0) {
           lineItems.push({
             price_data: {
               currency: "usd",
               product_data: { name: "Active Transponder Rental" },
-              unit_amount: Math.round(rentalFeeNum * 100),
+              unit_amount: Math.round(rentalUnit * 100),
             },
-            quantity: 1,
+            quantity: rentalQty,
           });
         }
-        if (rfidStickerFeeNum > 0) {
+        if (rfidStickerUnit > 0 && rfidQty > 0) {
           lineItems.push({
             price_data: {
               currency: "usd",
               product_data: { name: "RFID Sticker" },
-              unit_amount: Math.round(rfidStickerFeeNum * 100),
+              unit_amount: Math.round(rfidStickerUnit * 100),
             },
-            quantity: 1,
+            quantity: rfidQty,
+          });
+        }
+        if (trackrUnitCents > 0 && trackrQty > 0) {
+          lineItems.push({
+            price_data: {
+              currency: "usd",
+              product_data: { name: RM_TRACKR_NAME },
+              unit_amount: trackrUnitCents,
+            },
+            quantity: trackrQty,
           });
         }
 

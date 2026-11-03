@@ -758,6 +758,8 @@ export function initDb() {
     ["events", "group_race               INTEGER NOT NULL DEFAULT 0"],
     ["events", "riders_per_group         INTEGER"],
     ["registrations", "team_name          TEXT"],
+    ["team_members",  "trackr_choice      TEXT"],
+    ["team_members",  "rfid_purchased     INTEGER NOT NULL DEFAULT 0"],
     // registrations — check-in add-ons, waiver acknowledgment and rider cancellations
     ["registrations", "rfid_sticker_purchased INTEGER NOT NULL DEFAULT 0"],
     ["registrations", "rm_trackr_purchased    INTEGER NOT NULL DEFAULT 0"],
@@ -808,6 +810,8 @@ export function initDb() {
       email           TEXT,
       rfid_number     TEXT,
       trackr_number   TEXT,
+      trackr_choice   TEXT,
+      rfid_purchased  INTEGER NOT NULL DEFAULT 0,
       created_at      TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE (registration_id, position)

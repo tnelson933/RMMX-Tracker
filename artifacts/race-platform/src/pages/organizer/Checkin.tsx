@@ -1477,6 +1477,7 @@ export default function Checkin() {
       ridersPerGroup={Math.max(2, Number((event as any)?.ridersPerGroup) || 2)}
       rfidPrice={rfidStickerFee}
       trackrPrice={trackrPrice}
+      rentalPrice={transponderRentalEnabled && transponderRentalFee != null ? Number(transponderRentalFee) : null}
       onClose={() => setTeamTarget(null)}
       onChanged={() => queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) })}
     />
