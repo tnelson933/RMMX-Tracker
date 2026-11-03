@@ -5,6 +5,11 @@ import { loadSeriesScoring } from "../lib/scoringTables";
 import { practiceSectors } from "../lib/practiceSplits";
 import { computeMotoSectors } from "../lib/sectors";
 
+/** The reply's text: newer models put their (hidden) thinking before it. */
+function replyText(content: Array<{ type: string; text?: string }>): string {
+  return content.filter(b => b.type === "text").map(b => b.text ?? "").join("");
+}
+
 /** One rider's sector times in one race (rider app history). */
 type RiderMotoSectors = {
   names: string[];
@@ -2314,13 +2319,14 @@ Total session time: ${durationMinutes} minutes.`;
 
   try {
     const message = await anthropic.messages.create({
-      model: "claude-haiku-4-5",
-      max_tokens: 8192,
+      model: "claude-haiku-5-5",
+      // Thinking shares this room with the plan.
+      max_tokens: 16000,
       system: systemPrompt,
       messages: [{ role: "user", content: userPrompt }],
     });
 
-    const raw = message.content[0]?.type === "text" ? message.content[0].text : "";
+    const raw = replyText(message.content);
     const cleaned = raw
       .replace(/^```json\s*/i, "")
       .replace(/^```\s*/i, "")
@@ -2485,16 +2491,14 @@ You MUST respond with a valid JSON object and nothing else — no markdown fence
       .map((m: any) => ({ role: m.role as "user" | "assistant", content: String(m.content) }));
 
     const response = await anthropic.messages.create({
-      model: "claude-haiku-4-5",
-      max_tokens: 1024,
+      model: "claude-sonnet-5-5",
+      max_tokens: 6000,
+      output_config: { effort: "low" },
       system: systemPrompt,
       messages: filtered,
     });
 
-    const raw =
-      response.content[0]?.type === "text"
-        ? response.content[0].text.trim()
-        : "";
+    const raw = replyText(response.content).trim();
 
     let reply = raw;
     let suggestedFollowUps: string[] = [];
@@ -2737,8 +2741,10 @@ router.post("/rider/mechanic-memory-update", requireRiderAuth, async (req, res) 
 
   try {
     const response = await anthropic.messages.create({
-      model: "claude-haiku-4-5",
-      max_tokens: 120,
+      model: "claude-haiku-5-5",
+      // Room for thinking plus the one line; the prompt keeps the line short.
+      max_tokens: 2000,
+      output_config: { effort: "low" },
       system: `You are a concise memory-writer for a motorcycle mechanic AI. Summarise a single Q&A exchange into ONE short bullet line (max 25 words) that captures: the topic/problem, the advice given, and the outcome if mentioned. Format: [${today}] <summary>. Output only the bullet line — no preamble, no markdown.`,
       messages: [
         {
@@ -2748,8 +2754,7 @@ router.post("/rider/mechanic-memory-update", requireRiderAuth, async (req, res) 
       ],
     });
 
-    const memoryEntry =
-      response.content[0]?.type === "text" ? response.content[0].text.trim() : null;
+    const memoryEntry = replyText(response.content).trim() || null;
 
     return res.json({ memoryEntry });
   } catch (err) {
@@ -2985,8 +2990,10 @@ router.post("/rider/maintenance/:riderId/ai-generate", requireRiderAuth, async (
 
   try {
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 8192,
+      model: "claude-sonnet-5-5",
+      // Thinking shares this room with the schedule.
+      max_tokens: 16000,
+      output_config: { effort: "low" },
       messages: [
         {
           role: "user",
@@ -3007,7 +3014,7 @@ Include 10–15 items tailored to this specific make and model. Common categorie
       ],
     });
 
-    const raw = response.content[0]?.type === "text" ? response.content[0].text.trim() : "";
+    const raw = replyText(response.content).trim();
     const clean = raw.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim();
     const items: Array<{
       itemKey: string; itemName: string; intervalDesc?: string;

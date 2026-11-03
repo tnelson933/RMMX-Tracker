@@ -73,8 +73,10 @@ router.post("/ai/suggest-points-table", async (req, res) => {
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5",
-        max_tokens: 1024,
+        model: "claude-sonnet-5-5",
+        // Thinking shares this room with the answer.
+        max_tokens: 8000,
+        output_config: { effort: "low" },
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: userMessage }],
       }),
@@ -200,8 +202,10 @@ router.post("/ai/tweak-points-table", async (req, res) => {
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-haiku-4-5",
-        max_tokens: 1024,
+        model: "claude-sonnet-5-5",
+        // Thinking shares this room with the answer.
+        max_tokens: 8000,
+        output_config: { effort: "low" },
         system: TWEAK_SYSTEM_PROMPT,
         messages: [{ role: "user", content: userMessage }],
       }),
