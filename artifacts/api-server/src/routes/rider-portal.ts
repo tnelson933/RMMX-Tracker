@@ -4,6 +4,7 @@ import { isLowerBetter } from "../lib/overallOrder";
 import { loadSeriesScoring } from "../lib/scoringTables";
 import { practiceSectors } from "../lib/practiceSplits";
 import { computeMotoSectors } from "../lib/sectors";
+import { APPROVED_LINKS_RULES, enforceApprovedLinks, enforceApprovedLinksDeep } from "../lib/approvedLinks";
 
 /** The reply's text: newer models put their (hidden) thinking before it. */
 function replyText(content: Array<{ type: string; text?: string }>): string {
@@ -2289,10 +2290,12 @@ router.post("/rider/training-plan", requireRiderAuth, async (req, res) => {
 
   const type = workoutType === "bike" ? "bike" : workoutType === "mix" ? "mix" : "gym";
 
-  const systemPrompt =
+  const systemPrompt = `${
     type === "bike" ? BIKE_PRACTICE_SYSTEM_PROMPT :
     type === "mix"  ? MIX_SYSTEM_PROMPT :
-    MX_TRAINING_SYSTEM_PROMPT;
+    MX_TRAINING_SYSTEM_PROMPT}
+
+${APPROVED_LINKS_RULES}`;
 
   const userPrompt =
     type === "gym"
@@ -2333,7 +2336,8 @@ Total session time: ${durationMinutes} minutes.`;
       .replace(/```\s*$/i, "")
       .trim();
 
-    const plan = JSON.parse(cleaned);
+    // Only Rocky Mountain ATV/MC links reach the rider (lib/approvedLinks).
+    const plan = enforceApprovedLinksDeep(JSON.parse(cleaned));
 
     // Only generate exercise images for gym phases (phases with "exercises", not "drillBlocks")
     type ExerciseRef = { phaseIdx: number; exIdx: number; name: string; equipment: string };
@@ -2476,7 +2480,9 @@ ${maintenanceSection}${memorySection}STYLE GUIDELINES:
 - End with a follow-up question when appropriate to keep the diagnosis moving
 - When past memory entries exist, naturally reference them rather than repeating the same advice
 - When you log a maintenance item, briefly confirm it in your reply (e.g. "✓ Logged your oil change — clock reset.")
-- When you recommend or mention any specific product (part, oil, filter, gear, tool, accessory, or consumable), include a direct Rocky Mountain ATV/MC link formatted as: https://www.rockymountainatvmc.com/search#q=<product name url-encoded> — always show the link inline so the rider can tap it. Example: "Grab some Maxima 10W-40 — https://www.rockymountainatvmc.com/search#q=Maxima+10W-40"
+- When you recommend or mention a specific product (part, oil, filter, gear, tool, accessory, or consumable), include a Rocky Mountain ATV/MC store search link inline so the rider can tap it, e.g. "Grab some Maxima 10W-40 — https://www.rockymountainatvmc.com/search/go?w=Maxima%2010W-40". For a how-to, you may add a search of our YouTube channel.
+
+${APPROVED_LINKS_RULES}
 
 OUTPUT FORMAT:
 You MUST respond with a valid JSON object and nothing else — no markdown fences, no preamble:
@@ -2563,7 +2569,8 @@ You MUST respond with a valid JSON object and nothing else — no markdown fence
       }
     }
 
-    return res.json({ reply, suggestedFollowUps, maintenanceUpdates, loggedItems });
+    // Only Rocky Mountain ATV/MC links reach the rider (lib/approvedLinks).
+    return res.json({ reply: enforceApprovedLinks(reply), suggestedFollowUps: suggestedFollowUps.map(enforceApprovedLinks), maintenanceUpdates, loggedItems });
   } catch (err) {
     req.log.error({ err }, "Mechanic chat failed");
     return res.status(500).json({ error: "The AI helper didn't respond. Try again in a moment." });
@@ -3019,7 +3026,7 @@ Include 10–15 items tailored to this specific make and model. Common categorie
     const items: Array<{
       itemKey: string; itemName: string; intervalDesc?: string;
       intervalDays?: number; notes?: string; sortOrder?: number;
-    }> = JSON.parse(clean);
+    }> = enforceApprovedLinksDeep(JSON.parse(clean));
 
     // Upsert all generated items into the DB (preserve lastServicedAt if already set)
     const saved = await Promise.all(
