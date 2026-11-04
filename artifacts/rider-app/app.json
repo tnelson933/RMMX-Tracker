@@ -2,7 +2,7 @@
   "expo": {
     "name": "RM Roost",
     "slug": "rider-app",
-    "version": "1.0.21",
+    "version": "1.0.22",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "rider-app",
