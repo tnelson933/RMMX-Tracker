@@ -537,12 +537,29 @@ export default function MyRacesScreen() {
   }) ?? [];
   const registeredEventIds = new Set(schedule?.events.map(e => e.eventId) ?? []);
   const allOpenEvents = publicEvents.filter(e => e.status === "registration_open");
-  const upcoming = allOpenEvents.filter(e => {
-    if (!registeredEventIds.has(e.eventId)) return false;
-    const dateStr = e.date ? String(e.date).substring(0, 10) : "";
-    const endStr  = e.endDate ? String(e.endDate).substring(0, 10) : dateStr;
-    return endStr >= todayStr;
-  });
+  // Races the rider is entered in that haven't happened yet, whether or not
+  // registration is still open (it usually closes days before the race).
+  const raceDayIds = new Set(raceDay.map(e => e.eventId));
+  const publicById = new Map(publicEvents.map(e => [e.eventId, e]));
+  const upcoming: PublicEvent[] = (schedule?.events ?? [])
+    .filter(e => {
+      if (raceDayIds.has(e.eventId) || e.status === "completed" || e.status === "draft") return false;
+      const dateStr = e.eventDate ? String(e.eventDate).substring(0, 10) : "";
+      const endStr  = e.eventEndDate ? String(e.eventEndDate).substring(0, 10) : dateStr;
+      return !!dateStr && endStr >= todayStr;
+    })
+    .map(e => publicById.get(e.eventId) ?? {
+      eventId: e.eventId,
+      name: e.eventName,
+      state: e.eventState ?? "",
+      date: e.eventDate ?? "",
+      endDate: e.eventEndDate ?? null,
+      location: e.eventLocation,
+      trackName: null,
+      status: e.status,
+      clubName: "",
+    })
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
   const nearMeEvents = nearMeState && !showAllOpen ? allOpenEvents.filter(e => toStateCode(e.state) === nearMeState) : allOpenEvents;
 
   const styles = StyleSheet.create({

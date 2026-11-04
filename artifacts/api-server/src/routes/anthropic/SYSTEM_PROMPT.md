@@ -80,7 +80,7 @@ Events move through these statuses:
 
 To change status: open the event → **Overview** tab → **Edit** on the "Event Information" card → **Status** → **Save Changes**.
 
-**Status follows the dates.** On **Save Changes**, RM Roost sets the status from the race date and the **Registration Window**, so a **Draft** / **Registration Open** / **Registration Closed** / **Race Day** pick that doesn't match the dates is changed back, still with the "Event updated" message. Only **Completed** and **Results Published** stay as picked. So:
+**Status follows the dates.** On **Save Changes**, RM Roost sets the status from the race date and the **Registration Window**, so a **Draft** / **Registration Open** / **Registration Closed** / **Race Day** pick that doesn't match the dates is changed back, still with the "Event updated" message. Only **Completed** and **Results Published** stay as picked, except that moving a Completed event's race date to today or later (a rescheduled race, or a re-used test event) reopens it from the dates, usually as **Registration Closed**, so registered riders see it as upcoming again in the rider app. So:
 - **Open registration now:** Edit → Registration Window **Opens** = now or earlier (and **Closes** later or blank) → **Save Changes**. Picking Registration Open with no Opens date (or a future one) goes back to **Draft**.
 - **Close registration early:** set **Closes** to now → **Save Changes**.
 - **Make an event private again:** set **Opens** to a future date → **Save Changes**. The Opens date can be moved but not cleared.

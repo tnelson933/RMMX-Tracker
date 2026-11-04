@@ -18,7 +18,8 @@ export function NextRaceHero({ events, onOpen, onFind }: {
   onFind: () => void;
 }) {
   const today = todayYmd();
-  const upcoming = events.filter(e => e.status === "registration_open" || e.status === "race_day");
+  // Entered races still to come, including ones whose registration has closed.
+  const upcoming = events.filter(e => e.status === "registration_open" || e.status === "registration_closed" || e.status === "race_day");
   const next = pickNextRace(upcoming, today);
   const label = next ? countdownLabel(next, today) : null;
   const live = label === "Racing today";

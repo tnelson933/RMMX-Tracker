@@ -30,9 +30,12 @@ function getStaffClubId(res: Response): number | null {
 type EventRow = { id: number; date: string; endDate?: string | null; status: string; registrationOpen: string | null; registrationClose: string | null; state?: string | null; trackLat?: number | null; trackLng?: number | null };
 
 // Recompute the correct status from scratch based on date + registration window.
-function computeCorrectStatus(event: EventRow): string | null {
+function computeCorrectStatus(event: EventRow, rescheduled = false): string | null {
   const { status, registrationOpen, registrationClose } = event;
-  if (!["draft", "registration_open", "registration_closed", "race_day"].includes(status)) return null;
+  // A completed event only reopens when the organizer moves its date: e.g. a
+  // test event, or a rain-out rescheduled for a later day.
+  const recheckable = rescheduled ? ["draft", "registration_open", "registration_closed", "race_day", "completed"] : ["draft", "registration_open", "registration_closed", "race_day"];
+  if (!recheckable.includes(status)) return null;
 
   const now = new Date();
   const todayStr = eventToday(event, now);
@@ -53,7 +56,8 @@ function computeCorrectStatus(event: EventRow): string | null {
       correct = "registration_closed";
     }
   } else {
-    correct = "draft";
+    // A rescheduled, already-published event stays visible to its riders.
+    correct = status === "completed" ? "registration_closed" : "draft";
   }
 
   return correct !== status ? correct : null;
@@ -348,7 +352,7 @@ router.patch("/events/:eventId", async (req, res) => {
   const id = Number(req.params.eventId);
 
   // Capture previous status before update; also check club ownership for staff.
-  const [before] = await db.select({ status: eventsTable.status, clubId: eventsTable.clubId, date: eventsTable.date, trackName: eventsTable.trackName, location: eventsTable.location, state: eventsTable.state, quickCheckinEnabled: eventsTable.quickCheckinEnabled, streetAddress: eventsTable.streetAddress, zip: eventsTable.zip, purchaseOptions: eventsTable.purchaseOptions }).from(eventsTable).where(eq(eventsTable.id, id));
+  const [before] = await db.select({ status: eventsTable.status, clubId: eventsTable.clubId, date: eventsTable.date, endDate: eventsTable.endDate, trackName: eventsTable.trackName, location: eventsTable.location, state: eventsTable.state, quickCheckinEnabled: eventsTable.quickCheckinEnabled, streetAddress: eventsTable.streetAddress, zip: eventsTable.zip, purchaseOptions: eventsTable.purchaseOptions }).from(eventsTable).where(eq(eventsTable.id, id));
   const previousStatus = before?.status;
   const staffCId = getStaffClubId(res);
   if (staffCId !== null) {
@@ -439,7 +443,13 @@ router.patch("/events/:eventId", async (req, res) => {
   // A new track brings its course map (unless this event's course is custom).
   if (trackChanged && event.trackId) await copyTrackCourseToEvent(event.id);
 
-  // Recompute status from the updated registration window (bidirectional)
+  // Recompute status from the updated registration window (bidirectional).
+  // A new date also reopens a completed event, unless the organizer changed the
+  // status themselves (the edit form always sends the current one back).
+  const day10 = (v: unknown) => (v ? String(v).substring(0, 10) : null);
+  const statusPicked = req.body.status !== undefined && req.body.status !== previousStatus;
+  const rescheduled = !statusPicked && !!before
+    && (day10(event.date) !== day10(before.date) || day10(event.endDate) !== day10(before.endDate));
   const nextStatus = computeCorrectStatus({
     id: event.id,
     date: event.date,
@@ -450,7 +460,7 @@ router.patch("/events/:eventId", async (req, res) => {
     state: event.state,
     trackLat: event.trackLat,
     trackLng: event.trackLng,
-  });
+  }, rescheduled);
   if (nextStatus) {
     await db.update(eventsTable).set({ status: nextStatus }).where(eq(eventsTable.id, id));
     event.status = nextStatus;

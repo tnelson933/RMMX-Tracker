@@ -157,7 +157,7 @@ export default function HomeScreen() {
       if (schedRes.ok) {
         const sched = await schedRes.json();
         const evts: UpcomingEvent[] = (sched.events ?? [])
-          .filter((e: any) => e.status === "registration_open" || e.status === "race_day")
+          .filter((e: any) => e.status === "registration_open" || e.status === "registration_closed" || e.status === "race_day")
           .map((e: any) => ({
             eventId: e.eventId,
             eventName: e.eventName,
