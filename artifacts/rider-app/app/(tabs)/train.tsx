@@ -1,4 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { SessionLapChart, TrackProgressChart } from "@/components/PracticeCharts";
+import { fmtLapShort } from "@/lib/raceReport";
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -1276,7 +1278,7 @@ export default function TrainScreen() {
           <View style={styles.statsRow}>
             <StatTile value={displaySessions.length} label="Sessions" />
             <StatTile value={totalLaps} label="Total Laps" />
-            <StatTile value={fmtLap(overallBest)} label="Best Ever" highlight />
+            <StatTile value={fmtLapShort(overallBest)} label="Best Ever" highlight />
           </View>
         )}
       </View>
@@ -1385,6 +1387,9 @@ export default function TrainScreen() {
                     </Animated.View>
                   );
                 })()}
+                {/* Charts: this session's laps, then best and average per session at this track. */}
+                <SessionLapChart laps={liveLaps ?? currentSession.myLaps} raceStyle={currentSession.raceStyle} />
+                {currentTrack && <TrackProgressChart sessions={currentTrack.sessions} trackLabel={currentTrack.label} />}
                 <View>
                   <Text style={{ fontSize: 13, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>Lap Times</Text>
                   <LapTable
