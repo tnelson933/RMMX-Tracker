@@ -29,6 +29,7 @@ import {
   ViewState,
 } from "@/components/RaceSubScreens";
 import { NoProfileLinked } from "@/components/NoProfileLinked";
+import { SeasonView } from "@/components/SeasonView";
 import { EmptyState } from "@/components/EmptyState";
 import { PositionBadge, StatTile } from "@/components/RaceStats";
 import { EventCard, ResultCard } from "@/components/RaceCards";
@@ -92,7 +93,7 @@ interface ScheduleEvent {
   motos: ScheduleMoto[];
 }
 
-type FilterTab = "today" | "upcoming" | "near_me" | "history";
+type FilterTab = "today" | "upcoming" | "near_me" | "season" | "history";
 
 interface PublicEvent {
   eventId: number;
@@ -110,6 +111,7 @@ const FILTER_TABS: { key: FilterTab; label: string; icon: string }[] = [
   { key: "today",    label: "Today",    icon: "zap"      },
   { key: "upcoming", label: "Upcoming", icon: "calendar" },
   { key: "near_me",  label: "Near Me",  icon: "map-pin"  },
+  { key: "season",   label: "Season",   icon: "trending-up" },
   { key: "history",  label: "History",  icon: "award"    },
 ];
 
@@ -404,7 +406,7 @@ export default function MyRacesScreen() {
   // Other screens deep-link a tab, e.g. Home's "Find a race" opens Near Me
   const { filter: filterParam } = useLocalSearchParams<{ filter?: string }>();
   useEffect(() => {
-    if (filterParam === "today" || filterParam === "upcoming" || filterParam === "near_me" || filterParam === "history") {
+    if (filterParam === "today" || filterParam === "upcoming" || filterParam === "near_me" || filterParam === "season" || filterParam === "history") {
       setActiveFilter(filterParam);
     }
   }, [filterParam]);
@@ -735,6 +737,32 @@ export default function MyRacesScreen() {
               ? { label: "Show all open races", icon: "flag", onPress: () => setShowAllOpen(true) }
               : { label: "Browse results", icon: "flag", onPress: () => router.push("/(tabs)/results" as any) }}
             secondary={{ label: "Refresh", onPress: onRefresh }}
+          />
+        );
+
+      case "season":
+        return history.length > 0 ? (
+          <SeasonView
+            history={history}
+            profiles={activeProfiles}
+            riderFetch={riderFetch}
+            onOpenEvent={ev => pushView({ type: "event_detail", event: ev })}
+            onOpenSeries={(s, riderId) => pushView({
+              type: "series_standings",
+              seriesId: s.seriesId,
+              seriesName: s.seriesName,
+              riderClass: s.raceClass,
+              riderPosition: s.position,
+              riderPoints: s.totalPoints,
+              riderIds: [riderId],
+            })}
+          />
+        ) : (
+          <EmptyState
+            icon="trending-up"
+            title="Your season starts at the gate"
+            message="Race once and your finishes, points and pace trends show up here."
+            primary={{ label: "Find a race", onPress: () => setActiveFilter("near_me") }}
           />
         );
 

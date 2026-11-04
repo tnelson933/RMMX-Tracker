@@ -8,11 +8,11 @@
 import { Feather } from "@expo/vector-icons";
 import React, { useState } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
-import Svg, { Defs, LinearGradient, Path, Rect, Stop } from "react-native-svg";
 
 import { BarList, ChartCard, Legend, LineChart } from "@/components/charts";
 import type { MotoResult } from "@/components/RaceSubScreens";
 import { PositionBadge } from "@/components/RaceStats";
+import { PhotoFade, StockBackdrop } from "@/components/StockBackdrop";
 import { fonts } from "@/constants/fonts";
 import { useColors } from "@/hooks/useColors";
 import { API_BASE_URL } from "@/lib/apiBase";
@@ -27,26 +27,6 @@ export function eventImageUri(url: string | null | undefined): string | null {
   if (!url) return null;
   if (/^https?:\/\//i.test(url)) return url;
   return API_BASE_URL ? `${API_BASE_URL}${url.startsWith("/") ? "" : "/"}${url}` : null;
-}
-
-/** Dirt-track artwork for events without a photo. */
-function HeroArt() {
-  return (
-    <Svg style={StyleSheet.absoluteFill} viewBox="0 0 300 200" preserveAspectRatio="none">
-      <Defs>
-        <LinearGradient id="sky" x1="0.9" y1="0" x2="0.2" y2="1">
-          <Stop offset="0" stopColor="#8A6A4A" />
-          <Stop offset="0.45" stopColor="#4A3726" />
-          <Stop offset="1" stopColor="#161616" />
-        </LinearGradient>
-      </Defs>
-      <Rect x="0" y="0" width="300" height="200" fill="url(#sky)" />
-      <Path d="M0 140 C60 112 110 150 170 124 S260 104 300 118 L300 200 L0 200Z" fill="#2A1E15" />
-      <Path d="M0 160 C80 146 150 172 300 150 L300 200 L0 200Z" fill="#1C140E" />
-      <Path d="M188 40 L300 10 L300 22 L196 50Z" fill="#B30000" opacity={0.85} />
-      <Path d="M210 56 L300 34 L300 40 L214 62Z" fill="#B30000" opacity={0.45} />
-    </Svg>
-  );
 }
 
 export function RaceReportHero({
@@ -76,17 +56,8 @@ export function RaceReportHero({
     <View style={{ borderRadius: 20, overflow: "hidden", minHeight: 210, justifyContent: "flex-end", backgroundColor: "#161616" }}>
       {uri && !photoFailed
         ? <Image source={{ uri }} style={StyleSheet.absoluteFill} resizeMode="cover" onError={() => setPhotoFailed(true)} accessibilityIgnoresInvertColors />
-        : <HeroArt />}
-      {/* Dark fade so white text reads on any photo. */}
-      <Svg style={StyleSheet.absoluteFill} viewBox="0 0 10 10" preserveAspectRatio="none">
-        <Defs>
-          <LinearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0.25" stopColor="#000" stopOpacity={0} />
-            <Stop offset="1" stopColor="#000" stopOpacity={0.88} />
-          </LinearGradient>
-        </Defs>
-        <Rect x="0" y="0" width="10" height="10" fill="url(#fade)" />
-      </Svg>
+        : <StockBackdrop />}
+      <PhotoFade />
       <View style={{ padding: 16, gap: 4 }}>
         {riderName ? <Text style={hs.eyebrow} numberOfLines={1}>{riderName}</Text> : null}
         {eyebrow ? <Text style={hs.eyebrow} numberOfLines={1}>{eyebrow}</Text> : null}

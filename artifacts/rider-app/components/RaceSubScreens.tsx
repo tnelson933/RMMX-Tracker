@@ -71,6 +71,8 @@ export interface MotoResult {
   positionByLap?: Array<number | null>;
   /** Riders who started this moto. */
   fieldSize?: number;
+  /** The moto winner's average lap in ms, for % off the winner's pace. */
+  winnerAvgLapMs?: number | null;
   bibNumber: string | null;
   /** Group races: each team rider's own laps. */
   team?: TeamBreakdown | null;
@@ -119,6 +121,9 @@ export interface RiderSeriesEntry {
   raceClass: string;
   totalPoints: number;
   position: number;
+  /** The series' season year and events (from /rider/series). */
+  season?: number | null;
+  eventIds?: number[];
 }
 
 export interface PublicSeriesStandingRow {

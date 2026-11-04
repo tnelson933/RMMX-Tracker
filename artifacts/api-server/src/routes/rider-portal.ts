@@ -920,6 +920,8 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
           riderId: raceResultsTable.riderId,
           lapTimes: raceResultsTable.lapTimes,
           dns: raceResultsTable.dns,
+          dnf: raceResultsTable.dnf,
+          position: raceResultsTable.position,
         })
         .from(raceResultsTable)
         .where(inArray(raceResultsTable.motoId, motoIds))
@@ -982,6 +984,22 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
     return out;
   };
 
+  /**
+   * The winner's average lap (ms) in each moto, for "% off the winner's pace",
+   * which compares across tracks where raw lap times can't. Motocross skips
+   * lap 1 (it includes the start), the same as the rider's own laps in the app.
+   */
+  const styleByMoto = new Map(rows.map((r) => [r.motoId, r.raceStyle]));
+  const winnerAvgLapByMoto = new Map<number, number>();
+  for (const cr of competitorRows) {
+    if (cr.position !== 1 || cr.dnf || cr.dns) continue;
+    const parsed = ((cr.lapTimes as unknown[]) ?? []).map(parseLapValueMs);
+    if (parsed.length === 0 || parsed.some((l) => l == null)) continue;
+    const laps = parsed as number[];
+    const counted = styleByMoto.get(cr.motoId) === "motocross" && laps.length > 1 ? laps.slice(1) : laps;
+    winnerAvgLapByMoto.set(cr.motoId, Math.round(counted.reduce((a, b) => a + b, 0) / counted.length));
+  }
+
   // Group by event
   const eventMap = new Map<number, {
     eventId: number;
@@ -1012,6 +1030,8 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
       positionByLap: Array<number | null>;
       /** Riders who started this moto (DNS excluded). */
       fieldSize: number;
+      /** The moto winner's average lap in ms (motocross skips lap 1); null without readable laps. */
+      winnerAvgLapMs: number | null;
       dnf: boolean;
       dns: boolean;
       bibNumber: string | null;
@@ -1114,6 +1134,7 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
       lapGaps: computeLapGaps(row.motoId, lapTimesFormatted.length, row.resultRiderId),
       positionByLap: computePositionByLap(row.motoId, lapTimesFormatted.length, row.resultRiderId),
       fieldSize: fieldSizeByMoto.get(row.motoId) ?? 0,
+      winnerAvgLapMs: winnerAvgLapByMoto.get(row.motoId) ?? null,
       dnf: row.dnf,
       dns: row.dns,
       bibNumber: row.bibNumber,
@@ -2758,7 +2779,11 @@ router.get("/rider/series", requireRiderAuth, async (req, res) => {
 
   if (riders.length === 0) return res.json([]);
 
-  const riderIds = riders.map(r => r.id);
+  // ?riderId= limits the list to one of this account's riders (the app's My Season view),
+  // so a family account doesn't get another rider's series position.
+  const onlyRider = req.query.riderId != null ? Number(req.query.riderId) : null;
+  if (onlyRider != null && !riders.some(r => r.id === onlyRider)) return res.json([]);
+  const riderIds = onlyRider != null ? [onlyRider] : riders.map(r => r.id);
 
   // Find all series_points rows for these riders (only with actual points)
   const myPoints = await db
@@ -2774,10 +2799,11 @@ router.get("/rider/series", requireRiderAuth, async (req, res) => {
   // Fetch series names
   const seriesIds = [...new Set(myPoints.map(p => p.seriesId))];
   const seriesList = await db
-    .select({ id: seriesTable.id, name: seriesTable.name })
+    .select({ id: seriesTable.id, name: seriesTable.name, season: seriesTable.season, eventIds: seriesTable.eventIds })
     .from(seriesTable)
     .where(inArray(seriesTable.id, seriesIds));
   const seriesNameMap = new Map(seriesList.map(s => [s.id, s.name]));
+  const seriesById = new Map(seriesList.map(s => [s.id, s]));
 
   // Deduplicate: if multiple riderIds appear in same seriesId+raceClass, pick the highest-points one
   const grouped = new Map<string, typeof myPoints[0]>();
@@ -2796,6 +2822,9 @@ router.get("/rider/series", requireRiderAuth, async (req, res) => {
     raceClass: string;
     totalPoints: number;
     position: number;
+    /** The series' season year and events, so the app can match it to a season's races. */
+    season: number | null;
+    eventIds: number[];
   }> = [];
 
   for (const [, myRow] of grouped) {
@@ -2831,6 +2860,8 @@ router.get("/rider/series", requireRiderAuth, async (req, res) => {
       raceClass: myRow.raceClass,
       totalPoints: myRow.totalPoints,
       position,
+      season: seriesById.get(myRow.seriesId)?.season ?? null,
+      eventIds: seriesById.get(myRow.seriesId)?.eventIds ?? [],
     });
   }
 

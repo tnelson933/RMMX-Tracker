@@ -121,6 +121,36 @@ export function LineChart({
   );
 }
 
+/** Vertical bars with the value above each bar and a label below. */
+export function ColumnChart({
+  columns, max, height = 112, accessibilityLabel,
+}: {
+  columns: Array<{ key: string; label: string; value: number; valueLabel: string; color: string }>;
+  max: number;
+  height?: number;
+  accessibilityLabel: string;
+}) {
+  const colors = useColors();
+  const plot = height - 34;
+  return (
+    <View
+      style={{ height, flexDirection: "row", alignItems: "flex-end", gap: 6, borderBottomWidth: 0 }}
+      accessible
+      accessibilityRole="image"
+      accessibilityLabel={accessibilityLabel}
+    >
+      {columns.map(c => (
+        <View key={c.key} style={{ flex: 1, alignItems: "center", gap: 3 }}>
+          <Text style={{ fontSize: 11, color: colors.foreground, fontFamily: fonts.bold, fontVariant: ["tabular-nums"] }} numberOfLines={1}>{c.valueLabel}</Text>
+          <View style={{ width: "62%", maxWidth: 36, height: Math.max(3, (c.value / (max || 1)) * plot), borderTopLeftRadius: 3, borderTopRightRadius: 3, backgroundColor: c.color }} />
+          <View style={{ alignSelf: "stretch", height: 1, backgroundColor: colors.chartGrid }} />
+          <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: fonts.medium }} numberOfLines={1}>{c.label}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 /** Horizontal bars with a label and a value on each row. */
 export function BarList({
   rows, max, accessibilityLabel,
