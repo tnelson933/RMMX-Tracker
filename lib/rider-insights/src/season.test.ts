@@ -1,4 +1,4 @@
-// Run from scripts/: ./node_modules/.bin/tsx --test ../artifacts/rider-app/lib/season.test.ts
+// Run from scripts/: ./node_modules/.bin/tsx --test ../lib/rider-insights/src/season.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {

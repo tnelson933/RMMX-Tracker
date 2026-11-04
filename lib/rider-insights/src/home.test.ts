@@ -1,4 +1,4 @@
-// Run from scripts/: ./node_modules/.bin/tsx --test ../artifacts/rider-app/lib/home.test.ts
+// Run from scripts/: ./node_modules/.bin/tsx --test ../lib/rider-insights/src/home.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { countdownLabel, pickNextRace } from "./home";

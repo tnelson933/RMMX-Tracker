@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
+import { FollowingFeed } from "@/pages/rider/RiderFollowing";
 import { Trophy, Calendar, Star, User, ChevronRight, Plus, Clock, UserPlus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -131,6 +132,15 @@ export default function RiderPortal() {
             </CardContent>
           </Card>
         )}
+
+        {/* Riders you follow (same as the app's Home feed) */}
+        <section className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-heading font-extrabold uppercase tracking-[0.5px] text-[18px] text-[#242424]">Riders you follow</h2>
+            <Link href="/rider/following" className="text-[15px] font-semibold text-[#B30000] hover:underline">Find riders</Link>
+          </div>
+          <FollowingFeed limit={5} />
+        </section>
 
         <Card className="bg-[#FAFAFA] border-2 border-[#ECECEC] shadow-none">
           <CardHeader className="pb-2">

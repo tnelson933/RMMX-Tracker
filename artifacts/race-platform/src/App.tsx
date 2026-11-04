@@ -56,6 +56,8 @@ import RiderPortal from "@/pages/rider/RiderPortal";
 import RiderHistory from "@/pages/rider/RiderHistory";
 import RiderCreateProfile from "@/pages/rider/RiderCreateProfile";
 import RmCash from "@/pages/rider/RmCash";
+import RacerProfile from "@/pages/rider/RacerProfile";
+import RiderFollowing from "@/pages/rider/RiderFollowing";
 import WatchLive from "@/pages/public/WatchLive";
 import HandScanner from "@/pages/public/HandScanner";
 import EventWidget from "@/pages/public/EventWidget";
@@ -239,6 +241,12 @@ function Router() {
       </Route>
       <Route path="/rider/new-profile">
         <RiderProtectedRoute><RiderCreateProfile /></RiderProtectedRoute>
+      </Route>
+      <Route path="/rider/racer/:riderId">
+        <RiderProtectedRoute><RacerProfile /></RiderProtectedRoute>
+      </Route>
+      <Route path="/rider/following">
+        <RiderProtectedRoute><RiderFollowing /></RiderProtectedRoute>
       </Route>
       <Route path="/rider/portal/:riderId">
         <RiderProtectedRoute><RiderHistory /></RiderProtectedRoute>

@@ -1,0 +1,15 @@
+{
+  "name": "@workspace/rider-insights",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Rider performance maths and plain-language takeaways shared by the rider app and the rider website.",
+  "exports": {
+    "./raceReport": "./src/raceReport.ts",
+    "./season": "./src/season.ts",
+    "./home": "./src/home.ts",
+    "./practice": "./src/practice.ts",
+    "./career": "./src/career.ts",
+    "./plates": "./src/plates.ts"
+  }
+}

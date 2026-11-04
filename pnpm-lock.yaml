@@ -735,6 +735,9 @@ importers:
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod
+      '@workspace/rider-insights':
+        specifier: workspace:*
+        version: link:../../lib/rider-insights
       class-variance-authority:
         specifier: 'catalog:'
         version: 0.7.1
@@ -895,6 +898,9 @@ importers:
       '@workspace/api-client-react':
         specifier: workspace:*
         version: link:../../lib/api-client-react
+      '@workspace/rider-insights':
+        specifier: workspace:*
+        version: link:../../lib/rider-insights
       babel-plugin-react-compiler:
         specifier: ^19.0.0-beta-e993439-20250117
         version: 19.0.0-beta-ebf51a3-20250411
@@ -1078,6 +1084,8 @@ importers:
       '@types/react':
         specifier: 'catalog:'
         version: 19.2.14
+
+  lib/rider-insights: {}
 
   scripts:
     dependencies:
@@ -2031,7 +2039,7 @@ packages:
 
   '@expo/bunyan@4.0.1':
     resolution: {integrity: sha512-+Lla7nYSiHZirgK+U/uYzsLv/X+HaJienbD5AKX1UQZHYfWaP+9uuQluRB4GrEVWF0GZ7vEVp/jzaOT9k/SQlg==}
-    engines: {node: '>=0.10.0'}
+    engines: {'0': node >=0.10.0}
 
   '@expo/cli@54.0.23':
     resolution: {integrity: sha512-km0h72SFfQCmVycH/JtPFTVy69w6Lx1cHNDmfLfQqgKFYeeHTjx7LVDP4POHCtNxFP2UeRazrygJhlh4zz498g==}
@@ -11008,7 +11016,7 @@ snapshots:
       getenv: 1.0.0
       glob: 10.5.0
       resolve-from: 5.0.0
-      semver: 7.8.2
+      semver: 7.8.5
       slash: 3.0.0
       slugify: 1.6.9
       xcode: 3.0.1
@@ -11034,7 +11042,7 @@ snapshots:
       require-from-string: 2.0.2
       resolve-from: 5.0.0
       resolve-workspace-root: 2.0.1
-      semver: 7.8.2
+      semver: 7.8.5
       slugify: 1.6.9
       sucrase: 3.35.0
     transitivePeerDependencies:
@@ -11185,7 +11193,7 @@ snapshots:
       jimp-compact: 0.16.1
       parse-png: 2.1.0
       resolve-from: 5.0.0
-      semver: 7.8.2
+      semver: 7.8.5
       temp-dir: 2.0.0
       unique-string: 2.0.0
 

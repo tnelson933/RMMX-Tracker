@@ -1,4 +1,4 @@
-// Run from scripts/: ./node_modules/.bin/tsx --test ../artifacts/rider-app/lib/career.test.ts
+// Run from scripts/: ./node_modules/.bin/tsx --test ../lib/rider-insights/src/career.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { finishSpread, lapsLedTakeaway, spreadTakeaway, startTakeaway, type CareerNumbers } from "./career";

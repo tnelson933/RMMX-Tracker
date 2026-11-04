@@ -62,6 +62,19 @@ export interface MotoResult {
   totalTime: string | null;
   lapTimes: string[];
   lapGaps?: Array<{ leader: number | null; ahead: number | null }>;
+  /** Running position at the end of each lap (1 = leading). */
+  positionByLap?: Array<number | null>;
+  /** Riders who started this moto. */
+  fieldSize?: number;
+  /** The moto winner's average lap in ms, for % off the winner's pace. */
+  winnerAvgLapMs?: number | null;
+  /** Split (sector) times, when the course had split readers. */
+  sectors?: {
+    names: string[];
+    laps: Array<{ lapNumber: number; sectorsMs: Array<number | null> }>;
+    bestMs: Array<number | null>;
+    fieldBestMs: Array<number | null>;
+  } | null;
   dnf: boolean;
   dns: boolean;
   bibNumber: string | null;
@@ -82,6 +95,8 @@ export interface EventHistory {
   eventDate: string;
   eventState: string;
   eventLocation: string | null;
+  /** Organizer's event image ("/api/storage/..." path). */
+  eventImageUrl?: string | null;
   timingTechnology: string | null;
   /** Group races: the team this rider rode on. */
   teamName?: string | null;
@@ -111,6 +126,10 @@ export interface RiderFull {
   hometown: string | null;
   homeState: string | null;
   myLapsTransponderNumber: string | null;
+  /** Racer profile (riders.bio / plate_color / profile_visibility). */
+  bio?: string | null;
+  plateColor?: string | null;
+  profileVisibility?: "public" | "private" | null;
 }
 
 export interface RiderHistoryResponse {
@@ -275,8 +294,11 @@ export interface ScheduleEvent {
   eventId: number;
   eventName: string;
   eventDate: string | null;
+  eventEndDate?: string | null;
   eventState: string | null;
   eventLocation: string | null;
+  /** Organizer's event image ("/api/storage/..." path). */
+  eventImageUrl?: string | null;
   status: string;
   raceStyle: string;
   classStartTimes: Record<string, string | null>;
@@ -361,4 +383,116 @@ export const riderApi = {
       method: "POST",
       body: JSON.stringify({ registrationIds }),
     }),
+
+  // ── Shared with the rider app: profile settings, series, stats, following ──
+  profile: (riderId: number): Promise<RiderProfileDetail> =>
+    apiFetch(`/rider/profiles/${riderId}`),
+
+  updateRacerProfile: (riderId: number, payload: { bio?: string | null; plateColor?: string | null; profileVisibility?: "public" | "private" | null }): Promise<RiderProfileDetail> =>
+    apiFetch(`/rider/profiles/${riderId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+
+  /** This rider's series positions (season and events let the Season view match them). */
+  series: (riderId: number): Promise<RiderSeriesEntry[]> =>
+    apiFetch(`/rider/series?riderId=${riderId}`),
+
+  careerStats: (riderId: number): Promise<{ riderId: number; name: string; stats: CareerStats }> =>
+    apiFetch(`/rider/profiles/${riderId}/stats`),
+
+  managers: (riderId: number): Promise<{ isOwner: boolean; managers: ProfileManager[] }> =>
+    apiFetch(`/rider/profiles/${riderId}/managers`),
+
+  addManager: (riderId: number, email: string): Promise<unknown> =>
+    apiFetch(`/rider/profiles/${riderId}/managers`, { method: "POST", body: JSON.stringify({ email }) }),
+
+  removeManager: (riderId: number, managerId: number): Promise<unknown> =>
+    apiFetch(`/rider/profiles/${riderId}/managers/${managerId}`, { method: "DELETE" }),
+
+  racer: (riderId: number): Promise<RacerProfile> =>
+    apiFetch(`/rider/riders/${riderId}/public`),
+
+  searchRiders: (q: string): Promise<{ riders: Array<{ id: number; name: string; lastRaced: string | null; clubName: string | null; following: boolean }> }> =>
+    apiFetch(`/rider/riders/search?q=${encodeURIComponent(q)}`),
+
+  follows: (): Promise<{ following: Array<{ riderId: number; name: string; since: string }> }> =>
+    apiFetch("/rider/follows"),
+
+  follow: (riderId: number): Promise<unknown> =>
+    apiFetch(`/rider/follows/${riderId}`, { method: "POST" }),
+
+  unfollow: (riderId: number): Promise<unknown> =>
+    apiFetch(`/rider/follows/${riderId}`, { method: "DELETE" }),
+
+  feed: (): Promise<{ items: Array<FeedItem & { isMine: boolean }> }> =>
+    apiFetch("/rider/feed"),
 };
+
+export interface RiderProfileDetail extends RiderFull {
+  effectiveVisibility: "public" | "private";
+  isMinor?: boolean;
+}
+
+export interface RiderSeriesEntry {
+  seriesId: number;
+  seriesName: string;
+  raceClass: string;
+  totalPoints: number;
+  position: number;
+  season?: number | null;
+  eventIds?: number[];
+}
+
+export interface CareerStats {
+  starts: number;
+  finishes: number;
+  dnfs?: number;
+  wins: number;
+  podiums: number;
+  top5s: number;
+  avgFinish: number | null;
+  totalLaps: number;
+  lapsLed: number;
+  pctLapsLed: number | null;
+  lap1Leads: number;
+  avgLap1Position: number | null;
+  positionsGained: number;
+  avgPositionsGained: number | null;
+  bestLap: { ms: number; eventId: number; eventName: string; motoName: string } | null;
+}
+
+export interface ProfileManager { id: number; email: string; joined: boolean; isYou: boolean }
+
+export interface FeedItem {
+  riderId: number;
+  riderName: string;
+  eventId: number;
+  eventName: string;
+  eventDate: string;
+  raceClass: string;
+  official: boolean;
+  bestPosition: number | null;
+  motos: Array<{ motoName: string; position: number | null; dnf: boolean; dns: boolean }>;
+}
+
+export interface RacerProfile {
+  riderId: number;
+  name: string;
+  following: boolean;
+  followerCount: number;
+  stats: CareerStats;
+  recent: FeedItem[];
+  resume?: {
+    headline: string | null;
+    highlights: {
+      bestFinish: { position: number; eventId: number; eventName: string; eventDate: string } | null;
+      bestComeback: { gained: number; eventId: number; eventName: string } | null;
+    };
+    seasons: Array<{ year: string; avgFinish: number | null; motos: number }>;
+    badges: Array<{ key: string; label: string }>;
+    classes: string[];
+    tracks: string[];
+    firstYear: string | null;
+  };
+  profile?: { number: string | null; plateColor: string | null; state: string | null; bio: string | null };
+  visibility?: "public" | "private";
+  isManager?: boolean;
+}

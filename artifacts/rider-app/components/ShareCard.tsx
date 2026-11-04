@@ -6,6 +6,7 @@ import * as Sharing from "expo-sharing";
 
 import { podiumColor } from "@/components/RaceStats";
 import { PhotoFade, StockBackdrop } from "@/components/StockBackdrop";
+import { fmtLapShort } from "@/lib/raceReport";
 
 /**
  * Branded, shareable cards captured as a 1080x1350 PNG (4:5, the size
@@ -94,7 +95,7 @@ export function StatsShareCard({ name, stats, cardRef }: { name: string; stats: 
     ["Top 5s", String(stats.top5s)],
     ["Avg finish", stats.avgFinish != null ? `P${Math.round(stats.avgFinish)}` : "—"],
     ["Laps led", String(stats.lapsLed)],
-    ["Best lap", stats.bestLap ? formatLap(stats.bestLap.ms).replace(/(\.\d)\d\d$/, "$1") : "—"],
+    ["Best lap", stats.bestLap ? fmtLapShort(stats.bestLap.ms) : "—"],
   ];
   return (
     <CardFrame cardRef={cardRef} eyebrow="Career stats" name={name} sub={`${stats.starts} motos · ${stats.totalLaps} laps`}>

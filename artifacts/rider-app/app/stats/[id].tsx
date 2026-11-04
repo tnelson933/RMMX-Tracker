@@ -11,6 +11,7 @@ import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { finishSpread, lapsLedTakeaway, spreadTakeaway, startTakeaway } from "@/lib/career";
 import { goBack } from "@/lib/navigation";
+import { fmtLapShort } from "@/lib/raceReport";
 
 /**
  * Career stats as pictures: how finishes split up, where the rider is after
@@ -82,7 +83,7 @@ export default function RiderStatsScreen() {
               { v: String(stats.starts), l: "Motos" },
               { v: String(stats.totalLaps), l: "Laps" },
               { v: stats.avgFinish != null ? `P${Math.round(stats.avgFinish)}` : "—", l: "Avg finish" },
-              { v: stats.bestLap ? formatLap(stats.bestLap.ms).replace(/(\.\d)\d\d$/, "$1") : "—", l: "Best lap" },
+              { v: stats.bestLap ? fmtLapShort(stats.bestLap.ms) : "—", l: "Best lap" },
             ].map(t => (
               <View key={t.l} style={s.tile}>
                 <Text style={s.tileValue} numberOfLines={1} adjustsFontSizeToFit>{t.v}</Text>

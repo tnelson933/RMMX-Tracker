@@ -1,4 +1,4 @@
-// Run from scripts/: ./node_modules/.bin/tsx --test ../artifacts/rider-app/lib/practice.test.ts
+// Run from scripts/: ./node_modules/.bin/tsx --test ../lib/rider-insights/src/practice.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { sessionSummary, sessionTakeaway, sessionTrend, trendTakeaway, type PracticeSession } from "./practice";

@@ -9,7 +9,7 @@ import {
   Flag, AlertTriangle, Calendar, MapPin, Hash, User, Timer,
   Wifi, Pencil, Check, X, Loader2, Radio, DoorOpen,
   Navigation, LocateFixed, ExternalLink, LayoutList, LayoutGrid,
-  Settings, Phone, Shield, Bike, Ribbon
+  Settings, Phone, Shield, Bike, Ribbon, TrendingUp, BarChart3
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +25,12 @@ import {
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RiderLayout } from "@/components/layout/RiderLayout";
+import { RaceReportCard } from "@/components/rider/RaceReport";
+import { SeasonPanel } from "@/components/rider/SeasonPanel";
+import { FormTrend, NextRaceHero, RecentForm } from "@/components/rider/Overview";
+import { CareerStatsPanel } from "@/components/rider/CareerStatsPanel";
+import { SessionLapChart, TrackProgressChart } from "@/components/rider/PracticeCharts";
+import { ProfileManagers, RacerProfileSettings } from "@/components/rider/ProfileSettings";
 import { BikeBrandChips } from "@/components/BikeBrandChips";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -544,8 +550,8 @@ function GarageCard({ riderId }: { riderId: number }) {
 
 // ─── Race history components ────────────────────────────────────────────────
 
-function MotoRow({ moto, raceStyle }: { moto: MotoResult; raceStyle?: string | null }) {
-  const [lapOpen, setLapOpen] = useState(false);
+function MotoRow({ moto, raceStyle, defaultLapsOpen }: { moto: MotoResult; raceStyle?: string | null; defaultLapsOpen?: boolean }) {
+  const [lapOpen, setLapOpen] = useState(!!defaultLapsOpen);
   const [gapMode, setGapMode] = useState<"best" | "leader" | "ahead">("best");
   const hasTimes = moto.lapTimes && moto.lapTimes.length > 0;
   const hasGaps = (moto.lapGaps ?? []).some((g) => g.leader != null);
@@ -703,71 +709,6 @@ function TeamLaps({ team }: { team: NonNullable<MotoResult["team"]> }) {
         </div>
       )}
     </div>
-  );
-}
-
-function EventCard({ event }: { event: EventHistory }) {
-  const [open, setOpen] = useState(true);
-
-  return (
-    <Card>
-      <CardHeader
-        className="cursor-pointer select-none"
-        onClick={() => setOpen((v) => !v)}
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <CardTitle className="font-heading font-bold text-lg uppercase tracking-tight">
-              {event.eventName}
-            </CardTitle>
-            <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-              <span className="flex items-center gap-1 text-sm text-muted-foreground">
-                <Calendar size={13} />
-                {event.eventDate ? new Date(event.eventDate).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "—"}
-              </span>
-              {(event.eventLocation || event.eventState) && (
-                <span className="flex items-center gap-1 text-sm text-muted-foreground">
-                  <MapPin size={13} />
-                  {event.eventLocation ?? event.eventState}
-                </span>
-              )}
-              <Badge variant="secondary" className="text-xs">{event.raceClass}</Badge>
-              {event.teamName && <Badge variant="outline" className="text-xs">Team {event.teamName}</Badge>}
-              {(
-                <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Timer size={11} />
-                  Timed with {timingTagsLabel(eventTimingTags(event))}
-                </span>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4 flex-shrink-0">
-            {event.bestPosition !== null && (
-              <div className="text-center">
-                <div className="text-xs text-muted-foreground mb-0.5">Best</div>
-                <Badge variant="outline" className={`font-heading font-bold border ${positionBadge(event.bestPosition)}`}>
-                  P{event.bestPosition}
-                </Badge>
-              </div>
-            )}
-            <div className="text-center">
-              <div className="text-xs text-muted-foreground mb-0.5">Points</div>
-              <div className="font-heading font-bold text-primary text-lg">{event.totalPoints}</div>
-            </div>
-            {open ? <ChevronUp size={16} className="text-muted-foreground" /> : <ChevronDown size={16} className="text-muted-foreground" />}
-          </div>
-        </div>
-      </CardHeader>
-
-      {open && (
-        <CardContent className="pt-0 space-y-2">
-          {event.motos.map((moto) => (
-            <MotoRow key={moto.motoId} moto={moto} raceStyle={event.raceStyle} />
-          ))}
-        </CardContent>
-      )}
-    </Card>
   );
 }
 
@@ -936,6 +877,9 @@ function EventPracticeSessionCard({
               {showMyLaps ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
               Lap times ({myLapsWithTime.length})
             </button>
+            {showMyLaps && (
+              <div className="mt-2"><SessionLapChart laps={session.myLaps} raceStyle={raceStyle} /></div>
+            )}
             {showMyLaps && (
               <div className="mt-2 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
                 {myLapsWithTime.map((lap) => {
@@ -1270,12 +1214,15 @@ function PracticeSessionCard({
 
       {open && displayLaps.length > 0 && (
         <CardContent className="pt-0">
+          <div className="border-t pt-3 mb-3">
+            <SessionLapChart laps={liveLaps ?? session.laps} />
+          </div>
           <div className="border-t pt-3">
             <div className="text-xs text-muted-foreground mb-3 font-heading uppercase tracking-wider">
               Lap Times
             </div>
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-              {displayLaps.map((lap, lapIdx) => {
+              {displayLaps.map((lap) => {
                 const isSessionBest = lap.lapTimeMs === displayBestMs;
                 const isVenuePb = isSessionBest && (venueBestBeforeSessionMs == null || (lap.lapTimeMs != null && lap.lapTimeMs < venueBestBeforeSessionMs));
                 return (
@@ -1289,7 +1236,7 @@ function PracticeSessionCard({
                           : "bg-muted border-transparent"
                     }`}
                   >
-                    <div className="text-xs text-muted-foreground">Lap {lapIdx + 1}</div>
+                    <div className="text-xs text-muted-foreground">Lap {lap.lapNumber}</div>
                     <div className={`font-mono text-xs font-bold mt-0.5 ${isVenuePb ? "text-yellow-600" : isSessionBest ? "text-primary" : ""}`}>
                       {formatMs(lap.lapTimeMs)}
                     </div>
@@ -2399,7 +2346,7 @@ export default function RiderHistory() {
   const riderId = parseInt(params?.riderId ?? "0", 10);
   const searchStr = useSearch();
   const tabParam = new URLSearchParams(searchStr).get("tab");
-  const validTabs = ["today", "upcoming", "nearby", "races", "practice", "profile"] as const;
+  const validTabs = ["today", "upcoming", "nearby", "season", "races", "stats", "practice", "profile"] as const;
   const hasExplicitTab = validTabs.includes(tabParam as any);
   const initialTab = hasExplicitTab ? (tabParam as typeof validTabs[number]) : "today";
   const [activeTab, setActiveTab] = useState<typeof validTabs[number]>(initialTab);
@@ -2408,6 +2355,13 @@ export default function RiderHistory() {
     if (hasExplicitTab) setActiveTab(tabParam as typeof validTabs[number]);
   }, [tabParam]);
   const [practiceMode, setPracticeMode] = useState<"event" | "open">("event");
+  // A race picked in the Season tab opens (and scrolls to) in Race History.
+  const [focusRace, setFocusRace] = useState<string | null>(null);
+  useEffect(() => {
+    if (activeTab !== "races" || !focusRace) return;
+    const t = setTimeout(() => document.getElementById(`race-${focusRace}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+    return () => clearTimeout(t);
+  }, [activeTab, focusRace]);
   const [practiceVenueFilter, setPracticeVenueFilter] = useState<string | null>(null);
   const [cancelModal, setCancelModal] = useState<{
     eventId: number;
@@ -2563,6 +2517,21 @@ export default function RiderHistory() {
         </Card>
       ) : rider ? (
         <div className="space-y-6">
+          {/* Next race, recent form and one trend (same as the rider app's Home) */}
+          <div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
+            <NextRaceHero
+              events={scheduleData?.events ?? []}
+              onOpen={ev => setActiveTab(ev.status === "race_day" ? "today" : "upcoming")}
+              onFind={() => setActiveTab("nearby")}
+            />
+            {history.length > 0 && (
+              <div className="space-y-4">
+                <RecentForm history={history} onOpen={ev => { setFocusRace(`${ev.eventId}-${ev.raceClass}`); setActiveTab("races"); }} />
+                <FormTrend history={history} />
+              </div>
+            )}
+          </div>
+
           {/* Summary stats */}
           <div className="grid grid-cols-3 gap-3 sm:gap-4">
             <Card>
@@ -2673,6 +2642,17 @@ export default function RiderHistory() {
               Near Me
             </button>
             <button
+              onClick={() => setActiveTab("season")}
+              className={`flex items-center gap-2 px-4 sm:px-5 min-h-[44px] rounded-full text-[15px] font-heading font-bold uppercase tracking-[0.5px] whitespace-nowrap transition-colors shrink-0 ${
+                activeTab === "season"
+                  ? "bg-[#242424] text-white"
+                  : "text-[#555] hover:text-[#242424] hover:bg-white"
+              }`}
+            >
+              <TrendingUp size={14} />
+              Season
+            </button>
+            <button
               onClick={() => setActiveTab("races")}
               className={`flex items-center gap-2 px-4 sm:px-5 min-h-[44px] rounded-full text-[15px] font-heading font-bold uppercase tracking-[0.5px] whitespace-nowrap transition-colors shrink-0 ${
                 activeTab === "races"
@@ -2689,6 +2669,17 @@ export default function RiderHistory() {
                   {eventsRaced}
                 </span>
               )}
+            </button>
+            <button
+              onClick={() => setActiveTab("stats")}
+              className={`flex items-center gap-2 px-4 sm:px-5 min-h-[44px] rounded-full text-[15px] font-heading font-bold uppercase tracking-[0.5px] whitespace-nowrap transition-colors shrink-0 ${
+                activeTab === "stats"
+                  ? "bg-[#242424] text-white"
+                  : "text-[#555] hover:text-[#242424] hover:bg-white"
+              }`}
+            >
+              <BarChart3 size={14} />
+              Stats
             </button>
             <button
               onClick={() => setActiveTab("practice")}
@@ -2854,6 +2845,15 @@ export default function RiderHistory() {
             </div>
           )}
 
+          {/* Season tab */}
+          {activeTab === "season" && (
+            <SeasonPanel
+              riderId={riderId}
+              history={history}
+              onOpenEvent={ev => { setFocusRace(`${ev.eventId}-${ev.raceClass}`); setActiveTab("races"); }}
+            />
+          )}
+
           {/* Race History tab */}
           {activeTab === "races" && (
             <div>
@@ -2865,14 +2865,26 @@ export default function RiderHistory() {
                   </CardContent>
                 </Card>
               ) : (
-                <div className="space-y-3">
-                  {history.map((event) => (
-                    <EventCard key={event.eventId} event={event} />
-                  ))}
+                <div className="space-y-6">
+                  {history.map((event, i) => {
+                    const key = `${event.eventId}-${event.raceClass}`;
+                    return (
+                    <div key={`${key}-${focusRace === key ? "focus" : ""}`} id={`race-${key}`} className="scroll-mt-4">
+                    <RaceReportCard
+                      event={event}
+                      defaultOpen={focusRace ? focusRace === key : i === 0}
+                      renderMotoTable={moto => <MotoRow moto={moto} raceStyle={event.raceStyle} defaultLapsOpen />}
+                    />
+                    </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
           )}
+
+          {/* Stats tab (career stats, same as the app) */}
+          {activeTab === "stats" && <CareerStatsPanel riderId={riderId} />}
 
           {/* Practice tab */}
           {activeTab === "practice" && (
@@ -3004,6 +3016,17 @@ export default function RiderHistory() {
                       </Card>
                     </div>
 
+                    {/* Best and average lap per session at each track shown (same as the app's Train tab) */}
+                    {Array.from(new Set(filteredPracticeSessions.map(s => s.venueName).filter((v): v is string => v != null))).map(venue => (
+                      <TrackProgressChart
+                        key={venue}
+                        trackLabel={venue}
+                        sessions={filteredPracticeSessions.filter(s => s.venueName === venue).map(s => ({
+                          key: String(s.sessionId), label: s.sessionName, startedAt: s.startedAt, myLaps: s.laps,
+                        }))}
+                      />
+                    ))}
+
                     {filteredPracticeSessions.length === 0 ? (
                       <Card>
                         <CardContent className="p-10 text-center">
@@ -3051,6 +3074,8 @@ export default function RiderHistory() {
           {/* Profile tab */}
           {activeTab === "profile" && (
             <>
+              <RacerProfileSettings riderId={rider.id} />
+              <ProfileManagers riderId={rider.id} />
               <ProfileEditor rider={rider} />
               <GarageCard riderId={rider.id} />
             </>

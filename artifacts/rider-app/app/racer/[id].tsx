@@ -16,6 +16,7 @@ import { useColors } from "@/hooks/useColors";
 import { displayDate } from "@/lib/format";
 import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 import { goBack } from "@/lib/navigation";
+import { fmtLapShort } from "@/lib/raceReport";
 import { stateNameFromCode } from "@/lib/usStates";
 
 interface Recent { eventId: number; eventName: string; eventDate: string; raceClass: string; bestPosition: number | null; official?: boolean; motos: Array<{ motoName: string; position: number | null; dnf: boolean; dns: boolean }> }
@@ -204,7 +205,7 @@ export default function RacerScreen() {
                 )}
                 {st.bestLap && (
                   <View style={[s.card, s.hl]}>
-                    <Text style={s.hlValue}>{formatLap(st.bestLap.ms).replace(/(\.\d)\d\d$/, "$1")}</Text>
+                    <Text style={s.hlValue}>{fmtLapShort(st.bestLap.ms)}</Text>
                     <Text style={s.hlLabel}>Fastest lap</Text>
                     <Text style={s.hlWhere} numberOfLines={2}>{st.bestLap.eventName}</Text>
                   </View>
