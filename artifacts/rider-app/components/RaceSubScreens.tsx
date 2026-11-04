@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 
 import { BrandBar } from "@/components/BrandBar";
 import { useColors } from "@/hooks/useColors";
@@ -547,6 +548,7 @@ export function SeriesStandingsScreen({
   riderFetch: (path: string, options?: RequestInit) => Promise<Response>;
 }) {
   const primary = colors.primary;
+  const router = useRouter();
   const [rows, setRows] = useState<PublicSeriesStandingRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -618,15 +620,20 @@ export function SeriesStandingsScreen({
               top10.map((row, idx) => {
                 const isMe = riderIds.includes(row.riderId);
                 return (
-                  <View
+                  // Each rider opens their racer profile (where people can follow them).
+                  <Pressable
                     key={row.riderId}
-                    style={{
+                    onPress={() => router.push(`/racer/${row.riderId}` as any)}
+                    accessibilityRole="link"
+                    accessibilityLabel={`${row.riderName}, ${row.position}, ${row.totalScore} points. Open racer profile.`}
+                    style={({ pressed }) => ({
                       flexDirection: "row", alignItems: "center",
                       paddingHorizontal: 14, paddingVertical: 13,
                       borderBottomWidth: idx < top10.length - 1 ? 1 : 0,
                       borderBottomColor: isMe ? colors.primary + "33" : colors.border,
                       backgroundColor: isMe ? colors.primary + "12" : "transparent",
-                    }}
+                      opacity: pressed ? 0.7 : 1,
+                    })}
                   >
                     <View style={{
                       width: 26, height: 26, borderRadius: 13,
@@ -643,7 +650,8 @@ export function SeriesStandingsScreen({
                     <Text style={{ width: 52, fontSize: 14, fontWeight: isMe ? "700" : "500", color: isMe ? colors.primaryText : colors.foreground, fontFamily: isMe ? "Roboto_700Bold" : "Roboto_500Medium", textAlign: "right" }}>
                       {row.totalScore}
                     </Text>
-                  </View>
+                    <Feather name="chevron-right" size={14} color={colors.mutedForeground} style={{ marginLeft: 4 }} />
+                  </Pressable>
                 );
               })
             )}

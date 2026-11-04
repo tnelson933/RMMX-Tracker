@@ -1,5 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { RacerProfileSettings } from "@/components/RacerProfileSettings";
+import { ProfileManagers } from "@/components/ProfileManagers";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
@@ -964,6 +965,9 @@ export default function RiderDetailScreen() {
               }}
             />
           )}
+
+          {/* ── Who can manage this profile (moved from Career stats) ───── */}
+          {!editing && <ProfileManagers riderId={rider.id} riderFetch={riderFetch} />}
 
           {/* ── Personal Info ─────────────────────────────────────────────── */}
           <View style={s.section}>

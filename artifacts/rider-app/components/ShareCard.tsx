@@ -4,9 +4,14 @@ import { Feather } from "@expo/vector-icons";
 import { captureRef } from "react-native-view-shot";
 import * as Sharing from "expo-sharing";
 
+import { podiumColor } from "@/components/RaceStats";
+import { PhotoFade, StockBackdrop } from "@/components/StockBackdrop";
+
 /**
- * Branded, shareable cards (RM Roost banner on black) captured as a 1080x1350 PNG
- * (4:5, the size Instagram/Facebook feeds expect) and handed to the system share sheet.
+ * Branded, shareable cards captured as a 1080x1350 PNG (4:5, the size
+ * Instagram/Facebook feeds expect) and handed to the system share sheet:
+ * a riding photo with the RM Roost banner on top, the rider's name over it,
+ * and the result or stats below in the brand type.
  */
 
 const CARD_W = 320;
@@ -28,6 +33,7 @@ export interface CareerStats {
   positionsGained: number;
   avgPositionsGained: number | null;
   bestLap: { ms: number; eventName: string; motoName: string } | null;
+  dnfs?: number;
 }
 
 export function formatLap(ms: number): string {
@@ -59,12 +65,23 @@ export function useShareCapture() {
   return { ref, share, sharing };
 }
 
-function CardFrame({ children, cardRef }: { children: React.ReactNode; cardRef: React.RefObject<View | null> }) {
+function CardFrame({ eyebrow, name, sub, children, cardRef }: {
+  eyebrow: string; name: string; sub?: string; children: React.ReactNode; cardRef: React.RefObject<View | null>;
+}) {
   return (
     <View ref={cardRef} collapsable={false} style={c.card}>
-      <Image source={require("../assets/images/brand-banner.png")} style={c.banner} resizeMode="contain" />
+      <View style={c.photo}>
+        <StockBackdrop />
+        <PhotoFade from={0.35} strength={0.95} />
+        <Image source={require("../assets/images/brand-banner.png")} style={c.banner} resizeMode="contain" />
+        <View style={c.photoText}>
+          <Text style={c.eyebrow} numberOfLines={1}>{eyebrow}</Text>
+          <Text style={c.name} numberOfLines={1} adjustsFontSizeToFit>{name}</Text>
+          {sub ? <Text style={c.sub} numberOfLines={1}>{sub}</Text> : null}
+        </View>
+      </View>
       <View style={c.rule} />
-      {children}
+      <View style={c.body}>{children}</View>
       <Text style={c.footer}>rmroost.com</Text>
     </View>
   );
@@ -75,26 +92,20 @@ export function StatsShareCard({ name, stats, cardRef }: { name: string; stats: 
     ["Wins", String(stats.wins)],
     ["Podiums", String(stats.podiums)],
     ["Top 5s", String(stats.top5s)],
-    ["Avg finish", stats.avgFinish != null ? `P${stats.avgFinish}` : "—"],
+    ["Avg finish", stats.avgFinish != null ? `P${Math.round(stats.avgFinish)}` : "—"],
     ["Laps led", String(stats.lapsLed)],
-    ["Led lap 1", String(stats.lap1Leads)],
+    ["Best lap", stats.bestLap ? formatLap(stats.bestLap.ms).replace(/(\.\d)\d\d$/, "$1") : "—"],
   ];
   return (
-    <CardFrame cardRef={cardRef}>
-      <Text style={c.eyebrow}>CAREER STATS</Text>
-      <Text style={c.name} numberOfLines={1}>{name.toUpperCase()}</Text>
-      <Text style={c.sub}>{stats.starts} races · {stats.totalLaps} laps</Text>
+    <CardFrame cardRef={cardRef} eyebrow="Career stats" name={name} sub={`${stats.starts} motos · ${stats.totalLaps} laps`}>
       <View style={c.grid}>
         {tiles.map(([label, value]) => (
           <View key={label} style={c.tile}>
-            <Text style={c.tileValue}>{value}</Text>
+            <Text style={c.tileValue} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
             <Text style={c.tileLabel}>{label}</Text>
           </View>
         ))}
       </View>
-      {stats.bestLap && (
-        <Text style={c.best} numberOfLines={1}>Best lap {formatLap(stats.bestLap.ms)}</Text>
-      )}
     </CardFrame>
   );
 }
@@ -107,47 +118,53 @@ export function ResultShareCard({ name, eventName, raceClass, bestPosition, moto
   motos: Array<{ motoName: string; position: number | null; dnf?: boolean; dns?: boolean }>;
   cardRef: React.RefObject<View | null>;
 }) {
+  const metal = podiumColor(bestPosition);
   return (
-    <CardFrame cardRef={cardRef}>
-      <Text style={c.eyebrow} numberOfLines={1}>{eventName.toUpperCase()}</Text>
-      <Text style={c.name} numberOfLines={1}>{name.toUpperCase()}</Text>
-      <Text style={c.sub}>{raceClass}</Text>
-      <Text style={c.bigPos}>{bestPosition ? `P${bestPosition}` : "—"}</Text>
-      <View style={c.motoList}>
-        {motos.slice(0, 4).map((m, i) => (
-          <View key={i} style={c.motoRow}>
-            <Text style={c.motoName} numberOfLines={1}>{m.motoName}</Text>
-            <Text style={c.motoPos}>{m.dns ? "DNS" : m.dnf ? "DNF" : m.position ? `P${m.position}` : "—"}</Text>
-          </View>
-        ))}
+    <CardFrame cardRef={cardRef} eyebrow={eventName} name={name} sub={raceClass}>
+      <View style={c.resultRow}>
+        <View style={[c.posBadge, { backgroundColor: metal ?? RED }]}>
+          <Text style={[c.posText, { color: metal ? "#14110A" : "#FFFFFF" }]}>{bestPosition ? `P${bestPosition}` : "—"}</Text>
+        </View>
+        <View style={c.motoList}>
+          {motos.slice(0, 4).map((m, i) => (
+            <View key={i} style={c.motoRow}>
+              <Text style={c.motoName} numberOfLines={1}>{m.motoName}</Text>
+              <Text style={c.motoPos}>{m.dns ? "DNS" : m.dnf ? "DNF" : m.position ? `P${m.position}` : "—"}</Text>
+            </View>
+          ))}
+        </View>
       </View>
     </CardFrame>
   );
 }
 
 const c = StyleSheet.create({
-  card: { width: CARD_W, height: CARD_H, backgroundColor: "#000", borderRadius: 18, padding: 20, alignItems: "center" },
-  banner: { width: 220, height: 70 },
-  rule: { width: 64, height: 3, backgroundColor: RED, marginTop: 8, marginBottom: 14, transform: [{ skewX: "-18deg" }] },
-  eyebrow: { color: "#BDBDBD", fontSize: 11, letterSpacing: 2, fontFamily: "Roboto_600SemiBold" },
-  name: { color: "#fff", fontSize: 24, marginTop: 4, fontFamily: "Roboto_700Bold" },
-  sub: { color: "#BDBDBD", fontSize: 12, marginTop: 2, fontFamily: "Roboto_400Regular" },
-  grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", marginTop: 14, gap: 8 },
-  tile: { width: 84, paddingVertical: 8, borderRadius: 10, backgroundColor: "#1A1A1A", alignItems: "center" },
-  tileValue: { color: "#fff", fontSize: 20, fontFamily: "Roboto_700Bold" },
-  tileLabel: { color: "#BDBDBD", fontSize: 10, marginTop: 2, fontFamily: "Roboto_500Medium" },
-  best: { color: "#fff", fontSize: 13, marginTop: 12, fontFamily: "Roboto_600SemiBold" },
-  bigPos: { color: "#fff", fontSize: 64, lineHeight: 70, marginTop: 6, fontFamily: "Roboto_700Bold" },
-  motoList: { alignSelf: "stretch", marginTop: 6, gap: 4 },
-  motoRow: { flexDirection: "row", justifyContent: "space-between", backgroundColor: "#1A1A1A", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
-  motoName: { color: "#BDBDBD", fontSize: 12, flex: 1, fontFamily: "Roboto_500Medium" },
-  motoPos: { color: "#fff", fontSize: 12, fontFamily: "Roboto_700Bold" },
-  footer: { position: "absolute", bottom: 12, color: "#8C8C8C", fontSize: 10, letterSpacing: 1, fontFamily: "Roboto_500Medium" },
+  card: { width: CARD_W, height: CARD_H, backgroundColor: "#161616", borderRadius: 18, overflow: "hidden" },
+  photo: { height: 220, justifyContent: "flex-end", overflow: "hidden", backgroundColor: "#242424" },
+  banner: { position: "absolute", top: 12, left: 12, width: 132, height: 42 },
+  photoText: { paddingHorizontal: 18, paddingBottom: 12 },
+  rule: { width: 72, height: 5, backgroundColor: RED, marginLeft: 18, transform: [{ skewX: "-20deg" }] },
+  body: { paddingHorizontal: 18, paddingTop: 14 },
+  eyebrow: { color: "#E6E6E6", fontSize: 12, letterSpacing: 1.6, textTransform: "uppercase", fontFamily: "Barlow_700Bold" },
+  name: { color: "#FFFFFF", fontSize: 32, lineHeight: 34, textTransform: "uppercase", fontFamily: "Barlow_800ExtraBold_Italic" },
+  sub: { color: "#E6E6E6", fontSize: 13, fontFamily: "Roboto_500Medium" },
+  grid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  tile: { width: 88, paddingVertical: 8, borderRadius: 10, backgroundColor: "#242424", alignItems: "center" },
+  tileValue: { color: "#FFFFFF", fontSize: 22, fontFamily: "Barlow_800ExtraBold_Italic" },
+  tileLabel: { color: "#A8A8A8", fontSize: 10, letterSpacing: 1, textTransform: "uppercase", fontFamily: "Barlow_700Bold" },
+  resultRow: { flexDirection: "row", gap: 14, alignItems: "flex-start" },
+  posBadge: { borderRadius: 10, paddingHorizontal: 16, height: 74, minWidth: 96, alignItems: "center", justifyContent: "center", transform: [{ skewX: "-8deg" }] },
+  posText: { fontSize: 52, lineHeight: 60, fontFamily: "Barlow_800ExtraBold_Italic" },
+  motoList: { flex: 1, gap: 5 },
+  motoRow: { flexDirection: "row", justifyContent: "space-between", backgroundColor: "#242424", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  motoName: { color: "#C8C8C8", fontSize: 12, flex: 1, fontFamily: "Roboto_500Medium" },
+  motoPos: { color: "#FFFFFF", fontSize: 13, fontFamily: "Barlow_800ExtraBold_Italic" },
+  footer: { position: "absolute", bottom: 12, right: 18, color: "#8C8C8C", fontSize: 11, letterSpacing: 1.4, textTransform: "uppercase", fontFamily: "Barlow_700Bold" },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", alignItems: "center", justifyContent: "center", gap: 20, padding: 24 },
   modalActions: { flexDirection: "row", gap: 12 },
   modalBtn: { minWidth: 120, alignItems: "center", backgroundColor: RED, borderRadius: 999, paddingVertical: 12, paddingHorizontal: 20 },
   modalCancel: { backgroundColor: "#333" },
-  modalBtnText: { color: "#fff", fontSize: 15, fontFamily: "Roboto_700Bold" },
+  modalBtnText: { color: "#fff", fontSize: 16, textTransform: "uppercase", letterSpacing: 1, fontFamily: "Barlow_700Bold" },
 });
 
 /** "Share result" button that opens a preview of the result card, then the share sheet. */

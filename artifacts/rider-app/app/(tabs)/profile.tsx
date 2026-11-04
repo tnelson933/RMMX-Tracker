@@ -549,7 +549,8 @@ function ProfileList() {
                     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
                       {([
                         ["edit-2", "Edit profile", `/rider/${profile.id}`],
-                        ["bar-chart-2", "Stats & managers", `/stats/${profile.id}`],
+                        ["user", "Racer profile", `/racer/${profile.id}`],
+                        ["bar-chart-2", "Career stats", `/stats/${profile.id}`],
                         ["tool", "Maintenance", `/maintenance/${profile.id}`],
                       ] as const).map(([icon, label, href]) => (
                         <Pressable
