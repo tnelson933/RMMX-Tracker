@@ -1,7 +1,7 @@
 import { API_BASE_URL } from "@/lib/apiBase";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Linking, Platform } from "react-native";
 import { NETWORK_ERROR_MESSAGE, postJson, serverErrorMessage } from "@/lib/friendlyErrors";
 
@@ -202,9 +202,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [biometricEnabled, setBiometricEnabledState] = useState(false);
 
+  // Requests wait for the saved sign-in to be restored at startup. Otherwise a
+  // screen opened straight from a link (or a notification) fetches before the
+  // token is loaded, gets "signed out", and never retries.
+  const tokenRef = useRef<string | null>(null);
+  const restored = useRef<{ done: boolean; promise: Promise<void>; resolve: () => void } | null>(null);
+  if (!restored.current) {
+    let resolve!: () => void;
+    const promise = new Promise<void>(r => { resolve = r; });
+    restored.current = { done: false, promise, resolve };
+  }
+  const markRestored = () => {
+    if (restored.current && !restored.current.done) {
+      restored.current.done = true;
+      restored.current.resolve();
+    }
+  };
+  // Every sign-in, sign-out and restore goes through here so the token used
+  // by riderFetch is current before any re-render.
+  const applyAccount = (acc: RiderAccount | null) => {
+    tokenRef.current = acc?.mobileToken ?? null;
+    setAccount(acc);
+  };
+
   const riderFetch = useCallback(
-    (path: string, options: RequestInit = {}): Promise<Response> => {
-      return authedFetch(path, account?.mobileToken ?? null, options);
+    async (path: string, options: RequestInit = {}): Promise<Response> => {
+      if (!restored.current!.done) await restored.current!.promise;
+      return authedFetch(path, tokenRef.current, options);
     },
     [account?.mobileToken],
   );
@@ -283,7 +307,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (token) {
         const acc = await validateAndLoad(token);
         if (acc) {
-          setAccount(acc);
+          applyAccount(acc);
           await loadProfiles(token);
           void tryRegisterPushToken(token);
         } else {
@@ -291,8 +315,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
       setIsLoading(false);
+      markRestored();
     }
-    void init();
+    void init().catch(() => { setIsLoading(false); markRestored(); });
   }, []);
 
   async function login(email: string, password: string): Promise<void> {
@@ -300,7 +325,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       { email: email.trim().toLowerCase(), password }, "Sign-in failed");
     const acc: RiderAccount = { id: data.id, email: data.email, mobileToken: data.mobileToken };
     await AsyncStorage.setItem(TOKEN_KEY, data.mobileToken);
-    setAccount(acc);
+    applyAccount(acc);
     // Refresh the saved credentials only when the rider opted into biometric sign-in
     if (biometricEnabled) {
       await secureSet(BIOMETRIC_EMAIL_SKEY, email.trim().toLowerCase());
@@ -336,7 +361,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       { email: email.trim().toLowerCase(), password }, "Couldn't create your account");
     const acc: RiderAccount = { id: data.id, email: data.email, mobileToken: data.mobileToken };
     await AsyncStorage.setItem(TOKEN_KEY, data.mobileToken);
-    setAccount(acc);
+    applyAccount(acc);
     void loadProfiles(data.mobileToken);
     void tryRegisterPushToken(data.mobileToken);
     return typeof data.linkedProfiles === "number" ? data.linkedProfiles : -1;
@@ -360,7 +385,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.multiRemove(keysToRemove);
     // Clear biometric only if it was enabled; don't clear the stored creds so
     // they stay ready if user re-enables after signing back in.
-    setAccount(null);
+    applyAccount(null);
     setProfiles([]);
     setSelectedProfileIdsState([]);
   }
