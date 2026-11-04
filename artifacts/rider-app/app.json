@@ -27,11 +27,11 @@
         "ITSAppUsesNonExemptEncryption": false,
         "NSFaceIDUsageDescription": "Use Face ID to sign in to RM Roost quickly and securely."
       },
-      "buildNumber": "6"
+      "buildNumber": "7"
     },
     "android": {
       "package": "com.rockymountain.riderapp",
-      "versionCode": 24,
+      "versionCode": 25,
       "googleServicesFile": "./google-services.json"
     },
     "web": {
