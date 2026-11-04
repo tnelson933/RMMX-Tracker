@@ -54,8 +54,8 @@ function Check({ on, colors }: { on: boolean; colors: Colors }) {
   );
 }
 
-function Tile({ icon, title, onPress, children, colors, a11y }: {
-  icon: React.ComponentProps<typeof Feather>["name"]; title: string; onPress: () => void; children: React.ReactNode; colors: Colors; a11y: string;
+function Tile({ title, onPress, children, colors, a11y }: {
+  title: string; onPress: () => void; children: React.ReactNode; colors: Colors; a11y: string;
 }) {
   return (
     <Pressable
@@ -67,9 +67,8 @@ function Tile({ icon, title, onPress, children, colors, a11y }: {
         backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border, opacity: pressed ? 0.75 : 1,
       })}
     >
-      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 4 }}>
-        <Feather name={icon} size={11} color={colors.primaryText} style={{ marginTop: 1 }} />
-        <Text numberOfLines={2} style={{ flex: 1, fontSize: 11, lineHeight: 13, fontFamily: fonts.display, letterSpacing: 0.3, textTransform: "uppercase", color: colors.mutedForeground }}>{title}</Text>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={{ flex: 1, fontSize: 10, lineHeight: 12, fontFamily: fonts.display, letterSpacing: 0, textTransform: "uppercase", color: colors.mutedForeground }}>{title}</Text>
       </View>
       <View style={{ flex: 1, justifyContent: "space-between", gap: 4 }}>{children}</View>
     </Pressable>
@@ -154,7 +153,7 @@ export function RiderCard({ profile, selected, isOnlyOne, onToggle }: {
       </View>
 
       <View style={{ flexDirection: "row", gap: 8 }}>
-        <Tile icon="user" title="Racer Profile" colors={colors} onPress={() => router.push(`/racer/${profile.id}` as never)}
+        <Tile title="Racer Profile" colors={colors} onPress={() => router.push(`/racer/${profile.id}` as never)}
           a11y={`Racer profile, ${followers} ${followers === 1 ? "follower" : "followers"}`}>
           {profile.bibNumber
             ? <NumberPlate number={profile.bibNumber} color={data?.plateColor} size={26} />
@@ -164,7 +163,7 @@ export function RiderCard({ profile, selected, isOnlyOne, onToggle }: {
           </Text>
         </Tile>
 
-        <Tile icon="bar-chart-2" title="Career Stats" colors={colors} onPress={() => router.push(`/stats/${profile.id}` as never)}
+        <Tile title="Career Stats" colors={colors} onPress={() => router.push(`/stats/${profile.id}` as never)}
           a11y={`Career stats${data?.avgFinish != null ? `, average finish P${data.avgFinish.toFixed(1)}` : ""}`}>
           {finishes.length >= 2
             ? <Sparkline values={finishes} color={colors.primaryText} />
@@ -174,7 +173,7 @@ export function RiderCard({ profile, selected, isOnlyOne, onToggle }: {
           </Text>
         </Tile>
 
-        <Tile icon="tool" title="Maintenance" colors={colors} onPress={() => router.push(`/maintenance/${profile.id}` as never)}
+        <Tile title="Maintenance" colors={colors} onPress={() => router.push(`/maintenance/${profile.id}` as never)}
           a11y={`Maintenance, ${next ? next.label : hasBike ? "set up maintenance" : "add your bike"}`}>
           <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: next ? statusColor : colors.border }} />
           <Text numberOfLines={2} style={{ fontSize: 12, color: next?.status === "overdue" ? colors.destructive : colors.foreground, fontFamily: fonts.semibold }}>

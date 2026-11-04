@@ -27,7 +27,7 @@ async function loadRider(riderId: number) {
   return rider ?? null;
 }
 
-// ── #4 Career stats (own and managed profiles: all results) ─────────────────
+// ── #4 Career stats (own and managed profiles: completed motos) ─────────────
 
 /**
  * Everything one rider card on the Profile tab / My Profiles needs, in one call:
@@ -42,7 +42,8 @@ router.get("/rider/profiles/:riderId/card", requireRiderAuth, async (req, res) =
   if (!(await canManageRider(account, rider))) return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   const [[extra], { stats, resume }, recent, [followers], maintenance] = await Promise.all([
     db.select({ plateColor: ridersTable.plateColor }).from(ridersTable).where(eq(ridersTable.id, rider.id)),
-    loadRacerResume(rider.id, false),
+    // Completed motos only, so a race still running doesn't count (matches the racer profile).
+    loadRacerResume(rider.id, true),
     loadResultsFeed([rider.id], 6),
     db.select({ n: count() }).from(riderFollowsTable).where(eq(riderFollowsTable.riderId, rider.id)),
     db.select({ itemName: riderMaintenanceTable.itemName, intervalDays: riderMaintenanceTable.intervalDays, lastServicedAt: riderMaintenanceTable.lastServicedAt })
@@ -66,7 +67,7 @@ router.get("/rider/profiles/:riderId/stats", requireRiderAuth, async (req, res) 
   const rider = await loadRider(Number(req.params.riderId));
   if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
   if (!(await canManageRider(account, rider))) return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
-  return res.json({ riderId: rider.id, name: `${rider.firstName} ${rider.lastName}`.trim(), stats: await loadCareerStats(rider.id, false) });
+  return res.json({ riderId: rider.id, name: `${rider.firstName} ${rider.lastName}`.trim(), stats: await loadCareerStats(rider.id, true) });
 });
 
 // ── #6 Profile managers ─────────────────────────────────────────────────────
