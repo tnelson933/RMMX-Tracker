@@ -39,6 +39,7 @@ export function RacerProfileSettings({ riderId }: { riderId: number }) {
     onSuccess: (updated: RiderProfileDetail) => {
       qc.setQueryData(["rider-profile-detail", riderId], (old: RiderProfileDetail | undefined) => ({ ...(old ?? updated), ...updated }));
       qc.invalidateQueries({ queryKey: ["rider-history", riderId] });
+      qc.invalidateQueries({ queryKey: ["racer", riderId] });
       setBio(null);
     },
   });

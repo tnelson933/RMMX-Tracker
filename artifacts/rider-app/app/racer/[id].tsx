@@ -1,8 +1,8 @@
 import { Feather } from "@expo/vector-icons";
 import { StatusBarBackdrop } from "@/components/StatusBarBackdrop";
 import { useBottomSpace } from "@/hooks/useBottomSpace";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import React, { useCallback, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -66,17 +66,28 @@ export default function RacerScreen() {
   const [data, setData] = useState<RacerProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setError(null);
+  const load = useCallback(async (refresh = false) => {
+    if (!refresh) setError(null);
     try {
       const r = await riderFetch(`/api/rider/riders/${id}/public`);
-      if (!r.ok) { setError(r.status === 404 ? "This rider has no results yet." : `Couldn't load this rider (error ${r.status}).`); return; }
+      if (!r.ok) {
+        // A failed background refresh keeps what's already on screen.
+        if (!refresh) setError(r.status === 404 ? "This rider has no results yet." : `Couldn't load this rider (error ${r.status}).`);
+        return;
+      }
       setData(await r.json());
+      setError(null);
     } catch {
-      setError(NETWORK_ERROR_MESSAGE);
+      if (!refresh) setError(NETWORK_ERROR_MESSAGE);
     }
   }, [id, riderFetch]);
-  useEffect(() => { void load(); }, [load]);
+  // Reload whenever the screen comes back into view, so edits made in the
+  // profile editor (photos, bio, plate colour) show straight away.
+  const loadedId = React.useRef<string | null>(null);
+  useFocusEffect(useCallback(() => {
+    void load(loadedId.current === id);
+    loadedId.current = id ?? null;
+  }, [load, id]));
 
   const toggle = useCallback(async () => {
     if (!data) return;
