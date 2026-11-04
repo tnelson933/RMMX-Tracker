@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import { RacerProfileSettings } from "@/components/RacerProfileSettings";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
@@ -28,6 +29,12 @@ interface RiderFull {
   id: number;
   firstName: string;
   lastName: string;
+  /** Racer profile (GET /rider/profiles/:id). */
+  bio?: string | null;
+  plateColor?: string | null;
+  profileVisibility?: "public" | "private" | null;
+  effectiveVisibility?: "public" | "private";
+  isMinor?: boolean;
   email: string | null;
   phone: string | null;
   dateOfBirth: string | null;
@@ -940,6 +947,23 @@ export default function RiderDetailScreen() {
             )}
             <Text style={s.heroEmail}>{rider.email}</Text>
           </View>
+
+          {/* ── Racer profile: visibility, plate colour, bio ─────────────── */}
+          {!editing && (
+            <RacerProfileSettings
+              key={`${rider.id}-${rider.bibNumber ?? ""}`}
+              riderId={rider.id}
+              riderFetch={riderFetch}
+              initial={{
+                bio: rider.bio ?? null,
+                plateColor: rider.plateColor ?? null,
+                profileVisibility: rider.profileVisibility ?? null,
+                effectiveVisibility: rider.effectiveVisibility ?? "public",
+                isMinor: rider.isMinor ?? false,
+                bibNumber: rider.bibNumber ?? null,
+              }}
+            />
+          )}
 
           {/* ── Personal Info ─────────────────────────────────────────────── */}
           <View style={s.section}>

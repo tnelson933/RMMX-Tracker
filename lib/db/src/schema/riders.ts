@@ -30,6 +30,11 @@ export const ridersTable = pgTable("riders", {
   skillLevel: text("skill_level"),
   raceTypes: json("race_types").$type<string[] | null>(),
   aiMaintenanceSuggestions: boolean("ai_maintenance_suggestions").notNull().default(false),
+  // Racer profile (deploy/migrations/0030-rider-profile.sql)
+  bio: text("bio"),
+  plateColor: text("plate_color"),
+  /** "public" | "private"; null = default (private under 18, public otherwise). */
+  profileVisibility: text("profile_visibility"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

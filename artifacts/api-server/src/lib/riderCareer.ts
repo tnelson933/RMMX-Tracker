@@ -4,6 +4,7 @@ import {
 } from "@workspace/db";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { computeCareerStats, cumulativeMs, type CareerStats } from "./careerStats";
+import { computeResume, effectiveVisibility, type RacerResume } from "./riderResume";
 import { sendPushNotifications } from "./push";
 import { logger } from "./logger";
 
@@ -15,6 +16,16 @@ const FINISH_SENTINEL = 999;
  * accounts (followers), since publication is separate from race status.
  */
 export async function loadCareerStats(riderId: number, publishedOnly: boolean): Promise<CareerStats> {
+  return (await loadCareer(riderId, publishedOnly, false)).stats;
+}
+
+/** Career stats plus the racer-profile résumé (highlights, badges, seasons, headline). */
+export async function loadRacerResume(riderId: number, publishedOnly: boolean): Promise<{ stats: CareerStats; resume: RacerResume }> {
+  const { stats, resume } = await loadCareer(riderId, publishedOnly, true);
+  return { stats, resume: resume! };
+}
+
+async function loadCareer(riderId: number, publishedOnly: boolean, withResume: boolean) {
   const where = publishedOnly
     ? and(eq(raceResultsTable.riderId, riderId), eq(motosTable.status, "completed"))
     : eq(raceResultsTable.riderId, riderId);
@@ -23,7 +34,8 @@ export async function loadCareerStats(riderId: number, publishedOnly: boolean): 
       motoId: raceResultsTable.motoId, motoType: motosTable.type, motoName: motosTable.name,
       position: raceResultsTable.position, dnf: raceResultsTable.dnf, dns: raceResultsTable.dns,
       lapTimes: raceResultsTable.lapTimes, eventId: raceResultsTable.eventId, eventName: eventsTable.name,
-      raceStyle: eventsTable.raceStyle,
+      raceStyle: eventsTable.raceStyle, eventDate: eventsTable.date, raceClass: raceResultsTable.raceClass,
+      track: sql<string | null>`coalesce(nullif(${eventsTable.trackName}, ''), nullif(${eventsTable.location}, ''))`,
     })
     .from(raceResultsTable)
     .leftJoin(motosTable, eq(raceResultsTable.motoId, motosTable.id))
@@ -43,11 +55,20 @@ export async function loadCareerStats(riderId: number, publishedOnly: boolean): 
     if (!fieldByMoto.has(f.motoId)) fieldByMoto.set(f.motoId, []);
     fieldByMoto.get(f.motoId)!.push(cum);
   }
-  return computeCareerStats(rows.map(r => ({
+  const stats = computeCareerStats(rows.map(r => ({
     motoId: r.motoId, motoType: r.motoType, position: r.position, dnf: r.dnf, dns: r.dns,
     lapTimes: (r.lapTimes as unknown[]) ?? [], eventId: r.eventId,
     eventName: r.eventName ?? `Event ${r.eventId}`, motoName: r.motoName ?? "Moto", raceStyle: r.raceStyle,
   })), fieldByMoto);
+  const resume = withResume
+    ? computeResume(rows.map(r => ({
+        motoId: r.motoId, motoType: r.motoType, position: r.position, dnf: r.dnf, dns: r.dns,
+        lapTimes: (r.lapTimes as unknown[]) ?? [], eventId: r.eventId,
+        eventName: r.eventName ?? `Event ${r.eventId}`, eventDate: String(r.eventDate ?? ""),
+        raceClass: r.raceClass, track: r.track ?? null,
+      })), fieldByMoto, stats)
+    : null;
+  return { stats, resume };
 }
 
 export interface FeedItem {
@@ -112,6 +133,7 @@ export async function searchPublicRiders(q: string, limit = 20) {
   const rows = await db
     .select({
       id: ridersTable.id, firstName: ridersTable.firstName, lastName: ridersTable.lastName,
+      dateOfBirth: ridersTable.dateOfBirth, profileVisibility: ridersTable.profileVisibility,
       lastRaced: sql<string>`max(${eventsTable.date})`,
       clubName: sql<string>`max(${clubsTable.name})`,
     })
@@ -124,8 +146,10 @@ export async function searchPublicRiders(q: string, limit = 20) {
     .where(sql`lower(${ridersTable.firstName} || ' ' || ${ridersTable.lastName}) like ${term}`)
     .groupBy(ridersTable.id)
     .orderBy(desc(sql`max(${eventsTable.date})`))
-    .limit(limit);
-  return rows.map(r => ({
+    .limit(limit * 2);
+  // Private profiles (under-18 by default) aren't listed in search.
+  const today = new Date().toISOString().slice(0, 10);
+  return rows.filter(r => effectiveVisibility(r, today) === "public").slice(0, limit).map(r => ({
     id: r.id, name: `${r.firstName} ${r.lastName}`.trim(),
     lastRaced: r.lastRaced ? String(r.lastRaced).slice(0, 10) : null, clubName: r.clubName ?? null,
   }));

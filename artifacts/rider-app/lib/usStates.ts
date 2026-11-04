@@ -18,3 +18,11 @@ export function toStateCode(value: string | null | undefined): string | null {
   if (/^[A-Za-z]{2}$/.test(trimmed)) return trimmed.toUpperCase();
   return STATE_CODES[trimmed.toLowerCase()] ?? null;
 }
+
+/** "ID" → "Idaho" (title case); unknown values come back as given. */
+export function stateNameFromCode(code: string | null | undefined): string | null {
+  if (!code) return null;
+  const c = toStateCode(code) ?? code;
+  const name = Object.keys(STATE_CODES).find(n => STATE_CODES[n] === c);
+  return name ? name.replace(/\b\w/g, ch => ch.toUpperCase()) : code;
+}

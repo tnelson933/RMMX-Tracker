@@ -71,6 +71,7 @@ import { eq, desc, asc, or, and, ne, inArray, sql, ilike, isNull, isNotNull } fr
 import { canManageRider, managedRiderIds, managedRiderWhere, ownsRider } from "../lib/riderAccess";
 import { EXPO_PUSH_TOKEN_RE } from "../lib/push";
 import { eventsTimingTags, type TimingTags } from "../lib/eventTimingTags";
+import { ageOn, BIO_MAX, effectiveVisibility, PLATE_COLORS } from "../lib/riderResume";
 
 const router = Router();
 
@@ -1203,6 +1204,12 @@ router.get("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
     homeState: rider.homeState ?? null,
     zip: rider.zip ?? null,
     raceTypes: (rider.raceTypes as string[] | null) ?? [],
+    // Racer profile
+    bio: rider.bio ?? null,
+    plateColor: rider.plateColor ?? null,
+    profileVisibility: rider.profileVisibility ?? null,
+    effectiveVisibility: effectiveVisibility(rider, new Date().toISOString().slice(0, 10)),
+    isMinor: (() => { const a = ageOn(rider.dateOfBirth, new Date().toISOString().slice(0, 10)); return a != null && a < 18; })(),
   });
 });
 
@@ -1275,6 +1282,25 @@ router.patch("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
     patch.mylapsTransponderId = typeof val === "string" ? val.trim() || null : null;
   }
 
+  // Racer profile: bio, number-plate colour and who can see the profile.
+  const profilePatch: { bio?: string | null; plateColor?: string | null; profileVisibility?: string | null } = {};
+  if ("bio" in req.body) {
+    const bio = typeof req.body.bio === "string" ? req.body.bio.trim() : "";
+    if (bio.length > BIO_MAX) return res.status(400).json({ error: `Keep the bio to ${BIO_MAX} characters or fewer.` });
+    profilePatch.bio = bio || null;
+  }
+  if ("plateColor" in req.body) {
+    const c = req.body.plateColor;
+    if (c != null && !(PLATE_COLORS as readonly string[]).includes(c)) return res.status(400).json({ error: "Pick one of the plate colors shown." });
+    profilePatch.plateColor = c ?? null;
+  }
+  if ("profileVisibility" in req.body) {
+    const v = req.body.profileVisibility;
+    if (v != null && v !== "public" && v !== "private") return res.status(400).json({ error: "Choose public or private for the racer profile." });
+    profilePatch.profileVisibility = v ?? null;
+  }
+  Object.assign(patch, profilePatch);
+
   // raceTypes: array of discipline strings
   if ("raceTypes" in req.body) {
     const val = req.body.raceTypes;
@@ -1303,6 +1329,7 @@ router.patch("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
     ...updated,
     myLapsTransponderNumber: updated.mylapsTransponderId ?? null,
     raceTypes: (updated.raceTypes as string[] | null) ?? [],
+    effectiveVisibility: effectiveVisibility(updated, new Date().toISOString().slice(0, 10)),
   });
 });
 

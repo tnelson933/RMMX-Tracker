@@ -1,9 +1,10 @@
 import { Router } from "express";
 import { db, riderAccountsTable, ridersTable, riderFollowsTable, riderProfileManagersTable } from "@workspace/db";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import { requireRiderAuth } from "./rider-portal";
 import { canManageRider, managedRiderIds, ownsRider } from "../lib/riderAccess";
-import { loadCareerStats, loadResultsFeed, searchPublicRiders } from "../lib/riderCareer";
+import { loadCareerStats, loadRacerResume, loadResultsFeed, searchPublicRiders } from "../lib/riderCareer";
+import { effectiveVisibility } from "../lib/riderResume";
 
 /**
  * Rider career stats, profile managers (multiple accounts per rider) and following.
@@ -101,22 +102,53 @@ router.get("/rider/riders/search", requireRiderAuth, async (req, res) => {
   return res.json({ riders: riders.map(r => ({ ...r, following: followed.has(r.id) })) });
 });
 
-/** Public view of any rider: results of finished races (unofficial until finalized). */
+/**
+ * Racer profile: results of finished races (unofficial until finalized), a résumé
+ * built from them, and the rider's profile details. Bio and home state show only
+ * on public profiles or to the rider's own managers; under-18 riders are private
+ * by default (lib/riderResume.ts effectiveVisibility).
+ */
 router.get("/rider/riders/:riderId/public", requireRiderAuth, async (req, res) => {
   const account = await currentAccount(req);
   if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
-  const rider = await loadRider(Number(req.params.riderId));
+  const riderId = Number(req.params.riderId);
+  if (!Number.isInteger(riderId) || riderId <= 0) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
+  const [rider] = await db.select({
+    id: ridersTable.id, email: ridersTable.email, firstName: ridersTable.firstName, lastName: ridersTable.lastName,
+    bibNumber: ridersTable.bibNumber, homeState: ridersTable.homeState, dateOfBirth: ridersTable.dateOfBirth,
+    bio: ridersTable.bio, plateColor: ridersTable.plateColor, profileVisibility: ridersTable.profileVisibility,
+  }).from(ridersTable).where(eq(ridersTable.id, riderId));
   if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
-  const [stats, recent, follow] = await Promise.all([
-    loadCareerStats(rider.id, true),
+  const [{ stats, resume }, recent, follow, [followers], isManager] = await Promise.all([
+    loadRacerResume(rider.id, true),
     loadResultsFeed([rider.id], 10),
     db.select({ id: riderFollowsTable.id }).from(riderFollowsTable)
       .where(and(eq(riderFollowsTable.riderAccountId, account.id), eq(riderFollowsTable.riderId, rider.id))),
+    db.select({ n: count() }).from(riderFollowsTable).where(eq(riderFollowsTable.riderId, rider.id)),
+    canManageRider(account, rider),
   ]);
-  if (stats.starts === 0 && recent.length === 0 && !(await canManageRider(account, rider))) {
+  if (stats.starts === 0 && recent.length === 0 && !isManager) {
     return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
   }
-  return res.json({ riderId: rider.id, name: `${rider.firstName} ${rider.lastName}`.trim(), following: follow.length > 0, stats, recent });
+  const visibility = effectiveVisibility(rider, new Date().toISOString().slice(0, 10));
+  const showPersonal = visibility === "public" || isManager;
+  return res.json({
+    riderId: rider.id,
+    name: `${rider.firstName} ${rider.lastName}`.trim(),
+    following: follow.length > 0,
+    followerCount: Number(followers?.n ?? 0),
+    stats,
+    recent,
+    resume,
+    profile: {
+      number: rider.bibNumber ?? null,
+      plateColor: rider.plateColor ?? null,
+      state: showPersonal ? rider.homeState ?? null : null,
+      bio: showPersonal ? rider.bio ?? null : null,
+    },
+    visibility,
+    isManager,
+  });
 });
 
 router.get("/rider/follows", requireRiderAuth, async (req, res) => {
