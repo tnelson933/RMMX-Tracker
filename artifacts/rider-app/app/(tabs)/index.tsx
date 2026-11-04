@@ -21,14 +21,15 @@ import {
   SeriesStandingsScreen,
   ViewState,
 } from "@/components/RaceSubScreens";
-import { RockyHomeWidget } from "@/components/RockyHomeWidget";
+import { FormStrip, FormTrendCard, NextRaceHero, RockyRow } from "@/components/HomeCards";
+import { pickNextRace } from "@/lib/home";
 import { FollowingFeed } from "@/components/FollowingFeed";
 import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
 import { NoProfileLinked } from "@/components/NoProfileLinked";
 import { EmptyState } from "@/components/EmptyState";
 import { PositionBadge } from "@/components/RaceStats";
-import { displayDate, placeLabel } from "@/lib/format";
+import { displayDate, localDateString, placeLabel } from "@/lib/format";
 import { EventCard, ResultCard } from "@/components/RaceCards";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -54,8 +55,10 @@ interface UpcomingEvent {
   eventId: number;
   eventName: string;
   eventDate: string | null;
+  eventEndDate?: string | null;
   eventState: string | null;
   eventLocation: string | null;
+  eventImageUrl?: string | null;
   status: string;
   registrations: { raceClass: string | null }[];
   isRegistered?: boolean;
@@ -158,8 +161,10 @@ export default function HomeScreen() {
             eventId: e.eventId,
             eventName: e.eventName,
             eventDate: e.eventDate ?? null,
+            eventEndDate: e.eventEndDate ?? null,
             eventState: e.eventState ?? null,
             eventLocation: e.eventLocation ?? null,
+            eventImageUrl: e.eventImageUrl ?? null,
             status: e.status,
             registrations: (e.registrations ?? []).map((r: any) => ({ raceClass: r.raceClass })),
             isRegistered: true,
@@ -269,6 +274,10 @@ export default function HomeScreen() {
 
   const hasProfile = profiles.length > 0;
   const hasStats = combinedEventsRaced > 0 || combinedTotalPoints > 0 || combinedBestPosition != null;
+  const todayYmd = localDateString();
+  const next = pickNextRace(upcoming, todayYmd);
+  const laterRaces = upcoming.filter(e => e.eventId !== next?.eventId);
+  const findRace = () => router.push("/(tabs)/my-races?filter=near_me" as any);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -308,61 +317,68 @@ export default function HomeScreen() {
         {/* ── No profile warning ── */}
         {!hasProfile && <NoProfileLinked variant="card" />}
 
-        {/* ── Rocky: AI mechanic, up front ── */}
-        <View style={{ marginTop: 18 }}>
-          <RockyHomeWidget />
+        {/* ── Next race: photo hero with a countdown ── */}
+        {hasProfile && (
+          loading && upcoming.length === 0 && recentResults.length === 0 ? (
+            <View style={{ alignItems: "center", paddingVertical: 40 }}>
+              <ActivityIndicator color={colors.primaryText} size="small" />
+            </View>
+          ) : (
+            <View style={{ marginTop: 4 }}>
+              <NextRaceHero
+                race={next ? {
+                  ...next,
+                  classes: [...new Set((next.registrations ?? []).map(r => r.raceClass).filter((c): c is string => !!c))],
+                } : null}
+                todayYmd={todayYmd}
+                onOpen={() => next && router.push(`/event/${next.eventId}` as any)}
+                onFind={findRace}
+              />
+            </View>
+          )
+        )}
+
+        {/* ── Recent form and one trend ── */}
+        {hasProfile && allHistory.length > 0 && (
+          <View style={{ gap: 12, marginTop: 14 }}>
+            <FormStrip history={allHistory} onOpen={ev => pushView({ type: "event_detail", event: ev })} />
+            <FormTrendCard history={allHistory} />
+          </View>
+        )}
+
+        {/* ── Other booked races ── */}
+        {hasProfile && laterRaces.length > 0 && (
+          <View style={{ marginTop: 20 }}>
+            <SectionHeader icon="calendar" title="Also coming up" colors={colors} />
+            {laterRaces.map(e => <UpcomingEventCard key={e.eventId} event={e} colors={colors} onPress={() => router.push(`/event/${e.eventId}` as any)} />)}
+          </View>
+        )}
+
+        {/* ── Last race ── */}
+        {hasProfile && recentResults.length > 0 && (
+          <View style={{ marginTop: 20 }}>
+            <SectionHeader icon="award" title="Last race" colors={colors} />
+            <RecentResultCard
+              result={recentResults[0]}
+              colors={colors}
+              onPress={() => pushView({ type: "event_detail", event: recentResults[0] })}
+            />
+          </View>
+        )}
+        {hasProfile && !loading && allHistory.length === 0 && (
+          <EmptyState
+            variant="compact"
+            icon="award"
+            title="No results yet"
+            message="Finishes, points and laps land here after your first race."
+            primary={{ label: "Find a race", onPress: findRace }}
+          />
+        )}
+
+        {/* ── Rocky: one row (he also floats on every screen) ── */}
+        <View style={{ marginTop: 16, marginBottom: 16 }}>
+          <RockyRow />
         </View>
-
-        {/* ── Upcoming events ── */}
-        {hasProfile && (
-          <>
-            <SectionHeader icon="calendar" title="My Upcoming Events" colors={colors} />
-            {loading && upcoming.length === 0 ? (
-              <View style={{ alignItems: "center", paddingVertical: 20 }}>
-                <ActivityIndicator color={colors.primaryText} size="small" />
-              </View>
-            ) : upcoming.length > 0 ? (
-              upcoming.map(e => <UpcomingEventCard key={e.eventId} event={e} colors={colors} onPress={() => router.push(`/event/${e.eventId}` as any)} />)
-            ) : (
-              <EmptyState
-                variant="compact"
-                icon="flag"
-                title="No races booked"
-                message="Find an open race near you and lock in your gate."
-                primary={{ label: "Find a race", onPress: () => router.push("/(tabs)/my-races?filter=near_me" as any) }}
-              />
-            )}
-          </>
-        )}
-
-        {/* ── Recent results ── */}
-        {hasProfile && (
-          <>
-            <SectionHeader icon="award" title="Recent Results" colors={colors} />
-            {loading && recentResults.length === 0 ? (
-              <View style={{ alignItems: "center", paddingVertical: 20 }}>
-                <ActivityIndicator color={colors.primaryText} size="small" />
-              </View>
-            ) : recentResults.length > 0 ? (
-              recentResults.map((r, i) => (
-                <RecentResultCard
-                  key={`${r.eventId}-${i}`}
-                  result={r}
-                  colors={colors}
-                  onPress={() => pushView({ type: "event_detail", event: r })}
-                />
-              ))
-            ) : (
-              <EmptyState
-                variant="compact"
-                icon="award"
-                title="No results yet"
-                message="Finishes, points and laps land here after your first race."
-                primary={{ label: "Find a race", onPress: () => router.push("/(tabs)/my-races?filter=near_me" as any) }}
-              />
-            )}
-          </>
-        )}
 
         {/* ── Riders you follow ── */}
         {hasProfile && <FollowingFeed refreshKey={feedRefreshKey} />}

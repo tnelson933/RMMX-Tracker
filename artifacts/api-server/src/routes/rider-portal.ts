@@ -2215,6 +2215,8 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
       eventEndDate: event.endDate ?? null,
       eventState: event.state ?? null,
       eventLocation: event.location ?? null,
+      /** Organizer's event image ("/api/storage/..." path), for the app's next-race hero. */
+      eventImageUrl: event.imageUrl ?? null,
       status: event.status,
       raceStyle: event.raceStyle ?? null,
       classStartTimes: classStartTimesByEvent.get(event.id) ?? {},

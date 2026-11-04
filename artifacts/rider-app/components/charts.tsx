@@ -27,8 +27,10 @@ export interface ChartMark { index: number; value: number; color: string; label?
  * the top (positions: P1 at the top). `band` shades a value range (the podium).
  */
 export function LineChart({
-  xLabels, series, yMin, yMax, yTicks, yFormat, invert, band, marks, height = 128, accessibilityLabel,
+  xLabels, series, yMin, yMax, yTicks, yFormat, invert, band, marks, height = 128, accessibilityLabel, padLeft = 42,
 }: {
+  /** Room for the value axis; use a small value for sparklines without ticks. */
+  padLeft?: number;
   xLabels: string[];
   series: LineSeries[];
   yMin: number;
@@ -43,7 +45,7 @@ export function LineChart({
 }) {
   const colors = useColors();
   const [width, setWidth] = useState(0);
-  const L = 42, R = 10, T = 14, B = 20;
+  const L = padLeft, R = 10, T = 14, B = 20;
   const n = xLabels.length;
   const x = (i: number) => L + (n <= 1 ? (width - L - R) / 2 : (i * (width - L - R)) / (n - 1));
   const span = yMax - yMin || 1;
@@ -79,11 +81,18 @@ export function LineChart({
               </SvgText>
             </React.Fragment>
           ))}
-          {xLabels.map((lab, i) => (i % every === 0 || i === n - 1) && (
-            <SvgText key={`x${i}`} x={x(i)} y={height - 5} fontSize={10} fill={colors.mutedForeground} textAnchor="middle" fontFamily={fonts.medium}>
-              {lab}
-            </SvgText>
-          ))}
+          {xLabels.map((lab, i) => {
+            if (!(i % every === 0 || i === n - 1)) return null;
+            // Long labels (dates) at the ends are anchored inward so they aren't clipped.
+            const long = lab.length > 3;
+            const anchor = long && n > 1 && i === n - 1 ? "end" : long && i === 0 && L < 30 ? "start" : "middle";
+            const dx = anchor === "end" ? 4 : anchor === "start" ? -4 : 0;
+            return (
+              <SvgText key={`x${i}`} x={x(i) + dx} y={height - 5} fontSize={10} fill={colors.mutedForeground} textAnchor={anchor} fontFamily={fonts.medium}>
+                {lab}
+              </SvgText>
+            );
+          })}
           {series.map((s, si) => {
             const pts = s.data.map((v, i) => (v == null ? null : ([x(i), y(v)] as const))).filter((p): p is readonly [number, number] => p != null);
             if (pts.length === 0) return null;

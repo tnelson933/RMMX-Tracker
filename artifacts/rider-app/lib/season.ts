@@ -86,7 +86,19 @@ export function seasonRounds(events: SeasonEvent[], year: string, raceClass: str
   return events
     .filter(e => yearOf(e.eventDate) === year && e.raceClass === raceClass)
     .sort((a, b) => a.eventDate.localeCompare(b.eventDate))
-    .map(e => {
+    .map(eventRound);
+}
+
+/** The most recent races in any class, oldest first (Home's recent form). */
+export function recentRounds(events: SeasonEvent[], count: number): SeasonRound[] {
+  return [...events]
+    .sort((a, b) => a.eventDate.localeCompare(b.eventDate))
+    .slice(-count)
+    .map(eventRound);
+}
+
+/** One race's finish, points, pace and lap spread. */
+export function eventRound(e: SeasonEvent): SeasonRound {
       const races = e.motos.filter(isRace);
       const finishes = races.filter(m => !m.dnf && !m.dns && m.position != null).map(m => m.position!);
       const pace: number[] = [];
@@ -112,7 +124,6 @@ export function seasonRounds(events: SeasonEvent[], year: string, raceClass: str
         pacePct: pacePct == null ? null : Math.round(pacePct * 10) / 10,
         spreadMs: spreadMs == null ? null : Math.round(spreadMs),
       };
-    });
 }
 
 const P = (v: number) => `P${Math.round(v)}`;
@@ -141,7 +152,8 @@ export function pointsTakeaway(rounds: SeasonRound[], series?: { seriesName: str
     : `${total} points in ${rounds.length} races. Best: ${best.points} at ${best.eventName}.`;
 }
 
-export function paceTakeaway(rounds: SeasonRound[]): string | null {
+/** `scope` names the span for "your best …": "this season", or "in your last 5 races" on Home. */
+export function paceTakeaway(rounds: SeasonRound[], scope = "this season"): string | null {
   const r = rounds.filter(x => x.pacePct != null);
   if (r.length === 0) return null;
   const last = r[r.length - 1];
@@ -149,7 +161,7 @@ export function paceTakeaway(rounds: SeasonRound[]): string | null {
   if (last.pacePct! <= 0) return "Matched the winner's pace in your last race.";
   if (r.length === 1) return `${fmt(last.pacePct!)} off the winner's pace.`;
   const best = r.reduce((a, b) => (b.pacePct! < a.pacePct! ? b : a));
-  if (best === last) return `${fmt(last.pacePct!)} off the winner's pace, your best this season.`;
+  if (best === last) return `${fmt(last.pacePct!)} off the winner's pace, your best ${scope}.`;
   return `${fmt(last.pacePct!)} off the winner's pace. Best: ${fmt(best.pacePct!)} at ${best.eventName}.`;
 }
 
