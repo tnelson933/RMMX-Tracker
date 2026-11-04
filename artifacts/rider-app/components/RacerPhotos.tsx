@@ -2,10 +2,16 @@
  * Profile photo and background photo on the rider's racer profile settings.
  * Choose from the library or take one with the camera (permission is asked
  * only when tapped), crop, shrink to a sensible size, then upload.
+ *
+ * The picker and manipulator are native modules added after store build 1.0.21.
+ * They're loaded only when the running build has them, so this screen is safe
+ * to ship over the air: on an older build the photos still show, and the
+ * Choose / Take photo buttons are replaced by a note to update the app.
  */
 import { Feather } from "@expo/vector-icons";
-import * as ImageManipulator from "expo-image-manipulator";
-import * as ImagePicker from "expo-image-picker";
+import { requireOptionalNativeModule } from "expo";
+import type * as ImageManipulatorT from "expo-image-manipulator";
+import type * as ImagePickerT from "expo-image-picker";
 import React, { useState } from "react";
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, Text, View } from "react-native";
 
@@ -13,6 +19,18 @@ import { CoverBackdrop, RiderAvatar } from "@/components/RiderPhoto";
 import { PhotoFade } from "@/components/StockBackdrop";
 import { fonts } from "@/constants/fonts";
 import { useColors } from "@/hooks/useColors";
+
+/** True when this build includes the photo picker and manipulator (always on web). */
+export const PHOTO_PICKER_AVAILABLE = Platform.OS === "web" || (
+  requireOptionalNativeModule("ExponentImagePicker") != null &&
+  requireOptionalNativeModule("ExpoImageManipulator") != null
+);
+
+// Loaded on first use only: importing them on a build without the native code throws.
+/* eslint-disable @typescript-eslint/no-require-imports */
+const loadPicker = () => require("expo-image-picker") as typeof ImagePickerT;
+const loadManipulator = () => require("expo-image-manipulator") as typeof ImageManipulatorT;
+/* eslint-enable @typescript-eslint/no-require-imports */
 
 type Kind = "avatar" | "cover";
 type Source = "library" | "camera";
@@ -27,8 +45,9 @@ function say(title: string, message: string, settings = false) {
     : undefined);
 }
 
-async function pick(kind: Kind, source: Source): Promise<ImagePicker.ImagePickerAsset | null> {
-  const options: ImagePicker.ImagePickerOptions = {
+async function pick(kind: Kind, source: Source): Promise<ImagePickerT.ImagePickerAsset | null> {
+  const ImagePicker = loadPicker();
+  const options: ImagePickerT.ImagePickerOptions = {
     mediaTypes: ["images"],
     // A square crop for the headshot. iOS only offers a square crop, so the
     // background isn't cropped there (it's shown with "cover" anyway).
@@ -57,7 +76,8 @@ async function pick(kind: Kind, source: Source): Promise<ImagePicker.ImagePicker
 }
 
 /** JPEG no wider than the kind's limit, about 80% quality. */
-async function shrink(kind: Kind, asset: ImagePicker.ImagePickerAsset): Promise<string> {
+async function shrink(kind: Kind, asset: ImagePickerT.ImagePickerAsset): Promise<string> {
+  const ImageManipulator = loadManipulator();
   const actions = asset.width > MAX_WIDTH[kind] ? [{ resize: { width: MAX_WIDTH[kind] } }] : [];
   const out = await ImageManipulator.manipulateAsync(asset.uri, actions, { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG });
   return out.uri;
@@ -132,6 +152,16 @@ export function RacerPhotos({ riderId, name, initial, riderFetch, onChanged }: {
         <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: fonts.semibold }}>{text}</Text>
       </Pressable>
     );
+    if (!PHOTO_PICKER_AVAILABLE) {
+      return (
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+          {has && btn("trash-2", "Remove", () => { void remove(kind); }, `Remove the ${what}`)}
+          <Text style={{ flexShrink: 1, fontSize: 12, lineHeight: 17, color: colors.mutedForeground, fontFamily: fonts.regular }}>
+            Update RM Roost from the app store to add photos here, or add them on rmroost.com.
+          </Text>
+        </View>
+      );
+    }
     return (
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
         {btn("image", "Choose", () => { void choose(kind, "library"); }, `Choose a ${what}`)}
