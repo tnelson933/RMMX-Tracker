@@ -129,7 +129,7 @@ export default function OrganizationsScreen() {
       fontSize: 17,
       fontWeight: "700",
       color: colors.foreground,
-      fontFamily: "Inter_700Bold",
+      fontFamily: "Roboto_700Bold",
     },
     scroll: { flex: 1 },
     content: {
@@ -141,7 +141,7 @@ export default function OrganizationsScreen() {
     description: {
       fontSize: 13,
       color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
+      fontFamily: "Roboto_400Regular",
       lineHeight: 18,
     },
     card: {
@@ -176,18 +176,18 @@ export default function OrganizationsScreen() {
       fontSize: 15,
       fontWeight: "700",
       color: colors.foreground,
-      fontFamily: "Inter_700Bold",
+      fontFamily: "Roboto_700Bold",
     },
     orgState: {
       fontSize: 12,
       color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
+      fontFamily: "Roboto_400Regular",
       marginTop: 1,
     },
     notifLabel: {
       fontSize: 12,
       color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
+      fontFamily: "Roboto_400Regular",
     },
     emptyBox: {
       backgroundColor: colors.card,
@@ -202,12 +202,12 @@ export default function OrganizationsScreen() {
       fontSize: 16,
       fontWeight: "700",
       color: colors.foreground,
-      fontFamily: "Inter_700Bold",
+      fontFamily: "Roboto_700Bold",
     },
     emptyText: {
       fontSize: 13,
       color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
+      fontFamily: "Roboto_400Regular",
       textAlign: "center",
       lineHeight: 18,
     },
@@ -228,7 +228,7 @@ export default function OrganizationsScreen() {
 
       {loading ? (
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-          <ActivityIndicator color={colors.primary} />
+          <ActivityIndicator color={colors.primaryText} />
         </View>
       ) : (
         <ScrollView
@@ -265,7 +265,7 @@ export default function OrganizationsScreen() {
                   <View style={s.orgRow}>
                     {/* Club icon */}
                     <View style={s.iconBox}>
-                      <Feather name="flag" size={18} color={colors.primary} />
+                      <Feather name="flag" size={18} color={colors.primaryText} />
                     </View>
 
                     {/* Club info */}
@@ -280,7 +280,7 @@ export default function OrganizationsScreen() {
                     <View style={{ alignItems: "flex-end", gap: 2 }}>
                       <Text style={s.notifLabel}>Notifications</Text>
                       {toggling.has(org.clubId) ? (
-                        <ActivityIndicator size="small" color={colors.primary} style={{ marginRight: 4 }} />
+                        <ActivityIndicator size="small" color={colors.primaryText} style={{ marginRight: 4 }} />
                       ) : (
                         <Switch
                           value={org.notificationsEnabled}

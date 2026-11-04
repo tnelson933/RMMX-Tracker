@@ -103,8 +103,8 @@ function RecentResultCard({ result, colors, onPress }: { result: EventHistory; c
 function SectionHeader({ icon, title, colors }: { icon: string; title: string; colors: ReturnType<typeof useColors> }) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginHorizontal: 16, marginBottom: 10, marginTop: 4 }}>
-      <Feather name={icon as any} size={12} color={colors.primary} />
-      <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>{title}</Text>
+      <Feather name={icon as any} size={12} color={colors.primaryText} />
+      <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>{title}</Text>
     </View>
   );
 }
@@ -290,11 +290,11 @@ export default function HomeScreen() {
 
           {/* Greeting */}
           <View style={{ marginTop: 14 }}>
-            <Text style={{ fontSize: 24, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: 0.8, textTransform: "uppercase" }} numberOfLines={1} adjustsFontSizeToFit>
+            <Text style={{ fontSize: 24, fontWeight: "800", color: colors.foreground, fontFamily: "Barlow_800ExtraBold", letterSpacing: 0.8, textTransform: "uppercase" }} numberOfLines={1} adjustsFontSizeToFit>
               {primaryProfile ? greeting(primaryProfile.firstName) : "Welcome Back!"}
             </Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginTop: 2 }}>
-              <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+              <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
                 {fmtToday()}{primaryProfile && hasStats ? " · Let's ride" : ""}
               </Text>
             </View>
@@ -319,7 +319,7 @@ export default function HomeScreen() {
             <SectionHeader icon="calendar" title="My Upcoming Events" colors={colors} />
             {loading && upcoming.length === 0 ? (
               <View style={{ alignItems: "center", paddingVertical: 20 }}>
-                <ActivityIndicator color={colors.primary} size="small" />
+                <ActivityIndicator color={colors.primaryText} size="small" />
               </View>
             ) : upcoming.length > 0 ? (
               upcoming.map(e => <UpcomingEventCard key={e.eventId} event={e} colors={colors} onPress={() => router.push(`/event/${e.eventId}` as any)} />)
@@ -341,7 +341,7 @@ export default function HomeScreen() {
             <SectionHeader icon="award" title="Recent Results" colors={colors} />
             {loading && recentResults.length === 0 ? (
               <View style={{ alignItems: "center", paddingVertical: 20 }}>
-                <ActivityIndicator color={colors.primary} size="small" />
+                <ActivityIndicator color={colors.primaryText} size="small" />
               </View>
             ) : recentResults.length > 0 ? (
               recentResults.map((r, i) => (

@@ -227,7 +227,7 @@ function StatePickerField({
                   <Text style={{ fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 13, width: 32, color: colors.foreground }}>{item.code}</Text>
                   <Text style={{ fontSize: 14, color: colors.foreground, flex: 1 }}>{item.name}</Text>
                   {(editValue ?? "").toUpperCase() === item.code && (
-                    <Feather name="check" size={16} color={colors.primary} />
+                    <Feather name="check" size={16} color={colors.primaryText} />
                   )}
                 </Pressable>
               )}
@@ -513,7 +513,7 @@ export default function RiderDetailScreen() {
       fontSize: 17,
       fontWeight: "700",
       color: colors.foreground,
-      fontFamily: "Inter_700Bold",
+      fontFamily: "Roboto_700Bold",
     },
     editBtn: {
       paddingHorizontal: 14,
@@ -529,7 +529,7 @@ export default function RiderDetailScreen() {
     editBtnText: {
       fontSize: 13,
       color: colors.foreground,
-      fontFamily: "Inter_600SemiBold",
+      fontFamily: "Roboto_600SemiBold",
     },
     saveBtn: {
       paddingHorizontal: 14,
@@ -540,7 +540,7 @@ export default function RiderDetailScreen() {
     saveBtnText: {
       fontSize: 13,
       color: "#fff",
-      fontFamily: "Inter_600SemiBold",
+      fontFamily: "Roboto_600SemiBold",
     },
     cancelBtn: {
       paddingHorizontal: 14,
@@ -553,7 +553,7 @@ export default function RiderDetailScreen() {
     cancelBtnText: {
       fontSize: 13,
       color: colors.foreground,
-      fontFamily: "Inter_400Regular",
+      fontFamily: "Roboto_400Regular",
     },
     scroll: { flex: 1 },
     scrollContent: {
@@ -584,17 +584,17 @@ export default function RiderDetailScreen() {
       fontSize: 22,
       fontWeight: "800",
       color: colors.foreground,
-      fontFamily: "Inter_700Bold",
+      fontFamily: "Roboto_700Bold",
     },
     heroBib: {
       fontSize: 14,
       color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
+      fontFamily: "Roboto_400Regular",
     },
     heroEmail: {
       fontSize: 12,
       color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
+      fontFamily: "Roboto_400Regular",
       marginTop: 2,
     },
     section: {
@@ -618,7 +618,7 @@ export default function RiderDetailScreen() {
       fontSize: 11,
       fontWeight: "700",
       color: colors.mutedForeground,
-      fontFamily: "Inter_700Bold",
+      fontFamily: "Roboto_700Bold",
       textTransform: "uppercase",
       letterSpacing: 0.8,
     },
@@ -636,7 +636,7 @@ export default function RiderDetailScreen() {
       fontSize: 10,
       fontWeight: "700",
       color: colors.mutedForeground,
-      fontFamily: "Inter_700Bold",
+      fontFamily: "Roboto_700Bold",
       textTransform: "uppercase",
       letterSpacing: 0.6,
       marginBottom: 4,
@@ -644,18 +644,18 @@ export default function RiderDetailScreen() {
     fieldValue: {
       fontSize: 15,
       color: colors.foreground,
-      fontFamily: "Inter_400Regular",
+      fontFamily: "Roboto_400Regular",
     },
     fieldEmpty: {
       fontSize: 15,
       color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
+      fontFamily: "Roboto_400Regular",
       fontStyle: "italic",
     },
     fieldInput: {
       fontSize: 15,
       color: colors.foreground,
-      fontFamily: "Inter_400Regular",
+      fontFamily: "Roboto_400Regular",
       borderWidth: StyleSheet.hairlineWidth * 2,
       borderColor: colors.primary,
       borderRadius: 8,
@@ -666,7 +666,7 @@ export default function RiderDetailScreen() {
     fieldInputMulti: {
       fontSize: 14,
       color: colors.foreground,
-      fontFamily: "Inter_400Regular",
+      fontFamily: "Roboto_400Regular",
       borderWidth: StyleSheet.hairlineWidth * 2,
       borderColor: colors.primary,
       borderRadius: 8,
@@ -705,13 +705,13 @@ export default function RiderDetailScreen() {
     brandBtnText: {
       fontSize: 12,
       fontWeight: "800",
-      fontFamily: "Inter_700Bold",
+      fontFamily: "Roboto_700Bold",
       letterSpacing: 0.4,
     },
     brandOtherInput: {
       fontSize: 14,
       color: colors.foreground,
-      fontFamily: "Inter_400Regular",
+      fontFamily: "Roboto_400Regular",
       borderWidth: StyleSheet.hairlineWidth * 2,
       borderColor: colors.border,
       borderRadius: 8,
@@ -734,7 +734,7 @@ export default function RiderDetailScreen() {
     brandBadgeText: {
       fontSize: 12,
       fontWeight: "800",
-      fontFamily: "Inter_700Bold",
+      fontFamily: "Roboto_700Bold",
     },
     rfidRow: {
       paddingHorizontal: 16,
@@ -755,7 +755,7 @@ export default function RiderDetailScreen() {
       flex: 1,
       fontSize: 14,
       color: colors.foreground,
-      fontFamily: "Inter_400Regular",
+      fontFamily: "Roboto_400Regular",
       borderWidth: StyleSheet.hairlineWidth * 2,
       borderColor: colors.primary,
       borderRadius: 8,
@@ -793,7 +793,7 @@ export default function RiderDetailScreen() {
       flex: 1,
       fontSize: 13,
       color: colors.destructive,
-      fontFamily: "Inter_400Regular",
+      fontFamily: "Roboto_400Regular",
     },
     savedBanner: {
       backgroundColor: colors.successTint,
@@ -806,12 +806,12 @@ export default function RiderDetailScreen() {
     savedText: {
       fontSize: 13,
       color: colors.success,
-      fontFamily: "Inter_600SemiBold",
+      fontFamily: "Roboto_600SemiBold",
     },
     emailNote: {
       fontSize: 12,
       color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular",
+      fontFamily: "Roboto_400Regular",
       textAlign: "center",
       paddingHorizontal: 8,
       lineHeight: 18,
@@ -835,7 +835,7 @@ export default function RiderDetailScreen() {
           <Text style={s.headerTitle}>Rider Profile</Text>
         </View>
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-          <ActivityIndicator color={colors.primary} />
+          <ActivityIndicator color={colors.primaryText} />
         </View>
       </View>
     );
@@ -928,7 +928,7 @@ export default function RiderDetailScreen() {
           {/* Hero card */}
           <View style={s.heroCard}>
             <View style={s.heroAvatar}>
-              <Feather name="user" size={28} color={colors.primary} />
+              <Feather name="user" size={28} color={colors.primaryText} />
             </View>
             <Text style={s.heroName}>
               {editing && form

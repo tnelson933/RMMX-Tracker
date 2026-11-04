@@ -135,14 +135,14 @@ function RiderRow({ title, subtitle, following, onToggle, onOpen, colors }: {
         <Feather name="user" size={16} color={colors.mutedForeground} />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 15, color: colors.foreground, fontFamily: "Inter_600SemiBold" }} numberOfLines={1}>{title}</Text>
-        {!!subtitle && <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }} numberOfLines={1}>{subtitle}</Text>}
+        <Text style={{ fontSize: 15, color: colors.foreground, fontFamily: "Roboto_600SemiBold" }} numberOfLines={1}>{title}</Text>
+        {!!subtitle && <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }} numberOfLines={1}>{subtitle}</Text>}
       </View>
       <Pressable onPress={onToggle} hitSlop={6} style={({ pressed }) => ({
         paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, opacity: pressed ? 0.7 : 1,
         backgroundColor: following ? "transparent" : colors.primary, borderWidth: 1, borderColor: following ? colors.border : colors.primary,
       })}>
-        <Text style={{ fontSize: 13, color: following ? colors.foreground : "#fff", fontFamily: "Inter_700Bold" }}>{following ? "Following" : "Follow"}</Text>
+        <Text style={{ fontSize: 13, color: following ? colors.foreground : "#fff", fontFamily: "Roboto_700Bold" }}>{following ? "Following" : "Follow"}</Text>
       </Pressable>
     </Pressable>
   );
@@ -152,10 +152,10 @@ const styles = (colors: ReturnType<typeof useColors>, insets: { bottom: number }
   root: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, gap: 12 },
   backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.muted, alignItems: "center", justifyContent: "center" },
-  headerTitle: { flex: 1, fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" },
+  headerTitle: { flex: 1, fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" },
   content: { padding: 16, paddingBottom: insets.bottom + 32, gap: 10 },
   searchBox: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.card, borderRadius: 999, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14 },
-  searchInput: { flex: 1, paddingVertical: 12, color: colors.foreground, fontFamily: "Inter_400Regular" },
-  section: { fontSize: 13, letterSpacing: 1.5, textTransform: "uppercase", color: colors.mutedForeground, fontFamily: "Inter_700Bold", marginTop: 10 },
-  muted: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", lineHeight: 17 },
+  searchInput: { flex: 1, paddingVertical: 12, color: colors.foreground, fontFamily: "Roboto_400Regular" },
+  section: { fontSize: 14, letterSpacing: 1.5, textTransform: "uppercase", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", marginTop: 10 },
+  muted: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", lineHeight: 17 },
 });

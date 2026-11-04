@@ -33,9 +33,9 @@ export function FollowingFeed({ refreshKey }: { refreshKey: number }) {
     <View style={{ marginBottom: 24 }}>
       <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, marginBottom: 10, gap: 8 }}>
         <Feather name="users" size={14} color={colors.mutedForeground} />
-        <Text style={{ flex: 1, fontSize: 13, letterSpacing: 1.2, textTransform: "uppercase", color: colors.mutedForeground, fontFamily: "Inter_700Bold" }}>Following</Text>
+        <Text style={{ flex: 1, fontSize: 14, letterSpacing: 1.2, textTransform: "uppercase", color: colors.mutedForeground, fontFamily: "Barlow_700Bold" }}>Following</Text>
         <Pressable onPress={() => router.push("/follow" as any)} hitSlop={8}>
-          <Text style={{ fontSize: 13, color: colors.primary, fontFamily: "Inter_600SemiBold" }}>Find riders</Text>
+          <Text style={{ fontSize: 13, color: colors.primaryText, fontFamily: "Roboto_600SemiBold" }}>Find riders</Text>
         </Pressable>
       </View>
       {items && items.length === 0 ? (

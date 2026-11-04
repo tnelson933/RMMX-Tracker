@@ -15,6 +15,7 @@ import { useColors } from "@/hooks/useColors";
 import { displayDate } from "@/lib/format";
 import { ResultCard, ResultHero } from "@/components/RaceCards";
 import { PositionBadge } from "@/components/RaceStats";
+import { MotoChips, MotoReport, RaceReportHero } from "@/components/RaceReport";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -66,6 +67,10 @@ export interface MotoResult {
   totalTime: string | null;
   lapTimes: string[];
   lapGaps?: Array<{ leader: number | null; ahead: number | null }>;
+  /** Running position at the end of each lap (1 = leading). */
+  positionByLap?: Array<number | null>;
+  /** Riders who started this moto. */
+  fieldSize?: number;
   bibNumber: string | null;
   /** Group races: each team rider's own laps. */
   team?: TeamBreakdown | null;
@@ -98,6 +103,8 @@ export interface EventHistory {
   eventEndDate?: string | null;
   eventState: string;
   eventLocation: string | null;
+  /** Organizer's event image ("/api/storage/..." path). */
+  eventImageUrl?: string | null;
   raceClass: string;
   raceStyle?: string | null;
   motos: MotoResult[];
@@ -168,11 +175,11 @@ export function SubHeader({
           <Feather name="arrow-left" size={18} color={colors.foreground} />
         </Pressable>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 20, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: -0.3 }}>
+          <Text style={{ fontSize: 20, fontWeight: "800", color: colors.foreground, fontFamily: "Roboto_700Bold", letterSpacing: -0.3 }}>
             {title}
           </Text>
           {subtitle ? (
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>{subtitle}</Text>
+            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 }}>{subtitle}</Text>
           ) : null}
         </View>
         {rightEl}
@@ -196,6 +203,8 @@ export function EventDetailScreen({
 }) {
   const primary = colors.primary;
   const [gapMode, setGapMode] = useState<"best" | "leader" | "ahead">("best");
+  const [motoIdx, setMotoIdx] = useState(0);
+  const bestMoto = event.motos.find(m => !m.dnf && !m.dns && m.position === event.bestPosition);
   const hasAnyGaps = event.motos.some((m) => (m.lapGaps ?? []).some((g) => g.leader != null));
 
   const gapMsStr = (ms: number) => `+${(ms / 1000).toFixed(3)}s`;
@@ -203,7 +212,7 @@ export function EventDetailScreen({
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <SubHeader
-        title="Race Result"
+        title="Race Report"
         onBack={onBack}
         colors={colors}
         insets={insets}
@@ -211,21 +220,37 @@ export function EventDetailScreen({
 
       <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: insets.bottom + 32 }}>
         {/* Result hero */}
-        <ResultHero
+        <RaceReportHero
+          imageUrl={event.eventImageUrl}
           eventName={event.eventName}
           dateIso={event.eventDate}
           place={event.eventLocation ?? event.eventState}
           raceClass={event.raceClass}
           riderName={event.riderName}
-          bestPosition={event.bestPosition}
+          position={event.bestPosition}
+          fieldSize={bestMoto?.fieldSize}
           motoCount={event.motos.length}
           points={event.totalPoints}
         />
 
+        <MotoChips motos={event.motos} selected={Math.min(motoIdx, event.motos.length - 1)} onSelect={setMotoIdx} />
+
+        {/* Motos: charts first, the lap table behind "All laps and splits" */}
+        {event.motos.filter((_, mi) => mi === Math.min(motoIdx, event.motos.length - 1)).map(moto => {
+          const hasTimes = moto.lapTimes.length > 0;
+          const lapMsArr = hasTimes ? moto.lapTimes.map(parseLapMs) : [];
+          const trueLaps = event.raceStyle === "motocross" ? lapMsArr.slice(1) : lapMsArr;
+          const bestMs   = trueLaps.length > 0 ? Math.min(...trueLaps) : Infinity;
+          const fastestIdx = bestMs < Infinity
+            ? lapMsArr.findIndex((ms, i) => (event.raceStyle !== "motocross" || i > 0) && ms === bestMs)
+            : -1;
+
+          return (
+            <MotoReport key={moto.motoId} moto={moto} raceStyle={event.raceStyle}>
         {/* Gap mode toggle */}
-        {hasAnyGaps && (
+        {hasAnyGaps && hasTimes && (
           <View style={{
-            flexDirection: "row", borderRadius: 999, overflow: "hidden", padding: 4,
+            flexDirection: "row", borderRadius: 999, overflow: "hidden", padding: 4, margin: 12,
             borderWidth: 1, borderColor: colors.border, backgroundColor: colors.muted,
           }}>
             {([
@@ -245,7 +270,7 @@ export function EventDetailScreen({
                 >
                   <Text style={{
                     fontSize: 12, fontWeight: "700",
-                    fontFamily: "Inter_700Bold",
+                    fontFamily: "Roboto_700Bold",
                     color: active ? "#fff" : colors.mutedForeground,
                   }}>
                     {opt.label}
@@ -256,22 +281,7 @@ export function EventDetailScreen({
           </View>
         )}
 
-        {/* Motos */}
-        {event.motos.map(moto => {
-          const hasTimes = moto.lapTimes.length > 0;
-          const lapMsArr = hasTimes ? moto.lapTimes.map(parseLapMs) : [];
-          const trueLaps = event.raceStyle === "motocross" ? lapMsArr.slice(1) : lapMsArr;
-          const bestMs   = trueLaps.length > 0 ? Math.min(...trueLaps) : Infinity;
-          const fastestIdx = bestMs < Infinity
-            ? lapMsArr.findIndex((ms, i) => (event.raceStyle !== "motocross" || i > 0) && ms === bestMs)
-            : -1;
-
-          return (
-            <View key={moto.motoId} style={{
-              borderRadius: 12,
-              borderWidth: 1, borderColor: colors.border,
-              backgroundColor: colors.card, overflow: "hidden",
-            }}>
+            <View style={{ overflow: "hidden" }}>
               {/* Moto header */}
               <View style={{
                 flexDirection: "row", alignItems: "center", gap: 10,
@@ -284,25 +294,25 @@ export function EventDetailScreen({
                   backgroundColor: colors.foreground,
                   alignItems: "center", justifyContent: "center",
                 }}>
-                  <Text style={{ fontSize: 8, fontWeight: "700", color: colors.background, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
+                  <Text style={{ fontSize: 10, fontWeight: "700", color: colors.background, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
                     {moto.motoType === "practice" ? "PRAC" : "RACE"}
                   </Text>
-                  <Text style={{ fontSize: 17, fontWeight: "800", color: colors.background, fontFamily: "Inter_700Bold", fontStyle: "italic", lineHeight: 19 }}>
+                  <Text style={{ fontSize: 17, fontWeight: "800", color: colors.background, fontFamily: "Barlow_800ExtraBold_Italic", lineHeight: 19 }}>
                     #{moto.motoNumber}
                   </Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+                  <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
                     {moto.motoName}
                   </Text>
                   <View style={{ flexDirection: "row", gap: 10, marginTop: 2 }}>
                     {moto.totalTime ? (
-                      <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+                      <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
                         {moto.totalTime}
                       </Text>
                     ) : null}
                     {moto.points != null && moto.points > 0 ? (
-                      <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>
+                      <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>
                         {moto.points} pts
                       </Text>
                     ) : null}
@@ -317,9 +327,9 @@ export function EventDetailScreen({
                 <View>
                   {/* Column headers */}
                   <View style={{ flexDirection: "row", paddingHorizontal: 14, paddingVertical: 7, backgroundColor: colors.muted + "40", borderBottomWidth: 1, borderBottomColor: colors.border }}>
-                    <Text style={{ width: 36, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Lap</Text>
-                    <Text style={{ flex: 1, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Time</Text>
-                    <Text style={{ width: 68, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Gap to Leader</Text>
+                    <Text style={{ width: 36, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Lap</Text>
+                    <Text style={{ flex: 1, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Time</Text>
+                    <Text style={{ width: 68, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Gap to Leader</Text>
                   </View>
                   {moto.lapTimes.map((t, i) => {
                     const isFastest = i === fastestIdx;
@@ -354,22 +364,22 @@ export function EventDetailScreen({
                         }}
                       >
                         <View style={{ flexDirection: "row", alignItems: "center" }}>
-                        <Text style={{ width: 36, fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>
+                        <Text style={{ width: 36, fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>
                           {i + 1}
                         </Text>
-                        <Text style={{ flex: 1, fontSize: 15, fontWeight: isFastest ? "800" : "400", color: isFastest ? primary : colors.foreground, fontFamily: isFastest ? "Inter_700Bold" : "Inter_400Regular" }}>
+                        <Text style={{ flex: 1, fontSize: 15, fontWeight: isFastest ? "800" : "400", color: isFastest ? colors.primaryText : colors.foreground, fontFamily: isFastest ? "Roboto_700Bold" : "Roboto_400Regular" }}>
                           {t}
                         </Text>
                         <View style={{ width: 68, alignItems: "flex-end", flexDirection: "row", justifyContent: "flex-end", gap: 3 }}>
                           {gapEl?.kind === "best" ? (
                             <>
-                              <Feather name="zap" size={11} color={primary} />
-                              <Text style={{ fontSize: 10, fontWeight: "700", color: primary, fontFamily: "Inter_700Bold" }}>BEST</Text>
+                              <Feather name="zap" size={11} color={colors.primaryText} />
+                              <Text style={{ fontSize: 10, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>BEST</Text>
                             </>
                           ) : gapEl?.kind === "leader" ? (
-                            <Text style={{ fontSize: 10, fontWeight: "700", color: primary, fontFamily: "Inter_700Bold" }}>LEADER</Text>
+                            <Text style={{ fontSize: 10, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>LEADER</Text>
                           ) : gapEl?.kind === "text" ? (
-                            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>{gapEl.text}</Text>
+                            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>{gapEl.text}</Text>
                           ) : null}
                         </View>
                         </View>
@@ -383,7 +393,7 @@ export function EventDetailScreen({
                                 const fastest = ms != null && moto.sectors!.fieldBestMs[s] != null && ms <= moto.sectors!.fieldBestMs[s]!;
                                 const personal = ms != null && moto.sectors!.bestMs[s] != null && ms <= moto.sectors!.bestMs[s]!;
                                 return (
-                                  <Text key={s} style={{ fontSize: 11, fontFamily: fastest || personal ? "Inter_700Bold" : "Inter_400Regular", color: fastest ? SPLIT_FASTEST : personal ? SPLIT_PERSONAL_BEST : colors.mutedForeground }}>
+                                  <Text key={s} style={{ fontSize: 11, fontFamily: fastest || personal ? "Roboto_700Bold" : "Roboto_400Regular", color: fastest ? SPLIT_FASTEST : personal ? SPLIT_PERSONAL_BEST : colors.mutedForeground }}>
                                     S{s + 1} {fmtSplit(ms)}
                                   </Text>
                                 );
@@ -397,22 +407,23 @@ export function EventDetailScreen({
                   {moto.sectors && (
                     <View style={{ paddingHorizontal: 14, paddingVertical: 8, borderTopWidth: 1, borderTopColor: colors.border }}>
                       {moto.sectors.names.map((name, s) => (
-                        <Text key={s} style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>S{s + 1}: {name}</Text>
+                        <Text key={s} style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>S{s + 1}: {name}</Text>
                       ))}
-                      <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
-                        <Text style={{ color: SPLIT_FASTEST, fontFamily: "Inter_700Bold" }}>Purple</Text> fastest in the race · <Text style={{ color: SPLIT_PERSONAL_BEST, fontFamily: "Inter_700Bold" }}>Green</Text> your best
+                      <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 }}>
+                        <Text style={{ color: SPLIT_FASTEST, fontFamily: "Roboto_700Bold" }}>Purple</Text> fastest in the race · <Text style={{ color: SPLIT_PERSONAL_BEST, fontFamily: "Roboto_700Bold" }}>Green</Text> your best
                       </Text>
                     </View>
                   )}
                 </View>
               ) : (
                 <View style={{ padding: 14 }}>
-                  <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", fontStyle: "italic" }}>
+                  <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", fontStyle: "italic" }}>
                     No lap times recorded
                   </Text>
                 </View>
               )}
             </View>
+            </MotoReport>
           );
         })}
       </ScrollView>
@@ -449,10 +460,10 @@ export function EventsListScreen({
         {events.length === 0 ? (
           <View style={{ paddingTop: 48, alignItems: "center", gap: 10 }}>
             <Feather name="award" size={40} color={colors.mutedForeground + "60"} />
-            <Text style={{ fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", textAlign: "center" }}>
+            <Text style={{ fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold", textAlign: "center" }}>
               No race history yet
             </Text>
-            <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 20 }}>
+            <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center", lineHeight: 20 }}>
               Your past race results will appear here once events are completed.
             </Text>
           </View>
@@ -472,18 +483,18 @@ export function EventsListScreen({
                     {ev.motos.map(m => (
                       <View key={m.motoId} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 8, borderTopWidth: 1, borderTopColor: colors.border }}>
                         <View style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: colors.foreground, alignItems: "center", justifyContent: "center", marginRight: 10 }}>
-                          <Text style={{ fontSize: 11, color: colors.background, fontFamily: "Inter_700Bold", fontStyle: "italic" }}>#{m.motoNumber}</Text>
+                          <Text style={{ fontSize: 11, color: colors.background, fontFamily: "Barlow_800ExtraBold_Italic" }}>#{m.motoNumber}</Text>
                         </View>
-                        <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_500Medium" }}>{m.motoName}</Text>
+                        <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Roboto_500Medium" }}>{m.motoName}</Text>
                         {m.totalTime ? (
-                          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginRight: 8 }}>{m.totalTime}</Text>
+                          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginRight: 8 }}>{m.totalTime}</Text>
                         ) : null}
                         <PositionBadge position={m.position} dnf={m.dnf} dns={m.dns} size="sm" />
                       </View>
                     ))}
                     <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 4, paddingHorizontal: 16, paddingVertical: 9, borderTopWidth: 1, borderTopColor: colors.border }}>
-                      <Feather name="clock" size={11} color={primary} />
-                      <Text style={{ fontSize: 11, color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>Lap times</Text>
+                      <Feather name="clock" size={11} color={colors.primaryText} />
+                      <Text style={{ fontSize: 11, color: colors.foreground, fontFamily: "Roboto_600SemiBold" }}>Lap times</Text>
                       <Feather name="chevron-right" size={12} color={colors.mutedForeground} />
                     </View>
                   </>
@@ -564,7 +575,7 @@ export function SeriesStandingsScreen({
         insets={insets}
         rightEl={
           <View style={{ paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, backgroundColor: colors.primary }}>
-            <Text style={{ fontSize: 14, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" }}>
+            <Text style={{ fontSize: 14, fontWeight: "700", color: "#fff", fontFamily: "Roboto_700Bold" }}>
               {ordinal(riderPosition)}
             </Text>
           </View>
@@ -573,14 +584,14 @@ export function SeriesStandingsScreen({
 
       {loading ? (
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-          <ActivityIndicator color={primary} />
+          <ActivityIndicator color={colors.primaryText} />
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ padding: 16, gap: 0, paddingBottom: insets.bottom + 32 }}>
           {/* Section header */}
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 }}>
-            <Feather name="award" size={13} color={primary} />
-            <Text style={{ fontSize: 11, fontWeight: "700", color: primary, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
+            <Feather name="award" size={13} color={colors.primaryText} />
+            <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
               {riderClass} — Top 10
             </Text>
           </View>
@@ -589,14 +600,14 @@ export function SeriesStandingsScreen({
           <View style={{ borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, overflow: "hidden" }}>
             {/* Column headers */}
             <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 8, backgroundColor: colors.muted + "50", borderBottomWidth: 1, borderBottomColor: colors.border }}>
-              <Text style={{ width: 34, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>#</Text>
-              <Text style={{ flex: 1, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Rider</Text>
-              <Text style={{ width: 52, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Pts</Text>
+              <Text style={{ width: 34, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>#</Text>
+              <Text style={{ flex: 1, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Rider</Text>
+              <Text style={{ width: 52, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Pts</Text>
             </View>
 
             {top10.length === 0 ? (
               <View style={{ padding: 20, alignItems: "center" }}>
-                <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", fontStyle: "italic" }}>No standings yet</Text>
+                <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", fontStyle: "italic" }}>No standings yet</Text>
               </View>
             ) : (
               top10.map((row, idx) => {
@@ -617,14 +628,14 @@ export function SeriesStandingsScreen({
                       backgroundColor: isMe ? colors.primary : (row.position <= 3 ? primary + "18" : colors.muted),
                       alignItems: "center", justifyContent: "center", marginRight: 8,
                     }}>
-                      <Text style={{ fontSize: 12, fontWeight: "700", color: isMe ? "#fff" : (row.position <= 3 ? primary : colors.mutedForeground), fontFamily: "Inter_700Bold" }}>
+                      <Text style={{ fontSize: 12, fontWeight: "700", color: isMe ? "#fff" : (row.position <= 3 ? colors.primaryText : colors.mutedForeground), fontFamily: "Roboto_700Bold" }}>
                         {row.position}
                       </Text>
                     </View>
-                    <Text style={{ flex: 1, fontSize: 14, fontWeight: isMe ? "700" : "400", color: isMe ? colors.primary : colors.foreground, fontFamily: isMe ? "Inter_700Bold" : "Inter_400Regular" }}>
+                    <Text style={{ flex: 1, fontSize: 14, fontWeight: isMe ? "700" : "400", color: isMe ? colors.primaryText : colors.foreground, fontFamily: isMe ? "Roboto_700Bold" : "Roboto_400Regular" }}>
                       {row.riderName}
                     </Text>
-                    <Text style={{ width: 52, fontSize: 14, fontWeight: isMe ? "700" : "500", color: isMe ? colors.primary : colors.foreground, fontFamily: isMe ? "Inter_700Bold" : "Inter_500Medium", textAlign: "right" }}>
+                    <Text style={{ width: 52, fontSize: 14, fontWeight: isMe ? "700" : "500", color: isMe ? colors.primaryText : colors.foreground, fontFamily: isMe ? "Roboto_700Bold" : "Roboto_500Medium", textAlign: "right" }}>
                       {row.totalScore}
                     </Text>
                   </View>
@@ -638,23 +649,23 @@ export function SeriesStandingsScreen({
             <>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 10 }}>
                 <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
-                <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>· · ·</Text>
+                <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>· · ·</Text>
                 <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
               </View>
               <View style={{ borderRadius: 12, borderWidth: 1.5, borderColor: colors.primary + "44", backgroundColor: colors.primary + "0c", overflow: "hidden" }}>
                 <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 13 }}>
                   <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center", marginRight: 8 }}>
-                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" }}>{myRowBelow.position}</Text>
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#fff", fontFamily: "Roboto_700Bold" }}>{myRowBelow.position}</Text>
                   </View>
-                  <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold" }}>
+                  <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>
                     {myRowBelow.riderName}
                   </Text>
-                  <Text style={{ width: 52, fontSize: 14, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", textAlign: "right" }}>
+                  <Text style={{ width: 52, fontSize: 14, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold", textAlign: "right" }}>
                     {myRowBelow.totalScore}
                   </Text>
                 </View>
                 <View style={{ paddingHorizontal: 14, paddingBottom: 10 }}>
-                  <Text style={{ fontSize: 11, color: colors.primary, fontFamily: "Inter_500Medium" }}>
+                  <Text style={{ fontSize: 11, color: colors.primaryText, fontFamily: "Roboto_500Medium" }}>
                     Your position · {ordinal(riderPosition)} place
                   </Text>
                 </View>
@@ -722,16 +733,16 @@ export function PointsScreen({
           flexDirection: "row", alignItems: "center", gap: 16,
         }}>
           <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: primary + "18", alignItems: "center", justifyContent: "center" }}>
-            <Feather name="star" size={24} color={primary} />
+            <Feather name="star" size={24} color={colors.primaryText} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textTransform: "uppercase", letterSpacing: 0.5 }}>
+            <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textTransform: "uppercase", letterSpacing: 0.5 }}>
               Career Total
             </Text>
-            <Text style={{ fontSize: 40, fontWeight: "800", color: primary, fontFamily: "Inter_700Bold", letterSpacing: -1, lineHeight: 46 }}>
+            <Text style={{ fontSize: 40, fontWeight: "800", color: colors.primaryText, fontFamily: "Roboto_700Bold", letterSpacing: -1, lineHeight: 46 }}>
               {totalPoints}
             </Text>
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
               pts across {events.length} event{events.length !== 1 ? "s" : ""}
             </Text>
           </View>
@@ -740,14 +751,14 @@ export function PointsScreen({
         {/* Series section */}
         {seriesLoading ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8 }}>
-            <ActivityIndicator size="small" color={primary} />
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>Loading series…</Text>
+            <ActivityIndicator size="small" color={colors.primaryText} />
+            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>Loading series…</Text>
           </View>
         ) : seriesList.length > 0 ? (
           <>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2 }}>
-              <Feather name="trending-up" size={13} color={colors.primary} />
-              <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
+              <Feather name="trending-up" size={13} color={colors.primaryText} />
+              <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
                 Series Standings
               </Text>
             </View>
@@ -775,27 +786,27 @@ export function PointsScreen({
                     width: 52, height: 52, borderRadius: 26,
                     backgroundColor: colors.primary, alignItems: "center", justifyContent: "center",
                   }}>
-                    <Text style={{ fontSize: 22, fontWeight: "800", color: "#fff", fontFamily: "Inter_700Bold", lineHeight: 24 }}>
+                    <Text style={{ fontSize: 22, fontWeight: "800", color: "#fff", fontFamily: "Roboto_700Bold", lineHeight: 24 }}>
                       {s.position}
                     </Text>
-                    <Text style={{ fontSize: 10, fontWeight: "700", color: "rgba(255,255,255,0.8)", fontFamily: "Inter_700Bold", lineHeight: 12, textTransform: "uppercase", letterSpacing: 0.3 }}>
+                    <Text style={{ fontSize: 12, fontWeight: "700", color: "rgba(255,255,255,0.8)", fontFamily: "Barlow_700Bold", lineHeight: 12, textTransform: "uppercase", letterSpacing: 0.3 }}>
                       {s.position === 1 ? "1st" : s.position === 2 ? "2nd" : s.position === 3 ? "3rd" : `${s.position}th`}
                     </Text>
                   </View>
                   <View style={{ flex: 1, gap: 4 }}>
-                    <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+                    <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
                       {s.seriesName}
                     </Text>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                       <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: colors.primary + "18" }}>
-                        <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold" }}>{s.raceClass}</Text>
+                        <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>{s.raceClass}</Text>
                       </View>
-                      <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+                      <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
                         {s.totalPoints} pts
                       </Text>
                     </View>
                   </View>
-                  <Feather name="chevron-right" size={16} color={colors.primary} />
+                  <Feather name="chevron-right" size={16} color={colors.primaryText} />
                 </View>
               </Pressable>
             ))}
@@ -804,8 +815,8 @@ export function PointsScreen({
 
         {eventsWithPoints.length > 0 && (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2 }}>
-            <Feather name="flag" size={13} color={primary} />
-            <Text style={{ fontSize: 11, fontWeight: "700", color: primary, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
+            <Feather name="flag" size={13} color={colors.primaryText} />
+            <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
               Event Breakdown
             </Text>
           </View>
@@ -813,7 +824,7 @@ export function PointsScreen({
 
         {eventsWithPoints.length === 0 && !seriesLoading && seriesList.length === 0 ? (
           <View style={{ paddingTop: 24, alignItems: "center", gap: 8 }}>
-            <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>
+            <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center" }}>
               No points recorded yet.
             </Text>
           </View>
@@ -831,15 +842,15 @@ export function PointsScreen({
                 backgroundColor: colors.muted + "50",
               }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+                  <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
                     {ev.eventName}
                   </Text>
-                  <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>
+                  <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 }}>
                     {[fmtDateShared(ev.eventDate), ev.raceClass].filter(Boolean).join("  ·  ")}
                   </Text>
                 </View>
                 <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: primary + "18" }}>
-                  <Text style={{ fontSize: 13, fontWeight: "700", color: primary, fontFamily: "Inter_700Bold" }}>
+                  <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>
                     {ev.totalPoints} pts
                   </Text>
                 </View>
@@ -856,13 +867,13 @@ export function PointsScreen({
                     borderBottomColor: colors.border,
                   }}>
                     <View style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: primary + "18", alignItems: "center", justifyContent: "center", marginRight: 10 }}>
-                      <Text style={{ fontSize: 11, fontWeight: "700", color: primary, fontFamily: "Inter_700Bold" }}>#{m.motoNumber}</Text>
+                      <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>#{m.motoNumber}</Text>
                     </View>
-                    <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_500Medium" }}>{m.motoName}</Text>
+                    <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Roboto_500Medium" }}>{m.motoName}</Text>
                     {m.position != null && (
                       <View style={{ marginRight: 10 }}><PositionBadge position={m.position} size="sm" /></View>
                     )}
-                    <Text style={{ fontSize: 14, fontWeight: "700", color: primary, fontFamily: "Inter_700Bold" }}>
+                    <Text style={{ fontSize: 14, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>
                       +{m.points} pts
                     </Text>
                   </View>

@@ -19,7 +19,7 @@ export function TeamLaps({ team }: { team: TeamBreakdown }) {
   return (
     <View style={{ borderBottomWidth: 1, borderBottomColor: colors.border, paddingHorizontal: 14, paddingVertical: 10 }}>
       <Pressable onPress={() => setOpen(o => !o)} accessibilityRole="button" accessibilityLabel={open ? "Hide each rider's laps" : "Show each rider's laps"}>
-        <Text style={{ fontSize: 12, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold" }}>
+        <Text style={{ fontSize: 12, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>
           {open ? "Hide" : "Show"} each rider's laps{team.name ? ` · Team ${team.name}` : ""}
         </Text>
       </Pressable>
@@ -29,19 +29,19 @@ export function TeamLaps({ team }: { team: TeamBreakdown }) {
           backgroundColor: m.isYou ? colors.primary + "12" : colors.muted + "40",
         }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 8 }}>
-            <Text style={{ flex: 1, fontSize: 13, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+            <Text style={{ flex: 1, fontSize: 13, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
               {m.name}{m.isYou ? " (you)" : ""}
             </Text>
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>
+            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>
               {m.lapCount} lap{m.lapCount === 1 ? "" : "s"}
             </Text>
           </View>
           <View style={{ flexDirection: "row", gap: 14, marginTop: 4 }}>
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>Best {m.bestLap ?? "—"}</Text>
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>Riding time {m.totalTime ?? "—"}</Text>
+            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>Best {m.bestLap ?? "—"}</Text>
+            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>Riding time {m.totalTime ?? "—"}</Text>
           </View>
           {m.lapTimes.length > 0 && (
-            <Text style={{ fontSize: 12, marginTop: 4, color: colors.foreground, fontFamily: "Inter_400Regular" }}>
+            <Text style={{ fontSize: 12, marginTop: 4, color: colors.foreground, fontFamily: "Roboto_400Regular" }}>
               {m.lapTimes.join("   ")}
             </Text>
           )}

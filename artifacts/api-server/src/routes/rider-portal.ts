@@ -874,6 +874,7 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
       eventEndDate: eventsTable.endDate,
       eventState: eventsTable.state,
       eventLocation: eventsTable.location,
+      eventImageUrl: eventsTable.imageUrl,
       timingTechnology: eventsTable.timingTechnology,
       raceStyle: eventsTable.raceStyle,
       motoId: raceResultsTable.motoId,
@@ -918,10 +919,17 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
           motoId: raceResultsTable.motoId,
           riderId: raceResultsTable.riderId,
           lapTimes: raceResultsTable.lapTimes,
+          dns: raceResultsTable.dns,
         })
         .from(raceResultsTable)
         .where(inArray(raceResultsTable.motoId, motoIds))
     : [];
+
+  // Riders who started each moto, for "P4 of 18".
+  const fieldSizeByMoto = new Map<number, number>();
+  for (const cr of competitorRows) {
+    if (!cr.dns) fieldSizeByMoto.set(cr.motoId, (fieldSizeByMoto.get(cr.motoId) ?? 0) + 1);
+  }
 
   // motoId → array of { riderId, cum: cumulative ms at end of each lap }
   const cumByMoto = new Map<number, Array<{ riderId: number; cum: number[] }>>();
@@ -957,6 +965,23 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
     return gaps;
   };
 
+  /**
+   * Running position at the end of each lap (1 = leading), ranked by cumulative
+   * time among riders who had completed that lap. Null where this rider's laps
+   * can't be read.
+   */
+  const computePositionByLap = (motoId: number, lapCount: number, resultRiderId: number): Array<number | null> => {
+    const field = cumByMoto.get(motoId) ?? [];
+    const me = field.find((f) => f.riderId === resultRiderId);
+    const out: Array<number | null> = [];
+    for (let i = 0; i < lapCount; i++) {
+      const myCum = me?.cum[i];
+      if (myCum == null) { out.push(null); continue; }
+      out.push(1 + field.filter((f) => f.cum[i] != null && f.cum[i] < myCum).length);
+    }
+    return out;
+  };
+
   // Group by event
   const eventMap = new Map<number, {
     eventId: number;
@@ -965,6 +990,8 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
     eventEndDate: string | null;
     eventState: string;
     eventLocation: string | null;
+    /** Organizer's event image ("/api/storage/..." path), for the Race Report hero. */
+    eventImageUrl: string | null;
     timingTechnology: string | null;
     timingTags?: TimingTags;
     raceStyle: string | null;
@@ -981,6 +1008,10 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
       totalTime: string | null;
       lapTimes: string[];
       lapGaps: Array<{ leader: number | null; ahead: number | null }>;
+      /** Running position at the end of each lap (1 = leading). */
+      positionByLap: Array<number | null>;
+      /** Riders who started this moto (DNS excluded). */
+      fieldSize: number;
       dnf: boolean;
       dns: boolean;
       bibNumber: string | null;
@@ -1056,6 +1087,7 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
         eventEndDate: row.eventEndDate ?? null,
         eventState: row.eventState ?? "",
         eventLocation: row.eventLocation ?? null,
+        eventImageUrl: row.eventImageUrl ?? null,
         timingTechnology: row.timingTechnology ?? null,
         raceStyle: row.raceStyle ?? null,
         raceClass: row.raceClass,
@@ -1065,6 +1097,8 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
     }
     const lapTimesFormatted = ((row.lapTimes as unknown[]) ?? []).map((lt) => {
       if (typeof lt === "number") return formatLapTime(lt);
+      // Some imports store milliseconds as text ("119386"): format those like numbers.
+      if (typeof lt === "string" && /^\d+$/.test(lt.trim()) && parseInt(lt.trim(), 10) > 1000) return formatLapTime(parseInt(lt.trim(), 10));
       if (lt && typeof lt === "object" && "time" in lt) return (lt as { time: string }).time;
       return String(lt ?? "");
     }).filter(Boolean);
@@ -1078,6 +1112,8 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
       totalTime: row.totalTime,
       lapTimes: lapTimesFormatted,
       lapGaps: computeLapGaps(row.motoId, lapTimesFormatted.length, row.resultRiderId),
+      positionByLap: computePositionByLap(row.motoId, lapTimesFormatted.length, row.resultRiderId),
+      fieldSize: fieldSizeByMoto.get(row.motoId) ?? 0,
       dnf: row.dnf,
       dns: row.dns,
       bibNumber: row.bibNumber,

@@ -49,14 +49,14 @@ export function QuickCheckinFix({ registrationId, reason, onFixed }: Props) {
     <Pressable disabled={busy} onPress={onPress}
       style={{ paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10, alignItems: "center", backgroundColor: primary ? colors.primary : "transparent", borderWidth: primary ? 0 : 1, borderColor: colors.border }}>
       {busy ? <ActivityIndicator color={primary ? "#fff" : colors.foreground} size="small" />
-        : <Text style={{ color: primary ? "#fff" : colors.foreground, fontWeight: "700", fontFamily: "Inter_700Bold", fontSize: 13 }}>{label}</Text>}
+        : <Text style={{ color: primary ? "#fff" : colors.foreground, fontWeight: "700", fontFamily: "Roboto_700Bold", fontSize: 13 }}>{label}</Text>}
     </Pressable>
   );
 
   const input = (placeholder: string) => (
     <TextInput value={value} onChangeText={t => { setValue(t); setError(null); }} placeholder={placeholder}
       placeholderTextColor={colors.mutedForeground} autoCapitalize="characters" autoCorrect={false}
-      style={{ flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, color: colors.foreground, fontFamily: "Inter_400Regular" }} />
+      style={{ flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, color: colors.foreground, fontFamily: "Roboto_400Regular" }} />
   );
 
   let body: React.ReactNode = null;
@@ -87,7 +87,7 @@ export function QuickCheckinFix({ registrationId, reason, onFixed }: Props) {
             if (await post(`/api/rider/registrations/${registrationId}/rfid`, { rfidNumber: value }, "Couldn't save that number.")) onFixed();
           })}
         </View>
-        <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+        <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
           Already have an RFID sticker on your bike? Enter its number. Need one? Pick it up at the gate.
         </Text>
       </View>
@@ -109,22 +109,22 @@ export function QuickCheckinFix({ registrationId, reason, onFixed }: Props) {
     }) : waiver && (
       <View style={{ gap: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 12 }}>
         {waiver.text ? (
-          <Text style={{ fontSize: 12, color: colors.foreground, fontFamily: "Inter_400Regular", maxHeight: 220 }} numberOfLines={14}>{waiver.text}</Text>
+          <Text style={{ fontSize: 12, color: colors.foreground, fontFamily: "Roboto_400Regular", maxHeight: 220 }} numberOfLines={14}>{waiver.text}</Text>
         ) : null}
         {waiver.pdfUrl ? (
           <Pressable onPress={() => void WebBrowser.openBrowserAsync(waiver.pdfUrl!)} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            <Feather name="file-text" size={14} color={colors.primary} />
-            <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", textDecorationLine: "underline" }}>Read the full waiver</Text>
+            <Feather name="file-text" size={14} color={colors.primaryText} />
+            <Text style={{ color: colors.primaryText, fontFamily: "Roboto_600SemiBold", textDecorationLine: "underline" }}>Read the full waiver</Text>
           </Pressable>
         ) : null}
         {input("Type your full name to sign")}
         <Pressable onPress={() => setAsGuardian(g => !g)} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <Feather name={asGuardian ? "check-square" : "square"} size={16} color={colors.foreground} />
-          <Text style={{ flex: 1, fontSize: 12, color: colors.foreground, fontFamily: "Inter_400Regular" }}>I'm signing as parent/guardian for {waiver.riderName}</Text>
+          <Text style={{ flex: 1, fontSize: 12, color: colors.foreground, fontFamily: "Roboto_400Regular" }}>I'm signing as parent/guardian for {waiver.riderName}</Text>
         </Pressable>
         <Pressable onPress={() => setConsent(c => !c)} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <Feather name={consent ? "check-square" : "square"} size={16} color={colors.foreground} />
-          <Text style={{ flex: 1, fontSize: 12, color: colors.foreground, fontFamily: "Inter_400Regular" }}>I have read the waiver and agree to sign it electronically</Text>
+          <Text style={{ flex: 1, fontSize: 12, color: colors.foreground, fontFamily: "Roboto_400Regular" }}>I have read the waiver and agree to sign it electronically</Text>
         </Pressable>
         <View style={{ flexDirection: "row", gap: 8 }}>
           <View style={{ flex: 1 }}>{button("Sign", async () => {
@@ -140,7 +140,7 @@ export function QuickCheckinFix({ registrationId, reason, onFixed }: Props) {
   return (
     <View style={{ gap: 6, marginTop: 6 }}>
       {body}
-      {error && <Text style={{ fontSize: 12, color: colors.destructive, fontFamily: "Inter_400Regular" }}>{error}</Text>}
+      {error && <Text style={{ fontSize: 12, color: colors.destructive, fontFamily: "Roboto_400Regular" }}>{error}</Text>}
     </View>
   );
 }

@@ -116,7 +116,7 @@ export default function RiderStatsScreen() {
       </View>
 
       {loading ? (
-        <View style={s.center}><ActivityIndicator color={colors.primary} /></View>
+        <View style={s.center}><ActivityIndicator color={colors.primaryText} /></View>
       ) : error ? (
         <View style={s.center}><Text style={s.muted}>{error}</Text></View>
       ) : (
@@ -192,23 +192,23 @@ const styles = (colors: ReturnType<typeof useColors>, insets: { bottom: number }
   root: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, gap: 12 },
   backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.muted, alignItems: "center", justifyContent: "center" },
-  headerTitle: { flex: 1, fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" },
+  headerTitle: { flex: 1, fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
   content: { padding: 16, paddingBottom: insets.bottom + 32, gap: 12 },
-  section: { fontSize: 13, letterSpacing: 1.5, textTransform: "uppercase", color: colors.mutedForeground, fontFamily: "Inter_700Bold", marginTop: 8 },
-  muted: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", lineHeight: 18 },
-  note: { fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", lineHeight: 15 },
+  section: { fontSize: 14, letterSpacing: 1.5, textTransform: "uppercase", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", marginTop: 8 },
+  muted: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", lineHeight: 18 },
+  note: { fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", lineHeight: 15 },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   tile: { width: "31.5%", backgroundColor: colors.card, borderRadius: 14, paddingVertical: 16, paddingHorizontal: 6, alignItems: "center", borderWidth: 1, borderColor: colors.border, overflow: "hidden" },
   tileStripe: { position: "absolute", top: 0, left: 12, right: 12, height: 3, borderBottomLeftRadius: 3, borderBottomRightRadius: 3 },
-  tileValue: { fontSize: 26, color: colors.foreground, fontFamily: "Inter_700Bold", fontStyle: "italic", letterSpacing: -0.5 },
-  tileLabel: { fontSize: 11, color: colors.mutedForeground, marginTop: 2, fontFamily: "Inter_500Medium", textAlign: "center" },
+  tileValue: { fontSize: 26, color: colors.foreground, fontFamily: "Barlow_800ExtraBold_Italic", letterSpacing: -0.5 },
+  tileLabel: { fontSize: 11, color: colors.mutedForeground, marginTop: 2, fontFamily: "Roboto_500Medium", textAlign: "center" },
   primaryBtn: { flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary, borderRadius: 999, paddingVertical: 14 },
-  primaryBtnText: { color: "#fff", fontSize: 15, fontFamily: "Inter_700Bold" },
+  primaryBtnText: { color: "#fff", fontSize: 15, fontFamily: "Roboto_700Bold" },
   managerRow: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.card, borderRadius: 12, padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
-  managerEmail: { fontSize: 14, color: colors.foreground, fontFamily: "Inter_600SemiBold" },
-  managerStatus: { fontSize: 11, color: colors.mutedForeground, marginTop: 2, fontFamily: "Inter_400Regular" },
+  managerEmail: { fontSize: 14, color: colors.foreground, fontFamily: "Roboto_600SemiBold" },
+  managerStatus: { fontSize: 11, color: colors.mutedForeground, marginTop: 2, fontFamily: "Roboto_400Regular" },
   inviteRow: { flexDirection: "row", gap: 8 },
-  input: { flex: 1, backgroundColor: colors.card, borderRadius: 999, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 12, color: colors.foreground, fontFamily: "Inter_400Regular" },
+  input: { flex: 1, backgroundColor: colors.card, borderRadius: 999, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, paddingVertical: 12, color: colors.foreground, fontFamily: "Roboto_400Regular" },
   addBtn: { backgroundColor: colors.primary, borderRadius: 999, paddingHorizontal: 20, alignItems: "center", justifyContent: "center" },
 });

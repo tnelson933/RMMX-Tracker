@@ -216,23 +216,23 @@ export function QuickCheckinCard() {
         return (
           <View key={info.eventId} style={[card, { backgroundColor: allDone ? colors.successTint : colors.card, borderColor: allDone ? colors.success : atTrack ? colors.primary : colors.border }]}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Feather name={allDone ? "check-circle" : "map-pin"} size={18} color={allDone ? colors.success : colors.primary} />
-              <Text style={{ flex: 1, fontSize: 15, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>
+              <Feather name={allDone ? "check-circle" : "map-pin"} size={18} color={allDone ? colors.success : colors.primaryText} />
+              <Text style={{ flex: 1, fontSize: 16, fontWeight: "800", color: colors.foreground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>
                 {allDone ? "You're checked in" : atTrack ? "You're at the track" : "Quick Check-In today"}
               </Text>
             </View>
-            <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+            <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
               {info.eventName}{info.trackName ? ` · ${info.trackName}` : ""}
             </Text>
 
             {!allDone && !atTrack && (
               locationAllowed === false ? (
                 <Pressable onPress={turnOnAlerts} style={button(true)}>
-                  <Text style={{ color: "#fff", fontWeight: "700", fontFamily: "Inter_700Bold" }}>Allow location to check in</Text>
+                  <Text style={{ color: "#fff", fontWeight: "700", fontFamily: "Roboto_700Bold" }}>Allow location to check in</Text>
                 </Pressable>
               ) : (
                 <View style={{ gap: 8 }}>
-                  <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: "Inter_400Regular" }}>
+                  <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: "Roboto_400Regular" }}>
                     {miles != null
                       ? `You're ${miles.toFixed(1)} miles away. Check In opens within ${QUICK_CHECKIN_RADIUS_MILES} mile of the track.`
                       : locationFailed
@@ -241,7 +241,7 @@ export function QuickCheckinCard() {
                   </Text>
                   {miles == null && locationFailed && (
                     <Pressable onPress={() => void refresh()} style={button(false)}>
-                      <Text style={{ color: "#fff", fontWeight: "700", fontFamily: "Inter_700Bold" }}>Try again</Text>
+                      <Text style={{ color: "#fff", fontWeight: "700", fontFamily: "Roboto_700Bold" }}>Try again</Text>
                     </Pressable>
                   )}
                 </View>
@@ -252,21 +252,21 @@ export function QuickCheckinCard() {
               <View key={r.registrationId} style={{ paddingVertical: 4 }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>{r.riderName}</Text>
-                  <Text style={{ fontSize: 12, color: r.eligible || r.checkedIn ? colors.mutedForeground : colors.warning, fontFamily: "Inter_400Regular" }}>
+                  <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>{r.riderName}</Text>
+                  <Text style={{ fontSize: 12, color: r.eligible || r.checkedIn ? colors.mutedForeground : colors.warning, fontFamily: "Roboto_400Regular" }}>
                     {r.raceClass ?? ""}{!r.checkedIn && !r.eligible && r.ineligibleReason ? ` · ${REASONS[r.ineligibleReason] ?? "See the organizer at the gate."}` : ""}
                   </Text>
                 </View>
                 {r.checkedIn ? (
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                     <Feather name="check" size={16} color={colors.success} />
-                    <Text style={{ color: colors.success, fontWeight: "700", fontFamily: "Inter_700Bold" }}>Checked in</Text>
+                    <Text style={{ color: colors.success, fontWeight: "700", fontFamily: "Roboto_700Bold" }}>Checked in</Text>
                   </View>
                 ) : r.eligible && atTrack ? (
                   <Pressable disabled={busy !== null} onPress={() => checkIn([r], r.registrationId)} style={button(true)}>
                     {busy === r.registrationId
                       ? <ActivityIndicator color="#fff" size="small" />
-                      : <Text style={{ color: "#fff", fontWeight: "700", fontFamily: "Inter_700Bold" }}>Check In</Text>}
+                      : <Text style={{ color: "#fff", fontWeight: "700", fontFamily: "Roboto_700Bold" }}>Check In</Text>}
                   </Pressable>
                 ) : null}
               </View>
@@ -280,12 +280,12 @@ export function QuickCheckinCard() {
               <Pressable disabled={busy !== null} onPress={() => checkIn(pending, "all")} style={[button(true), { backgroundColor: colors.success }]}>
                 {busy === "all"
                   ? <ActivityIndicator color="#fff" size="small" />
-                  : <Text style={{ color: "#fff", fontWeight: "700", fontFamily: "Inter_700Bold" }}>Check In for All ({pending.length})</Text>}
+                  : <Text style={{ color: "#fff", fontWeight: "700", fontFamily: "Roboto_700Bold" }}>Check In for All ({pending.length})</Text>}
               </Pressable>
             )}
 
             {message?.eventId === info.eventId && (
-              <Text style={{ fontSize: 13, color: message.ok ? colors.success : colors.destructive, fontFamily: "Inter_600SemiBold" }}>{message.text}</Text>
+              <Text style={{ fontSize: 13, color: message.ok ? colors.success : colors.destructive, fontFamily: "Roboto_600SemiBold" }}>{message.text}</Text>
             )}
           </View>
         );
@@ -294,31 +294,31 @@ export function QuickCheckinCard() {
       {showAlertsPrompt && (
         <View style={[card, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <Feather name="bell" size={18} color={colors.primary} />
-            <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+            <Feather name="bell" size={18} color={colors.primaryText} />
+            <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
               {alertStatus === "off" ? "Get a check-in alert when you arrive" : "Arrival alerts are on"}
             </Text>
           </View>
           {alertStatus === "off" ? (
             <>
-              <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+              <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
                 {upcoming[0].eventName} has Quick Check-In. Allow notifications and location while using RM Roost and we'll alert you within {QUICK_CHECKIN_RADIUS_MILES} mile of {upcoming[0].trackName ?? "the track"} on race day, even with your phone locked, while the app is open in the background.
               </Text>
               <Pressable onPress={turnOnAlerts} style={button(true)}>
-                <Text style={{ color: "#fff", fontWeight: "700", fontFamily: "Inter_700Bold" }}>Turn on arrival alerts</Text>
+                <Text style={{ color: "#fff", fontWeight: "700", fontFamily: "Roboto_700Bold" }}>Turn on arrival alerts</Text>
               </Pressable>
             </>
           ) : (
             <>
-              <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+              <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
                 Keep RM Roost open on race day (the background is fine, phone locked) and we'll alert you when you arrive. To get the alert even after closing the app, allow location all the time.
               </Text>
               <View style={{ flexDirection: "row", gap: 10 }}>
                 <Pressable onPress={allowAlways} style={[button(true), { flex: 1 }]}>
-                  <Text style={{ color: "#fff", fontWeight: "700", fontFamily: "Inter_700Bold" }}>Allow all the time</Text>
+                  <Text style={{ color: "#fff", fontWeight: "700", fontFamily: "Roboto_700Bold" }}>Allow all the time</Text>
                 </Pressable>
                 <Pressable onPress={dismissAlways} style={[button(false), { flex: 1, backgroundColor: "transparent", borderWidth: 1, borderColor: colors.border }]}>
-                  <Text style={{ color: colors.foreground, fontWeight: "700", fontFamily: "Inter_700Bold" }}>Not now</Text>
+                  <Text style={{ color: colors.foreground, fontWeight: "700", fontFamily: "Roboto_700Bold" }}>Not now</Text>
                 </Pressable>
               </View>
             </>

@@ -2,13 +2,14 @@
 import { useOtaUpdates } from "@/hooks/useOtaUpdates";
 import "@/lib/quickCheckinGeofence";
 import { API_BASE_URL } from "@/lib/apiBase";
-import {
-  Inter_400Regular,
-  Inter_500Medium,
-  Inter_600SemiBold,
-  Inter_700Bold,
-  useFonts,
-} from "@expo-google-fonts/inter";
+import { useFonts } from "expo-font";
+import { Roboto_400Regular } from "@expo-google-fonts/roboto/400Regular";
+import { Roboto_500Medium } from "@expo-google-fonts/roboto/500Medium";
+import { Roboto_600SemiBold } from "@expo-google-fonts/roboto/600SemiBold";
+import { Roboto_700Bold } from "@expo-google-fonts/roboto/700Bold";
+import { Barlow_700Bold } from "@expo-google-fonts/barlow/700Bold";
+import { Barlow_800ExtraBold } from "@expo-google-fonts/barlow/800ExtraBold";
+import { Barlow_800ExtraBold_Italic } from "@expo-google-fonts/barlow/800ExtraBold_Italic";
 import { setBaseUrl } from "@workspace/api-client-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter, useSegments } from "expo-router";
@@ -131,10 +132,13 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
+    Roboto_400Regular,
+    Roboto_500Medium,
+    Roboto_600SemiBold,
+    Roboto_700Bold,
+    Barlow_700Bold,
+    Barlow_800ExtraBold,
+    Barlow_800ExtraBold_Italic,
   });
 
   useEffect(() => {

@@ -251,7 +251,7 @@ export default function EventDetailScreen() {
       backgroundColor: colors.background,
     },
     backBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
-    backText: { fontSize: 15, color: colors.primary, fontFamily: "Inter_600SemiBold" },
+    backText: { fontSize: 15, color: colors.primaryText, fontFamily: "Roboto_600SemiBold" },
     hero: {
       marginHorizontal: 16, marginTop: 4, marginBottom: 14, padding: 16, borderRadius: 20,
       backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, overflow: "hidden",
@@ -262,31 +262,31 @@ export default function EventDetailScreen() {
       width: 62, height: 66, borderRadius: 14, backgroundColor: colors.primary,
       alignItems: "center", justifyContent: "center",
     },
-    dateMonth: { fontSize: 12, color: "#fff", fontFamily: "Inter_700Bold", letterSpacing: 1.5 },
-    dateDay: { fontSize: 28, color: "#fff", fontFamily: "Inter_700Bold", lineHeight: 32 },
+    dateMonth: { fontSize: 12, color: "#fff", fontFamily: "Roboto_700Bold", letterSpacing: 1.5 },
+    dateDay: { fontSize: 28, color: "#fff", fontFamily: "Roboto_700Bold", lineHeight: 32 },
     metaChips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 14 },
     metaChip: {
       flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: colors.muted,
       borderRadius: 999, paddingVertical: 6, paddingHorizontal: 10, borderWidth: 1, borderColor: colors.border,
     },
-    metaChipText: { fontSize: 12, color: colors.foreground, fontFamily: "Inter_600SemiBold" },
+    metaChipText: { fontSize: 12, color: colors.foreground, fontFamily: "Roboto_600SemiBold" },
     liveBadge: {
       flexDirection: "row", alignItems: "center", gap: 4,
       backgroundColor: "#ef444420", paddingHorizontal: 10, paddingVertical: 4,
       borderRadius: 20, alignSelf: "flex-start", marginBottom: 8,
     },
     liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#ef4444" },
-    liveText: { fontSize: 11, fontWeight: "700", color: "#ef4444", fontFamily: "Inter_700Bold", letterSpacing: 0.5 },
+    liveText: { fontSize: 11, fontWeight: "700", color: "#ef4444", fontFamily: "Roboto_700Bold", letterSpacing: 0.5 },
     openBadge: {
       alignSelf: "flex-start", backgroundColor: "#22c55e20",
       paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, marginBottom: 8,
     },
-    openText: { fontSize: 11, fontWeight: "700", color: "#22c55e", fontFamily: "Inter_700Bold", letterSpacing: 0.5 },
+    openText: { fontSize: 11, fontWeight: "700", color: "#22c55e", fontFamily: "Roboto_700Bold", letterSpacing: 0.5 },
     eventName: {
       fontSize: 22, fontWeight: "800", color: colors.foreground,
-      fontFamily: "Inter_700Bold", letterSpacing: 0.5, textTransform: "uppercase", fontStyle: "italic", marginBottom: 2,
+      fontFamily: "Barlow_800ExtraBold_Italic", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 2,
     },
-    metaText: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
+    metaText: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" },
 
     // NOW RACING card
     nowCard: {
@@ -299,25 +299,25 @@ export default function EventDetailScreen() {
       backgroundColor: "#ef4444", paddingHorizontal: 14, paddingVertical: 10,
     },
     nowHeaderLeft: { flexDirection: "row", alignItems: "center", gap: 6 },
-    nowHeaderText: { fontSize: 11, fontWeight: "800", color: "#fff", fontFamily: "Inter_700Bold", letterSpacing: 1 },
-    nowRaceNum: { fontSize: 13, fontWeight: "800", color: "#fff", fontFamily: "Inter_700Bold", opacity: 0.9 },
+    nowHeaderText: { fontSize: 11, fontWeight: "800", color: "#fff", fontFamily: "Roboto_700Bold", letterSpacing: 1 },
+    nowRaceNum: { fontSize: 13, fontWeight: "800", color: "#fff", fontFamily: "Roboto_700Bold", opacity: 0.9 },
 
     // YOU'RE UP card
     upCard: {
       marginHorizontal: 16, marginTop: 12,
       borderRadius: 14, overflow: "hidden",
-      borderWidth: 1.5, borderColor: "#cf152d",
+      borderWidth: 1.5, borderColor: colors.primary,
     },
     upHeader: {
       flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-      backgroundColor: "#cf152d", paddingHorizontal: 14, paddingVertical: 10,
+      backgroundColor: colors.primary, paddingHorizontal: 14, paddingVertical: 10,
     },
-    upHeaderText: { fontSize: 11, fontWeight: "800", color: "#fff", fontFamily: "Inter_700Bold", letterSpacing: 1 },
-    upRaceNum: { fontSize: 13, fontWeight: "800", color: "#fff", fontFamily: "Inter_700Bold", opacity: 0.9 },
+    upHeaderText: { fontSize: 11, fontWeight: "800", color: "#fff", fontFamily: "Roboto_700Bold", letterSpacing: 1 },
+    upRaceNum: { fontSize: 13, fontWeight: "800", color: "#fff", fontFamily: "Roboto_700Bold", opacity: 0.9 },
 
     cardBody: { backgroundColor: colors.card, padding: 14 },
-    cardName: { fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" },
-    cardClass: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 },
+    cardName: { fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" },
+    cardClass: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 },
     gateChip: {
       marginTop: 10, flexDirection: "row", alignItems: "center", gap: 6,
       backgroundColor: colors.background, borderRadius: 8,
@@ -335,7 +335,7 @@ export default function EventDetailScreen() {
     },
     sectionTitle: {
       fontSize: 12, fontWeight: "700", color: colors.mutedForeground,
-      fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.8,
+      fontFamily: "Roboto_700Bold", textTransform: "uppercase", letterSpacing: 0.8,
     },
     motoRow: {
       marginHorizontal: 16, marginBottom: 6, borderRadius: 10,
@@ -349,10 +349,10 @@ export default function EventDetailScreen() {
       width: 44, height: 44, borderRadius: 10,
       alignItems: "center", justifyContent: "center",
     },
-    raceNumText: { fontSize: 10, fontWeight: "700", fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.3 },
-    raceNumValue: { fontSize: 16, fontWeight: "800", fontFamily: "Inter_700Bold", lineHeight: 18 },
+    raceNumText: { fontSize: 12, fontWeight: "700", fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.3 },
+    raceNumValue: { fontSize: 16, fontWeight: "800", fontFamily: "Roboto_700Bold", lineHeight: 18 },
     statusChip: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
-    statusChipText: { fontSize: 11, fontWeight: "700", fontFamily: "Inter_700Bold" },
+    statusChipText: { fontSize: 11, fontWeight: "700", fontFamily: "Roboto_700Bold" },
 
     // Registration
     registerCard: {
@@ -361,7 +361,7 @@ export default function EventDetailScreen() {
     },
     primaryBtn: { marginTop: 14, backgroundColor: colors.primary, borderRadius: 999, paddingVertical: 15, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 },
     mutedBtn:   { marginTop: 14, backgroundColor: colors.muted,   borderRadius: 999, paddingVertical: 15, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 },
-    btnText:    { color: "#fff", fontSize: 15, fontWeight: "700", fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 },
+    btnText:    { color: "#fff", fontSize: 16, fontWeight: "700", fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 1 },
 
     // Modal
     modalOverlay: { flex: 1, backgroundColor: "#00000088", justifyContent: "flex-end" },
@@ -374,7 +374,7 @@ export default function EventDetailScreen() {
   if (loading) {
     return (
       <View style={[s.container, { alignItems: "center", justifyContent: "center" }]}>
-        <ActivityIndicator color={colors.primary} size="large" />
+        <ActivityIndicator color={colors.primaryText} size="large" />
       </View>
     );
   }
@@ -383,19 +383,19 @@ export default function EventDetailScreen() {
     return (
       <View style={[s.container, { alignItems: "center", justifyContent: "center", padding: 32, gap: 10 }]}>
         <Feather name="alert-circle" size={36} color={colors.mutedForeground} />
-        <Text style={{ fontSize: 18, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+        <Text style={{ fontSize: 18, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
           {error === "Event not found" || !error ? "Event not found" : "Couldn't load event"}
         </Text>
         {error && error !== "Event not found" && (
-          <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>{error}</Text>
+          <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center" }}>{error}</Text>
         )}
         {error && error !== "Event not found" && (
           <Pressable onPress={() => { setLoading(true); void load(); }} style={{ marginTop: 8 }}>
-            <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", fontSize: 14 }}>Try again</Text>
+            <Text style={{ color: colors.primaryText, fontFamily: "Roboto_600SemiBold", fontSize: 14 }}>Try again</Text>
           </Pressable>
         )}
         <Pressable onPress={() => goBack(router)} style={{ marginTop: 8 }}>
-          <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", fontSize: 14 }}>Go back</Text>
+          <Text style={{ color: colors.primaryText, fontFamily: "Roboto_600SemiBold", fontSize: 14 }}>Go back</Text>
         </Pressable>
       </View>
     );
@@ -425,7 +425,7 @@ export default function EventDetailScreen() {
         {/* Top bar */}
         <View style={s.topBar}>
           <Pressable style={s.backBtn} onPress={() => goBack(router)}>
-            <Feather name="chevron-left" size={20} color={colors.primary} />
+            <Feather name="chevron-left" size={20} color={colors.primaryText} />
             <Text style={s.backText}>Events</Text>
           </Pressable>
           <RmCashWidget />
@@ -439,7 +439,7 @@ export default function EventDetailScreen() {
             marginBottom: 8,
           }}>
             <Feather name="wifi-off" size={12} color={colors.mutedForeground} />
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_600SemiBold" }}>Offline, retrying</Text>
+            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_600SemiBold" }}>Offline, retrying</Text>
           </View>
         )}
 
@@ -484,19 +484,19 @@ export default function EventDetailScreen() {
           <View style={s.metaChips}>
             {(event.location || event.state) && (
               <View style={s.metaChip}>
-                <Feather name="map-pin" size={12} color={colors.primary} />
+                <Feather name="map-pin" size={12} color={colors.primaryText} />
                 <Text style={s.metaChipText}>{placeLabel(event.location, event.state)}</Text>
               </View>
             )}
             {event.trackName && (
               <View style={s.metaChip}>
-                <Feather name="flag" size={12} color={colors.primary} />
+                <Feather name="flag" size={12} color={colors.primaryText} />
                 <Text style={s.metaChipText}>{event.trackName}</Text>
               </View>
             )}
             {event.clubName && (
               <View style={s.metaChip}>
-                <Feather name="users" size={12} color={colors.primary} />
+                <Feather name="users" size={12} color={colors.primaryText} />
                 <Text style={s.metaChipText}>{event.clubName}</Text>
               </View>
             )}
@@ -521,8 +521,8 @@ export default function EventDetailScreen() {
                   {inProgressMoto.raceClass && <Text style={s.cardClass}>{inProgressMoto.raceClass}</Text>}
                   {isMyMoto(inProgressMoto) && (
                     <View style={s.gateChip}>
-                      <Feather name="flag" size={14} color={colors.primary} />
-                      <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+                      <Feather name="flag" size={14} color={colors.primaryText} />
+                      <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
                         {myGateIn(inProgressMoto) != null ? `Your Gate: #${myGateIn(inProgressMoto)}` : "You're in this race!"}
                       </Text>
                     </View>
@@ -541,8 +541,8 @@ export default function EventDetailScreen() {
                 <View style={s.cardBody}>
                   {Object.entries(event.classStartTimes ?? {}).map(([cls, time]) => (
                     <View key={cls} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-                      <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: "Inter_500Medium", flex: 1 }}>{cls}</Text>
-                      <Text style={{ fontSize: 15, fontWeight: "700", color: "#cf152d", fontFamily: "Inter_700Bold" }}>
+                      <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: "Roboto_500Medium", flex: 1 }}>{cls}</Text>
+                      <Text style={{ fontSize: 15, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>
                         {fmtStartTime(time)}
                       </Text>
                     </View>
@@ -564,7 +564,7 @@ export default function EventDetailScreen() {
                   {myGateIn(nextMyMoto) != null && (
                     <View style={[s.gateChip, { borderWidth: 1, borderColor: "#cf152d33" }]}>
                       <Feather name="flag" size={14} color="#cf152d" />
-                      <Text style={{ fontSize: 14, fontWeight: "700", color: "#cf152d", fontFamily: "Inter_700Bold" }}>
+                      <Text style={{ fontSize: 14, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>
                         Gate #{myGateIn(nextMyMoto)}
                       </Text>
                     </View>
@@ -572,12 +572,12 @@ export default function EventDetailScreen() {
                   <View style={s.countRow}>
                     <Feather name="clock" size={14} color={colors.mutedForeground} />
                     {racesUntilUp === 0 ? (
-                      <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>
+                      <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: "Roboto_600SemiBold" }}>
                         You're on deck — get ready!
                       </Text>
                     ) : (
-                      <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
-                        <Text style={{ fontFamily: "Inter_700Bold", color: colors.foreground }}>{racesUntilUp} {racesUntilUp === 1 ? "race" : "races"}</Text>
+                      <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
+                        <Text style={{ fontFamily: "Roboto_700Bold", color: colors.foreground }}>{racesUntilUp} {racesUntilUp === 1 ? "race" : "races"}</Text>
                         {" "}until you're up ({raceLabel(nextMyMoto)})
                       </Text>
                     )}
@@ -593,7 +593,7 @@ export default function EventDetailScreen() {
                   <Feather name="list" size={14} color={colors.mutedForeground} />
                   <Text style={s.sectionTitle}>Race Schedule</Text>
                   {scheduledMotos.length > 0 && (
-                    <Text style={{ marginLeft: "auto", fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+                    <Text style={{ marginLeft: "auto", fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
                       {scheduledMotos.length} remaining
                     </Text>
                   )}
@@ -617,21 +617,21 @@ export default function EventDetailScreen() {
 
                       {/* Moto info */}
                       <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>
+                        <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Roboto_600SemiBold" }}>
                           {moto.name}
                         </Text>
                         {moto.raceClass && (
-                          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>
+                          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 }}>
                             {moto.raceClass}
                           </Text>
                         )}
                         {mine && event?.raceStyle !== "enduro" && gate != null && (
-                          <Text style={{ fontSize: 12, color: mine && !live ? colors.primary : "#ef4444", fontFamily: "Inter_600SemiBold", marginTop: 3 }}>
+                          <Text style={{ fontSize: 12, color: mine && !live ? colors.primaryText : "#ef4444", fontFamily: "Roboto_600SemiBold", marginTop: 3 }}>
                             Gate #{gate}
                           </Text>
                         )}
                         {mine && (event?.raceStyle !== "enduro" ? gate == null : true) && (
-                          <Text style={{ fontSize: 12, color: colors.primary, fontFamily: "Inter_600SemiBold", marginTop: 3 }}>
+                          <Text style={{ fontSize: 12, color: colors.primaryText, fontFamily: "Roboto_600SemiBold", marginTop: 3 }}>
                             ★ {event?.raceStyle === "enduro" ? "Your test" : "Your race"}
                           </Text>
                         )}
@@ -650,10 +650,10 @@ export default function EventDetailScreen() {
             {raceMotos.length === 0 && (
               <View style={{ alignItems: "center", paddingTop: 48, paddingHorizontal: 32, gap: 8 }}>
                 <Feather name="clock" size={36} color={colors.mutedForeground} />
-                <Text style={{ fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+                <Text style={{ fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
                   Schedule not yet posted
                 </Text>
-                <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>
+                <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center" }}>
                   Pull to refresh — race order will appear once the organizer posts it.
                 </Text>
               </View>
@@ -666,17 +666,17 @@ export default function EventDetailScreen() {
           <View style={s.registerCard}>
             {event.entryFee != null && (
               <View style={{ flexDirection: "row", alignItems: "baseline", gap: 4, marginBottom: 14 }}>
-                <Text style={{ fontSize: 40, color: colors.foreground, fontFamily: "Inter_700Bold", fontStyle: "italic", letterSpacing: -1 }}>
+                <Text style={{ fontSize: 40, color: colors.foreground, fontFamily: "Barlow_800ExtraBold_Italic", letterSpacing: -1 }}>
                   ${event.entryFee}
                 </Text>
-                <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>
+                <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>
                   Entry fee
                 </Text>
               </View>
             )}
             {(event.raceClasses ?? []).length > 0 && (
               <>
-                <Text style={{ fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+                <Text style={{ fontSize: 14, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
                   Available Classes
                 </Text>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", marginBottom: 4 }}>
@@ -684,9 +684,9 @@ export default function EventDetailScreen() {
                     const isRegistered = registeredClasses.has(cls);
                     return (
                       <View key={cls} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: isRegistered ? "#ef444418" : colors.muted, borderWidth: isRegistered ? 1 : 0, borderColor: "#ef4444", marginRight: 6, marginBottom: 6 }}>
-                        <Text style={{ fontSize: 12, color: isRegistered ? "#ef4444" : colors.mutedForeground, fontFamily: "Inter_500Medium" }}>{cls}</Text>
+                        <Text style={{ fontSize: 12, color: isRegistered ? "#ef4444" : colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>{cls}</Text>
                         {isRegistered && (
-                          <Text style={{ fontSize: 10, fontWeight: "700", color: "#ef4444", fontFamily: "Inter_700Bold", marginLeft: 5 }}>· Registered</Text>
+                          <Text style={{ fontSize: 10, fontWeight: "700", color: "#ef4444", fontFamily: "Roboto_700Bold", marginLeft: 5 }}>· Registered</Text>
                         )}
                       </View>
                     );
@@ -697,17 +697,17 @@ export default function EventDetailScreen() {
             {/* ── My registrations (view + change class) ── */}
             {isAuthenticated && myRegistrations.length > 0 && (
               <View style={{ marginTop: 12, marginBottom: 8, padding: 12, borderRadius: 10, backgroundColor: "#16a34a10", borderWidth: 1, borderColor: "#16a34a30" }}>
-                <Text style={{ fontSize: 11, fontWeight: "700", color: "#16a34a", fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+                <Text style={{ fontSize: 13, fontWeight: "700", color: "#16a34a", fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
                   {myRegistrations.length === 1 ? "My Registration" : "My Registrations"}
                 </Text>
                 {myRegistrations.map(reg => (
                   <View key={reg.id} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+                      <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
                         {reg.raceClass}
                       </Text>
                       {myRegistrations.length > 1 && (
-                        <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+                        <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
                           {reg.riderName}
                         </Text>
                       )}
@@ -716,7 +716,7 @@ export default function EventDetailScreen() {
                       onPress={() => { setChangingReg(reg); setChangeClassError(null); setShowChangeClassModal(true); }}
                       style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: colors.muted })}
                     >
-                      <Text style={{ fontSize: 12, color: colors.primary, fontFamily: "Inter_600SemiBold" }}>Change Class ›</Text>
+                      <Text style={{ fontSize: 12, color: colors.primaryText, fontFamily: "Roboto_600SemiBold" }}>Change Class ›</Text>
                     </Pressable>
                   </View>
                 ))}
@@ -733,7 +733,7 @@ export default function EventDetailScreen() {
                 <Pressable style={s.mutedBtn} onPress={() => router.push("/login" as any)}>
                   <Text style={[s.btnText, { color: colors.mutedForeground }]}>Sign in to Register</Text>
                 </Pressable>
-                <Text style={{ marginTop: 8, fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>
+                <Text style={{ marginTop: 8, fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center" }}>
                   Create a free rider account to register for this event.
                 </Text>
               </>
@@ -774,22 +774,22 @@ export default function EventDetailScreen() {
       <Modal visible={showRegisterModal} transparent animationType="slide" onRequestClose={() => setShowRegisterModal(false)}>
         <Pressable style={s.modalOverlay} onPress={() => setShowRegisterModal(false)}>
           <Pressable style={s.modalBox} onPress={() => {}}>
-            <Text style={{ fontSize: 18, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", marginBottom: 4 }}>
+            <Text style={{ fontSize: 18, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold", marginBottom: 4 }}>
               Register for {event.name}
             </Text>
-            <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginBottom: 16, lineHeight: 18 }}>
+            <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginBottom: 16, lineHeight: 18 }}>
               {fmtDate(event.date)}
             </Text>
             {/* Already-registered class badges */}
             {registeredClasses.size > 0 && (
               <View style={{ marginBottom: 14, padding: 10, borderRadius: 8, backgroundColor: "#16a34a18", borderWidth: 1, borderColor: "#16a34a40" }}>
-                <Text style={{ fontSize: 11, fontWeight: "700", color: "#16a34a", fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>
+                <Text style={{ fontSize: 13, fontWeight: "700", color: "#16a34a", fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>
                   Already registered
                 </Text>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
                   {Array.from(registeredClasses).map(cls => (
                     <View key={cls} style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12, backgroundColor: "#16a34a22" }}>
-                      <Text style={{ fontSize: 12, color: "#16a34a", fontFamily: "Inter_500Medium" }}>{cls}</Text>
+                      <Text style={{ fontSize: 12, color: "#16a34a", fontFamily: "Roboto_500Medium" }}>{cls}</Text>
                     </View>
                   ))}
                 </View>
@@ -798,7 +798,7 @@ export default function EventDetailScreen() {
 
             {(profiles ?? []).length === 0 ? (
               <>
-                <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", lineHeight: 20, marginBottom: 16 }}>
+                <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", lineHeight: 20, marginBottom: 16 }}>
                   No rider profiles linked. Register for an event through the club website first to link your profile.
                 </Text>
                 <Pressable
@@ -809,12 +809,12 @@ export default function EventDetailScreen() {
                 </Pressable>
               </>
             ) : (event.raceClasses ?? []).length > 0 && (event.raceClasses ?? []).every(cls => registeredClasses.has(cls)) ? (
-              <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", lineHeight: 20 }}>
+              <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", lineHeight: 20 }}>
                 You're already registered for all available classes at this event.
               </Text>
             ) : (
               <>
-                <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginBottom: 10 }}>
+                <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginBottom: 10 }}>
                   {registeredClasses.size > 0
                     ? "Tap a profile to register for additional classes."
                     : "Tap a profile to open the registration form with your details pre-filled."}
@@ -836,16 +836,16 @@ export default function EventDetailScreen() {
                     })}
                   >
                     <View>
-                      <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+                      <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
                         {p.firstName} {p.lastName}
                       </Text>
                       {p.bibNumber && (
-                        <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+                        <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
                           #{p.bibNumber}
                         </Text>
                       )}
                     </View>
-                    <Text style={{ fontSize: 18, color: colors.primary }}>›</Text>
+                    <Text style={{ fontSize: 18, color: colors.primaryText }}>›</Text>
                   </Pressable>
                 ))}
               </>
@@ -861,16 +861,16 @@ export default function EventDetailScreen() {
       <Modal visible={showChangeClassModal} transparent animationType="slide" onRequestClose={() => setShowChangeClassModal(false)}>
         <Pressable style={s.modalOverlay} onPress={() => { if (!changeClassLoading) setShowChangeClassModal(false); }}>
           <Pressable style={s.modalBox} onPress={() => {}}>
-            <Text style={{ fontSize: 18, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", marginBottom: 4 }}>
+            <Text style={{ fontSize: 18, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold", marginBottom: 4 }}>
               Change Class
             </Text>
             {changingReg && (
               <View style={{ marginBottom: 14 }}>
-                <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
-                  Currently: <Text style={{ fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>{changingReg.raceClass}</Text>
+                <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
+                  Currently: <Text style={{ fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>{changingReg.raceClass}</Text>
                 </Text>
                 {myRegistrations.length > 1 && (
-                  <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
+                  <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 }}>
                     Rider: {changingReg.riderName}
                   </Text>
                 )}
@@ -878,10 +878,10 @@ export default function EventDetailScreen() {
             )}
             {changeClassError != null && (
               <View style={{ marginBottom: 12, padding: 10, borderRadius: 8, backgroundColor: "#ef444418", borderWidth: 1, borderColor: "#ef444440" }}>
-                <Text style={{ fontSize: 13, color: "#ef4444", fontFamily: "Inter_400Regular" }}>{changeClassError}</Text>
+                <Text style={{ fontSize: 13, color: "#ef4444", fontFamily: "Roboto_400Regular" }}>{changeClassError}</Text>
               </View>
             )}
-            <Text style={{ fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+            <Text style={{ fontSize: 14, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
               Select New Class
             </Text>
             {(event?.raceClasses ?? [])
@@ -906,22 +906,22 @@ export default function EventDetailScreen() {
                       justifyContent: "space-between",
                     })}
                   >
-                    <Text style={{ fontSize: 15, fontWeight: "700", color: alreadyInClass ? colors.mutedForeground : colors.foreground, fontFamily: "Inter_700Bold" }}>
+                    <Text style={{ fontSize: 15, fontWeight: "700", color: alreadyInClass ? colors.mutedForeground : colors.foreground, fontFamily: "Roboto_700Bold" }}>
                       {cls}
                     </Text>
                     {alreadyInClass ? (
-                      <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>Already registered</Text>
+                      <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>Already registered</Text>
                     ) : changeClassLoading ? (
-                      <ActivityIndicator size="small" color={colors.primary} />
+                      <ActivityIndicator size="small" color={colors.primaryText} />
                     ) : (
-                      <Text style={{ fontSize: 16, color: colors.primary }}>›</Text>
+                      <Text style={{ fontSize: 16, color: colors.primaryText }}>›</Text>
                     )}
                   </Pressable>
                 );
               })
             }
             {(event?.raceClasses ?? []).filter(cls => cls !== changingReg?.raceClass).length === 0 && (
-              <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", marginBottom: 12 }}>
+              <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center", marginBottom: 12 }}>
                 No other classes available at this event.
               </Text>
             )}

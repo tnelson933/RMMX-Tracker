@@ -129,25 +129,25 @@ const c = StyleSheet.create({
   card: { width: CARD_W, height: CARD_H, backgroundColor: "#000", borderRadius: 18, padding: 20, alignItems: "center" },
   banner: { width: 220, height: 70 },
   rule: { width: 64, height: 3, backgroundColor: RED, marginTop: 8, marginBottom: 14, transform: [{ skewX: "-18deg" }] },
-  eyebrow: { color: "#BDBDBD", fontSize: 11, letterSpacing: 2, fontFamily: "Inter_600SemiBold" },
-  name: { color: "#fff", fontSize: 24, marginTop: 4, fontFamily: "Inter_700Bold" },
-  sub: { color: "#BDBDBD", fontSize: 12, marginTop: 2, fontFamily: "Inter_400Regular" },
+  eyebrow: { color: "#BDBDBD", fontSize: 11, letterSpacing: 2, fontFamily: "Roboto_600SemiBold" },
+  name: { color: "#fff", fontSize: 24, marginTop: 4, fontFamily: "Roboto_700Bold" },
+  sub: { color: "#BDBDBD", fontSize: 12, marginTop: 2, fontFamily: "Roboto_400Regular" },
   grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", marginTop: 14, gap: 8 },
   tile: { width: 84, paddingVertical: 8, borderRadius: 10, backgroundColor: "#1A1A1A", alignItems: "center" },
-  tileValue: { color: "#fff", fontSize: 20, fontFamily: "Inter_700Bold" },
-  tileLabel: { color: "#BDBDBD", fontSize: 10, marginTop: 2, fontFamily: "Inter_500Medium" },
-  best: { color: "#fff", fontSize: 13, marginTop: 12, fontFamily: "Inter_600SemiBold" },
-  bigPos: { color: "#fff", fontSize: 64, lineHeight: 70, marginTop: 6, fontFamily: "Inter_700Bold" },
+  tileValue: { color: "#fff", fontSize: 20, fontFamily: "Roboto_700Bold" },
+  tileLabel: { color: "#BDBDBD", fontSize: 10, marginTop: 2, fontFamily: "Roboto_500Medium" },
+  best: { color: "#fff", fontSize: 13, marginTop: 12, fontFamily: "Roboto_600SemiBold" },
+  bigPos: { color: "#fff", fontSize: 64, lineHeight: 70, marginTop: 6, fontFamily: "Roboto_700Bold" },
   motoList: { alignSelf: "stretch", marginTop: 6, gap: 4 },
   motoRow: { flexDirection: "row", justifyContent: "space-between", backgroundColor: "#1A1A1A", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
-  motoName: { color: "#BDBDBD", fontSize: 12, flex: 1, fontFamily: "Inter_500Medium" },
-  motoPos: { color: "#fff", fontSize: 12, fontFamily: "Inter_700Bold" },
-  footer: { position: "absolute", bottom: 12, color: "#8C8C8C", fontSize: 10, letterSpacing: 1, fontFamily: "Inter_500Medium" },
+  motoName: { color: "#BDBDBD", fontSize: 12, flex: 1, fontFamily: "Roboto_500Medium" },
+  motoPos: { color: "#fff", fontSize: 12, fontFamily: "Roboto_700Bold" },
+  footer: { position: "absolute", bottom: 12, color: "#8C8C8C", fontSize: 10, letterSpacing: 1, fontFamily: "Roboto_500Medium" },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", alignItems: "center", justifyContent: "center", gap: 20, padding: 24 },
   modalActions: { flexDirection: "row", gap: 12 },
   modalBtn: { minWidth: 120, alignItems: "center", backgroundColor: RED, borderRadius: 999, paddingVertical: 12, paddingHorizontal: 20 },
   modalCancel: { backgroundColor: "#333" },
-  modalBtnText: { color: "#fff", fontSize: 15, fontFamily: "Inter_700Bold" },
+  modalBtnText: { color: "#fff", fontSize: 15, fontFamily: "Roboto_700Bold" },
 });
 
 /** "Share result" button that opens a preview of the result card, then the share sheet. */
@@ -162,7 +162,7 @@ export function ShareResultButton(props: {
     <>
       <Pressable onPress={() => setOpen(true)} style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-end", opacity: pressed ? 0.6 : 1 })}>
         <Feather name="share" size={14} color={props.color} />
-        <Text style={{ fontSize: 13, color: props.color, fontFamily: "Inter_600SemiBold" }}>Share result</Text>
+        <Text style={{ fontSize: 13, color: props.color, fontFamily: "Roboto_600SemiBold" }}>Share result</Text>
       </Pressable>
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <View style={c.modalBackdrop}>

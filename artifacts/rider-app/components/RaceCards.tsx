@@ -13,10 +13,10 @@ export function DateBlock({ iso, size = 52 }: { iso: string | null | undefined; 
   const d = iso ? displayDate(iso) : null;
   return (
     <View style={{ width: size, height: size + 4, borderRadius: 12, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" }}>
-      <Text style={{ fontSize: size * 0.2, color: "#fff", fontFamily: "Inter_700Bold", letterSpacing: 1.2 }}>
+      <Text style={{ fontSize: size * 0.2, color: "#fff", fontFamily: "Roboto_700Bold", letterSpacing: 1.2 }}>
         {d ? d.toLocaleDateString("en-US", { month: "short" }).toUpperCase() : "TBD"}
       </Text>
-      <Text style={{ fontSize: size * 0.44, color: "#fff", fontFamily: "Inter_700Bold", lineHeight: size * 0.52 }}>
+      <Text style={{ fontSize: size * 0.44, color: "#fff", fontFamily: "Roboto_700Bold", lineHeight: size * 0.52 }}>
         {d ? d.getDate() : "–"}
       </Text>
     </View>
@@ -31,8 +31,8 @@ export function MetaChip({ icon, label, accent }: { icon: FeatherName; label: st
       flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 999, paddingVertical: 3, paddingHorizontal: 8,
       backgroundColor: accent ? colors.primaryTint : colors.muted, borderWidth: 1, borderColor: accent ? colors.primary + "55" : colors.border,
     }}>
-      <Feather name={icon} size={10} color={accent ? colors.primary : colors.mutedForeground} />
-      <Text style={{ fontSize: 11, color: colors.foreground, fontFamily: "Inter_600SemiBold" }} numberOfLines={1}>{label}</Text>
+      <Feather name={icon} size={10} color={accent ? colors.primaryText : colors.mutedForeground} />
+      <Text style={{ fontSize: 11, color: colors.foreground, fontFamily: "Roboto_600SemiBold" }} numberOfLines={1}>{label}</Text>
     </View>
   );
 }
@@ -78,14 +78,14 @@ export function ResultCard({
         <View style={{ minWidth: 56, alignItems: "center" }}>
           {position != null || dnf
             ? <PositionBadge position={position} dnf={dnf} size="md" />
-            : <Text style={{ fontSize: 16, color: colors.mutedForeground, fontFamily: "Inter_700Bold" }}>—</Text>}
+            : <Text style={{ fontSize: 16, color: colors.mutedForeground, fontFamily: "Roboto_700Bold" }}>—</Text>}
         </View>
         <View style={{ flex: 1, gap: 6 }}>
           <View>
             {kicker ? (
-              <Text style={{ fontSize: 10, color: colors.primary, fontFamily: "Inter_700Bold", letterSpacing: 1, textTransform: "uppercase" }} numberOfLines={1}>{kicker}</Text>
+              <Text style={{ fontSize: 12, color: colors.primaryText, fontFamily: "Barlow_700Bold", letterSpacing: 1, textTransform: "uppercase" }} numberOfLines={1}>{kicker}</Text>
             ) : null}
-            <Text style={{ fontSize: 15, color: colors.foreground, fontFamily: "Inter_700Bold", fontStyle: "italic", letterSpacing: 0.3, textTransform: "uppercase" }} numberOfLines={1}>
+            <Text style={{ fontSize: 15, color: colors.foreground, fontFamily: "Barlow_800ExtraBold_Italic", letterSpacing: 0.3, textTransform: "uppercase" }} numberOfLines={1}>
               {title}
             </Text>
           </View>
@@ -95,7 +95,7 @@ export function ResultCard({
             {place ? <MetaChip icon="map-pin" label={place} /> : null}
           </View>
           {official != null ? (
-            <Text style={{ fontSize: 10, fontFamily: "Inter_700Bold", letterSpacing: 0.6, textTransform: "uppercase", color: official ? "#15803d" : "#b45309" }}>
+            <Text style={{ fontSize: 12, fontFamily: "Barlow_700Bold", letterSpacing: 0.6, textTransform: "uppercase", color: official ? "#15803d" : "#b45309" }}>
               {official ? "✓ Official results" : "Unofficial results"}
             </Text>
           ) : null}
@@ -103,7 +103,7 @@ export function ResultCard({
             <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
               {motos.map((m, i) => (
                 <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
-                  <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_700Bold" }}>M{i + 1}</Text>
+                  <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_700Bold" }}>M{i + 1}</Text>
                   <PositionBadge position={m.position} dnf={m.dnf} dns={m.dns} size="sm" />
                 </View>
               ))}
@@ -112,8 +112,8 @@ export function ResultCard({
         </View>
         {points != null && points > 0 ? (
           <View style={{ alignItems: "center", minWidth: 40 }}>
-            <Text style={{ fontSize: 22, color: colors.foreground, fontFamily: "Inter_700Bold", fontStyle: "italic" }}>{points}</Text>
-            <Text style={{ fontSize: 9, color: colors.mutedForeground, fontFamily: "Inter_700Bold", letterSpacing: 1 }}>PTS</Text>
+            <Text style={{ fontSize: 22, color: colors.foreground, fontFamily: "Barlow_800ExtraBold_Italic" }}>{points}</Text>
+            <Text style={{ fontSize: 9, color: colors.mutedForeground, fontFamily: "Roboto_700Bold", letterSpacing: 1 }}>PTS</Text>
           </View>
         ) : onPress ? (
           <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
@@ -161,21 +161,21 @@ export function EventCard({
           {live && (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: "#ef4444" }}>
               <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: "#fff" }} />
-              <Text style={{ fontSize: 9, color: "#fff", fontFamily: "Inter_700Bold", letterSpacing: 0.8 }}>LIVE NOW</Text>
+              <Text style={{ fontSize: 9, color: "#fff", fontFamily: "Roboto_700Bold", letterSpacing: 0.8 }}>LIVE NOW</Text>
             </View>
           )}
           {status === "open" && (
             <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: colors.successTint }}>
-              <Text style={{ fontSize: 9, color: colors.success, fontFamily: "Inter_700Bold", letterSpacing: 0.8 }}>REGISTRATION OPEN</Text>
+              <Text style={{ fontSize: 9, color: colors.success, fontFamily: "Roboto_700Bold", letterSpacing: 0.8 }}>REGISTRATION OPEN</Text>
             </View>
           )}
           {registered && (
             <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: colors.primary }}>
-              <Text style={{ fontSize: 9, color: "#fff", fontFamily: "Inter_700Bold", letterSpacing: 0.8 }}>✓ REGISTERED</Text>
+              <Text style={{ fontSize: 9, color: "#fff", fontFamily: "Roboto_700Bold", letterSpacing: 0.8 }}>✓ REGISTERED</Text>
             </View>
           )}
         </View>
-        <Text style={{ fontSize: 15, color: colors.foreground, fontFamily: "Inter_700Bold", fontStyle: "italic", letterSpacing: 0.3, textTransform: "uppercase" }} numberOfLines={2}>
+        <Text style={{ fontSize: 15, color: colors.foreground, fontFamily: "Barlow_800ExtraBold_Italic", letterSpacing: 0.3, textTransform: "uppercase" }} numberOfLines={2}>
           {title}
         </Text>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 5 }}>
@@ -221,9 +221,9 @@ export function ResultHero({
         <DateBlock iso={dateIso} size={56} />
         <View style={{ flex: 1, gap: 6 }}>
           {riderName ? (
-            <Text style={{ fontSize: 10, color: colors.primary, fontFamily: "Inter_700Bold", letterSpacing: 1, textTransform: "uppercase" }} numberOfLines={1}>{riderName}</Text>
+            <Text style={{ fontSize: 12, color: colors.primaryText, fontFamily: "Barlow_700Bold", letterSpacing: 1, textTransform: "uppercase" }} numberOfLines={1}>{riderName}</Text>
           ) : null}
-          <Text style={{ fontSize: 20, color: colors.foreground, fontFamily: "Inter_700Bold", fontStyle: "italic", letterSpacing: 0.3, textTransform: "uppercase" }} numberOfLines={2}>
+          <Text style={{ fontSize: 20, color: colors.foreground, fontFamily: "Barlow_800ExtraBold_Italic", letterSpacing: 0.3, textTransform: "uppercase" }} numberOfLines={2}>
             {eventName}
           </Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 5 }}>
@@ -236,18 +236,18 @@ export function ResultHero({
         <View style={{ flex: 1.3, alignItems: "center", paddingVertical: 14, gap: 6 }}>
           {bestPosition != null
             ? <PositionBadge position={bestPosition} size="lg" />
-            : <Text style={{ fontSize: 26, color: colors.mutedForeground, fontFamily: "Inter_700Bold" }}>—</Text>}
-          <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_700Bold", letterSpacing: 1 }}>BEST FINISH</Text>
+            : <Text style={{ fontSize: 26, color: colors.mutedForeground, fontFamily: "Roboto_700Bold" }}>—</Text>}
+          <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_700Bold", letterSpacing: 1 }}>BEST FINISH</Text>
         </View>
         <View style={{ width: 1, backgroundColor: colors.border }} />
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 2 }}>
-          <Text style={{ fontSize: 28, color: colors.foreground, fontFamily: "Inter_700Bold", fontStyle: "italic" }}>{motoCount}</Text>
-          <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_700Bold", letterSpacing: 1 }}>{motoCount === 1 ? "MOTO" : "MOTOS"}</Text>
+          <Text style={{ fontSize: 28, color: colors.foreground, fontFamily: "Barlow_800ExtraBold_Italic" }}>{motoCount}</Text>
+          <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_700Bold", letterSpacing: 1 }}>{motoCount === 1 ? "MOTO" : "MOTOS"}</Text>
         </View>
         <View style={{ width: 1, backgroundColor: colors.border }} />
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center", gap: 2 }}>
-          <Text style={{ fontSize: 28, color: points ? colors.primary : colors.foreground, fontFamily: "Inter_700Bold", fontStyle: "italic" }}>{points ?? 0}</Text>
-          <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_700Bold", letterSpacing: 1 }}>POINTS</Text>
+          <Text style={{ fontSize: 28, color: points ? colors.primaryText : colors.foreground, fontFamily: "Barlow_800ExtraBold_Italic" }}>{points ?? 0}</Text>
+          <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_700Bold", letterSpacing: 1 }}>POINTS</Text>
         </View>
       </View>
     </View>

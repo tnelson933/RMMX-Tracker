@@ -44,7 +44,7 @@ export function RockyHomeWidget() {
             onPress={() => ask(q.question)}
             style={({ pressed }) => [styles.chip, { backgroundColor: colors.muted, borderColor: colors.border, opacity: pressed ? 0.72 : 1 }]}
           >
-            <Feather name={q.icon} size={12} color={colors.primary} />
+            <Feather name={q.icon} size={12} color={colors.primaryText} />
             <Text style={[styles.chipText, { color: colors.foreground }]}>{q.label}</Text>
           </Pressable>
         ))}
@@ -62,10 +62,10 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   row: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 10 },
-  title: { fontSize: 16, fontFamily: "Inter_700Bold", fontStyle: "italic", letterSpacing: 0.4, textTransform: "uppercase" },
-  subtitle: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 1 },
+  title: { fontSize: 16, fontFamily: "Barlow_800ExtraBold_Italic", letterSpacing: 0.4, textTransform: "uppercase" },
+  subtitle: { fontSize: 12, fontFamily: "Roboto_400Regular", marginTop: 1 },
   openBtn: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
   chips: { flexDirection: "row", gap: 6, paddingHorizontal: 12, paddingBottom: 12 },
   chip: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderWidth: 1 },
-  chipText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  chipText: { fontSize: 12, fontFamily: "Roboto_600SemiBold" },
 });

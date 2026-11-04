@@ -70,21 +70,21 @@ function AuthForm() {
       backgroundColor: colors.primary,
       alignItems: "center", justifyContent: "center", marginBottom: 8,
     },
-    title: { fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: 1, textTransform: "uppercase" },
-    subtitle: { fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginBottom: 8 },
+    title: { fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Barlow_800ExtraBold", letterSpacing: 1, textTransform: "uppercase" },
+    subtitle: { fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginBottom: 8 },
     inputWrapper: {
       flexDirection: "row", alignItems: "center",
       backgroundColor: colors.muted, borderRadius: 10,
       paddingHorizontal: 14, borderWidth: 1, borderColor: colors.border,
     },
-    input: { flex: 1, paddingVertical: 14, fontSize: 15, color: colors.foreground, fontFamily: "Inter_400Regular" },
+    input: { flex: 1, paddingVertical: 14, fontSize: 15, color: colors.foreground, fontFamily: "Roboto_400Regular" },
     btn: { backgroundColor: colors.primary, paddingVertical: 14, borderRadius: 10, alignItems: "center", marginTop: 4 },
     btnDisabled: { opacity: 0.5 },
-    btnText: { color: "#fff", fontWeight: "700", fontSize: 15, fontFamily: "Inter_700Bold" },
+    btnText: { color: "#fff", fontWeight: "700", fontSize: 15, fontFamily: "Roboto_700Bold" },
     switchRow: { flexDirection: "row", justifyContent: "center", gap: 6, marginTop: 4 },
-    switchText: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
-    switchLink: { fontSize: 13, color: colors.primary, fontFamily: "Inter_600SemiBold" },
-    error: { backgroundColor: colors.dangerTint, borderRadius: 8, padding: 12, fontSize: 13, color: colors.destructive, fontFamily: "Inter_400Regular" },
+    switchText: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" },
+    switchLink: { fontSize: 13, color: colors.primaryText, fontFamily: "Roboto_600SemiBold" },
+    error: { backgroundColor: colors.dangerTint, borderRadius: 8, padding: 12, fontSize: 13, color: colors.destructive, fontFamily: "Roboto_400Regular" },
   });
 
   return (
@@ -359,31 +359,31 @@ function ProfileList() {
       backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border,
     },
     container: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: (tabBarHeight > 0 ? tabBarHeight : 49 + insets.bottom) + 96, gap: 14 },
-    pageTitle: { fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: 1, textTransform: "uppercase" },
-    pageSubtitle: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 },
+    pageTitle: { fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Barlow_800ExtraBold", letterSpacing: 1, textTransform: "uppercase" },
+    pageSubtitle: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 },
     accountCard: {
       backgroundColor: colors.card, borderRadius: 14, padding: 16,
       borderWidth: 1, borderColor: colors.border,
       flexDirection: "row", alignItems: "center", gap: 12,
     },
     accountIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary + "20", alignItems: "center", justifyContent: "center" },
-    accountEmail: { fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" },
-    accountLabel: { fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginBottom: 2 },
+    accountEmail: { fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Roboto_600SemiBold" },
+    accountLabel: { fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginBottom: 2 },
     sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 2 },
-    sectionLabel: { fontSize: 11, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", letterSpacing: 0.8, textTransform: "uppercase" },
-    sectionHint: { fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
+    sectionLabel: { fontSize: 13, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", letterSpacing: 0.8, textTransform: "uppercase" },
+    sectionHint: { fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" },
     listCard: { backgroundColor: colors.card, borderRadius: 16, borderWidth: 1, borderColor: colors.border, overflow: "hidden" },
     riderRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
     riderInitials: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
-    riderName: { fontSize: 15, color: colors.foreground, fontFamily: "Inter_700Bold" },
-    riderMeta: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 },
+    riderName: { fontSize: 15, color: colors.foreground, fontFamily: "Roboto_700Bold" },
+    riderMeta: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 },
     expandBtn: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center" },
     actionPill: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: colors.primaryTint, borderWidth: 1, borderColor: colors.primary + "44" },
-    actionPillText: { fontSize: 12, color: colors.foreground, fontFamily: "Inter_600SemiBold" },
+    actionPillText: { fontSize: 12, color: colors.foreground, fontFamily: "Roboto_600SemiBold" },
     settingRow: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 13 },
     settingIcon: { width: 32, height: 32, borderRadius: 10, backgroundColor: colors.primaryTint, alignItems: "center", justifyContent: "center" },
-    settingLabel: { fontSize: 15, color: colors.foreground, fontFamily: "Inter_600SemiBold" },
-    settingSub: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 },
+    settingLabel: { fontSize: 15, color: colors.foreground, fontFamily: "Roboto_600SemiBold" },
+    settingSub: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 },
     settingDivider: { height: 1, backgroundColor: colors.border, marginLeft: 58 },
     miniSeg: { flexDirection: "row", backgroundColor: colors.muted, borderRadius: 999, padding: 3, gap: 2 },
     miniSegBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
@@ -393,12 +393,12 @@ function ProfileList() {
       backgroundColor: colors.primary + "14", borderRadius: 10, padding: 10,
       borderWidth: 1, borderColor: colors.primary + "35",
     },
-    activeBannerText: { flex: 1, fontSize: 13, fontWeight: "600", color: colors.primary, fontFamily: "Inter_600SemiBold" },
+    activeBannerText: { flex: 1, fontSize: 13, fontWeight: "600", color: colors.primaryText, fontFamily: "Roboto_600SemiBold" },
     activeBannerBtn: {
       paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
       backgroundColor: colors.primary, flexDirection: "row", alignItems: "center", gap: 4,
     },
-    activeBannerBtnText: { fontSize: 11, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" },
+    activeBannerBtnText: { fontSize: 11, fontWeight: "700", color: "#fff", fontFamily: "Roboto_700Bold" },
     // Profile card
     profileCard: {
       backgroundColor: colors.card, borderRadius: 14,
@@ -409,14 +409,14 @@ function ProfileList() {
     profileRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
     profileLeft: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
     profileAvatar: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
-    profileName: { fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" },
-    profileBib: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 },
+    profileName: { fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" },
+    profileBib: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 },
     statsRow: { flexDirection: "row", marginTop: 12, gap: 8 },
     statBox: { flex: 1, backgroundColor: colors.muted, borderRadius: 8, padding: 10, alignItems: "center" },
-    statLabel: { fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginBottom: 2 },
-    statValue: { fontSize: 18, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold" },
-    statValuePrimary: { fontSize: 18, fontWeight: "800", color: colors.primary, fontFamily: "Inter_700Bold" },
-    lastRaced: { fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 8 },
+    statLabel: { fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginBottom: 2 },
+    statValue: { fontSize: 18, fontWeight: "800", color: colors.foreground, fontFamily: "Roboto_700Bold" },
+    statValuePrimary: { fontSize: 18, fontWeight: "800", color: colors.primaryText, fontFamily: "Roboto_700Bold" },
+    lastRaced: { fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 8 },
     // Checkbox
     checkOuter: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, alignItems: "center", justifyContent: "center" },
     // Other
@@ -425,26 +425,26 @@ function ProfileList() {
       flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
       borderWidth: 1, borderColor: colors.border, borderStyle: "dashed",
     },
-    addBtnText: { fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_600SemiBold" },
+    addBtnText: { fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_600SemiBold" },
     signOutBtn: {
       backgroundColor: colors.muted, borderRadius: 14, padding: 14,
       flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
       borderWidth: 1, borderColor: colors.border,
     },
-    signOutText: { fontSize: 14, color: "#DC2626", fontFamily: "Inter_600SemiBold" },
+    signOutText: { fontSize: 14, color: "#DC2626", fontFamily: "Roboto_600SemiBold" },
     emptyBox: {
       backgroundColor: colors.card, borderRadius: 14, padding: 32,
       alignItems: "center", gap: 8,
       borderWidth: 1, borderColor: colors.border,
     },
-    emptyTitle: { fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" },
-    emptyText: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" },
+    emptyTitle: { fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" },
+    emptyText: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center" },
     infoCard: {
       backgroundColor: colors.card, borderRadius: 14, padding: 14,
       borderWidth: 1, borderColor: colors.border, gap: 4,
     },
-    infoTitle: { fontSize: 11, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 },
-    infoText: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", lineHeight: 18 },
+    infoTitle: { fontSize: 13, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 },
+    infoText: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", lineHeight: 18 },
   });
 
   return (
@@ -460,7 +460,7 @@ function ProfileList() {
           <BrandBar />
           <Text style={s.pageTitle}>My Profiles</Text>
           <Text style={s.pageSubtitle} numberOfLines={1}>
-            Signed in as <Text style={{ fontFamily: "Inter_700Bold", color: colors.foreground }}>{account?.email}</Text>
+            Signed in as <Text style={{ fontFamily: "Roboto_700Bold", color: colors.foreground }}>{account?.email}</Text>
           </Text>
         </View>
       </View>
@@ -482,7 +482,7 @@ function ProfileList() {
             })}
           >
             <Feather name={allSelected ? "minus" : "check-square"} size={12} color={allSelected ? "#fff" : colors.mutedForeground} />
-            <Text style={{ fontSize: 12, fontWeight: "700", color: allSelected ? "#fff" : colors.mutedForeground, fontFamily: "Inter_700Bold" }}>
+            <Text style={{ fontSize: 12, fontWeight: "700", color: allSelected ? "#fff" : colors.mutedForeground, fontFamily: "Roboto_700Bold" }}>
               {allSelected ? "Solo" : "All"}
             </Text>
           </Pressable>
@@ -511,7 +511,7 @@ function ProfileList() {
                   style={({ pressed }) => [s.riderRow, { opacity: pressed ? 0.8 : 1 }]}
                 >
                   <View style={[s.riderInitials, { backgroundColor: isSelected ? colors.primary : colors.muted }]}>
-                    <Text style={{ fontSize: 14, color: isSelected ? "#fff" : colors.mutedForeground, fontFamily: "Inter_700Bold" }}>{initials || "?"}</Text>
+                    <Text style={{ fontSize: 14, color: isSelected ? "#fff" : colors.mutedForeground, fontFamily: "Roboto_700Bold" }}>{initials || "?"}</Text>
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={s.riderName} numberOfLines={1}>{profile.firstName} {profile.lastName}</Text>
@@ -557,7 +557,7 @@ function ProfileList() {
                           onPress={() => router.push(href as any)}
                           style={({ pressed }) => [s.actionPill, { opacity: pressed ? 0.7 : 1 }]}
                         >
-                          <Feather name={icon} size={13} color={colors.primary} />
+                          <Feather name={icon} size={13} color={colors.primaryText} />
                           <Text style={s.actionPillText}>{label}</Text>
                         </Pressable>
                       ))}
@@ -579,8 +579,8 @@ function ProfileList() {
       {profiles.length > 0 && (
         <>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8, marginTop: 4 }}>
-            <Text style={{ fontSize: 11, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", letterSpacing: 0.8, textTransform: "uppercase" }}>My Garage</Text>
-            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>— riding level & maintenance</Text>
+            <Text style={{ fontSize: 13, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", letterSpacing: 0.8, textTransform: "uppercase" }}>My Garage</Text>
+            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>— riding level & maintenance</Text>
           </View>
 
           {profiles.map(profile => {
@@ -614,23 +614,23 @@ function ProfileList() {
                   })}
                 >
                   <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: colors.primary + "18", alignItems: "center", justifyContent: "center" }}>
-                    <DirtBikeIcon size={20} color={colors.primary} />
+                    <DirtBikeIcon size={20} color={colors.primaryText} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 13, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+                    <Text style={{ fontSize: 13, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
                       {profile.firstName} {profile.lastName}
                     </Text>
                     {(profile.bikes && profile.bikes.length > 0) ? (
-                      <Text style={{ fontSize: 12, color: colors.primary, fontFamily: "Inter_500Medium", marginTop: 1 }}>
+                      <Text style={{ fontSize: 12, color: colors.primaryText, fontFamily: "Roboto_500Medium", marginTop: 1 }}>
                         {bikeStr || `${profile.bikes.length} bike${profile.bikes.length === 1 ? "" : "s"}`}
                       </Text>
                     ) : (
-                      <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>
+                      <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 }}>
                         No bikes yet — expand to add one
                       </Text>
                     )}
                     {info.rideExperience && (
-                      <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1, textTransform: "capitalize" }}>
+                      <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1, textTransform: "capitalize" }}>
                         {info.rideExperience} rider
                       </Text>
                     )}
@@ -648,9 +648,9 @@ function ProfileList() {
 
                     {/* Bike garage list */}
                     <View>
-                      <Text style={{ fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>My Bikes</Text>
+                      <Text style={{ fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>My Bikes</Text>
                       {(!profile.bikes || profile.bikes.length === 0) && showAddBike !== profile.id && (
-                        <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", fontStyle: "italic", marginBottom: 8 }}>No bikes yet</Text>
+                        <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", fontStyle: "italic", marginBottom: 8 }}>No bikes yet</Text>
                       )}
                       {(profile.bikes ?? []).map(bike => {
                         const bs = [bike.bikeYear, bike.bikeManufacturer, bike.bikeModel].filter(Boolean).join(" ") || "Unnamed bike";
@@ -676,7 +676,7 @@ function ProfileList() {
                             <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: bike.isDefault ? colors.primary : colors.border, backgroundColor: bike.isDefault ? colors.primary : "transparent", alignItems: "center", justifyContent: "center" }}>
                               {bike.isDefault && <Feather name="check" size={11} color="#fff" />}
                             </View>
-                            <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>{bs}</Text>
+                            <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Roboto_600SemiBold" }}>{bs}</Text>
                             <Pressable
                               onPress={async () => {
                                 await riderFetch(`/api/rider/profiles/${profile.id}/bikes/${bike.id}`, { method: "DELETE" });
@@ -699,28 +699,28 @@ function ProfileList() {
                             value={addBikeForm.year}
                             onChangeText={v => setAddBikeForm(f => ({ ...f, year: v }))}
                             keyboardType="numeric"
-                            style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular", backgroundColor: colors.card }}
+                            style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14, color: colors.foreground, fontFamily: "Roboto_400Regular", backgroundColor: colors.card }}
                           />
                           <TextInput
                             placeholder="Make (e.g. KTM)"
                             placeholderTextColor={colors.mutedForeground}
                             value={addBikeForm.manufacturer}
                             onChangeText={v => setAddBikeForm(f => ({ ...f, manufacturer: v }))}
-                            style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular", backgroundColor: colors.card }}
+                            style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14, color: colors.foreground, fontFamily: "Roboto_400Regular", backgroundColor: colors.card }}
                           />
                           <TextInput
                             placeholder="Model (e.g. 450 SX-F)"
                             placeholderTextColor={colors.mutedForeground}
                             value={addBikeForm.model}
                             onChangeText={v => setAddBikeForm(f => ({ ...f, model: v }))}
-                            style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular", backgroundColor: colors.card }}
+                            style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14, color: colors.foreground, fontFamily: "Roboto_400Regular", backgroundColor: colors.card }}
                           />
                           <View style={{ flexDirection: "row", gap: 8 }}>
                             <Pressable
                               onPress={() => { setShowAddBike(null); setAddBikeForm({ manufacturer: "", model: "", year: "" }); }}
                               style={({ pressed }) => ({ flex: 1, alignItems: "center", paddingVertical: 9, borderRadius: 8, backgroundColor: colors.muted, opacity: pressed ? 0.7 : 1 })}
                             >
-                              <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_600SemiBold" }}>Cancel</Text>
+                              <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_600SemiBold" }}>Cancel</Text>
                             </Pressable>
                             <Pressable
                               disabled={addBikeSaving}
@@ -741,7 +741,7 @@ function ProfileList() {
                               }}
                               style={({ pressed }) => ({ flex: 1, alignItems: "center", paddingVertical: 9, borderRadius: 8, backgroundColor: colors.primary, opacity: pressed || addBikeSaving ? 0.75 : 1 })}
                             >
-                              {addBikeSaving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={{ fontSize: 13, color: "#fff", fontFamily: "Inter_700Bold" }}>Add Bike</Text>}
+                              {addBikeSaving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={{ fontSize: 13, color: "#fff", fontFamily: "Roboto_700Bold" }}>Add Bike</Text>}
                             </Pressable>
                           </View>
                         </View>
@@ -751,14 +751,14 @@ function ProfileList() {
                           style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, borderColor: colors.border, borderStyle: "dashed", opacity: pressed ? 0.7 : 1, backgroundColor: colors.background })}
                         >
                           <Feather name="plus" size={14} color={colors.mutedForeground} />
-                          <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_600SemiBold" }}>Add bike</Text>
+                          <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_600SemiBold" }}>Add bike</Text>
                         </Pressable>
                       )}
                     </View>
 
                     {/* Engine Hours */}
                     <View>
-                      <Text style={{ fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>
+                      <Text style={{ fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>
                         Current Engine Hours — used for maintenance intervals
                       </Text>
                       <TextInput
@@ -771,7 +771,7 @@ function ProfileList() {
                         style={{
                           borderWidth: 1, borderColor: colors.border, borderRadius: 10,
                           paddingHorizontal: 12, paddingVertical: 10,
-                          fontSize: 15, color: colors.foreground, fontFamily: "Inter_400Regular",
+                          fontSize: 15, color: colors.foreground, fontFamily: "Roboto_400Regular",
                           backgroundColor: colors.background,
                         }}
                       />
@@ -779,7 +779,7 @@ function ProfileList() {
 
                     {/* Experience Level */}
                     <View>
-                      <Text style={{ fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>
+                      <Text style={{ fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>
                         Riding Experience — used by Rocky AI
                       </Text>
                       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
@@ -796,7 +796,7 @@ function ProfileList() {
                                 opacity: pressed ? 0.75 : 1,
                               })}
                             >
-                              <Text style={{ fontSize: 13, fontWeight: "600", color: selected ? "#fff" : colors.mutedForeground, fontFamily: "Inter_600SemiBold" }}>{lvl}</Text>
+                              <Text style={{ fontSize: 13, fontWeight: "600", color: selected ? "#fff" : colors.mutedForeground, fontFamily: "Roboto_600SemiBold" }}>{lvl}</Text>
                             </Pressable>
                           );
                         })}
@@ -805,7 +805,7 @@ function ProfileList() {
 
                     {/* Race Types */}
                     <View>
-                      <Text style={{ fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>
+                      <Text style={{ fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>
                         Race Types — used by Rocky AI
                       </Text>
                       <View style={{ gap: 6 }}>
@@ -838,7 +838,7 @@ function ProfileList() {
                               }}>
                                 {isChecked && <Feather name="check" size={12} color="#fff" />}
                               </View>
-                              <Text style={{ fontSize: 14, fontWeight: "600", color: isChecked ? colors.primary : colors.foreground, fontFamily: "Inter_600SemiBold" }}>
+                              <Text style={{ fontSize: 14, fontWeight: "600", color: isChecked ? colors.primaryText : colors.foreground, fontFamily: "Roboto_600SemiBold" }}>
                                 {discipline}
                               </Text>
                             </Pressable>
@@ -883,7 +883,7 @@ function ProfileList() {
                       {garageSaving ? (
                         <ActivityIndicator color="#fff" size="small" />
                       ) : (
-                        <Text style={{ color: "#fff", fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold" }}>Save Garage Settings</Text>
+                        <Text style={{ color: "#fff", fontSize: 14, fontWeight: "700", fontFamily: "Roboto_700Bold" }}>Save Garage Settings</Text>
                       )}
                     </Pressable>
                   </View>
@@ -899,7 +899,7 @@ function ProfileList() {
       <Text style={[s.sectionLabel, { marginTop: 6 }]}>Settings</Text>
       <View style={s.listCard}>
           <Pressable onPress={() => router.push("/organizations" as any)} style={({ pressed }) => [s.settingRow, { opacity: pressed ? 0.75 : 1 }]}>
-            <View style={s.settingIcon}><Feather name="flag" size={15} color={colors.primary} /></View>
+            <View style={s.settingIcon}><Feather name="flag" size={15} color={colors.primaryText} /></View>
             <View style={{ flex: 1 }}>
               <Text style={s.settingLabel}>Race organizations</Text>
               <Text style={s.settingSub}>Clubs you race with and their alerts</Text>
@@ -908,7 +908,7 @@ function ProfileList() {
           </Pressable>
         <View style={s.settingDivider} />
         <View style={s.settingRow}>
-          <View style={s.settingIcon}><Feather name={themePref === "dark" ? "moon" : "sun"} size={15} color={colors.primary} /></View>
+          <View style={s.settingIcon}><Feather name={themePref === "dark" ? "moon" : "sun"} size={15} color={colors.primaryText} /></View>
           <Text style={[s.settingLabel, { flex: 1 }]}>Appearance</Text>
           <View style={s.miniSeg}>
             {(["light", "dark"] as ThemePreference[]).map(option => {
@@ -920,7 +920,7 @@ function ProfileList() {
                   style={[s.miniSegBtn, isActive && { backgroundColor: colors.primary }]}
                 >
                   <Feather name={option === "light" ? "sun" : "moon"} size={12} color={isActive ? "#fff" : colors.mutedForeground} />
-                  <Text style={{ fontSize: 11, fontFamily: "Inter_700Bold", color: isActive ? "#fff" : colors.mutedForeground }}>{option === "light" ? "Light" : "Dark"}</Text>
+                  <Text style={{ fontSize: 11, fontFamily: "Roboto_700Bold", color: isActive ? "#fff" : colors.mutedForeground }}>{option === "light" ? "Light" : "Dark"}</Text>
                 </Pressable>
               );
             })}
@@ -928,7 +928,7 @@ function ProfileList() {
         </View>
         <View style={s.settingDivider} />
           <Pressable onPress={() => { setShowSecurity(v => !v); setPwError(null); setPwSuccess(false); }} style={({ pressed }) => [s.settingRow, { opacity: pressed ? 0.75 : 1 }]}>
-            <View style={s.settingIcon}><Feather name="lock" size={15} color={colors.primary} /></View>
+            <View style={s.settingIcon}><Feather name="lock" size={15} color={colors.primaryText} /></View>
             <View style={{ flex: 1 }}>
               <Text style={s.settingLabel}>Security</Text>
               <Text style={s.settingSub}>{biometricHardware ? "Face ID / fingerprint and password" : "Change your password"}</Text>
@@ -950,13 +950,13 @@ function ProfileList() {
                   <Feather
                     name={biometricType === "face" ? "aperture" : "check-circle"}
                     size={18}
-                    color={biometricEnabled ? colors.primary : colors.mutedForeground}
+                    color={biometricEnabled ? colors.primaryText : colors.mutedForeground}
                   />
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>
+                    <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Roboto_600SemiBold" }}>
                       {biometricType === "face" ? "Face ID" : "Fingerprint"} sign-in
                     </Text>
-                    <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>
+                    <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 }}>
                       {biometricEnabled ? "Enabled — tap to disable" : "Tap to enable quick biometric sign-in"}
                     </Text>
                   </View>
@@ -976,13 +976,13 @@ function ProfileList() {
   
               {biometricHardware && !biometricEnabled && bioSetupOpen && (
                 <View style={{ gap: 8 }}>
-                  <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+                  <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
                     Enter your password once. It's stored in this device's secure keychain and used only for {biometricType === "face" ? "Face ID" : "fingerprint"} sign-in.
                   </Text>
                   {bioError && (
                     <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: colors.dangerTint, borderRadius: 8, padding: 10 }}>
                       <Feather name="alert-circle" size={14} color={colors.destructive} style={{ marginTop: 1 }} />
-                      <Text style={{ flex: 1, fontSize: 13, color: colors.destructive, fontFamily: "Inter_400Regular" }}>{bioError}</Text>
+                      <Text style={{ flex: 1, fontSize: 13, color: colors.destructive, fontFamily: "Roboto_400Regular" }}>{bioError}</Text>
                     </View>
                   )}
                   <View style={{
@@ -990,7 +990,7 @@ function ProfileList() {
                     borderRadius: 10, backgroundColor: colors.muted, paddingHorizontal: 12,
                   }}>
                     <TextInput
-                      style={{ paddingVertical: 12, fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular" }}
+                      style={{ paddingVertical: 12, fontSize: 14, color: colors.foreground, fontFamily: "Roboto_400Regular" }}
                       placeholder="Your password"
                       placeholderTextColor={colors.mutedForeground}
                       secureTextEntry
@@ -1011,7 +1011,7 @@ function ProfileList() {
                   >
                     {bioSaving
                       ? <ActivityIndicator color="#fff" size="small" />
-                      : <Text style={{ color: "#fff", fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold" }}>
+                      : <Text style={{ color: "#fff", fontSize: 14, fontWeight: "700", fontFamily: "Roboto_700Bold" }}>
                           Turn On {biometricType === "face" ? "Face ID" : "Fingerprint"}
                         </Text>
                     }
@@ -1024,21 +1024,21 @@ function ProfileList() {
               )}
   
               {/* Change password */}
-              <Text style={{ fontSize: 13, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>
+              <Text style={{ fontSize: 14, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>
                 Change Password
               </Text>
   
               {pwSuccess ? (
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.successTint, borderRadius: 8, padding: 10 }}>
                   <Feather name="check-circle" size={14} color={colors.success} />
-                  <Text style={{ fontSize: 13, color: colors.success, fontFamily: "Inter_400Regular" }}>Password updated successfully</Text>
+                  <Text style={{ fontSize: 13, color: colors.success, fontFamily: "Roboto_400Regular" }}>Password updated successfully</Text>
                 </View>
               ) : (
                 <>
                   {pwError && (
                     <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: colors.dangerTint, borderRadius: 8, padding: 10 }}>
                       <Feather name="alert-circle" size={14} color={colors.destructive} style={{ marginTop: 1 }} />
-                      <Text style={{ flex: 1, fontSize: 13, color: colors.destructive, fontFamily: "Inter_400Regular" }}>{pwError}</Text>
+                      <Text style={{ flex: 1, fontSize: 13, color: colors.destructive, fontFamily: "Roboto_400Regular" }}>{pwError}</Text>
                     </View>
                   )}
                   <View style={{
@@ -1046,7 +1046,7 @@ function ProfileList() {
                     borderRadius: 10, backgroundColor: colors.muted, paddingHorizontal: 12,
                   }}>
                     <TextInput
-                      style={{ paddingVertical: 12, fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular" }}
+                      style={{ paddingVertical: 12, fontSize: 14, color: colors.foreground, fontFamily: "Roboto_400Regular" }}
                       placeholder="Current password"
                       placeholderTextColor={colors.mutedForeground}
                       secureTextEntry
@@ -1060,7 +1060,7 @@ function ProfileList() {
                     borderRadius: 10, backgroundColor: colors.muted, paddingHorizontal: 12,
                   }}>
                     <TextInput
-                      style={{ paddingVertical: 12, fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular" }}
+                      style={{ paddingVertical: 12, fontSize: 14, color: colors.foreground, fontFamily: "Roboto_400Regular" }}
                       placeholder="New password (min 8 characters)"
                       placeholderTextColor={colors.mutedForeground}
                       secureTextEntry
@@ -1074,7 +1074,7 @@ function ProfileList() {
                     borderRadius: 10, backgroundColor: colors.muted, paddingHorizontal: 12,
                   }}>
                     <TextInput
-                      style={{ paddingVertical: 12, fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular" }}
+                      style={{ paddingVertical: 12, fontSize: 14, color: colors.foreground, fontFamily: "Roboto_400Regular" }}
                       placeholder="Confirm new password"
                       placeholderTextColor={colors.mutedForeground}
                       secureTextEntry
@@ -1095,7 +1095,7 @@ function ProfileList() {
                   >
                     {pwSaving
                       ? <ActivityIndicator color="#fff" size="small" />
-                      : <Text style={{ color: "#fff", fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold" }}>Update Password</Text>
+                      : <Text style={{ color: "#fff", fontSize: 14, fontWeight: "700", fontFamily: "Roboto_700Bold" }}>Update Password</Text>
                     }
                   </Pressable>
                 </>
@@ -1105,7 +1105,7 @@ function ProfileList() {
         </View>
         <View style={s.settingDivider} />
           <Pressable onPress={() => setShowLinkHelp(v => !v)} style={({ pressed }) => [s.settingRow, { opacity: pressed ? 0.75 : 1 }]}>
-            <View style={s.settingIcon}><Feather name="link" size={15} color={colors.primary} /></View>
+            <View style={s.settingIcon}><Feather name="link" size={15} color={colors.primaryText} /></View>
             <View style={{ flex: 1 }}>
               <Text style={s.settingLabel}>How profiles link</Text>
             </View>
@@ -1118,7 +1118,7 @@ function ProfileList() {
         )}
         <View style={s.settingDivider} />
           <Pressable onPress={handleOpenPrivacy} style={({ pressed }) => [s.settingRow, { opacity: pressed ? 0.75 : 1 }]}>
-            <View style={s.settingIcon}><Feather name="shield" size={15} color={colors.primary} /></View>
+            <View style={s.settingIcon}><Feather name="shield" size={15} color={colors.primaryText} /></View>
             <View style={{ flex: 1 }}>
               <Text style={s.settingLabel}>Privacy policy</Text>
             </View>
@@ -1156,7 +1156,7 @@ export default function ProfileScreen() {
   if (isLoading) {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background }}>
-        <ActivityIndicator color={colors.primary} />
+        <ActivityIndicator color={colors.primaryText} />
       </View>
     );
   }

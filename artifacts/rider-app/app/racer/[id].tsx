@@ -74,12 +74,12 @@ export default function RacerScreen() {
         )}
       </View>
       {!data && !error ? (
-        <View style={s.center}><ActivityIndicator color={colors.primary} /></View>
+        <View style={s.center}><ActivityIndicator color={colors.primaryText} /></View>
       ) : error ? (
         <View style={s.center}>
           <Text style={[s.muted, { textAlign: "center" }]}>{error}</Text>
           <Pressable onPress={() => { void load(); }} style={({ pressed }) => ({ marginTop: 12, opacity: pressed ? 0.6 : 1 })}>
-            <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", fontSize: 14 }}>Try again</Text>
+            <Text style={{ color: colors.primaryText, fontFamily: "Roboto_600SemiBold", fontSize: 14 }}>Try again</Text>
           </Pressable>
         </View>
       ) : (
@@ -113,20 +113,20 @@ const styles = (colors: ReturnType<typeof useColors>, insets: { bottom: number }
   root: { flex: 1, backgroundColor: colors.background },
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, gap: 12 },
   backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.muted, alignItems: "center", justifyContent: "center" },
-  headerTitle: { flex: 1, fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" },
+  headerTitle: { flex: 1, fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" },
   followBtn: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, backgroundColor: colors.primary, borderWidth: 1, borderColor: colors.primary },
   followingBtn: { backgroundColor: "transparent", borderColor: colors.border },
-  followText: { color: "#fff", fontSize: 13, fontFamily: "Inter_700Bold" },
+  followText: { color: "#fff", fontSize: 13, fontFamily: "Roboto_700Bold" },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
   content: { padding: 16, paddingBottom: insets.bottom + 32, gap: 10 },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   tile: { width: "31.5%", backgroundColor: colors.card, borderRadius: 14, paddingVertical: 16, paddingHorizontal: 6, alignItems: "center", borderWidth: 1, borderColor: colors.border, overflow: "hidden" },
   tileStripe: { position: "absolute", top: 0, left: 12, right: 12, height: 3, borderBottomLeftRadius: 3, borderBottomRightRadius: 3 },
-  tileValue: { fontSize: 26, color: colors.foreground, fontFamily: "Inter_700Bold", fontStyle: "italic", letterSpacing: -0.5 },
-  tileLabel: { fontSize: 11, color: colors.mutedForeground, marginTop: 2, fontFamily: "Inter_500Medium" },
-  section: { fontSize: 13, letterSpacing: 1.5, textTransform: "uppercase", color: colors.mutedForeground, fontFamily: "Inter_700Bold", marginTop: 8 },
-  muted: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
+  tileValue: { fontSize: 26, color: colors.foreground, fontFamily: "Barlow_800ExtraBold_Italic", letterSpacing: -0.5 },
+  tileLabel: { fontSize: 11, color: colors.mutedForeground, marginTop: 2, fontFamily: "Roboto_500Medium" },
+  section: { fontSize: 14, letterSpacing: 1.5, textTransform: "uppercase", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", marginTop: 8 },
+  muted: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" },
   resultRow: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.card, borderRadius: 12, padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
-  resultTitle: { fontSize: 14, color: colors.foreground, fontFamily: "Inter_600SemiBold" },
-  pos: { fontSize: 18, color: colors.foreground, fontFamily: "Inter_700Bold" },
+  resultTitle: { fontSize: 14, color: colors.foreground, fontFamily: "Roboto_600SemiBold" },
+  pos: { fontSize: 18, color: colors.foreground, fontFamily: "Roboto_700Bold" },
 });

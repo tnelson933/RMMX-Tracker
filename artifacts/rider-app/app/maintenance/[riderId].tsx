@@ -68,12 +68,12 @@ function StatusBadge({ item }: { item: MaintenanceItem }) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
       <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, backgroundColor: s.bg }}>
-        <Text style={{ fontSize: 10, fontWeight: "700", color: s.color, fontFamily: "Inter_700Bold" }}>
+        <Text style={{ fontSize: 10, fontWeight: "700", color: s.color, fontFamily: "Roboto_700Bold" }}>
           {s.label}
         </Text>
       </View>
       {days !== null && (
-        <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+        <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
           {days === 0 ? "Today" : `${days}d ago`}
         </Text>
       )}
@@ -241,8 +241,8 @@ export default function MaintenanceScreen() {
     },
     backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.muted, alignItems: "center", justifyContent: "center" },
     headerCenter: { flex: 1 },
-    headerTitle: { fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" },
-    headerSub: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 },
+    headerTitle: { fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" },
+    headerSub: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 },
     headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
     historyBtn: {
       width: 36, height: 36, borderRadius: 18, backgroundColor: colors.muted,
@@ -253,41 +253,41 @@ export default function MaintenanceScreen() {
       paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
       backgroundColor: colors.primary,
     },
-    genBtnText: { fontSize: 12, color: "#fff", fontFamily: "Inter_700Bold" },
+    genBtnText: { fontSize: 12, color: "#fff", fontFamily: "Roboto_700Bold" },
     scroll: { flex: 1 },
     content: { padding: 16, gap: 12, paddingBottom: insets.bottom + 32 },
     summaryRow: { flexDirection: "row", gap: 10 },
     summaryBox: { flex: 1, borderRadius: 12, padding: 14, alignItems: "center", gap: 4, borderWidth: 1 },
-    summaryNum: { fontSize: 24, fontWeight: "800", fontFamily: "Inter_700Bold" },
-    summaryLabel: { fontSize: 10, fontWeight: "700", fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.6 },
+    summaryNum: { fontSize: 24, fontWeight: "800", fontFamily: "Roboto_700Bold" },
+    summaryLabel: { fontSize: 12, fontWeight: "700", fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.6 },
     emptyBox: {
       backgroundColor: colors.card, borderRadius: 14, padding: 32,
       alignItems: "center", gap: 10, borderWidth: 1, borderColor: colors.border,
     },
-    emptyTitle: { fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" },
-    emptyText: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 19 },
+    emptyTitle: { fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" },
+    emptyText: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center", lineHeight: 19 },
     itemCard: {
       backgroundColor: colors.card, borderRadius: 14,
       borderWidth: 1, borderColor: colors.border, overflow: "hidden",
     },
     itemInner: { padding: 14, gap: 8 },
     itemTopRow: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 8 },
-    itemName: { fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", flex: 1 },
-    itemInterval: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
-    itemNotes: { fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", fontStyle: "italic" },
+    itemName: { fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold", flex: 1 },
+    itemInterval: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" },
+    itemNotes: { fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", fontStyle: "italic" },
     itemActions: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
     logBtn: {
       flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
       paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8,
       backgroundColor: colors.primary,
     },
-    logBtnText: { fontSize: 12, color: "#fff", fontFamily: "Inter_600SemiBold" },
+    logBtnText: { fontSize: 12, color: "#fff", fontFamily: "Roboto_600SemiBold" },
     shopBtn: {
       flexDirection: "row", alignItems: "center", gap: 5,
       paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8,
       backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border,
     },
-    shopBtnText: { fontSize: 12, color: colors.foreground, fontFamily: "Inter_600SemiBold" },
+    shopBtnText: { fontSize: 12, color: colors.foreground, fontFamily: "Roboto_600SemiBold" },
     deleteBtn: { padding: 8, borderRadius: 8, backgroundColor: colors.muted },
     // Log sheet modal
     modalOverlay: {
@@ -302,25 +302,25 @@ export default function MaintenanceScreen() {
       width: 36, height: 4, borderRadius: 2, backgroundColor: colors.border,
       alignSelf: "center", marginBottom: 4,
     },
-    sheetTitle: { fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" },
-    sheetItemName: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
-    notesLabel: { fontSize: 12, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" },
+    sheetTitle: { fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" },
+    sheetItemName: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" },
+    notesLabel: { fontSize: 12, fontWeight: "600", color: colors.foreground, fontFamily: "Roboto_600SemiBold" },
     notesInput: {
       backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border,
       borderRadius: 10, padding: 12, fontSize: 13, color: colors.foreground,
-      fontFamily: "Inter_400Regular", minHeight: 80, textAlignVertical: "top",
+      fontFamily: "Roboto_400Regular", minHeight: 80, textAlignVertical: "top",
     },
     sheetBtns: { flexDirection: "row", gap: 10 },
     sheetCancel: {
       flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: "center",
       backgroundColor: colors.muted,
     },
-    sheetCancelText: { fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" },
+    sheetCancelText: { fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Roboto_600SemiBold" },
     sheetSave: {
       flex: 1, paddingVertical: 12, borderRadius: 10, alignItems: "center",
       backgroundColor: colors.primary,
     },
-    sheetSaveText: { fontSize: 14, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" },
+    sheetSaveText: { fontSize: 14, fontWeight: "700", color: "#fff", fontFamily: "Roboto_700Bold" },
   });
 
   return (
@@ -363,7 +363,7 @@ export default function MaintenanceScreen() {
 
       {loading ? (
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-          <ActivityIndicator color={colors.primary} />
+          <ActivityIndicator color={colors.primaryText} />
         </View>
       ) : (
         <ScrollView
@@ -375,8 +375,8 @@ export default function MaintenanceScreen() {
           {/* Disclaimer */}
           <View style={{ backgroundColor: colors.muted, borderRadius: 10, padding: 12, borderWidth: 1, borderColor: colors.border, flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
             <Feather name="info" size={13} color={colors.mutedForeground} style={{ marginTop: 1 }} />
-            <Text style={{ flex: 1, fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", lineHeight: 16 }}>
-              <Text style={{ fontFamily: "Inter_700Bold" }}>Suggested intervals only.</Text>
+            <Text style={{ flex: 1, fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", lineHeight: 16 }}>
+              <Text style={{ fontFamily: "Roboto_700Bold" }}>Suggested intervals only.</Text>
               {" "}Maintenance recommendations are generated by AI and may not reflect exact manufacturer specifications. Always refer to your owner's manual and consult a qualified mechanic for safety-critical service.
             </Text>
           </View>
@@ -393,7 +393,7 @@ export default function MaintenanceScreen() {
                 <Text style={[s.summaryLabel, { color: dueSoonCount > 0 ? colors.warning : colors.mutedForeground }]}>Due Soon</Text>
               </View>
               <View style={[s.summaryBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Text style={[s.summaryNum, { color: colors.primary }]}>{items.length}</Text>
+                <Text style={[s.summaryNum, { color: colors.primaryText }]}>{items.length}</Text>
                 <Text style={[s.summaryLabel, { color: colors.mutedForeground }]}>Total Items</Text>
               </View>
             </View>
@@ -406,7 +406,7 @@ export default function MaintenanceScreen() {
               <Text style={s.emptyTitle}>Couldn't load your schedule</Text>
               <Text style={s.emptyText}>{loadError}</Text>
               <Pressable onPress={handleRefresh} style={({ pressed }) => ({ marginTop: 4, opacity: pressed ? 0.6 : 1 })}>
-                <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", fontSize: 14 }}>Try again</Text>
+                <Text style={{ color: colors.primaryText, fontFamily: "Roboto_600SemiBold", fontSize: 14 }}>Try again</Text>
               </Pressable>
             </View>
           )}
@@ -489,7 +489,7 @@ export default function MaintenanceScreen() {
           })}
 
           {items.length > 0 && (
-            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 17 }}>
+            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center", lineHeight: 17 }}>
               Schedule generated by AI based on manufacturer guidelines.{"\n"}Always consult your owner's manual.
             </Text>
           )}

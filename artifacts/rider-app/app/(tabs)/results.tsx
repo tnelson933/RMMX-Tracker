@@ -271,10 +271,10 @@ function PublicRiderLapSheet({
           flexDirection: "row", alignItems: "flex-start", gap: 10,
         }}>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 17, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+            <Text style={{ fontSize: 17, fontWeight: "800", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
               {riderName}
             </Text>
-            <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
+            <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 }}>
               Lap Times
             </Text>
           </View>
@@ -286,19 +286,19 @@ function PublicRiderLapSheet({
         <ScrollView showsVerticalScrollIndicator={false}>
           {loading ? (
             <View style={{ paddingVertical: 44, alignItems: "center" }}>
-              <ActivityIndicator color={colors.primary} />
+              <ActivityIndicator color={colors.primaryText} />
             </View>
           ) : laps.length === 0 ? (
             <View style={{ paddingVertical: 44, alignItems: "center", gap: 8 }}>
               <Feather name="clock" size={28} color={colors.mutedForeground} />
-              <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>No lap data recorded</Text>
+              <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>No lap data recorded</Text>
             </View>
           ) : (
             <>
               <View style={{ flexDirection: "row", paddingHorizontal: 20, paddingTop: 14, paddingBottom: 6 }}>
-                <Text style={{ width: 44, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase" }}>Lap</Text>
-                <Text style={{ flex: 1, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase" }}>Time</Text>
-                <Text style={{ width: 80, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", textAlign: "right" }}>
+                <Text style={{ width: 44, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase" }}>Lap</Text>
+                <Text style={{ flex: 1, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase" }}>Time</Text>
+                <Text style={{ width: 80, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", textAlign: "right" }}>
                   {hasLeaderData ? "+Gap to Leader" : "+Gap to Best"}
                 </Text>
               </View>
@@ -331,14 +331,14 @@ function PublicRiderLapSheet({
                       backgroundColor: isBest ? "#f59e0b0a" : "transparent",
                     }}
                   >
-                    <Text style={{ width: 44, fontSize: 14, fontWeight: "700", color: isBest ? "#f59e0b" : colors.mutedForeground, fontFamily: "Inter_700Bold" }}>
+                    <Text style={{ width: 44, fontSize: 14, fontWeight: "700", color: isBest ? "#f59e0b" : colors.mutedForeground, fontFamily: "Roboto_700Bold" }}>
                       {lap.lapNumber}
                     </Text>
-                    <Text style={{ flex: 1, fontSize: 15, fontWeight: isBest ? "800" : "500", color: isBest ? "#f59e0b" : colors.foreground, fontFamily: isBest ? "Inter_700Bold" : "Inter_500Medium" }}>
+                    <Text style={{ flex: 1, fontSize: 15, fontWeight: isBest ? "800" : "500", color: isBest ? "#f59e0b" : colors.foreground, fontFamily: isBest ? "Roboto_700Bold" : "Roboto_500Medium" }}>
                       {fmtLap(lap.lapTimeMs)}
                       {isBest ? "  ★ Best" : ""}
                     </Text>
-                    <Text style={{ width: 80, fontSize: 12, color: isP1 ? colors.primary : colors.mutedForeground, fontFamily: isP1 ? "Inter_700Bold" : "Inter_400Regular", textAlign: "right" }}>
+                    <Text style={{ width: 80, fontSize: 12, color: isP1 ? colors.primaryText : colors.mutedForeground, fontFamily: isP1 ? "Roboto_700Bold" : "Roboto_400Regular", textAlign: "right" }}>
                       {gapDisplay}
                     </Text>
                   </View>
@@ -376,19 +376,19 @@ function SectorsCard({ detail, colors }: { detail: PublicMotoDetail; colors: Ret
   return (
     <View style={{ marginHorizontal: 16, marginTop: 18, borderWidth: 1, borderColor: colors.border, borderRadius: 14, overflow: "hidden" }}>
       <View style={{ paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border, gap: 2 }}>
-        <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>Best segments</Text>
+        <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>Best segments</Text>
         {names.map((name, i) => (
-          <Text key={i} style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>Seg {i + 1} · {name}</Text>
+          <Text key={i} style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>Seg {i + 1} · {name}</Text>
         ))}
       </View>
       {rows.map((e, r) => (
         <View key={e.riderId ?? r} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 8, borderTopWidth: r ? 1 : 0, borderTopColor: colors.border + "55", gap: 8 }}>
-          <Text numberOfLines={1} style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_500Medium" }}>{e.riderName}</Text>
+          <Text numberOfLines={1} style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Roboto_500Medium" }}>{e.riderName}</Text>
           {names.map((_, i) => {
             const v = e.sectors?.bestMs?.[i] ?? null;
             const best = v != null && v === fastest[i];
             return (
-              <Text key={i} style={{ width: 54, textAlign: "right", fontSize: 12, color: best ? "#22c55e" : colors.foreground, fontFamily: best ? "Inter_700Bold" : "Inter_400Regular", fontVariant: ["tabular-nums"] }}>
+              <Text key={i} style={{ width: 54, textAlign: "right", fontSize: 12, color: best ? "#22c55e" : colors.foreground, fontFamily: best ? "Roboto_700Bold" : "Roboto_400Regular", fontVariant: ["tabular-nums"] }}>
                 {fmtSector(v)}
               </Text>
             );
@@ -432,10 +432,10 @@ function LiveMotoTabs({
               opacity: pressed ? 0.65 : 1,
             })}
           >
-            <Feather name={tab.icon} size={15} color={active ? colors.primary : colors.mutedForeground} />
+            <Feather name={tab.icon} size={15} color={active ? colors.primaryText : colors.mutedForeground} />
             <Text style={{
-              fontSize: 10, fontWeight: "700", color: active ? colors.primary : colors.mutedForeground,
-              fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.2,
+              fontSize: 10, fontWeight: "700", color: active ? colors.primaryText : colors.mutedForeground,
+              fontFamily: "Roboto_700Bold", textTransform: "uppercase", letterSpacing: 0.2,
             }}>
               {tab.label}
             </Text>
@@ -470,7 +470,7 @@ function LiveAnalyticsView({
     {
       label: "Most Passes",
       icon: "bar-chart-2",
-      color: colors.primary,
+      color: colors.primaryText,
       rider: analytics?.mostPasses,
       detail: rider => `${rider.positionsGained ?? 0} positions gained`,
     },
@@ -484,7 +484,7 @@ function LiveAnalyticsView({
     {
       label: "Fastest Lap",
       icon: "zap",
-      color: colors.primary,
+      color: colors.primaryText,
       rider: analytics?.fastestLap,
       detail: rider => analytics?.fastestLap?.bestLap ?? "No lap yet",
     },
@@ -500,29 +500,29 @@ function LiveAnalyticsView({
           }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 10 }}>
               <Feather name={card.icon} size={14} color={card.color} />
-              <Text style={{ fontSize: 10, fontWeight: "700", color: card.color, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.4 }}>
+              <Text style={{ fontSize: 12, fontWeight: "700", color: card.color, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.4 }}>
                 {card.label}
               </Text>
             </View>
             {card.rider ? (
               <>
-                <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+                <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
                   {card.rider.riderName}
                 </Text>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 4, marginTop: 6 }}>
-                  <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>#{card.rider.bibNumber ?? "—"}</Text>
-                  <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>{card.detail(card.rider)}</Text>
+                  <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>#{card.rider.bibNumber ?? "—"}</Text>
+                  <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>{card.detail(card.rider)}</Text>
                 </View>
               </>
             ) : (
-              <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", lineHeight: 17 }}>
+              <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", lineHeight: 17 }}>
                 Waiting for a complete lap
               </Text>
             )}
           </View>
         ))}
       </View>
-      <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+      <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
         {analytics?.lastCompletedLap
           ? `Based on completed lap ${analytics.lastCompletedLap}`
           : "Analytics will appear after the first complete lap"}
@@ -542,9 +542,9 @@ function LiveFastestLapsView({
   return fastestLaps.length > 0 ? (
     <View>
       <View style={{ flexDirection: "row", paddingHorizontal: 20, paddingVertical: 9, backgroundColor: colors.muted + "55", borderBottomWidth: 1, borderBottomColor: colors.border }}>
-        <Text style={{ width: 34, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase" }}>Pos</Text>
-        <Text style={{ flex: 1, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase" }}>Rider</Text>
-        <Text style={{ width: 80, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", textAlign: "right" }}>Best Lap</Text>
+        <Text style={{ width: 34, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase" }}>Pos</Text>
+        <Text style={{ flex: 1, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase" }}>Rider</Text>
+        <Text style={{ width: 80, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", textAlign: "right" }}>Best Lap</Text>
       </View>
       {fastestLaps.map((entry, index) => (
         <View key={entry.riderId} style={{
@@ -552,14 +552,14 @@ function LiveFastestLapsView({
           borderBottomWidth: 1, borderBottomColor: colors.border + "55",
           backgroundColor: index === 0 ? colors.primary + "0e" : "transparent",
         }}>
-          <Text style={{ width: 34, fontSize: 15, fontWeight: "800", color: index === 0 ? colors.primary : colors.mutedForeground, fontFamily: "Inter_700Bold" }}>
+          <Text style={{ width: 34, fontSize: 15, fontWeight: "800", color: index === 0 ? colors.primaryText : colors.mutedForeground, fontFamily: "Roboto_700Bold" }}>
             {index + 1}
           </Text>
           <View style={{ flex: 1 }}>
-            <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>{entry.riderName}</Text>
-            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>#{entry.bibNumber ?? "—"}</Text>
+            <Text numberOfLines={1} style={{ fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Roboto_600SemiBold" }}>{entry.riderName}</Text>
+            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 }}>#{entry.bibNumber ?? "—"}</Text>
           </View>
-          <Text style={{ width: 80, fontSize: 14, fontWeight: "700", color: index === 0 ? colors.primary : colors.foreground, fontFamily: "Inter_700Bold", textAlign: "right" }}>
+          <Text style={{ width: 80, fontSize: 14, fontWeight: "700", color: index === 0 ? colors.primaryText : colors.foreground, fontFamily: "Roboto_700Bold", textAlign: "right" }}>
             {entry.bestLap ?? "—"}
           </Text>
         </View>
@@ -568,7 +568,7 @@ function LiveFastestLapsView({
   ) : (
     <View style={{ paddingVertical: 48, paddingHorizontal: 24, alignItems: "center" }}>
       <Feather name="clock" size={28} color={colors.mutedForeground} />
-      <Text style={{ marginTop: 10, fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>
+      <Text style={{ marginTop: 10, fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center" }}>
         Fastest laps will appear as timing data arrives.
       </Text>
     </View>
@@ -660,23 +660,23 @@ function PublicMotoSheet({
           flexDirection: "row", alignItems: "flex-start", gap: 10,
         }}>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 17, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+            <Text style={{ fontSize: 17, fontWeight: "800", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
               {moto.name}
             </Text>
             {moto.raceClass && (
-              <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
+              <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 }}>
                 {moto.raceClass}
               </Text>
             )}
             {moto.status === "completed" && detail && (
-              <Text style={{ fontSize: 10, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.6, marginTop: 4, color: (detail as any).resultsOfficial ? "#15803d" : "#b45309" }}>
+              <Text style={{ fontSize: 12, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.6, marginTop: 4, color: (detail as any).resultsOfficial ? "#15803d" : "#b45309" }}>
                 {(detail as any).resultsOfficial ? "✓ Official results" : "Unofficial results"}
               </Text>
             )}
           </View>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingTop: 2 }}>
             <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: chip.color + "22" }}>
-              <Text style={{ fontSize: 11, fontWeight: "700", color: chip.color, fontFamily: "Inter_700Bold" }}>
+              <Text style={{ fontSize: 11, fontWeight: "700", color: chip.color, fontFamily: "Roboto_700Bold" }}>
                 {isLive ? "🔴 LIVE" : chip.label}
               </Text>
             </View>
@@ -697,7 +697,7 @@ function PublicMotoSheet({
         >
           {fetching && (
             <View style={{ paddingVertical: 44, alignItems: "center" }}>
-              <ActivityIndicator color={colors.primary} />
+              <ActivityIndicator color={colors.primaryText} />
             </View>
           )}
 
@@ -705,12 +705,12 @@ function PublicMotoSheet({
           {!fetching && isScheduled && (
             <>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 20, paddingTop: 18, paddingBottom: 10 }}>
-                <Feather name="users" size={12} color={colors.primary} />
-                <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>
+                <Feather name="users" size={12} color={colors.primaryText} />
+                <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>
                   Race Lineup
                 </Text>
                 {lineupRows.length > 0 && (
-                  <Text style={{ marginLeft: "auto", fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+                  <Text style={{ marginLeft: "auto", fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
                     {lineupRows.length} riders
                   </Text>
                 )}
@@ -718,7 +718,7 @@ function PublicMotoSheet({
               {lineupRows.length === 0 ? (
                 <View style={{ paddingVertical: 36, alignItems: "center", gap: 8 }}>
                   <Feather name="clock" size={28} color={colors.mutedForeground} />
-                  <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>Gate draw not posted yet</Text>
+                  <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>Gate draw not posted yet</Text>
                 </View>
               ) : (
                 lineupRows.map((entry, i) => (
@@ -735,17 +735,17 @@ function PublicMotoSheet({
                       backgroundColor: colors.muted,
                       alignItems: "center", justifyContent: "center",
                     }}>
-                      <Text style={{ fontSize: 9, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase" }}>Gate</Text>
-                      <Text style={{ fontSize: 15, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", lineHeight: 17 }}>
+                      <Text style={{ fontSize: 11, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase" }}>Gate</Text>
+                      <Text style={{ fontSize: 15, fontWeight: "800", color: colors.foreground, fontFamily: "Roboto_700Bold", lineHeight: 17 }}>
                         #{entry.gate}
                       </Text>
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 14, fontWeight: "500", color: colors.foreground, fontFamily: "Inter_500Medium" }}>
+                      <Text style={{ fontSize: 14, fontWeight: "500", color: colors.foreground, fontFamily: "Roboto_500Medium" }}>
                         {entry.riderName}
                       </Text>
                       {entry.bibNumber && (
-                        <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>
+                        <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 }}>
                           #{entry.bibNumber}
                         </Text>
                       )}
@@ -762,12 +762,12 @@ function PublicMotoSheet({
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 20, paddingTop: 18, paddingBottom: 10 }}>
                 {isLive
                   ? <Feather name="radio" size={12} color="#ef4444" />
-                  : <Feather name="award" size={12} color={colors.primary} />}
-                <Text style={{ fontSize: 11, fontWeight: "700", color: isLive ? "#ef4444" : colors.primary, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>
+                  : <Feather name="award" size={12} color={colors.primaryText} />}
+                <Text style={{ fontSize: 13, fontWeight: "700", color: isLive ? "#ef4444" : colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>
                   {isLive ? "Live Leaderboard" : "Final Results"}
                 </Text>
                 {isLive && (
-                  <Text style={{ marginLeft: "auto", fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+                  <Text style={{ marginLeft: "auto", fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
                     Updates every 5s
                   </Text>
                 )}
@@ -776,7 +776,7 @@ function PublicMotoSheet({
               {(!detail || detail.leaderboard.length === 0) ? (
                 <View style={{ paddingVertical: 36, alignItems: "center", gap: 8 }}>
                   <Feather name="clock" size={28} color={colors.mutedForeground} />
-                  <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+                  <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
                     {isLive ? "Waiting for riders to start…" : "Results not yet posted"}
                   </Text>
                 </View>
@@ -805,34 +805,34 @@ function PublicMotoSheet({
                       })}
                     >
                       <View style={{ width: 40, alignItems: "center" }}>
-                        <Text style={{ fontSize: 16, fontWeight: "800", color: posColor, fontFamily: "Inter_700Bold" }}>{pos}</Text>
+                        <Text style={{ fontSize: 16, fontWeight: "800", color: posColor, fontFamily: "Roboto_700Bold" }}>{pos}</Text>
                         {isLive && !isDNS && !isDNF && entry.laps > 0 && (
-                          <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+                          <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
                             {entry.laps}L
                           </Text>
                         )}
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 14, fontWeight: "500", color: canTapLaps ? colors.primary : colors.foreground, fontFamily: "Inter_500Medium" }}>
+                        <Text style={{ fontSize: 14, fontWeight: "500", color: canTapLaps ? colors.primaryText : colors.foreground, fontFamily: "Roboto_500Medium" }}>
                           {entry.riderName}
                         </Text>
                         {entry.bibNumber && (
-                          <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>
+                          <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 }}>
                             #{entry.bibNumber}
                           </Text>
                         )}
                       </View>
                       <View style={{ alignItems: "flex-end", gap: 2 }}>
                         {entry.totalTime && !isDNS && (
-                          <Text style={{ fontSize: 13, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>
+                          <Text style={{ fontSize: 13, fontWeight: "600", color: colors.foreground, fontFamily: "Roboto_600SemiBold" }}>
                             {entry.totalTime}
                           </Text>
                         )}
                         {entry.gap === "Leader" && !isDNS && !isDNF && (
-                          <Text style={{ fontSize: 11, color: "#f59e0b", fontFamily: "Inter_600SemiBold" }}>Leader</Text>
+                          <Text style={{ fontSize: 11, color: "#f59e0b", fontFamily: "Roboto_600SemiBold" }}>Leader</Text>
                         )}
                         {entry.gap && entry.gap !== "Leader" && !isDNS && !isDNF && (
-                          <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>{entry.gap}</Text>
+                          <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>{entry.gap}</Text>
                         )}
                         {canTapLaps && (
                           <Feather name="chevron-right" size={11} color={colors.mutedForeground + "80"} />
@@ -921,24 +921,24 @@ function EventScheduleScreen({
             {isLive && (
               <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: "#ef4444", flexDirection: "row", alignItems: "center", gap: 4 }}>
                 <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: "#fff" }} />
-                <Text style={{ fontSize: 10, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>RACE DAY</Text>
+                <Text style={{ fontSize: 10, fontWeight: "700", color: "#fff", fontFamily: "Roboto_700Bold", letterSpacing: 0.5 }}>RACE DAY</Text>
               </View>
             )}
             {!isLive && (
               <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: "#22c55e22" }}>
-                <Text style={{ fontSize: 10, fontWeight: "700", color: "#22c55e", fontFamily: "Inter_700Bold" }}>COMPLETED</Text>
+                <Text style={{ fontSize: 10, fontWeight: "700", color: "#22c55e", fontFamily: "Roboto_700Bold" }}>COMPLETED</Text>
               </View>
             )}
           </View>
-          <Text style={{ fontSize: 17, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", marginTop: 4 }} numberOfLines={2}>
+          <Text style={{ fontSize: 17, fontWeight: "800", color: colors.foreground, fontFamily: "Roboto_700Bold", marginTop: 4 }} numberOfLines={2}>
             {event.name}
           </Text>
-          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
+          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 }}>
             {placeLabel(event.location || event.trackName, event.state)}
             {event.date ? `  ·  ${fmtEventRange(event.date, event.endDate)}` : ""}
           </Text>
           {event.clubName ? (
-            <Text style={{ fontSize: 11, color: colors.mutedForeground + "88", fontFamily: "Inter_400Regular", marginTop: 1 }}>{event.clubName}</Text>
+            <Text style={{ fontSize: 11, color: colors.mutedForeground + "88", fontFamily: "Roboto_400Regular", marginTop: 1 }}>{event.clubName}</Text>
           ) : null}
         </View>
       </View>
@@ -949,19 +949,19 @@ function EventScheduleScreen({
           {liveCount > 0 && (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#ef444418", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 }}>
               <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#ef4444" }} />
-              <Text style={{ fontSize: 11, fontWeight: "700", color: "#ef4444", fontFamily: "Inter_700Bold" }}>{liveCount} Live</Text>
+              <Text style={{ fontSize: 11, fontWeight: "700", color: "#ef4444", fontFamily: "Roboto_700Bold" }}>{liveCount} Live</Text>
             </View>
           )}
           {doneCount > 0 && (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#22c55e18", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 }}>
               <Feather name="check" size={11} color="#22c55e" />
-              <Text style={{ fontSize: 11, fontWeight: "700", color: "#22c55e", fontFamily: "Inter_700Bold" }}>{doneCount} Done</Text>
+              <Text style={{ fontSize: 11, fontWeight: "700", color: "#22c55e", fontFamily: "Roboto_700Bold" }}>{doneCount} Done</Text>
             </View>
           )}
           {upcomingCount > 0 && (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.muted, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 }}>
               <Feather name="clock" size={11} color={colors.mutedForeground} />
-              <Text style={{ fontSize: 11, fontWeight: "600", color: colors.mutedForeground, fontFamily: "Inter_600SemiBold" }}>{upcomingCount} Upcoming</Text>
+              <Text style={{ fontSize: 11, fontWeight: "600", color: colors.mutedForeground, fontFamily: "Roboto_600SemiBold" }}>{upcomingCount} Upcoming</Text>
             </View>
           )}
         </View>
@@ -972,12 +972,12 @@ function EventScheduleScreen({
       >
         {loading ? (
           <View style={{ paddingVertical: 60, alignItems: "center" }}>
-            <ActivityIndicator color={colors.primary} />
+            <ActivityIndicator color={colors.primaryText} />
           </View>
         ) : motos.length === 0 ? (
           <View style={{ paddingVertical: 60, alignItems: "center", gap: 8, paddingHorizontal: 32 }}>
             <Feather name="clock" size={32} color={colors.mutedForeground} />
-            <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>
+            <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center" }}>
               Schedule not yet posted
             </Text>
           </View>
@@ -985,10 +985,10 @@ function EventScheduleScreen({
           <>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 }}>
               <Feather name="list" size={12} color={colors.mutedForeground} />
-              <Text style={{ fontSize: 11, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
+              <Text style={{ fontSize: 13, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
                 Race Schedule
               </Text>
-              <Text style={{ marginLeft: "auto", fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+              <Text style={{ marginLeft: "auto", fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
                 {motos.length} motos
               </Text>
             </View>
@@ -1017,34 +1017,34 @@ function EventScheduleScreen({
                     backgroundColor: live ? "#ef444420" : done ? "#22c55e18" : colors.muted,
                     alignItems: "center", justifyContent: "center",
                   }}>
-                    <Text style={{ fontSize: 9, fontWeight: "700", color: live ? "#ef4444" : done ? "#22c55e" : colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.3 }}>
+                    <Text style={{ fontSize: 11, fontWeight: "700", color: live ? "#ef4444" : done ? "#22c55e" : colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.3 }}>
                       RACE
                     </Text>
-                    <Text style={{ fontSize: 16, fontWeight: "800", color: live ? "#ef4444" : done ? "#22c55e" : colors.foreground, fontFamily: "Inter_700Bold", lineHeight: 18 }}>
+                    <Text style={{ fontSize: 16, fontWeight: "800", color: live ? "#ef4444" : done ? "#22c55e" : colors.foreground, fontFamily: "Roboto_700Bold", lineHeight: 18 }}>
                       #{moto.motoNumber}
                     </Text>
                   </View>
 
                   {/* Info */}
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>{moto.name}</Text>
+                    <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Roboto_600SemiBold" }}>{moto.name}</Text>
                     {moto.raceClass && (
-                      <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>{moto.raceClass}</Text>
+                      <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 }}>{moto.raceClass}</Text>
                     )}
                     {hasLineup && (
-                      <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
+                      <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 }}>
                         {moto.lineup.length} riders
                       </Text>
                     )}
                     {moto.scheduledTime && moto.status === "scheduled" && (
-                      <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>{moto.scheduledTime}</Text>
+                      <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 }}>{moto.scheduledTime}</Text>
                     )}
                   </View>
 
                   {/* Chip + chevron */}
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                     <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: chip.color + "22" }}>
-                      <Text style={{ fontSize: 10, fontWeight: "700", fontFamily: "Inter_700Bold", color: chip.color }}>
+                      <Text style={{ fontSize: 10, fontWeight: "700", fontFamily: "Roboto_700Bold", color: chip.color }}>
                         {live ? "🔴 " : ""}{chip.label}
                       </Text>
                     </View>
@@ -1134,30 +1134,30 @@ function SeriesCard({
             alignItems: "center", justifyContent: "center",
             flexShrink: 0,
           }}>
-            <Feather name="award" size={18} color={colors.primary} />
+            <Feather name="award" size={18} color={colors.primaryText} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }} numberOfLines={2}>
+            <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }} numberOfLines={2}>
               {series.name}
             </Text>
             {series.season && (
-              <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
+              <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 }}>
                 {series.season}
               </Text>
             )}
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>
+            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 }}>
               {series.clubName}{series.state ? ` · ${series.state}` : ""}
             </Text>
             {series.classes && series.classes.length > 0 && (
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
                 {series.classes.slice(0, 5).map(cls => (
                   <View key={cls} style={{ backgroundColor: colors.muted, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 }}>
-                    <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>{cls}</Text>
+                    <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>{cls}</Text>
                   </View>
                 ))}
                 {series.classes.length > 5 && (
                   <View style={{ backgroundColor: colors.muted, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 }}>
-                    <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>+{series.classes.length - 5} more</Text>
+                    <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>+{series.classes.length - 5} more</Text>
                   </View>
                 )}
               </View>
@@ -1242,10 +1242,10 @@ function SeriesStandingsScreen({
           <Feather name="arrow-left" size={22} color={colors.foreground} />
         </Pressable>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 17, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold" }} numberOfLines={2}>
+          <Text style={{ fontSize: 17, fontWeight: "800", color: colors.foreground, fontFamily: "Roboto_700Bold" }} numberOfLines={2}>
             {series.name}
           </Text>
-          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
+          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 }}>
             {[series.season, series.clubName, series.state].filter(Boolean).join(" · ")}
           </Text>
         </View>
@@ -1254,8 +1254,8 @@ function SeriesStandingsScreen({
       {/* Class count strip */}
       {!loading && byClass.length > 0 && (
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-          <Feather name="layers" size={12} color={colors.primary} />
-          <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
+          <Feather name="layers" size={12} color={colors.primaryText} />
+          <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
             {byClass.length} class{byClass.length !== 1 ? "es" : ""}
           </Text>
           <Pressable
@@ -1265,7 +1265,7 @@ function SeriesStandingsScreen({
             }}
             style={({ pressed }) => ({ marginLeft: "auto", opacity: pressed ? 0.6 : 1 })}
           >
-            <Text style={{ fontSize: 12, color: colors.primary, fontFamily: "Inter_500Medium" }}>
+            <Text style={{ fontSize: 12, color: colors.primaryText, fontFamily: "Roboto_500Medium" }}>
               {byClass.every(([cls]) => expandedClasses.has(cls)) ? "Collapse all" : "Expand all"}
             </Text>
           </Pressable>
@@ -1277,13 +1277,13 @@ function SeriesStandingsScreen({
       >
         {loading ? (
           <View style={{ paddingVertical: 80, alignItems: "center" }}>
-            <ActivityIndicator color={colors.primary} />
+            <ActivityIndicator color={colors.primaryText} />
           </View>
         ) : byClass.length === 0 ? (
           <View style={{ paddingVertical: 80, alignItems: "center", paddingHorizontal: 32, gap: 10 }}>
             <Feather name="inbox" size={36} color={colors.mutedForeground + "60"} />
-            <Text style={{ fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", textAlign: "center" }}>No standings yet</Text>
-            <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 20 }}>
+            <Text style={{ fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold", textAlign: "center" }}>No standings yet</Text>
+            <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center", lineHeight: 20 }}>
               Results will appear here once motos are scored and events are published.
             </Text>
           </View>
@@ -1304,10 +1304,10 @@ function SeriesStandingsScreen({
                     })}
                   >
                     <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: colors.primary + "18", alignItems: "center", justifyContent: "center", marginRight: 10 }}>
-                      <Feather name="layers" size={13} color={colors.primary} />
+                      <Feather name="layers" size={13} color={colors.primaryText} />
                     </View>
-                    <Text style={{ flex: 1, fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>{cls}</Text>
-                    <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginRight: 8 }}>
+                    <Text style={{ flex: 1, fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>{cls}</Text>
+                    <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginRight: 8 }}>
                       {riders.length} rider{riders.length !== 1 ? "s" : ""}
                     </Text>
                     <Feather name={open ? "chevron-up" : "chevron-down"} size={16} color={colors.mutedForeground} />
@@ -1331,32 +1331,32 @@ function SeriesStandingsScreen({
                         backgroundColor: posColor(rider.position) + "20",
                         alignItems: "center", justifyContent: "center", marginRight: 10,
                       }}>
-                        <Text style={{ fontSize: 14, fontWeight: "800", color: posColor(rider.position), fontFamily: "Inter_700Bold" }}>
+                        <Text style={{ fontSize: 14, fontWeight: "800", color: posColor(rider.position), fontFamily: "Roboto_700Bold" }}>
                           {rider.position}
                         </Text>
                       </View>
 
                       {/* Name + info */}
                       <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" }} numberOfLines={1}>
+                        <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Roboto_600SemiBold" }} numberOfLines={1}>
                           {rider.riderName}
                         </Text>
                         <View style={{ flexDirection: "row", gap: 6, marginTop: 2, flexWrap: "wrap" }}>
-                          <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+                          <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
                             {rider.eventsEntered} event{rider.eventsEntered !== 1 ? "s" : ""}
                           </Text>
                           {rider.bikeBrand && (
-                            <Text style={{ fontSize: 11, color: colors.mutedForeground + "90", fontFamily: "Inter_400Regular" }}>· {rider.bikeBrand}</Text>
+                            <Text style={{ fontSize: 11, color: colors.mutedForeground + "90", fontFamily: "Roboto_400Regular" }}>· {rider.bikeBrand}</Text>
                           )}
                         </View>
                       </View>
 
                       {/* Points + chevron */}
                       <View style={{ alignItems: "flex-end", gap: 2 }}>
-                        <Text style={{ fontSize: 16, fontWeight: "800", color: colors.primary, fontFamily: "Inter_700Bold" }}>
+                        <Text style={{ fontSize: 16, fontWeight: "800", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>
                           {rider.totalScore}
                         </Text>
-                        <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textTransform: "uppercase", letterSpacing: 0.5 }}>
+                        <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textTransform: "uppercase", letterSpacing: 0.5 }}>
                           pts
                         </Text>
                       </View>
@@ -1399,10 +1399,10 @@ function SeriesStandingsScreen({
                 borderBottomWidth: 1, borderBottomColor: colors.border,
               }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 17, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+                  <Text style={{ fontSize: 17, fontWeight: "800", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
                     {selectedRider.riderName}
                   </Text>
-                  <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
+                  <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 }}>
                     {selectedRider.raceClass} · {ordinalSuffix(selectedRider.position)} place · {selectedRider.totalScore} pts total
                   </Text>
                 </View>
@@ -1413,9 +1413,9 @@ function SeriesStandingsScreen({
 
               {/* Column headers */}
               <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 8, backgroundColor: colors.muted + "50" }}>
-                <Text style={{ flex: 1, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Race</Text>
-                <Text style={{ width: 70, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "center" }}>Finish</Text>
-                <Text style={{ width: 52, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Pts</Text>
+                <Text style={{ flex: 1, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Race</Text>
+                <Text style={{ width: 70, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "center" }}>Finish</Text>
+                <Text style={{ width: 52, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Pts</Text>
               </View>
 
               <ScrollView showsVerticalScrollIndicator={false}>
@@ -1435,16 +1435,16 @@ function SeriesStandingsScreen({
                       }}
                     >
                       <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" }} numberOfLines={1}>
+                        <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Roboto_600SemiBold" }} numberOfLines={1}>
                           {ev.eventName}
                         </Text>
                       </View>
                       <View style={{ width: 70, alignItems: "center" }}>
-                        <Text style={{ fontSize: 13, fontWeight: "700", color: finishes.length > 0 ? posColor(Math.min(...finishes)) : colors.mutedForeground, fontFamily: "Inter_700Bold" }}>
+                        <Text style={{ fontSize: 13, fontWeight: "700", color: finishes.length > 0 ? posColor(Math.min(...finishes)) : colors.mutedForeground, fontFamily: "Roboto_700Bold" }}>
                           {finishLabel}
                         </Text>
                       </View>
-                      <Text style={{ width: 52, fontSize: 15, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", textAlign: "right" }}>
+                      <Text style={{ width: 52, fontSize: 15, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold", textAlign: "right" }}>
                         {ev.eventScore}
                       </Text>
                     </View>
@@ -1593,7 +1593,7 @@ export default function ResultsScreen() {
         borderBottomWidth: 1, borderBottomColor: colors.border,
       }}>
         <BrandBar />
-        <Text style={{ fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: 1, textTransform: "uppercase", marginBottom: 12 }}>
+        <Text style={{ fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Barlow_800ExtraBold", letterSpacing: 1, textTransform: "uppercase", marginBottom: 12 }}>
           Race Results
         </Text>
 
@@ -1627,7 +1627,7 @@ export default function ResultsScreen() {
                   />
                   <Text style={{
                     fontSize: 13, fontWeight: "700",
-                    fontFamily: "Inter_700Bold",
+                    fontFamily: "Roboto_700Bold",
                     color: active ? "#fff" : colors.mutedForeground,
                   }}>
                     {t === "races" ? "Race Events" : "Series"}
@@ -1652,7 +1652,7 @@ export default function ResultsScreen() {
               onChangeText={handleRacesQueryChange}
               placeholder="Search by state, city, race or track name…"
               placeholderTextColor={colors.mutedForeground}
-              style={{ flex: 1, fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular", padding: 0 }}
+              style={{ flex: 1, fontSize: 14, color: colors.foreground, fontFamily: "Roboto_400Regular", padding: 0 }}
               returnKeyType="search"
               clearButtonMode="while-editing"
               autoCorrect={false}
@@ -1664,7 +1664,7 @@ export default function ResultsScreen() {
               onChangeText={handleSeriesQueryChange}
               placeholder="Search by series name, club, state…"
               placeholderTextColor={colors.mutedForeground}
-              style={{ flex: 1, fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular", padding: 0 }}
+              style={{ flex: 1, fontSize: 14, color: colors.foreground, fontFamily: "Roboto_400Regular", padding: 0 }}
               returnKeyType="search"
               clearButtonMode="while-editing"
               autoCorrect={false}
@@ -1692,7 +1692,7 @@ export default function ResultsScreen() {
         >
           {eventsLoading ? (
             <View style={{ paddingVertical: 80, alignItems: "center" }}>
-              <ActivityIndicator color={colors.primary} />
+              <ActivityIndicator color={colors.primaryText} />
             </View>
           ) : events.length === 0 ? (
             <EmptyState
@@ -1708,11 +1708,11 @@ export default function ResultsScreen() {
                 <>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 16, paddingTop: 20, paddingBottom: 10 }}>
                     <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: "#ef4444" }} />
-                    <Text style={{ fontSize: 11, fontWeight: "700", color: "#ef4444", fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: "700", color: "#ef4444", fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>
                       Live Now
                     </Text>
                     <View style={{ marginLeft: 4, backgroundColor: "#ef444420", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 10 }}>
-                      <Text style={{ fontSize: 10, fontWeight: "700", color: "#ef4444", fontFamily: "Inter_700Bold" }}>{liveEvents.length}</Text>
+                      <Text style={{ fontSize: 10, fontWeight: "700", color: "#ef4444", fontFamily: "Roboto_700Bold" }}>{liveEvents.length}</Text>
                     </View>
                   </View>
                   {liveEvents.map(e => (
@@ -1724,11 +1724,11 @@ export default function ResultsScreen() {
               {pastEvents.length > 0 && (
                 <>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 16, paddingTop: liveEvents.length > 0 ? 8 : 20, paddingBottom: 10 }}>
-                    <Feather name="flag" size={12} color={colors.primary} />
-                    <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>
+                    <Feather name="flag" size={12} color={colors.primaryText} />
+                    <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>
                       Past Races
                     </Text>
-                    <Text style={{ marginLeft: "auto", fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+                    <Text style={{ marginLeft: "auto", fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
                       {pastEvents.length} events
                     </Text>
                   </View>
@@ -1751,15 +1751,15 @@ export default function ResultsScreen() {
         >
           {seriesLoading ? (
             <View style={{ paddingVertical: 80, alignItems: "center" }}>
-              <ActivityIndicator color={colors.primary} />
+              <ActivityIndicator color={colors.primaryText} />
             </View>
           ) : filteredSeries.length === 0 ? (
             <View style={{ paddingVertical: 80, alignItems: "center", paddingHorizontal: 32, gap: 8 }}>
               <Feather name="award" size={36} color={colors.mutedForeground + "60"} />
-              <Text style={{ fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", textAlign: "center" }}>
+              <Text style={{ fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold", textAlign: "center" }}>
                 {seriesDebouncedQ ? "No matching series" : "No series yet"}
               </Text>
-              <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 20 }}>
+              <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center", lineHeight: 20 }}>
                 {seriesDebouncedQ
                   ? "Try a different search — series name, club name, or state."
                   : "Championship series will appear here once clubs create them."}
@@ -1768,11 +1768,11 @@ export default function ResultsScreen() {
           ) : (
             <>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 16, paddingTop: 20, paddingBottom: 10 }}>
-                <Feather name="award" size={12} color={colors.primary} />
-                <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>
+                <Feather name="award" size={12} color={colors.primaryText} />
+                <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>
                   Championship Series
                 </Text>
-                <Text style={{ marginLeft: "auto", fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+                <Text style={{ marginLeft: "auto", fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
                   {filteredSeries.length} series
                 </Text>
               </View>

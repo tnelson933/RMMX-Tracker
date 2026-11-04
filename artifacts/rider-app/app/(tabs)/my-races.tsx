@@ -165,55 +165,55 @@ function ScheduleMotoCard({
       flexDirection: "row", alignItems: "center", gap: 10,
     }}>
       <View style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: badgeBg, alignItems: "center", justifyContent: "center" }}>
-        <Text style={{ fontSize: 9, fontWeight: "700", color: badgeFg, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.3 }}>
+        <Text style={{ fontSize: 11, fontWeight: "700", color: badgeFg, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.3 }}>
           {isPrac ? "PRAC" : isEnduro ? "TEST" : "RACE"}
         </Text>
-        <Text style={{ fontSize: 16, fontWeight: "800", color: badgeFg, fontFamily: "Inter_700Bold", lineHeight: 18 }}>
+        <Text style={{ fontSize: 16, fontWeight: "800", color: badgeFg, fontFamily: "Roboto_700Bold", lineHeight: 18 }}>
           #{moto.motoNumber}
         </Text>
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>{moto.name}</Text>
+        <Text style={{ fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Roboto_600SemiBold" }}>{moto.name}</Text>
         {moto.raceClass && (
-          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>{moto.raceClass}</Text>
+          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 }}>{moto.raceClass}</Text>
         )}
         {!isPrac && !isEnduro && moto.familyGates.length > 0 && (
           <View style={{ marginTop: 3, gap: 1 }}>
             {moto.familyGates.map(g => (
-              <Text key={g.gate} style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: live ? "#ef4444" : colors.primary }}>
+              <Text key={g.gate} style={{ fontSize: 12, fontFamily: "Roboto_600SemiBold", color: live ? "#ef4444" : colors.primaryText }}>
                 Gate #{g.gate}{moto.familyGates.length > 1 ? ` · ${g.riderName}` : ""}
               </Text>
             ))}
           </View>
         )}
         {!isPrac && !isEnduro && mine && moto.familyGates.length === 0 && moto.status === "scheduled" && (
-          <Text style={{ fontSize: 12, color: colors.primary, fontFamily: "Inter_500Medium", marginTop: 2 }}>Gate draw pending</Text>
+          <Text style={{ fontSize: 12, color: colors.primaryText, fontFamily: "Roboto_500Medium", marginTop: 2 }}>Gate draw pending</Text>
         )}
         {mine && isEnduro && (
-          <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: live ? "#ef4444" : colors.primary, marginTop: 2 }}>
+          <Text style={{ fontSize: 12, fontFamily: "Roboto_600SemiBold", color: live ? "#ef4444" : colors.primaryText, marginTop: 2 }}>
             ★ Your test
           </Text>
         )}
         {isPrac && mine && (myBestLap != null || myRank != null) && (
           <View style={{ flexDirection: "row", gap: 10, marginTop: 3 }}>
             {myBestLap != null && (
-              <Text style={{ fontSize: 12, fontFamily: "Inter_500Medium", color: colors.mutedForeground }}>
-                Best: <Text style={{ color: colors.primary, fontFamily: "Inter_700Bold" }}>{fmtLap(myBestLap)}</Text>
+              <Text style={{ fontSize: 12, fontFamily: "Roboto_500Medium", color: colors.mutedForeground }}>
+                Best: <Text style={{ color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>{fmtLap(myBestLap)}</Text>
               </Text>
             )}
             {myRank != null && (
-              <Text style={{ fontSize: 12, fontFamily: "Inter_500Medium", color: colors.mutedForeground }}>
-                Rank: <Text style={{ color: colors.foreground, fontFamily: "Inter_700Bold" }}>P{myRank}</Text>/{moto.practiceLeaderboard?.length}
+              <Text style={{ fontSize: 12, fontFamily: "Roboto_500Medium", color: colors.mutedForeground }}>
+                Rank: <Text style={{ color: colors.foreground, fontFamily: "Roboto_700Bold" }}>P{myRank}</Text>/{moto.practiceLeaderboard?.length}
               </Text>
             )}
           </View>
         )}
         {moto.scheduledTime && moto.status === "scheduled" && (
-          <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>{moto.scheduledTime}</Text>
+          <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 }}>{moto.scheduledTime}</Text>
         )}
       </View>
       <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: chip.color + "22" }}>
-        <Text style={{ fontSize: 10, fontWeight: "700", fontFamily: "Inter_700Bold", color: chip.color }}>
+        <Text style={{ fontSize: 10, fontWeight: "700", fontFamily: "Roboto_700Bold", color: chip.color }}>
           {live ? "🔴 " : ""}{chip.label}
         </Text>
       </View>
@@ -247,24 +247,24 @@ function RaceDaySection({ event, colors }: { event: ScheduleEvent; colors: Retur
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start", marginBottom: 8 }}>
             <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: "#ef4444", flexDirection: "row", alignItems: "center", gap: 4 }}>
               <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: "#fff" }} />
-              <Text style={{ fontSize: 10, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>RACE DAY</Text>
+              <Text style={{ fontSize: 10, fontWeight: "700", color: "#fff", fontFamily: "Roboto_700Bold", letterSpacing: 0.5 }}>RACE DAY</Text>
             </View>
           </View>
-          <Text style={{ fontSize: 16, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold" }}>{event.eventName}</Text>
-          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
+          <Text style={{ fontSize: 16, fontWeight: "800", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>{event.eventName}</Text>
+          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 }}>
             {[event.eventLocation, event.eventState].filter(Boolean).join(", ")}
             {event.eventDate ? `  ·  ${fmtDate(event.eventDate)}` : ""}
           </Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
             {myRiders.map(name => (
               <View key={name} style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.primary + "18", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}>
-                <Feather name="user" size={10} color={colors.primary} />
-                <Text style={{ fontSize: 12, fontWeight: "600", color: colors.primary, fontFamily: "Inter_600SemiBold" }}>{name}</Text>
+                <Feather name="user" size={10} color={colors.primaryText} />
+                <Text style={{ fontSize: 12, fontWeight: "600", color: colors.primaryText, fontFamily: "Roboto_600SemiBold" }}>{name}</Text>
               </View>
             ))}
             {myClasses.map(cls => (
               <View key={cls} style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: colors.muted }}>
-                <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>{cls}</Text>
+                <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>{cls}</Text>
               </View>
             ))}
           </View>
@@ -272,21 +272,21 @@ function RaceDaySection({ event, colors }: { event: ScheduleEvent; colors: Retur
         {inProgress && (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: "#ef444418", borderTopWidth: 1, borderTopColor: "#ef444433" }}>
             <Feather name="radio" size={13} color="#ef4444" />
-            <Text style={{ fontSize: 12, fontWeight: "700", color: "#ef4444", fontFamily: "Inter_700Bold", flex: 1 }}>
+            <Text style={{ fontSize: 12, fontWeight: "700", color: "#ef4444", fontFamily: "Roboto_700Bold", flex: 1 }}>
               NOW: Race #{inProgress.motoNumber} · {inProgress.name}
             </Text>
           </View>
         )}
         {!isEnduro && nextMyMoto && (
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: "#cf152d14", borderTopWidth: 1, borderTopColor: "#cf152d33" }}>
-            <Feather name="alert-circle" size={13} color="#cf152d" />
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: colors.primaryTint, borderTopWidth: 1, borderTopColor: colors.primary + "55" }}>
+            <Feather name="alert-circle" size={13} color={colors.primaryText} />
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 12, fontWeight: "700", color: "#cf152d", fontFamily: "Inter_700Bold" }}>
+              <Text style={{ fontSize: 12, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>
                 {racesAway === 0 ? `YOU'RE ON DECK — Race #${nextMyMoto.motoNumber}` : `UP NEXT — Race #${nextMyMoto.motoNumber}`}
                 {nextMyMoto.familyGates.length > 0 ? `  ·  Gate #${nextMyMoto.familyGates.map(g => g.gate).join(", #")}` : ""}
               </Text>
               {racesAway > 0 && (
-                <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>
+                <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 }}>
                   {racesAway} {racesAway === 1 ? "race" : "races"} until you're up
                 </Text>
               )}
@@ -294,17 +294,17 @@ function RaceDaySection({ event, colors }: { event: ScheduleEvent; colors: Retur
           </View>
         )}
         {isEnduro && enduroStartTimes.length > 0 && (
-          <View style={{ paddingHorizontal: 14, paddingVertical: 10, backgroundColor: "#cf152d14", borderTopWidth: 1, borderTopColor: "#cf152d33" }}>
+          <View style={{ paddingHorizontal: 14, paddingVertical: 10, backgroundColor: colors.primaryTint, borderTopWidth: 1, borderTopColor: colors.primary + "55" }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
-              <Feather name="clock" size={13} color="#cf152d" />
-              <Text style={{ fontSize: 11, fontWeight: "700", color: "#cf152d", fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>
+              <Feather name="clock" size={13} color={colors.primaryText} />
+              <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>
                 Test Class Schedule
               </Text>
             </View>
             {enduroStartTimes.map(cs => (
               <View key={cs.raceClass} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 2 }}>
-                <Text style={{ fontSize: 12, color: colors.foreground, fontFamily: "Inter_500Medium" }}>{cs.raceClass}</Text>
-                <Text style={{ fontSize: 13, fontWeight: "700", color: "#cf152d", fontFamily: "Inter_700Bold" }}>{fmtStartTime(cs.startTime)}</Text>
+                <Text style={{ fontSize: 12, color: colors.foreground, fontFamily: "Roboto_500Medium" }}>{cs.raceClass}</Text>
+                <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>{fmtStartTime(cs.startTime)}</Text>
               </View>
             ))}
           </View>
@@ -312,9 +312,9 @@ function RaceDaySection({ event, colors }: { event: ScheduleEvent; colors: Retur
       </View>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8 }}>
         <Feather name="list" size={13} color={colors.mutedForeground} />
-        <Text style={{ fontSize: 11, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>Race Schedule</Text>
+        <Text style={{ fontSize: 13, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>Race Schedule</Text>
         {scheduled.length > 0 && (
-          <Text style={{ marginLeft: "auto", fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+          <Text style={{ marginLeft: "auto", fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
             {scheduled.length} remaining
           </Text>
         )}
@@ -322,7 +322,7 @@ function RaceDaySection({ event, colors }: { event: ScheduleEvent; colors: Retur
       {event.motos.length === 0 ? (
         <View style={{ alignItems: "center", paddingTop: 24, paddingHorizontal: 32, gap: 6 }}>
           <Feather name="clock" size={28} color={colors.mutedForeground} />
-          <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>
+          <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center" }}>
             Schedule not yet posted — pull to refresh.
           </Text>
         </View>
@@ -375,15 +375,15 @@ function HistoryCard({ event, colors, onPress }: { event: EventHistory; colors: 
         <>
           {event.motos.map(moto => (
             <View key={moto.motoId} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 9, borderTopWidth: 1, borderTopColor: colors.border }}>
-              <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_500Medium" }}>{moto.motoName}</Text>
-              {moto.totalTime && <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginRight: 8 }}>{moto.totalTime}</Text>}
-              {moto.points != null && moto.points > 0 && <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginRight: 8 }}>{moto.points}pts</Text>}
+              <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Roboto_500Medium" }}>{moto.motoName}</Text>
+              {moto.totalTime && <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginRight: 8 }}>{moto.totalTime}</Text>}
+              {moto.points != null && moto.points > 0 && <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginRight: 8 }}>{moto.points}pts</Text>}
               <PositionBadge position={moto.position} dnf={moto.dnf} dns={moto.dns} size="sm" />
             </View>
           ))}
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 4, paddingHorizontal: 16, paddingVertical: 9, borderTopWidth: 1, borderTopColor: colors.border }}>
-            <Feather name="clock" size={11} color={colors.primary} />
-            <Text style={{ fontSize: 11, color: colors.foreground, fontFamily: "Inter_600SemiBold" }}>Lap times</Text>
+            <Feather name="clock" size={11} color={colors.primaryText} />
+            <Text style={{ fontSize: 11, color: colors.foreground, fontFamily: "Roboto_600SemiBold" }}>Lap times</Text>
             <Feather name="chevron-right" size={12} color={colors.mutedForeground} />
           </View>
         </>
@@ -552,19 +552,19 @@ export default function MyRacesScreen() {
   });
 
   if (authLoading) {
-    return <View style={[styles.container, { flex: 1, alignItems: "center", justifyContent: "center" }]}><ActivityIndicator color={colors.primary} /></View>;
+    return <View style={[styles.container, { flex: 1, alignItems: "center", justifyContent: "center" }]}><ActivityIndicator color={colors.primaryText} /></View>;
   }
 
   if (!isAuthenticated) {
     return (
       <View style={[styles.container, { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 8 }]}>
         <Feather name="award" size={48} color={colors.mutedForeground} />
-        <Text style={{ fontSize: 18, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", textAlign: "center" }}>Your racing lives here</Text>
-        <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 20 }}>
+        <Text style={{ fontSize: 18, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold", textAlign: "center" }}>Your racing lives here</Text>
+        <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center", lineHeight: 20 }}>
           Sign in to see your race schedule, practice laps, and results.
         </Text>
         <Pressable style={{ marginTop: 12, backgroundColor: colors.primary, paddingHorizontal: 28, paddingVertical: 12, borderRadius: 10 }} onPress={() => router.push("/(tabs)/profile")}>
-          <Text style={{ color: "#fff", fontSize: 15, fontWeight: "700", fontFamily: "Inter_700Bold" }}>Sign In</Text>
+          <Text style={{ color: "#fff", fontSize: 15, fontWeight: "700", fontFamily: "Roboto_700Bold" }}>Sign In</Text>
         </Pressable>
       </View>
     );
@@ -672,7 +672,7 @@ export default function MyRacesScreen() {
 
   function renderContent() {
     if (loading && !refreshing) {
-      return <View style={{ marginTop: 60, alignItems: "center" }}><ActivityIndicator color={colors.primary} /></View>;
+      return <View style={{ marginTop: 60, alignItems: "center" }}><ActivityIndicator color={colors.primaryText} /></View>;
     }
     if (error) {
       return <EmptyState icon="alert-circle" title="Couldn't load your races" message={error} primary={{ label: "Try again", icon: "refresh-cw", onPress: onRefresh }} />;
@@ -695,8 +695,8 @@ export default function MyRacesScreen() {
         return upcoming.length > 0 ? (
           <>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginHorizontal: 16, marginTop: 20, marginBottom: 8 }}>
-              <Feather name="calendar" size={13} color={colors.primary} />
-              <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>Upcoming Events</Text>
+              <Feather name="calendar" size={13} color={colors.primaryText} />
+              <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>Upcoming Events</Text>
             </View>
             {upcoming.map(e => <UpcomingCard key={e.eventId} event={e} colors={colors} isRegistered={registeredEventIds.has(e.eventId)} />)}
           </>
@@ -712,15 +712,15 @@ export default function MyRacesScreen() {
       case "near_me":
         if (locationLoading) {
           return <View style={{ marginTop: 60, alignItems: "center", gap: 12 }}>
-            <ActivityIndicator color={colors.primary} />
-            <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>Finding your location…</Text>
+            <ActivityIndicator color={colors.primaryText} />
+            <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>Finding your location…</Text>
           </View>;
         }
         return nearMeEvents.length > 0 ? (
           <>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginHorizontal: 16, marginTop: 20, marginBottom: 8 }}>
-              <Feather name="map-pin" size={13} color={colors.primary} />
-              <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>
+              <Feather name="map-pin" size={13} color={colors.primaryText} />
+              <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>
                 {showAllOpen ? "All open races" : nearMeState ? `Open in ${nearMeState}` : "Open Near You"}
               </Text>
             </View>
@@ -742,8 +742,8 @@ export default function MyRacesScreen() {
         return history.length > 0 ? (
           <>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginHorizontal: 16, marginTop: 20, marginBottom: 8 }}>
-              <Feather name="award" size={13} color={colors.primary} />
-              <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>Race History</Text>
+              <Feather name="award" size={13} color={colors.primaryText} />
+              <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>Race History</Text>
             </View>
             {history.map(e => (
               <HistoryCard
@@ -770,7 +770,7 @@ export default function MyRacesScreen() {
       {/* Header */}
       <View style={styles.header}>
         <BrandBar />
-        <Text style={{ fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: 1, textTransform: "uppercase" }}>
+        <Text style={{ fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Barlow_800ExtraBold", letterSpacing: 1, textTransform: "uppercase" }}>
           My Racing
         </Text>
 
@@ -793,7 +793,7 @@ export default function MyRacesScreen() {
               onPress={() => setActiveFilter(tab.key)}
             >
               <Feather name={tab.icon as any} size={11} color={active ? "#fff" : colors.mutedForeground} />
-              <Text style={{ fontSize: 10, fontWeight: "700", fontFamily: "Inter_700Bold", color: active ? "#fff" : colors.mutedForeground, lineHeight: 14, marginTop: 2, textAlign: "center" }}>
+              <Text style={{ fontSize: 10, fontWeight: "700", fontFamily: "Roboto_700Bold", color: active ? "#fff" : colors.mutedForeground, lineHeight: 14, marginTop: 2, textAlign: "center" }}>
                 {tab.label}
               </Text>
             </Pressable>

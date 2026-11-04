@@ -85,7 +85,7 @@ function MessageBubble({ msg, colors }: { msg: ChatMessage; colors: ReturnType<t
           text={msg.content}
           textStyle={[
             styles.bubbleText,
-            { color: isUser ? "#fff" : colors.foreground, fontFamily: "Inter_400Regular" },
+            { color: isUser ? "#fff" : colors.foreground, fontFamily: "Roboto_400Regular" },
           ]}
           linkColor={isUser ? "#ffd0d6" : colors.primary}
         />
@@ -101,7 +101,7 @@ function TypingIndicator({ colors }: { colors: ReturnType<typeof useColors> }) {
     <View style={[styles.bubbleRow, styles.bubbleRowLeft]}>
       <RockyAvatar size={30} online={false} />
       <View style={[styles.bubble, { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }]}>
-        <ActivityIndicator size="small" color={colors.primary} />
+        <ActivityIndicator size="small" color={colors.primaryText} />
       </View>
     </View>
   );
@@ -140,13 +140,13 @@ function MemoryPanel({
         style={({ pressed }) => [styles.memoryHeader, { opacity: pressed ? 0.7 : 1 }]}
       >
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          <Feather name="cpu" size={13} color={colors.primary} />
-          <Text style={{ fontSize: 12, fontFamily: "Inter_700Bold", color: colors.primary, letterSpacing: 0.3 }}>
+          <Feather name="cpu" size={13} color={colors.primaryText} />
+          <Text style={{ fontSize: 12, fontFamily: "Roboto_700Bold", color: colors.primaryText, letterSpacing: 0.3 }}>
             Rocky's Memory
           </Text>
           {memory.length > 0 && (
             <View style={[styles.memoryBadge, { backgroundColor: colors.primary + "20", borderColor: colors.primary + "40" }]}>
-              <Text style={{ fontSize: 10, color: colors.primary, fontFamily: "Inter_700Bold" }}>{memory.length}</Text>
+              <Text style={{ fontSize: 10, color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>{memory.length}</Text>
             </View>
           )}
         </View>
@@ -291,12 +291,12 @@ export default function MechanicScreen() {
           <RockyAvatar size={42} />
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Text style={{ fontSize: 19, color: colors.foreground, fontFamily: "Inter_700Bold", fontStyle: "italic", letterSpacing: 0.5, textTransform: "uppercase" }}>Rocky</Text>
+              <Text style={{ fontSize: 19, color: colors.foreground, fontFamily: "Barlow_800ExtraBold_Italic", letterSpacing: 0.5, textTransform: "uppercase" }}>Rocky</Text>
               <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, backgroundColor: colors.primary }}>
-                <Text style={{ fontSize: 9, color: "#fff", fontFamily: "Inter_700Bold", letterSpacing: 0.8 }}>AI</Text>
+                <Text style={{ fontSize: 9, color: "#fff", fontFamily: "Roboto_700Bold", letterSpacing: 0.8 }}>AI</Text>
               </View>
             </View>
-            <Text style={{ fontSize: 11, color: colors.success, fontFamily: "Inter_600SemiBold", marginTop: 1 }}>
+            <Text style={{ fontSize: 11, color: colors.success, fontFamily: "Roboto_600SemiBold", marginTop: 1 }}>
               {isTyping ? "Rocky is typing…" : "Online · Mechanic & riding coach"}
             </Text>
           </View>
@@ -329,7 +329,7 @@ export default function MechanicScreen() {
             color={confirmingClear ? colors.destructive : colors.mutedForeground}
           />
           {confirmingClear && (
-            <Text style={{ fontSize: 11, color: colors.destructive, fontFamily: "Inter_700Bold" }}>
+            <Text style={{ fontSize: 11, color: colors.destructive, fontFamily: "Roboto_700Bold" }}>
               {CONFIRM_CLEAR_LABEL}
             </Text>
           )}
@@ -339,12 +339,12 @@ export default function MechanicScreen() {
       {/* Bike context banner (if bike info set) */}
       {bikeStr.length > 0 && (
         <View style={[styles.contextBanner, { backgroundColor: colors.primary + "10", borderBottomColor: colors.primary + "25" }]}>
-          <Feather name="settings" size={11} color={colors.primary} />
-          <Text style={{ fontSize: 11, color: colors.primary, fontFamily: "Inter_500Medium" }}>{bikeStr}</Text>
+          <Feather name="settings" size={11} color={colors.primaryText} />
+          <Text style={{ fontSize: 11, color: colors.primaryText, fontFamily: "Roboto_500Medium" }}>{bikeStr}</Text>
           {storedInfo.rideExperience && (
             <>
               <View style={{ width: 3, height: 3, borderRadius: 2, backgroundColor: colors.primary + "60" }} />
-              <Text style={{ fontSize: 11, color: colors.primary, fontFamily: "Inter_500Medium", textTransform: "capitalize" }}>{storedInfo.rideExperience}</Text>
+              <Text style={{ fontSize: 11, color: colors.primaryText, fontFamily: "Roboto_500Medium", textTransform: "capitalize" }}>{storedInfo.rideExperience}</Text>
             </>
           )}
         </View>
@@ -357,8 +357,8 @@ export default function MechanicScreen() {
           <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
             <RockyAvatar size={52} />
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 10, color: colors.primary, fontFamily: "Inter_700Bold", letterSpacing: 1.2, textTransform: "uppercase" }}>Your new crew chief</Text>
-              <Text style={{ fontSize: 22, color: colors.foreground, fontFamily: "Inter_700Bold", fontStyle: "italic", textTransform: "uppercase" }}>Meet Rocky</Text>
+              <Text style={{ fontSize: 12, color: colors.primaryText, fontFamily: "Barlow_700Bold", letterSpacing: 1.2, textTransform: "uppercase" }}>Your new crew chief</Text>
+              <Text style={{ fontSize: 22, color: colors.foreground, fontFamily: "Barlow_800ExtraBold_Italic", textTransform: "uppercase" }}>Meet Rocky</Text>
             </View>
           </View>
           {([
@@ -369,18 +369,18 @@ export default function MechanicScreen() {
           ] as const).map(([icon, text]) => (
             <View key={text} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
               <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: colors.primaryTint, alignItems: "center", justifyContent: "center" }}>
-                <Feather name={icon} size={14} color={colors.primary} />
+                <Feather name={icon} size={14} color={colors.primaryText} />
               </View>
-              <Text style={{ flex: 1, fontSize: 14, color: colors.foreground, fontFamily: "Inter_500Medium", lineHeight: 19 }}>{text}</Text>
+              <Text style={{ flex: 1, fontSize: 14, color: colors.foreground, fontFamily: "Roboto_500Medium", lineHeight: 19 }}>{text}</Text>
             </View>
           ))}
           <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
             <Pressable onPress={minimize} style={({ pressed }) => ({ flex: 1, flexDirection: "row", gap: 6, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary, borderRadius: 999, paddingVertical: 13, opacity: pressed ? 0.85 : 1 })}>
               <Feather name="minimize-2" size={15} color="#fff" />
-              <Text style={{ color: "#fff", fontSize: 13, fontFamily: "Inter_700Bold", letterSpacing: 0.8, textTransform: "uppercase" }}>Minimize Rocky</Text>
+              <Text style={{ color: "#fff", fontSize: 14, fontFamily: "Barlow_700Bold", letterSpacing: 0.8, textTransform: "uppercase" }}>Minimize Rocky</Text>
             </Pressable>
             <Pressable onPress={() => setShowIntro(false)} style={({ pressed }) => ({ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.muted, borderRadius: 999, paddingVertical: 13, borderWidth: 1, borderColor: colors.border, opacity: pressed ? 0.85 : 1 })}>
-              <Text style={{ color: colors.foreground, fontSize: 13, fontFamily: "Inter_700Bold", letterSpacing: 0.8, textTransform: "uppercase" }}>Ask a question</Text>
+              <Text style={{ color: colors.foreground, fontSize: 14, fontFamily: "Barlow_700Bold", letterSpacing: 0.8, textTransform: "uppercase" }}>Ask a question</Text>
             </Pressable>
           </View>
         </View>
@@ -388,7 +388,7 @@ export default function MechanicScreen() {
 
       {/* Disclaimer */}
       <View style={{ paddingHorizontal: 14, paddingVertical: 7, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, backgroundColor: colors.background }}>
-        <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 14 }}>
+        <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center", lineHeight: 14 }}>
           Rocky's advice is for information only. Check your owner's manual, and use a qualified mechanic for safety-critical repairs.
         </Text>
       </View>
@@ -404,7 +404,7 @@ export default function MechanicScreen() {
         renderItem={({ item }) => <MessageBubble msg={item} colors={colors} />}
         ListFooterComponent={isTyping ? <TypingIndicator colors={colors} /> : !lastUser ? (
           <View style={{ paddingHorizontal: 12, paddingTop: 4 }}>
-            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_700Bold", letterSpacing: 1, textTransform: "uppercase", marginBottom: 8, marginLeft: 2 }}>
+            <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Barlow_700Bold", letterSpacing: 1, textTransform: "uppercase", marginBottom: 8, marginLeft: 2 }}>
               Try asking
             </Text>
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
@@ -419,9 +419,9 @@ export default function MechanicScreen() {
                   })}
                 >
                   <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: colors.primaryTint, alignItems: "center", justifyContent: "center" }}>
-                    <Feather name={q.icon} size={14} color={colors.primary} />
+                    <Feather name={q.icon} size={14} color={colors.primaryText} />
                   </View>
-                  <Text style={{ flex: 1, fontSize: 12, color: colors.foreground, fontFamily: "Inter_600SemiBold" }} numberOfLines={1}>{q.label}</Text>
+                  <Text style={{ flex: 1, fontSize: 12, color: colors.foreground, fontFamily: "Roboto_600SemiBold" }} numberOfLines={1}>{q.label}</Text>
                 </Pressable>
               ))}
             </View>
@@ -436,7 +436,7 @@ export default function MechanicScreen() {
       {error && (
         <View style={{ marginHorizontal: 12, marginBottom: 6, padding: 10, borderRadius: 8, backgroundColor: colors.dangerTint, flexDirection: "row", alignItems: "center", gap: 8 }}>
           <Feather name="alert-circle" size={14} color={colors.destructive} />
-          <Text style={{ flex: 1, fontSize: 12, color: colors.destructive, fontFamily: "Inter_400Regular" }}>{error}</Text>
+          <Text style={{ flex: 1, fontSize: 12, color: colors.destructive, fontFamily: "Roboto_400Regular" }}>{error}</Text>
           <Pressable onPress={() => setError(null)}>
             <Feather name="x" size={14} color={colors.destructive} />
           </Pressable>
@@ -466,7 +466,7 @@ export default function MechanicScreen() {
                 },
               ]}
             >
-              <Text style={[styles.followUpChipText, { color: colors.primary }]} numberOfLines={1}>
+              <Text style={[styles.followUpChipText, { color: colors.primaryText }]} numberOfLines={1}>
                 {chip.label}
               </Text>
             </Pressable>
@@ -557,7 +557,7 @@ const styles = StyleSheet.create({
   },
   memoryEmpty: {
     fontSize: 12,
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Roboto_400Regular",
     fontStyle: "italic",
     paddingVertical: 6,
     paddingHorizontal: 4,
@@ -574,7 +574,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 12,
     lineHeight: 17,
-    fontFamily: "Inter_400Regular",
+    fontFamily: "Roboto_400Regular",
   },
   clearMemoryBtn: {
     flexDirection: "row",
@@ -589,7 +589,7 @@ const styles = StyleSheet.create({
   },
   clearMemoryLabel: {
     fontSize: 12,
-    fontFamily: "Inter_500Medium",
+    fontFamily: "Roboto_500Medium",
   },
   bubbleRow: {
     flexDirection: "row", marginHorizontal: 12, marginBottom: 12, alignItems: "flex-end", gap: 8,
@@ -614,7 +614,7 @@ const styles = StyleSheet.create({
     flex: 1, borderRadius: 22, paddingHorizontal: 16, paddingVertical: 11,
     fontSize: 14, lineHeight: 20,
     borderWidth: 1,
-    maxHeight: 120, fontFamily: "Inter_400Regular",
+    maxHeight: 120, fontFamily: "Roboto_400Regular",
   },
   followUpChipsRow: {
     paddingHorizontal: 12,
@@ -634,6 +634,6 @@ const styles = StyleSheet.create({
   followUpChipText: {
     fontSize: 12,
     fontWeight: "600",
-    fontFamily: "Inter_600SemiBold",
+    fontFamily: "Roboto_600SemiBold",
   },
 });

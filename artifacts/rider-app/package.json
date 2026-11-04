@@ -13,7 +13,8 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
-    "@expo-google-fonts/inter": "^0.4.0",
+    "@expo-google-fonts/barlow": "0.4.1",
+    "@expo-google-fonts/roboto": "0.4.3",
     "@expo/cli": "54.0.23",
     "@expo/ngrok": "^4.1.0",
     "@expo/vector-icons": "^15.0.3",

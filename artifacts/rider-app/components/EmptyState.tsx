@@ -43,10 +43,10 @@ export function EmptyState({
           <Feather name={icon} size={19} color={colors.foreground} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: 0.6, textTransform: "uppercase" }} numberOfLines={1}>
+          <Text style={{ fontSize: 14, color: colors.foreground, fontFamily: "Barlow_700Bold", letterSpacing: 0.6, textTransform: "uppercase" }} numberOfLines={1}>
             {title}
           </Text>
-          <Text style={{ marginTop: 2, fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", lineHeight: 16 }} numberOfLines={2}>
+          <Text style={{ marginTop: 2, fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", lineHeight: 16 }} numberOfLines={2}>
             {message}
           </Text>
         </View>
@@ -58,7 +58,7 @@ export function EmptyState({
               borderRadius: 999, paddingVertical: 8, paddingHorizontal: 12, opacity: pressed ? 0.85 : 1,
             })}
           >
-            <Text style={{ color: "#fff", fontSize: 11, fontFamily: "Inter_700Bold", letterSpacing: 0.6, textTransform: "uppercase" }}>{primary.label}</Text>
+            <Text style={{ color: "#fff", fontSize: 13, fontFamily: "Barlow_700Bold", letterSpacing: 0.6, textTransform: "uppercase" }}>{primary.label}</Text>
             <Feather name={primary.icon ?? "arrow-right"} size={12} color="#fff" />
           </Pressable>
         )}
@@ -100,10 +100,10 @@ export function EmptyState({
         ))}
       </View>
 
-      <Text style={{ fontSize: card ? 16 : 19, color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: 1, textTransform: "uppercase", textAlign: "center" }}>
+      <Text style={{ fontSize: card ? 16 : 19, color: colors.foreground, fontFamily: "Roboto_700Bold", letterSpacing: 1, textTransform: "uppercase", textAlign: "center" }}>
         {title}
       </Text>
-      <Text style={{ marginTop: 6, fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 20, maxWidth: 320 }}>
+      <Text style={{ marginTop: 6, fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center", lineHeight: 20, maxWidth: 320 }}>
         {message}
       </Text>
 
@@ -116,13 +116,13 @@ export function EmptyState({
             opacity: pressed ? 0.85 : 1,
           })}
         >
-          <Text style={{ color: "#fff", fontSize: 14, fontFamily: "Inter_700Bold", letterSpacing: 0.8, textTransform: "uppercase" }}>{primary.label}</Text>
+          <Text style={{ color: "#fff", fontSize: 15, fontFamily: "Barlow_700Bold", letterSpacing: 0.8, textTransform: "uppercase" }}>{primary.label}</Text>
           <Feather name={primary.icon ?? "arrow-right"} size={16} color="#fff" />
         </Pressable>
       )}
       {secondary && (
         <Pressable onPress={secondary.onPress} hitSlop={8} style={{ marginTop: 12 }}>
-          <Text style={{ color: colors.foreground, fontSize: 13, fontFamily: "Inter_600SemiBold", textDecorationLine: "underline" }}>{secondary.label}</Text>
+          <Text style={{ color: colors.foreground, fontSize: 13, fontFamily: "Roboto_600SemiBold", textDecorationLine: "underline" }}>{secondary.label}</Text>
         </Pressable>
       )}
     </View>

@@ -88,7 +88,7 @@ const pa = StyleSheet.create({
   text: {
     fontSize: 8,
     fontWeight: "800",
-    fontFamily: "Inter_700Bold",
+    fontFamily: "Roboto_700Bold",
     color: "#fff",
     letterSpacing: 0.2,
   },

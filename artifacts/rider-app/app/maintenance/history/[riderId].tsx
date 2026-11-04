@@ -93,12 +93,12 @@ function EditModal({
       width: 40, height: 4, borderRadius: 2, backgroundColor: colors.border,
       alignSelf: "center", marginBottom: 16,
     },
-    title: { fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", marginBottom: 20 },
-    label: { fontSize: 12, fontWeight: "600", color: colors.mutedForeground, fontFamily: "Inter_600SemiBold", marginBottom: 6 },
+    title: { fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold", marginBottom: 20 },
+    label: { fontSize: 12, fontWeight: "600", color: colors.mutedForeground, fontFamily: "Roboto_600SemiBold", marginBottom: 6 },
     input: {
       backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border,
       borderRadius: 10, paddingHorizontal: 14, paddingVertical: 11,
-      fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular",
+      fontSize: 14, color: colors.foreground, fontFamily: "Roboto_400Regular",
     },
     inputArea: { height: 80, textAlignVertical: "top" },
     row: { flexDirection: "row", gap: 12, marginTop: 20 },
@@ -107,9 +107,9 @@ function EditModal({
       borderWidth: 1, borderColor: colors.border,
       alignItems: "center",
     },
-    cancelText: { fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Inter_600SemiBold" },
+    cancelText: { fontSize: 14, fontWeight: "600", color: colors.foreground, fontFamily: "Roboto_600SemiBold" },
     saveBtn: { flex: 1, paddingVertical: 13, borderRadius: 12, backgroundColor: colors.primary, alignItems: "center" },
-    saveText: { fontSize: 14, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" },
+    saveText: { fontSize: 14, fontWeight: "700", color: "#fff", fontFamily: "Roboto_700Bold" },
   });
 
   return (
@@ -194,7 +194,7 @@ function HistoryRow({
           }}
         >
           <Feather name="edit-2" size={18} color="#fff" />
-          <Text style={{ fontSize: 10, color: "#fff", fontFamily: "Inter_600SemiBold", marginTop: 3 }}>Edit</Text>
+          <Text style={{ fontSize: 10, color: "#fff", fontFamily: "Roboto_600SemiBold", marginTop: 3 }}>Edit</Text>
         </Pressable>
         <Pressable
           style={{
@@ -211,7 +211,7 @@ function HistoryRow({
           }}
         >
           <Feather name="trash-2" size={18} color="#fff" />
-          <Text style={{ fontSize: 10, color: "#fff", fontFamily: "Inter_600SemiBold", marginTop: 3 }}>Delete</Text>
+          <Text style={{ fontSize: 10, color: "#fff", fontFamily: "Roboto_600SemiBold", marginTop: 3 }}>Delete</Text>
         </Pressable>
       </View>
     );
@@ -237,19 +237,19 @@ function HistoryRow({
         })}
       >
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-          <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", flex: 1 }}>
+          <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold", flex: 1 }}>
             {entry.itemName}
           </Text>
           <Feather name="chevron-right" size={14} color={colors.mutedForeground} style={{ opacity: 0.5 }} />
         </View>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
           <Feather name="calendar" size={11} color={colors.mutedForeground} />
-          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>
+          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
             {formatDate(entry.servicedAt)}
           </Text>
         </View>
         {entry.notes ? (
-          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", fontStyle: "italic", marginTop: 2 }}>
+          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", fontStyle: "italic", marginTop: 2 }}>
             {entry.notes}
           </Text>
         ) : null}
@@ -351,10 +351,10 @@ export default function MaintenanceHistoryScreen() {
       alignItems: "center", justifyContent: "center",
     },
     headerCenter: { flex: 1 },
-    headerTitle: { fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" },
-    headerSub: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 },
+    headerTitle: { fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" },
+    headerSub: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 },
     hint: {
-      fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular",
+      fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular",
       textAlign: "center", marginBottom: 2, opacity: 0.7,
     },
     scroll: { flex: 1 },
@@ -364,13 +364,13 @@ export default function MaintenanceHistoryScreen() {
       alignItems: "center", gap: 12, borderWidth: 1, borderColor: colors.border,
       marginTop: 16,
     },
-    emptyTitle: { fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" },
+    emptyTitle: { fontSize: 16, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" },
     emptyText: {
-      fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular",
+      fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular",
       textAlign: "center", lineHeight: 19,
     },
     countLabel: {
-      fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular",
+      fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular",
       textAlign: "center", marginBottom: 4,
     },
   });
@@ -389,7 +389,7 @@ export default function MaintenanceHistoryScreen() {
 
       {loading ? (
         <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-          <ActivityIndicator color={colors.primary} />
+          <ActivityIndicator color={colors.primaryText} />
         </View>
       ) : (
         <ScrollView

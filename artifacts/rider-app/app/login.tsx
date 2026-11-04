@@ -164,12 +164,12 @@ export default function LoginScreen() {
 
 
   // Dark, race-themed palette for the sign-in screens (the brand art is built for black)
-  const ink = "#0B0B0C";
-  const panel = "#17171A";
-  const field = "#232327";
-  const line = "#2E2E33";
+  const ink = "#161616";
+  const panel = "#242424";
+  const field = "#1C1C1C";
+  const line = "#3A3A3A";
   const text = "#FFFFFF";
-  const muted = "#A1A1AA";
+  const muted = "#A8A8A8";
   const red = colors.primary;
   const { width: screenWidth } = useWindowDimensions();
   const bannerWidth = Math.min(screenWidth - 44, 440);
@@ -184,11 +184,11 @@ export default function LoginScreen() {
     },
     hero: { alignItems: "center", marginBottom: 22 },
     headline: {
-      marginTop: 14, fontSize: 26, color: text, fontFamily: "Inter_700Bold",
+      marginTop: 14, fontSize: 26, color: text, fontFamily: "Roboto_700Bold",
       letterSpacing: 1.5, textTransform: "uppercase", textAlign: "center",
     },
     subhead: {
-      marginTop: 6, fontSize: 14, color: muted, fontFamily: "Inter_400Regular",
+      marginTop: 6, fontSize: 14, color: muted, fontFamily: "Roboto_400Regular",
       textAlign: "center", lineHeight: 20, maxWidth: 320,
     },
     chips: { flexDirection: "row", justifyContent: "center", flexWrap: "wrap", gap: 6, marginTop: 14 },
@@ -198,54 +198,54 @@ export default function LoginScreen() {
       paddingVertical: 5, paddingLeft: 5, paddingRight: 9, borderRadius: 999,
     },
     chipDot: { width: 18, height: 18, borderRadius: 9, backgroundColor: red, alignItems: "center", justifyContent: "center" },
-    chipText: { fontSize: 11, color: text, fontFamily: "Inter_600SemiBold" },
+    chipText: { fontSize: 11, color: text, fontFamily: "Roboto_600SemiBold" },
     card: {
       backgroundColor: panel, borderRadius: 22, padding: 18,
       borderWidth: 1, borderColor: line,
       shadowColor: "#000", shadowOpacity: 0.5, shadowRadius: 24, shadowOffset: { width: 0, height: 12 }, elevation: 8,
     },
-    cardTitle: { fontSize: 20, color: text, fontFamily: "Inter_700Bold", textAlign: "center" },
-    cardSub: { fontSize: 13, color: muted, fontFamily: "Inter_400Regular", textAlign: "center", marginTop: 4, marginBottom: 16 },
+    cardTitle: { fontSize: 20, color: text, fontFamily: "Roboto_700Bold", textAlign: "center" },
+    cardSub: { fontSize: 13, color: muted, fontFamily: "Roboto_400Regular", textAlign: "center", marginTop: 4, marginBottom: 16 },
     tabRow: { flexDirection: "row", backgroundColor: ink, borderRadius: 999, padding: 4, marginBottom: 16 },
     tab: { flex: 1, paddingVertical: 10, borderRadius: 999, alignItems: "center" },
     tabActive: { backgroundColor: red },
-    tabText: { fontSize: 14, color: muted, fontFamily: "Inter_600SemiBold" },
+    tabText: { fontSize: 14, color: muted, fontFamily: "Roboto_600SemiBold" },
     tabTextActive: { color: "#fff" },
     inputWrapper: {
       flexDirection: "row", alignItems: "center",
       backgroundColor: field, borderRadius: 14,
       paddingHorizontal: 14, borderWidth: 1, borderColor: line, marginBottom: 12,
     },
-    input: { flex: 1, paddingVertical: 15, fontSize: 15, color: text, fontFamily: "Inter_400Regular" },
+    input: { flex: 1, paddingVertical: 15, fontSize: 15, color: text, fontFamily: "Roboto_400Regular" },
     btn: {
       flexDirection: "row", gap: 8, backgroundColor: red, paddingVertical: 16,
       borderRadius: 999, alignItems: "center", justifyContent: "center", marginTop: 6,
     },
     btnDisabled: { opacity: 0.45 },
-    btnText: { color: "#fff", fontSize: 16, fontFamily: "Inter_700Bold", letterSpacing: 1, textTransform: "uppercase" },
+    btnText: { color: "#fff", fontSize: 17, fontFamily: "Barlow_700Bold", letterSpacing: 1, textTransform: "uppercase" },
     biometricBtn: {
       flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
       borderWidth: 1.5, borderColor: line, backgroundColor: field,
       paddingVertical: 15, borderRadius: 999, marginBottom: 14,
     },
-    biometricText: { fontSize: 15, color: text, fontFamily: "Inter_600SemiBold" },
+    biometricText: { fontSize: 15, color: text, fontFamily: "Roboto_600SemiBold" },
     orRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 14 },
     orLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: line },
-    orText: { fontSize: 12, color: muted, fontFamily: "Inter_400Regular" },
+    orText: { fontSize: 12, color: muted, fontFamily: "Roboto_400Regular" },
     error: {
       backgroundColor: "rgba(239,68,68,0.14)", borderColor: "rgba(239,68,68,0.4)", borderWidth: 1,
-      borderRadius: 12, padding: 12, fontSize: 13, color: "#FCA5A5", fontFamily: "Inter_400Regular", marginBottom: 12,
+      borderRadius: 12, padding: 12, fontSize: 13, color: "#FCA5A5", fontFamily: "Roboto_400Regular", marginBottom: 12,
     },
     success: {
       backgroundColor: "rgba(16,185,129,0.14)", borderColor: "rgba(16,185,129,0.4)", borderWidth: 1,
-      borderRadius: 12, padding: 12, fontSize: 13, color: "#A7F3D0", fontFamily: "Inter_400Regular", marginBottom: 12,
+      borderRadius: 12, padding: 12, fontSize: 13, color: "#A7F3D0", fontFamily: "Roboto_400Regular", marginBottom: 12,
     },
     forgotLink: { alignSelf: "flex-end", marginTop: -2, marginBottom: 8 },
-    forgotText: { fontSize: 13, color: text, fontFamily: "Inter_500Medium", textDecorationLine: "underline" },
+    forgotText: { fontSize: 13, color: text, fontFamily: "Roboto_500Medium", textDecorationLine: "underline" },
     backLink: { marginTop: 16, alignItems: "center" },
-    backText: { fontSize: 14, color: text, fontFamily: "Inter_500Medium" },
-    footerText: { fontSize: 12, color: muted, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 18, marginTop: 18 },
-    poweredBy: { fontSize: 11, color: "#71717A", fontFamily: "Inter_500Medium", textAlign: "center", marginTop: 14, letterSpacing: 1, textTransform: "uppercase" },
+    backText: { fontSize: 14, color: text, fontFamily: "Roboto_500Medium" },
+    footerText: { fontSize: 12, color: muted, fontFamily: "Roboto_400Regular", textAlign: "center", lineHeight: 18, marginTop: 18 },
+    poweredBy: { fontSize: 11, color: "#71717A", fontFamily: "Roboto_500Medium", textAlign: "center", marginTop: 14, letterSpacing: 1, textTransform: "uppercase" },
   });
 
   // Hero slides in on first paint

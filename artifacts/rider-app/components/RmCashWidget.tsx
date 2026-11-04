@@ -54,7 +54,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 8,
     fontWeight: "700",
-    fontFamily: "Inter_700Bold",
+    fontFamily: "Roboto_700Bold",
     letterSpacing: 0.8,
     textTransform: "uppercase",
     lineHeight: 10,
@@ -62,7 +62,7 @@ const styles = StyleSheet.create({
   amount: {
     fontSize: 13,
     fontWeight: "800",
-    fontFamily: "Inter_700Bold",
+    fontFamily: "Roboto_700Bold",
     lineHeight: 15,
     color: "#16a34a",
   },

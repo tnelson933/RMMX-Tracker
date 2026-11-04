@@ -40,7 +40,7 @@ export function PositionBadge({
   if (dnf || dns) {
     return (
       <View style={{ height: dims.h, paddingHorizontal: dims.px, borderRadius: 8, backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center" }}>
-        <Text style={{ fontSize: dims.fs - 2, color: colors.mutedForeground, fontFamily: "Inter_700Bold", letterSpacing: 0.5 }}>{dnf ? "DNF" : "DNS"}</Text>
+        <Text style={{ fontSize: dims.fs - 2, color: colors.mutedForeground, fontFamily: "Roboto_700Bold", letterSpacing: 0.5 }}>{dnf ? "DNF" : "DNS"}</Text>
       </View>
     );
   }
@@ -55,7 +55,7 @@ export function PositionBadge({
       shadowColor: metal ?? colors.primary, shadowOpacity: metal ? 0.45 : 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 3,
     }}>
       {position === 1 && size !== "sm" && <Feather name="award" size={dims.fs - 2} color="#1A1300" />}
-      <Text style={{ fontSize: dims.fs, color: metal ? "#14110A" : "#fff", fontFamily: "Inter_700Bold", fontStyle: "italic", letterSpacing: 0.3 }}>
+      <Text style={{ fontSize: dims.fs, color: metal ? "#14110A" : "#fff", fontFamily: "Barlow_800ExtraBold_Italic", letterSpacing: 0.3 }}>
         P{position}
       </Text>
     </View>
@@ -78,13 +78,13 @@ export function StatTile({
     <>
       <View style={{ position: "absolute", top: 0, left: 14, right: 14, height: 3, borderBottomLeftRadius: 3, borderBottomRightRadius: 3, backgroundColor: metal ?? colors.primary }} />
       <Text
-        style={{ fontSize: compact ? 22 : 30, color: metalText ?? (highlight ? colors.primary : colors.foreground), fontFamily: "Inter_700Bold", fontStyle: "italic", letterSpacing: -0.5 }}
+        style={{ fontSize: compact ? 22 : 30, color: metalText ?? (highlight ? colors.primaryText : colors.foreground), fontFamily: "Barlow_800ExtraBold_Italic", letterSpacing: -0.5 }}
         numberOfLines={1}
         adjustsFontSizeToFit
       >
         {value}
       </Text>
-      <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_700Bold", marginTop: 2, textTransform: "uppercase", letterSpacing: 1 }} numberOfLines={1}>
+      <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Barlow_700Bold", marginTop: 2, textTransform: "uppercase", letterSpacing: 1 }} numberOfLines={1}>
         {label}
       </Text>
       {onPress && <Feather name="chevron-right" size={12} color={colors.mutedForeground} style={{ position: "absolute", right: 7, top: 9 }} />}

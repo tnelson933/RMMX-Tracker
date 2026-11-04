@@ -83,7 +83,7 @@ export function RockyLauncher() {
           paddingVertical: 10, paddingHorizontal: 12, flexDirection: "row", gap: 8, alignItems: "center",
           shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 8,
         }}>
-          <Text style={{ flex: 1, fontSize: 13, color: colors.background, fontFamily: "Inter_600SemiBold", lineHeight: 18 }}>
+          <Text style={{ flex: 1, fontSize: 13, color: colors.background, fontFamily: "Roboto_600SemiBold", lineHeight: 18 }}>
             I'm here on every screen. Tap me anytime you've got a question.
           </Text>
           <Feather name="x" size={14} color={colors.background} />

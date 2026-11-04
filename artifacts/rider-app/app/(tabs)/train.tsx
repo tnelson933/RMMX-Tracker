@@ -171,8 +171,8 @@ function ChipBar({ items, selected, onSelect, colors }: {
             backgroundColor: active ? colors.primary : colors.muted,
             borderWidth: active ? 0 : StyleSheet.hairlineWidth, borderColor: colors.border,
           }}>
-            <Text style={{ fontSize: 13, fontWeight: "700", color: active ? "#fff" : colors.foreground, fontFamily: "Inter_700Bold" }}>{item.label}</Text>
-            {item.sub ? <Text style={{ fontSize: 10, color: active ? "#fff" : colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>{item.sub}</Text> : null}
+            <Text style={{ fontSize: 13, fontWeight: "700", color: active ? "#fff" : colors.foreground, fontFamily: "Roboto_700Bold" }}>{item.label}</Text>
+            {item.sub ? <Text style={{ fontSize: 10, color: active ? "#fff" : colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 }}>{item.sub}</Text> : null}
           </Pressable>
         );
       })}
@@ -195,7 +195,7 @@ function LapTable({
   if (validLaps.length === 0) return (
     <View style={{ padding: 24, alignItems: "center", gap: 6 }}>
       <Feather name="clock" size={28} color={colors.mutedForeground} />
-      <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>No lap times recorded yet.</Text>
+      <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center" }}>No lap times recorded yet.</Text>
     </View>
   );
   const eligibleLaps = validLaps.filter(l => isLapEligible(l.lapNumber, raceStyle));
@@ -205,9 +205,9 @@ function LapTable({
   return (
     <View style={{ borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, overflow: "hidden", backgroundColor: colors.card }}>
       <View style={{ flexDirection: "row", paddingHorizontal: 14, paddingVertical: 8, backgroundColor: colors.muted + "80", borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
-        <Text style={{ width: 36, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Lap</Text>
-        <Text style={{ flex: 1, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Time</Text>
-        <Text style={{ width: 70, fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Gap</Text>
+        <Text style={{ width: 36, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Lap</Text>
+        <Text style={{ flex: 1, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Time</Text>
+        <Text style={{ width: 70, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Gap</Text>
       </View>
       {validLaps.map((lap, i) => {
         const isBest = isLapEligible(lap.lapNumber, raceStyle) && bestMs != null && lap.lapTimeMs === bestMs;
@@ -216,10 +216,10 @@ function LapTable({
           : "";
         return (
           <View key={i} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: i < validLaps.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: colors.border, backgroundColor: isBest ? colors.primary + "10" : "transparent" }}>
-            <Text style={{ width: 36, fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>{lap.lapNumber}</Text>
-            <Text style={{ flex: 1, fontSize: 15, fontWeight: isBest ? "800" : "400", color: isBest ? colors.primary : colors.foreground, fontFamily: isBest ? "Inter_700Bold" : "Inter_400Regular" }}>{fmtLap(lap.lapTimeMs)}</Text>
+            <Text style={{ width: 36, fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>{lap.lapNumber}</Text>
+            <Text style={{ flex: 1, fontSize: 15, fontWeight: isBest ? "800" : "400", color: isBest ? colors.primaryText : colors.foreground, fontFamily: isBest ? "Roboto_700Bold" : "Roboto_400Regular" }}>{fmtLap(lap.lapTimeMs)}</Text>
             <View style={{ width: 70, alignItems: "flex-end", flexDirection: "row", justifyContent: "flex-end", gap: 4 }}>
-              {isBest ? (<><Feather name="zap" size={11} color={colors.primary} /><Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold" }}>BEST</Text></>) : delta ? (<Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>{delta}</Text>) : null}
+              {isBest ? (<><Feather name="zap" size={11} color={colors.primaryText} /><Text style={{ fontSize: 11, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>BEST</Text></>) : delta ? (<Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>{delta}</Text>) : null}
             </View>
           </View>
         );
@@ -236,21 +236,21 @@ function Leaderboard({ entries, colors }: { entries: LeaderboardEntry[]; colors:
     <View style={{ borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, overflow: "hidden", backgroundColor: colors.card }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: colors.muted + "80", borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
         <Feather name="list" size={12} color={colors.mutedForeground} />
-        <Text style={{ fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.8, flex: 1 }}>Gate Pick Order</Text>
-        <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>Best Lap</Text>
+        <Text style={{ fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8, flex: 1 }}>Gate Pick Order</Text>
+        <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>Best Lap</Text>
       </View>
       {entries.map((e, i) => (
         <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: i < entries.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: colors.border, backgroundColor: e.isMe ? colors.primary + "0d" : "transparent" }}>
           <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: e.rank === 1 ? colors.primary : e.isMe ? colors.primary + "30" : colors.muted, alignItems: "center", justifyContent: "center" }}>
-            <Text style={{ fontSize: 12, fontWeight: "700", color: e.rank === 1 ? "#fff" : e.isMe ? colors.primary : colors.mutedForeground, fontFamily: "Inter_700Bold" }}>{e.rank}</Text>
+            <Text style={{ fontSize: 12, fontWeight: "700", color: e.rank === 1 ? "#fff" : e.isMe ? colors.primaryText : colors.mutedForeground, fontFamily: "Roboto_700Bold" }}>{e.rank}</Text>
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 14, fontWeight: e.isMe ? "700" : "400", color: colors.foreground, fontFamily: e.isMe ? "Inter_700Bold" : "Inter_400Regular" }}>{e.riderName}{e.isMe ? "  ★" : ""}</Text>
-            {e.bibNumber && <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>#{e.bibNumber}</Text>}
+            <Text style={{ fontSize: 14, fontWeight: e.isMe ? "700" : "400", color: colors.foreground, fontFamily: e.isMe ? "Roboto_700Bold" : "Roboto_400Regular" }}>{e.riderName}{e.isMe ? "  ★" : ""}</Text>
+            {e.bibNumber && <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>#{e.bibNumber}</Text>}
           </View>
           <View style={{ alignItems: "flex-end", gap: 1 }}>
-            <Text style={{ fontSize: 14, fontWeight: "600", color: e.isMe ? colors.primary : colors.foreground, fontFamily: e.isMe ? "Inter_700Bold" : "Inter_500Medium" }}>{fmtLap(e.bestLapMs)}</Text>
-            <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>{e.lapCount} lap{e.lapCount !== 1 ? "s" : ""}</Text>
+            <Text style={{ fontSize: 14, fontWeight: "600", color: e.isMe ? colors.primaryText : colors.foreground, fontFamily: e.isMe ? "Roboto_700Bold" : "Roboto_500Medium" }}>{fmtLap(e.bestLapMs)}</Text>
+            <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>{e.lapCount} lap{e.lapCount !== 1 ? "s" : ""}</Text>
           </View>
         </View>
       ))}
@@ -302,8 +302,8 @@ function ExerciseCard({ ex, phaseColor, index: _index, colors }: {
           <Feather name={equipmentIcon(ex.equipment)} size={18} color={phaseColor} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>{ex.name}</Text>
-          <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>{ex.equipment}</Text>
+          <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>{ex.name}</Text>
+          <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 }}>{ex.equipment}</Text>
         </View>
         <Feather name={expanded ? "chevron-up" : "chevron-down"} size={16} color={colors.mutedForeground} />
       </Pressable>
@@ -312,23 +312,23 @@ function ExerciseCard({ ex, phaseColor, index: _index, colors }: {
       <View style={{ flexDirection: "row", paddingHorizontal: 14, paddingBottom: 12, gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         {metricsStr ? (
           <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: phaseColor + "20" }}>
-            <Text style={{ fontSize: 12, fontWeight: "700", color: phaseColor, fontFamily: "Inter_700Bold" }}>{metricsStr}</Text>
+            <Text style={{ fontSize: 12, fontWeight: "700", color: phaseColor, fontFamily: "Roboto_700Bold" }}>{metricsStr}</Text>
           </View>
         ) : null}
         {restStr ? (
           <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: colors.muted }}>
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>{restStr}</Text>
+            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>{restStr}</Text>
           </View>
         ) : null}
         {ex.intensity ? (
           <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: colors.muted }}>
-            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>{ex.intensity}</Text>
+            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>{ex.intensity}</Text>
           </View>
         ) : null}
         {ex.mxBenefit ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: colors.primary + "12" }}>
-            <DirtBikeIcon size={11} color={colors.primary} />
-            <Text style={{ fontSize: 11, color: colors.primary, fontFamily: "Inter_500Medium" }} numberOfLines={1}>{ex.mxBenefit}</Text>
+            <DirtBikeIcon size={11} color={colors.primaryText} />
+            <Text style={{ fontSize: 11, color: colors.primaryText, fontFamily: "Roboto_500Medium" }} numberOfLines={1}>{ex.mxBenefit}</Text>
           </View>
         ) : null}
       </View>
@@ -338,11 +338,11 @@ function ExerciseCard({ ex, phaseColor, index: _index, colors }: {
           {/* Form cues — dot bullets */}
           {ex.formTips?.length > 0 && (
             <View style={{ marginHorizontal: 14, marginBottom: 10 }}>
-              <Text style={{ fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 5 }}>Form Cues</Text>
+              <Text style={{ fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 5 }}>Form Cues</Text>
               {ex.formTips.map((tip, i) => (
                 <View key={i} style={{ flexDirection: "row", gap: 8, marginBottom: 3, alignItems: "flex-start" }}>
-                  <Text style={{ fontSize: 13, color: phaseColor, fontFamily: "Inter_700Bold", lineHeight: 18 }}>·</Text>
-                  <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_400Regular", lineHeight: 18 }}>{tip}</Text>
+                  <Text style={{ fontSize: 13, color: phaseColor, fontFamily: "Roboto_700Bold", lineHeight: 18 }}>·</Text>
+                  <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Roboto_400Regular", lineHeight: 18 }}>{tip}</Text>
                 </View>
               ))}
             </View>
@@ -353,7 +353,7 @@ function ExerciseCard({ ex, phaseColor, index: _index, colors }: {
             <View style={{ marginHorizontal: 14, marginBottom: 10, flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
               {ex.muscleGroups.map((m, i) => (
                 <View key={i} style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: colors.muted, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}>
-                  <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>{m}</Text>
+                  <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>{m}</Text>
                 </View>
               ))}
             </View>
@@ -363,8 +363,8 @@ function ExerciseCard({ ex, phaseColor, index: _index, colors }: {
           {noteText ? (
             <View style={{ marginHorizontal: 14, marginBottom: 13, flexDirection: "row", gap: 7, alignItems: "flex-start" }}>
               <Feather name="info" size={12} color={colors.mutedForeground} style={{ marginTop: 2 }} />
-              <Text style={{ flex: 1, fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", lineHeight: 16 }}>
-                <Text style={{ fontFamily: "Inter_700Bold", color: colors.foreground }}>Note: </Text>{noteText}
+              <Text style={{ flex: 1, fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", lineHeight: 16 }}>
+                <Text style={{ fontFamily: "Roboto_700Bold", color: colors.foreground }}>Note: </Text>{noteText}
               </Text>
             </View>
           ) : null}
@@ -389,36 +389,36 @@ function DrillCard({ drill, phaseColor, colors }: {
           <Feather name="flag" size={18} color={phaseColor} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>{drill.name}</Text>
-          <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 1 }}>{drill.trackSection}</Text>
+          <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>{drill.name}</Text>
+          <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 }}>{drill.trackSection}</Text>
         </View>
         <Feather name={expanded ? "chevron-up" : "chevron-down"} size={16} color={colors.mutedForeground} />
       </Pressable>
 
       <View style={{ flexDirection: "row", paddingHorizontal: 14, paddingBottom: 12, gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: phaseColor + "20" }}>
-          <Text style={{ fontSize: 12, fontWeight: "700", color: phaseColor, fontFamily: "Inter_700Bold" }}>{drill.durationMinutes} min</Text>
+          <Text style={{ fontSize: 12, fontWeight: "700", color: phaseColor, fontFamily: "Roboto_700Bold" }}>{drill.durationMinutes} min</Text>
         </View>
         {drill.reps > 0 ? (
           <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: colors.muted }}>
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>{drill.reps} reps/set</Text>
+            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>{drill.reps} reps/set</Text>
           </View>
         ) : null}
         {drill.mxFocus ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: colors.primary + "12" }}>
-            <DirtBikeIcon size={11} color={colors.primary} />
-            <Text style={{ fontSize: 11, color: colors.primary, fontFamily: "Inter_500Medium" }} numberOfLines={1}>{drill.mxFocus}</Text>
+            <DirtBikeIcon size={11} color={colors.primaryText} />
+            <Text style={{ fontSize: 11, color: colors.primaryText, fontFamily: "Roboto_500Medium" }} numberOfLines={1}>{drill.mxFocus}</Text>
           </View>
         ) : null}
       </View>
 
       {expanded && drill.cues?.length > 0 && (
         <View style={{ marginHorizontal: 14, marginBottom: 13 }}>
-          <Text style={{ fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 5 }}>Technique Cues</Text>
+          <Text style={{ fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 5 }}>Technique Cues</Text>
           {drill.cues.map((cue, i) => (
             <View key={i} style={{ flexDirection: "row", gap: 8, marginBottom: 3, alignItems: "flex-start" }}>
-              <Text style={{ fontSize: 13, color: phaseColor, fontFamily: "Inter_700Bold", lineHeight: 18 }}>·</Text>
-              <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_400Regular", lineHeight: 18 }}>{cue}</Text>
+              <Text style={{ fontSize: 13, color: phaseColor, fontFamily: "Roboto_700Bold", lineHeight: 18 }}>·</Text>
+              <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Roboto_400Regular", lineHeight: 18 }}>{cue}</Text>
             </View>
           ))}
         </View>
@@ -451,18 +451,18 @@ function TipCard({ emoji, label, labelColor, text, colors }: {
       <View style={{ flexDirection: "row", gap: 10, alignItems: "flex-start" }}>
         <Text style={{ fontSize: 20 }}>{emoji}</Text>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 11, fontWeight: "700", color: labelColor, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 5 }}>{label}</Text>
+          <Text style={{ fontSize: 13, fontWeight: "700", color: labelColor, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 5 }}>{label}</Text>
           {bullets.length > 1 ? (
             <View style={{ gap: 3 }}>
               {bullets.map((b, i) => (
                 <View key={i} style={{ flexDirection: "row", gap: 7, alignItems: "flex-start" }}>
-                  <Text style={{ fontSize: 13, color: labelColor, fontFamily: "Inter_700Bold", lineHeight: 18 }}>·</Text>
-                  <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_400Regular", lineHeight: 18 }}>{b}</Text>
+                  <Text style={{ fontSize: 13, color: labelColor, fontFamily: "Roboto_700Bold", lineHeight: 18 }}>·</Text>
+                  <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Roboto_400Regular", lineHeight: 18 }}>{b}</Text>
                 </View>
               ))}
             </View>
           ) : (
-            <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: "Inter_400Regular", lineHeight: 18 }}>{text}</Text>
+            <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: "Roboto_400Regular", lineHeight: 18 }}>{text}</Text>
           )}
         </View>
       </View>
@@ -491,23 +491,23 @@ function PlanScreen({ plan, workoutType, onReset, colors, insets }: {
       <View style={{ borderRadius: 14, overflow: "hidden", borderWidth: 1.5, borderColor: colors.primary + "44" }}>
         <View style={{ padding: 16, backgroundColor: colors.primary + "12" }}>
           <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
-            <Text style={{ flex: 1, fontSize: 20, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: -0.5, lineHeight: 24 }}>
+            <Text style={{ flex: 1, fontSize: 20, fontWeight: "800", color: colors.foreground, fontFamily: "Roboto_700Bold", letterSpacing: -0.5, lineHeight: 24 }}>
               {plan.planTitle}
             </Text>
             <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: colors.primary, marginLeft: 10 }}>
-              <Text style={{ fontSize: 12, fontWeight: "700", color: "#fff", fontFamily: "Inter_700Bold" }}>{plan.totalMinutes} min</Text>
+              <Text style={{ fontSize: 12, fontWeight: "700", color: "#fff", fontFamily: "Roboto_700Bold" }}>{plan.totalMinutes} min</Text>
             </View>
           </View>
           {/* Workout type badge */}
           <View style={{ alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: colors.primary + "22", marginBottom: 10 }}>
             <Text style={{ fontSize: 12 }}>{typeMeta.emoji}</Text>
-            <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold" }}>{typeMeta.label}</Text>
+            <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>{typeMeta.label}</Text>
           </View>
           {/* Focus tags */}
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
             {(plan.focus ?? []).map((f, i) => (
               <View key={i} style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: colors.primary + "25" }}>
-                <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold" }}>{f}</Text>
+                <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>{f}</Text>
               </View>
             ))}
           </View>
@@ -516,13 +516,13 @@ function PlanScreen({ plan, workoutType, onReset, colors, insets }: {
             <View style={{ gap: 3 }}>
               {(plan.mxRelevance as string[]).map((bullet, i) => (
                 <View key={i} style={{ flexDirection: "row", gap: 7, alignItems: "flex-start" }}>
-                  <Text style={{ fontSize: 13, color: colors.primary, fontFamily: "Inter_700Bold", lineHeight: 19 }}>·</Text>
-                  <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Inter_400Regular", lineHeight: 19 }}>{bullet}</Text>
+                  <Text style={{ fontSize: 13, color: colors.primaryText, fontFamily: "Roboto_700Bold", lineHeight: 19 }}>·</Text>
+                  <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Roboto_400Regular", lineHeight: 19 }}>{bullet}</Text>
                 </View>
               ))}
             </View>
           ) : (
-            <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: "Inter_400Regular", lineHeight: 19 }}>{plan.mxRelevance as string}</Text>
+            <Text style={{ fontSize: 13, color: colors.foreground, fontFamily: "Roboto_400Regular", lineHeight: 19 }}>{plan.mxRelevance as string}</Text>
           )}
         </View>
         {/* Phase overview strip */}
@@ -530,8 +530,8 @@ function PlanScreen({ plan, workoutType, onReset, colors, insets }: {
           {(plan.phases ?? []).map((phase, i) => (
             <View key={i} style={{ flex: 1, padding: 8, alignItems: "center", borderRightWidth: i < plan.phases.length - 1 ? StyleSheet.hairlineWidth : 0, borderRightColor: colors.border + "60" }}>
               <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: phase.phaseColor, marginBottom: 3 }} />
-              <Text style={{ fontSize: 9, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", textAlign: "center" }}>{phase.name}</Text>
-              <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>{phase.duration}m</Text>
+              <Text style={{ fontSize: 11, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", textAlign: "center" }}>{phase.name}</Text>
+              <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>{phase.duration}m</Text>
             </View>
           ))}
         </View>
@@ -543,11 +543,11 @@ function PlanScreen({ plan, workoutType, onReset, colors, insets }: {
           {/* Phase header */}
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
             <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: phase.phaseColor }} />
-            <Text style={{ fontSize: 12, fontWeight: "800", color: phase.phaseColor, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 1, flex: 1 }}>
+            <Text style={{ fontSize: 14, fontWeight: "800", color: phase.phaseColor, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 1, flex: 1 }}>
               {phase.name}
             </Text>
             <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, backgroundColor: phase.phaseColor + "20" }}>
-              <Text style={{ fontSize: 11, fontWeight: "700", color: phase.phaseColor, fontFamily: "Inter_700Bold" }}>{phase.duration} min</Text>
+              <Text style={{ fontSize: 11, fontWeight: "700", color: phase.phaseColor, fontFamily: "Roboto_700Bold" }}>{phase.duration} min</Text>
             </View>
           </View>
           {/* Exercise cards or drill blocks */}
@@ -575,7 +575,7 @@ function PlanScreen({ plan, workoutType, onReset, colors, insets }: {
 
       {/* New plan button */}
       <Pressable onPress={onReset} style={({ pressed }) => ({ marginTop: 4, borderRadius: 12, borderWidth: 1.5, borderColor: colors.primary, paddingVertical: 14, alignItems: "center", opacity: pressed ? 0.7 : 1 })}>
-        <Text style={{ fontSize: 15, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold" }}>Generate New Plan</Text>
+        <Text style={{ fontSize: 15, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>Generate New Plan</Text>
       </Pressable>
     </ScrollView>
   );
@@ -602,17 +602,17 @@ function LoadingScreen({ colors, insets }: { colors: ReturnType<typeof useColors
     <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 40, gap: 24 }}>
       {/* Animated logo / spinner */}
       <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: colors.primary + "20", alignItems: "center", justifyContent: "center" }}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <ActivityIndicator size="large" color={colors.primaryText} />
       </View>
       <View style={{ alignItems: "center", gap: 8 }}>
-        <Text style={{ fontSize: 18, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", textAlign: "center" }}>
+        <Text style={{ fontSize: 18, fontWeight: "800", color: colors.foreground, fontFamily: "Roboto_700Bold", textAlign: "center" }}>
           Building Your Plan
         </Text>
-        <Animated.Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", opacity: fadeAnim }}>
+        <Animated.Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center", opacity: fadeAnim }}>
           {LOADING_MESSAGES[msgIdx]}
         </Animated.Text>
       </View>
-      <Text style={{ fontSize: 11, color: colors.mutedForeground + "80", fontFamily: "Inter_400Regular", textAlign: "center" }}>
+      <Text style={{ fontSize: 11, color: colors.mutedForeground + "80", fontFamily: "Roboto_400Regular", textAlign: "center" }}>
         Claude is consulting professional MX training protocols…
       </Text>
     </View>
@@ -693,19 +693,19 @@ function InputScreen({ onGenerate, colors, insets }: {
         {/* Hero */}
         <View style={{ alignItems: "center", gap: 8, paddingTop: 8 }}>
           <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: colors.primary + "20", alignItems: "center", justifyContent: "center" }}>
-            <DirtBikeIcon size={44} color={colors.primary} />
+            <DirtBikeIcon size={44} color={colors.primaryText} />
           </View>
-          <Text style={{ fontSize: 22, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", textAlign: "center", letterSpacing: -0.5 }}>
+          <Text style={{ fontSize: 22, fontWeight: "800", color: colors.foreground, fontFamily: "Roboto_700Bold", textAlign: "center", letterSpacing: -0.5 }}>
             MX Training Coach
           </Text>
-          <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 19 }}>
+          <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center", lineHeight: 19 }}>
             AI-powered workouts built exclusively for{"\n"}Supercross and Motocross racers
           </Text>
         </View>
 
         {/* Goal input */}
         <View style={{ gap: 10 }}>
-          <Text style={{ fontSize: 13, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+          <Text style={{ fontSize: 13, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
             What do you want to improve?
           </Text>
           <TextInput
@@ -719,19 +719,19 @@ function InputScreen({ onGenerate, colors, insets }: {
               borderRadius: 12, borderWidth: 1.5,
               borderColor: goal.trim().length > 0 ? colors.primary + "80" : colors.border,
               backgroundColor: colors.card, padding: 14,
-              fontSize: 14, color: colors.foreground, fontFamily: "Inter_400Regular",
+              fontSize: 14, color: colors.foreground, fontFamily: "Roboto_400Regular",
               lineHeight: 20, minHeight: 110, textAlignVertical: "top",
             }}
           />
           {/* Quick suggestions */}
           <View style={{ gap: 6 }}>
-            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>
+            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>
               {workoutType ? `Quick picks for ${WORKOUT_TYPE_META[workoutType].label.toLowerCase()}:` : "Quick picks:"}
             </Text>
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
               {suggestions.map((s, i) => (
                 <Pressable key={i} onPress={() => setGoal(s)} style={({ pressed }) => ({ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: colors.muted, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, opacity: pressed ? 0.7 : 1 })}>
-                  <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_500Medium" }}>{s}</Text>
+                  <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>{s}</Text>
                 </Pressable>
               ))}
             </View>
@@ -740,7 +740,7 @@ function InputScreen({ onGenerate, colors, insets }: {
 
         {/* Workout type selector */}
         <View style={{ gap: 10 }}>
-          <Text style={{ fontSize: 13, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+          <Text style={{ fontSize: 13, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
             What kind of session?
           </Text>
           <View style={{ flexDirection: "row", gap: 8 }}>
@@ -758,7 +758,7 @@ function InputScreen({ onGenerate, colors, insets }: {
                   })}
                 >
                   <Text style={{ fontSize: 18 }}>{wt.emoji}</Text>
-                  <Text style={{ fontSize: 11, fontWeight: "700", color: active ? "#fff" : colors.foreground, fontFamily: "Inter_700Bold", textAlign: "center", lineHeight: 14 }}>{wt.label}</Text>
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: active ? "#fff" : colors.foreground, fontFamily: "Roboto_700Bold", textAlign: "center", lineHeight: 14 }}>{wt.label}</Text>
                 </Pressable>
               );
             })}
@@ -767,7 +767,7 @@ function InputScreen({ onGenerate, colors, insets }: {
 
         {/* Duration picker */}
         <View style={{ gap: 10 }}>
-          <Text style={{ fontSize: 13, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" }}>
+          <Text style={{ fontSize: 13, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
             {durationLabel}
           </Text>
           <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
@@ -780,8 +780,8 @@ function InputScreen({ onGenerate, colors, insets }: {
                   borderWidth: active ? 0 : StyleSheet.hairlineWidth, borderColor: colors.border,
                   alignItems: "center", opacity: pressed ? 0.7 : 1,
                 })}>
-                  <Text style={{ fontSize: 14, fontWeight: "800", color: active ? "#fff" : colors.foreground, fontFamily: "Inter_700Bold" }}>{d}</Text>
-                  <Text style={{ fontSize: 9, color: active ? "#fff" : colors.mutedForeground, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.3 }}>min</Text>
+                  <Text style={{ fontSize: 14, fontWeight: "800", color: active ? "#fff" : colors.foreground, fontFamily: "Roboto_700Bold" }}>{d}</Text>
+                  <Text style={{ fontSize: 9, color: active ? "#fff" : colors.mutedForeground, fontFamily: "Roboto_500Medium", textTransform: "uppercase", letterSpacing: 0.3 }}>min</Text>
                 </Pressable>
               );
             })}
@@ -798,11 +798,11 @@ function InputScreen({ onGenerate, colors, insets }: {
             opacity: pressed ? 0.8 : 1,
           })}
         >
-          <Text style={{ fontSize: 16, fontWeight: "800", color: canGenerate ? "#fff" : colors.mutedForeground, fontFamily: "Inter_700Bold" }}>
+          <Text style={{ fontSize: 16, fontWeight: "800", color: canGenerate ? "#fff" : colors.mutedForeground, fontFamily: "Roboto_700Bold" }}>
             Generate My Plan
           </Text>
           {!canGenerate && (
-            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
+            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 }}>
               {goal.trim().length === 0
                 ? "Describe what you want to improve"
                 : goal.trim().length <= 10
@@ -815,15 +815,15 @@ function InputScreen({ onGenerate, colors, insets }: {
         </Pressable>
 
         {/* Powered by notice */}
-        <Text style={{ fontSize: 11, color: colors.mutedForeground + "70", fontFamily: "Inter_400Regular", textAlign: "center" }}>
+        <Text style={{ fontSize: 11, color: colors.mutedForeground + "70", fontFamily: "Roboto_400Regular", textAlign: "center" }}>
           Powered by Claude AI · Trained on professional MX/SX conditioning programs
         </Text>
 
         {/* Disclaimer */}
         <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 7, backgroundColor: colors.muted, borderRadius: 10, padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }}>
           <Feather name="info" size={12} color={colors.mutedForeground} style={{ marginTop: 1, flexShrink: 0 }} />
-          <Text style={{ flex: 1, fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular", lineHeight: 16 }}>
-            <Text style={{ fontFamily: "Inter_700Bold" }}>For informational purposes only.</Text>
+          <Text style={{ flex: 1, fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", lineHeight: 16 }}>
+            <Text style={{ fontFamily: "Roboto_700Bold" }}>For informational purposes only.</Text>
             {" "}AI-generated training plans are suggestions and may not be suitable for your fitness level or health condition. Consult a certified personal trainer before starting any new gym program, and always ride within your ability level under the guidance of a qualified coach.
           </Text>
         </View>
@@ -1217,27 +1217,27 @@ export default function TrainScreen() {
     header:    { paddingTop: insets.top + 16, paddingHorizontal: 20, paddingBottom: 12, backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border },
     statsRow:  { flexDirection: "row", gap: 10, marginTop: 14 },
     statBox:   { flex: 1, backgroundColor: colors.muted, borderRadius: 10, padding: 12, alignItems: "center" },
-    statValue: { fontSize: 18, fontWeight: "700", color: colors.primary, fontFamily: "Inter_700Bold" },
-    statLabel: { fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_500Medium", marginTop: 2, textTransform: "uppercase", letterSpacing: 0.5 },
+    statValue: { fontSize: 18, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" },
+    statLabel: { fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_500Medium", marginTop: 2, textTransform: "uppercase", letterSpacing: 0.5 },
     segControl: { flexDirection: "row", margin: 16, borderRadius: 999, backgroundColor: colors.muted, padding: 4, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
     segBtn:    { flex: 1, paddingVertical: 9, borderRadius: 999, alignItems: "center" },
     pickerRow: { paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
-    pickerLabel: { fontSize: 10, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.8, paddingHorizontal: 16, marginBottom: 6 },
+    pickerLabel: { fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8, paddingHorizontal: 16, marginBottom: 6 },
     footer:    { height: insets.bottom + 150 },
   });
 
   if (authLoading) {
-    return <View style={[styles.container, { flex: 1, alignItems: "center", justifyContent: "center" }]}><ActivityIndicator color={colors.primary} /></View>;
+    return <View style={[styles.container, { flex: 1, alignItems: "center", justifyContent: "center" }]}><ActivityIndicator color={colors.primaryText} /></View>;
   }
 
   if (!isAuthenticated) {
     return (
       <View style={[styles.container, { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 8 }]}>
         <Feather name="activity" size={48} color={colors.mutedForeground} />
-        <Text style={{ fontSize: 18, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", textAlign: "center" }}>Your training lives here</Text>
-        <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 20 }}>Sign in to see your practice sessions and lap times.</Text>
+        <Text style={{ fontSize: 18, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold", textAlign: "center" }}>Your training lives here</Text>
+        <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center", lineHeight: 20 }}>Sign in to see your practice sessions and lap times.</Text>
         <Pressable style={{ marginTop: 12, backgroundColor: colors.primary, paddingHorizontal: 28, paddingVertical: 12, borderRadius: 10 }} onPress={() => router.push("/(tabs)/profile")}>
-          <Text style={{ color: "#fff", fontSize: 15, fontWeight: "700", fontFamily: "Inter_700Bold" }}>Sign In</Text>
+          <Text style={{ color: "#fff", fontSize: 15, fontWeight: "700", fontFamily: "Roboto_700Bold" }}>Sign In</Text>
         </Pressable>
       </View>
     );
@@ -1252,7 +1252,7 @@ export default function TrainScreen() {
       {/* ── Shared header ── */}
       <View style={styles.header}>
         <BrandBar />
-        <Text style={{ fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold", letterSpacing: 1, textTransform: "uppercase" }}>Train</Text>
+        <Text style={{ fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Barlow_800ExtraBold", letterSpacing: 1, textTransform: "uppercase" }}>Train</Text>
 
         {/* Segmented control: Track | Coach */}
         <View style={[styles.segControl, { marginTop: 14, marginHorizontal: 0 }]}>
@@ -1262,7 +1262,7 @@ export default function TrainScreen() {
               <Pressable key={mode} onPress={() => setTabMode(mode)} style={[styles.segBtn, { backgroundColor: active ? colors.primary : "transparent" }]}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
                   <Feather name={mode === "track" ? "activity" : "cpu"} size={13} color={active ? "#fff" : colors.mutedForeground} />
-                  <Text style={{ fontSize: 13, fontWeight: "700", color: active ? "#fff" : colors.mutedForeground, fontFamily: "Inter_700Bold" }}>
+                  <Text style={{ fontSize: 13, fontWeight: "700", color: active ? "#fff" : colors.mutedForeground, fontFamily: "Roboto_700Bold" }}>
                     {mode === "track" ? "Track" : "Train"}
                   </Text>
                 </View>
@@ -1307,11 +1307,11 @@ export default function TrainScreen() {
             contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, gap: 16, paddingBottom: insets.bottom + 150 }}
           >
             {trackLoading && !refreshing ? (
-              <View style={{ marginTop: 60, alignItems: "center" }}><ActivityIndicator color={colors.primary} /></View>
+              <View style={{ marginTop: 60, alignItems: "center" }}><ActivityIndicator color={colors.primaryText} /></View>
             ) : trackError ? (
               <View style={{ padding: 32, alignItems: "center", gap: 8 }}>
                 <Feather name="alert-circle" size={32} color={colors.mutedForeground} />
-                <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center" }}>{trackError}</Text>
+                <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center" }}>{trackError}</Text>
               </View>
             ) : tracks.length === 0 ? (
               <EmptyState
@@ -1323,7 +1323,7 @@ export default function TrainScreen() {
               />
             ) : !currentSession ? (
               <View style={{ paddingTop: 48, alignItems: "center", gap: 8 }}>
-                <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>Select a session above</Text>
+                <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>Select a session above</Text>
               </View>
             ) : (
               <>
@@ -1350,9 +1350,9 @@ export default function TrainScreen() {
                     }}>
                       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
                         <View style={{ flex: 1 }}>
-                          <Text style={{ fontSize: 16, fontWeight: "800", color: colors.foreground, fontFamily: "Inter_700Bold" }}>{currentSession.label}</Text>
+                          <Text style={{ fontSize: 16, fontWeight: "800", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>{currentSession.label}</Text>
                           {currentTrack && (
-                            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 }}>
+                            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 }}>
                               {currentTrack.label}{currentDate && currentTrack.dates.length > 1 ? `  ·  ${currentDate.label}` : currentTrack.sublabel ? `  ·  ${currentTrack.sublabel}` : ""}
                             </Text>
                           )}
@@ -1360,7 +1360,7 @@ export default function TrainScreen() {
                             {currentSession.status === "in_progress" && (
                               <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: "#ef444420" }}>
                                 <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: "#ef4444" }} />
-                                <Text style={{ fontSize: 10, fontWeight: "700", color: "#ef4444", fontFamily: "Inter_700Bold" }}>LIVE</Text>
+                                <Text style={{ fontSize: 10, fontWeight: "700", color: "#ef4444", fontFamily: "Roboto_700Bold" }}>LIVE</Text>
                               </View>
                             )}
                             {pbFlash && (
@@ -1371,22 +1371,22 @@ export default function TrainScreen() {
                                 transform: [{ scale: pbAnim.interpolate({ inputRange: [0, 0.6, 1], outputRange: [1, 1.08, 1] }) }],
                               }}>
                                 <Feather name="zap" size={11} color="#713f12" />
-                                <Text style={{ fontSize: 11, fontWeight: "800", color: "#713f12", fontFamily: "Inter_700Bold" }}>Personal Best!</Text>
+                                <Text style={{ fontSize: 11, fontWeight: "800", color: "#713f12", fontFamily: "Roboto_700Bold" }}>Personal Best!</Text>
                               </Animated.View>
                             )}
                           </View>
                         </View>
                         <View style={{ alignItems: "flex-end", gap: 2 }}>
-                          <Text style={{ fontSize: 24, fontWeight: "800", color: pbFlash ? "#ca8a04" : colors.primary, fontFamily: "Inter_700Bold" }}>{fmtLap(displayBest)}</Text>
-                          <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.5 }}>Best Lap</Text>
-                          <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" }}>{lapCount} laps</Text>
+                          <Text style={{ fontSize: 24, fontWeight: "800", color: pbFlash ? "#ca8a04" : colors.primaryText, fontFamily: "Roboto_700Bold" }}>{fmtLap(displayBest)}</Text>
+                          <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_500Medium", textTransform: "uppercase", letterSpacing: 0.5 }}>Best Lap</Text>
+                          <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>{lapCount} laps</Text>
                         </View>
                       </View>
                     </Animated.View>
                   );
                 })()}
                 <View>
-                  <Text style={{ fontSize: 11, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>Lap Times</Text>
+                  <Text style={{ fontSize: 13, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>Lap Times</Text>
                   <LapTable
                     laps={liveLaps ?? currentSession.myLaps}
                     colors={colors}
@@ -1395,7 +1395,7 @@ export default function TrainScreen() {
                 </View>
                 {currentSession.leaderboard && currentSession.leaderboard.length > 0 && (
                   <View>
-                    <Text style={{ fontSize: 11, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>Class Leaderboard</Text>
+                    <Text style={{ fontSize: 13, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 }}>Class Leaderboard</Text>
                     <Leaderboard entries={currentSession.leaderboard} colors={colors} />
                   </View>
                 )}
@@ -1420,10 +1420,10 @@ export default function TrainScreen() {
           {coachState === "error" && (
             <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 40, gap: 16 }}>
               <Feather name="alert-circle" size={40} color="#ef4444" />
-              <Text style={{ fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", textAlign: "center" }}>Couldn't Generate Plan</Text>
-              <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Inter_400Regular", textAlign: "center", lineHeight: 20 }}>{coachError}</Text>
+              <Text style={{ fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold", textAlign: "center" }}>Couldn't Generate Plan</Text>
+              <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center", lineHeight: 20 }}>{coachError}</Text>
               <Pressable onPress={() => setCoachState("input")} style={{ backgroundColor: colors.primary, paddingHorizontal: 28, paddingVertical: 12, borderRadius: 10 }}>
-                <Text style={{ color: "#fff", fontSize: 15, fontWeight: "700", fontFamily: "Inter_700Bold" }}>Try Again</Text>
+                <Text style={{ color: "#fff", fontSize: 15, fontWeight: "700", fontFamily: "Roboto_700Bold" }}>Try Again</Text>
               </Pressable>
             </View>
           )}

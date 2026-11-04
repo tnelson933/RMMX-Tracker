@@ -45,7 +45,7 @@ export default function RmCashScreen() {
       backgroundColor: colors.background,
     },
     backBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
-    backText: { fontSize: 15, color: colors.primary, fontFamily: "Inter_600SemiBold" },
+    backText: { fontSize: 15, color: colors.primaryText, fontFamily: "Roboto_600SemiBold" },
     content: { flex: 1, paddingHorizontal: 16, paddingTop: 8 },
     iconCircle: {
       width: 64, height: 64, borderRadius: 32,
@@ -55,12 +55,12 @@ export default function RmCashScreen() {
     },
     title: {
       fontSize: 22, fontWeight: "800", color: colors.foreground,
-      fontFamily: "Inter_700Bold", letterSpacing: -0.3,
+      fontFamily: "Roboto_700Bold", letterSpacing: -0.3,
       textAlign: "center",
     },
     subtitle: {
       fontSize: 13, color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular", textAlign: "center", marginTop: 4, marginBottom: 20,
+      fontFamily: "Roboto_400Regular", textAlign: "center", marginTop: 4, marginBottom: 20,
     },
     balanceCard: {
       borderRadius: 16,
@@ -74,18 +74,18 @@ export default function RmCashScreen() {
     },
     balanceLabel: {
       fontSize: 11, fontWeight: "700", color: colors.mutedForeground,
-      fontFamily: "Inter_700Bold", letterSpacing: 1, textTransform: "uppercase", marginBottom: 6,
+      fontFamily: "Roboto_700Bold", letterSpacing: 1, textTransform: "uppercase", marginBottom: 6,
     },
     balanceAmount: {
       fontSize: 52, fontWeight: "800", color: "#16a34a",
-      fontFamily: "Inter_700Bold", letterSpacing: -1,
+      fontFamily: "Roboto_700Bold", letterSpacing: -1,
     },
     sectionRow: {
       flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10,
     },
     sectionTitle: {
       fontSize: 11, fontWeight: "700", color: colors.mutedForeground,
-      fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.8,
+      fontFamily: "Roboto_700Bold", textTransform: "uppercase", letterSpacing: 0.8,
     },
     emptyCard: {
       borderRadius: 14, backgroundColor: colors.card,
@@ -95,7 +95,7 @@ export default function RmCashScreen() {
     },
     emptyText: {
       fontSize: 14, color: colors.mutedForeground,
-      fontFamily: "Inter_400Regular", textAlign: "center",
+      fontFamily: "Roboto_400Regular", textAlign: "center",
     },
     txCard: {
       borderRadius: 14, backgroundColor: colors.card,
@@ -112,11 +112,11 @@ export default function RmCashScreen() {
     },
     txName: {
       fontSize: 14, color: colors.foreground,
-      fontFamily: "Inter_600SemiBold",
+      fontFamily: "Roboto_600SemiBold",
     },
     txAmount: {
       fontSize: 14, color: "#16a34a",
-      fontFamily: "Inter_700Bold",
+      fontFamily: "Roboto_700Bold",
     },
     useBtn: {
       marginBottom: insets.bottom + 20,
@@ -132,7 +132,7 @@ export default function RmCashScreen() {
     },
     useBtnText: {
       color: "#fff", fontSize: 16, fontWeight: "800",
-      fontFamily: "Inter_700Bold", letterSpacing: 0.4,
+      fontFamily: "Roboto_700Bold", letterSpacing: 0.4,
     },
   });
 
@@ -140,7 +140,7 @@ export default function RmCashScreen() {
     <View style={s.container}>
       <View style={s.topBar}>
         <Pressable style={s.backBtn} onPress={() => goBack(router)}>
-          <Feather name="chevron-left" size={20} color={colors.primary} />
+          <Feather name="chevron-left" size={20} color={colors.primaryText} />
           <Text style={s.backText}>Back</Text>
         </Pressable>
       </View>

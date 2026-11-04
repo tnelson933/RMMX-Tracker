@@ -26,7 +26,7 @@ function TabIcon({ focused, color, sf, feather }: { focused: boolean; color: str
 function NativeTabLayout() {
   const colors = useColors();
   return (
-    <NativeTabs tintColor={colors.primary}>
+    <NativeTabs tintColor={colors.primaryText}>
       <NativeTabs.Trigger name="index">
         <Icon sf={{ default: "house", selected: "house.fill" }} />
         <Label>Home</Label>
@@ -60,10 +60,10 @@ function ClassicTabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: colors.primary,
+        tabBarActiveTintColor: colors.primaryText,
         tabBarInactiveTintColor: colors.mutedForeground,
         headerShown: false,
-        tabBarLabelStyle: { fontFamily: "Inter_700Bold", fontSize: 10, letterSpacing: 0.8, textTransform: "uppercase" },
+        tabBarLabelStyle: { fontFamily: "Barlow_700Bold", fontSize: 12, letterSpacing: 0.8, textTransform: "uppercase" },
         tabBarStyle: {
           position: "absolute",
           backgroundColor: isIOS ? "transparent" : colors.background,
