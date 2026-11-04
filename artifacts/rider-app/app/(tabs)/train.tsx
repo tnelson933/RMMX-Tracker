@@ -488,7 +488,7 @@ function PlanScreen({ plan, workoutType, onReset, colors, insets }: {
 }) {
   const typeMeta = WORKOUT_TYPE_META[workoutType];
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: insets.bottom + 150 }}>
+    <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: insets.bottom + 170 }}>
       {/* Plan header */}
       <View style={{ borderRadius: 14, overflow: "hidden", borderWidth: 1.5, borderColor: colors.primary + "44" }}>
         <View style={{ padding: 16, backgroundColor: colors.primary + "12" }}>
@@ -691,7 +691,7 @@ function InputScreen({ onGenerate, colors, insets }: {
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-      <ScrollView contentContainerStyle={{ padding: 20, gap: 24, paddingBottom: insets.bottom + 150 }}>
+      <ScrollView contentContainerStyle={{ padding: 20, gap: 24, paddingBottom: insets.bottom + 170 }}>
         {/* Hero */}
         <View style={{ alignItems: "center", gap: 8, paddingTop: 8 }}>
           <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: colors.primary + "20", alignItems: "center", justifyContent: "center" }}>
@@ -1225,7 +1225,7 @@ export default function TrainScreen() {
     segBtn:    { flex: 1, paddingVertical: 9, borderRadius: 999, alignItems: "center" },
     pickerRow: { paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
     pickerLabel: { fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8, paddingHorizontal: 16, marginBottom: 6 },
-    footer:    { height: insets.bottom + 150 },
+    footer:    { height: insets.bottom + 170 },
   });
 
   if (authLoading) {
@@ -1286,28 +1286,31 @@ export default function TrainScreen() {
       {/* ── Track mode ── */}
       {tabMode === "track" && (
         <>
-          {tracks.length > 0 && (
-            <View style={styles.pickerRow}>
-              <Text style={styles.pickerLabel}>Track</Text>
-              <ChipBar items={tracks.map(t => ({ key: t.key, label: t.label, sub: t.sublabel }))} selected={selectedTrack} onSelect={handleTrackSelect} colors={colors} />
-            </View>
-          )}
-          {currentTrack && currentTrack.dates.length > 1 && (
-            <View style={styles.pickerRow}>
-              <Text style={styles.pickerLabel}>Date</Text>
-              <ChipBar items={currentTrack.dates.map(d => ({ key: d.key, label: d.label }))} selected={selectedDate} onSelect={handleDateSelect} colors={colors} />
-            </View>
-          )}
-          {currentDate && currentDate.sessions.length > 1 && (
-            <View style={[styles.pickerRow, { borderBottomWidth: StyleSheet.hairlineWidth }]}>
-              <Text style={styles.pickerLabel}>Session</Text>
-              <ChipBar items={currentDate.sessions.map(s => ({ key: s.key, label: s.label }))} selected={selectedSession} onSelect={setSelectedSession} colors={colors} />
-            </View>
-          )}
           <ScrollView
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
-            contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, gap: 16, paddingBottom: insets.bottom + 150 }}
+            contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 0, gap: 16, paddingBottom: insets.bottom + 170 }}
           >
+            {/* Track, date and session pickers scroll with the content, leaving room for the charts. */}
+            <View style={{ marginHorizontal: -16 }}>
+            {tracks.length > 0 && (
+              <View style={styles.pickerRow}>
+                <Text style={styles.pickerLabel}>Track</Text>
+                <ChipBar items={tracks.map(t => ({ key: t.key, label: t.label, sub: t.sublabel }))} selected={selectedTrack} onSelect={handleTrackSelect} colors={colors} />
+              </View>
+            )}
+            {currentTrack && currentTrack.dates.length > 1 && (
+              <View style={styles.pickerRow}>
+                <Text style={styles.pickerLabel}>Date</Text>
+                <ChipBar items={currentTrack.dates.map(d => ({ key: d.key, label: d.label }))} selected={selectedDate} onSelect={handleDateSelect} colors={colors} />
+              </View>
+            )}
+            {currentDate && currentDate.sessions.length > 1 && (
+              <View style={[styles.pickerRow, { borderBottomWidth: StyleSheet.hairlineWidth }]}>
+                <Text style={styles.pickerLabel}>Session</Text>
+                <ChipBar items={currentDate.sessions.map(s => ({ key: s.key, label: s.label }))} selected={selectedSession} onSelect={setSelectedSession} colors={colors} />
+              </View>
+            )}
+            </View>
             {trackLoading && !refreshing ? (
               <View style={{ marginTop: 60, alignItems: "center" }}><ActivityIndicator color={colors.primaryText} /></View>
             ) : trackError ? (

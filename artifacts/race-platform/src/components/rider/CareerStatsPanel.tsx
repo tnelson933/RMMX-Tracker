@@ -34,7 +34,7 @@ export function CareerStatsPanel({ riderId }: { riderId: number }) {
         {[
           { v: String(stats.starts), l: "Motos" },
           { v: String(stats.totalLaps), l: "Laps" },
-          { v: stats.avgFinish != null ? `P${Math.round(stats.avgFinish)}` : "—", l: "Avg finish" },
+          { v: stats.avgFinish != null ? `P${stats.avgFinish.toFixed(1)}` : "—", l: "Avg finish" },
           { v: stats.bestLap ? fmtLapShort(stats.bestLap.ms) : "—", l: "Best lap" },
         ].map(t => (
           <div key={t.l} className="rounded-xl border border-[#E2E2E2] bg-white py-3 text-center">

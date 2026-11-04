@@ -6,6 +6,7 @@ import { db } from "@workspace/db";
 import { clubsTable, eventsTable, ridersTable, registrationsTable, checkinsTable, motosTable, raceResultsTable, eventPublicationTable, lapCrossingsTable, liabilityWaiverSignaturesTable } from "@workspace/db";
 import { eq, and, ne, count, countDistinct, sql, inArray, desc, asc, gt, lte } from "drizzle-orm";
 import { buildLeaderboard } from "./timing";
+import { parseLapMs } from "../lib/careerStats";
 import { addonCollected, eventAddonSales } from "../lib/addonPayments";
 
 const router = Router();
@@ -682,6 +683,18 @@ router.get("/public/motos/:motoId/laps/:riderId", async (req, res) => {
   .from(lapCrossingsTable)
   .where(and(...conditions))
   .orderBy(asc(lapCrossingsTable.lapNumber));
+
+  // Results entered by hand or imported have no reader crossings: fall back to
+  // the lap times stored with the result, so the sheet matches the Race Report.
+  if (laps.length === 0) {
+    const [result] = await db.select({ lapTimes: raceResultsTable.lapTimes })
+      .from(raceResultsTable)
+      .where(and(eq(raceResultsTable.motoId, motoId), eq(raceResultsTable.riderId, riderId)));
+    const stored = ((result?.lapTimes as unknown[]) ?? []).map((lt, i) => ({ lapNumber: i + 1, lapTimeMs: parseLapMs(lt) }))
+      .filter((l): l is { lapNumber: number; lapTimeMs: number } => l.lapTimeMs != null && l.lapTimeMs > 0)
+      .filter(l => moto?.lapCount == null || l.lapNumber <= moto.lapCount);
+    return res.json(stored);
+  }
 
   return res.json(laps);
 });

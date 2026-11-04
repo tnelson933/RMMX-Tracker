@@ -93,7 +93,7 @@ export function StatsShareCard({ name, stats, cardRef }: { name: string; stats: 
     ["Wins", String(stats.wins)],
     ["Podiums", String(stats.podiums)],
     ["Top 5s", String(stats.top5s)],
-    ["Avg finish", stats.avgFinish != null ? `P${Math.round(stats.avgFinish)}` : "—"],
+    ["Avg finish", stats.avgFinish != null ? `P${stats.avgFinish.toFixed(1)}` : "—"],
     ["Laps led", String(stats.lapsLed)],
     ["Best lap", stats.bestLap ? fmtLapShort(stats.bestLap.ms) : "—"],
   ];

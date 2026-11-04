@@ -50,7 +50,13 @@ test("position takeaway", () => {
   assert.equal(positionTakeaway([9, 7, 5, 4]), "P9 after lap 1, finished P4: up 5.");
   assert.equal(positionTakeaway([2, 3, 4]), "P2 after lap 1, finished P4: down 2.");
   assert.equal(positionTakeaway([1, 1, 1]), "Led from lap 1 to the flag.");
-  assert.equal(positionTakeaway([3, 2, 3]), "Held P3 from lap 1 to the finish.");
+  assert.equal(positionTakeaway([3, 3, 3]), "Held P3 from lap 1 to the finish.");
+  // Moved around: never "held" (emulator bug report: led lap 4, finished P2).
+  assert.equal(positionTakeaway([2, 2, 2, 1, 2, 2]), "Led on lap 4, finished P2.");
+  assert.equal(positionTakeaway([4, 2, 3]), "Ran as high as P2 (lap 2), finished P3.");
+  assert.equal(positionTakeaway([3, 2, 3]), "Ran as high as P2 (lap 2), finished P3.");
+  assert.equal(positionTakeaway([3, 5, 3]), "Dropped as low as P5 (lap 2), back to P3 by the finish.");
+  assert.equal(positionTakeaway([null, 4, 2, 3]), "Ran as high as P2 (lap 3), finished P3.");
 });
 
 test("sector losses and takeaway", () => {

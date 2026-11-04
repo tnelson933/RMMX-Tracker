@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "@/lib/apiBase";
+import { useBottomSpace } from "@/hooks/useBottomSpace";
 import { Feather } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -104,6 +105,7 @@ export default function EventDetailScreen() {
   const router    = useRouter();
   const colors    = useColors();
   const insets    = useSafeAreaInsets();
+  const bottomSpace = useBottomSpace();
   const { profiles, isAuthenticated, riderFetch, account } = useRiderAuth();
 
   const scrollViewRef = useRef<ScrollView>(null);
@@ -420,7 +422,7 @@ export default function EventDetailScreen() {
         ref={scrollViewRef}
         style={s.container}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
+        contentContainerStyle={{ paddingBottom: bottomSpace }}
       >
         {/* Top bar */}
         <View style={s.topBar}>

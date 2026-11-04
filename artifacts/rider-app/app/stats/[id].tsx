@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import { useBottomSpace } from "@/hooks/useBottomSpace";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -45,7 +46,8 @@ export default function RiderStatsScreen() {
   }, [id, riderFetch]);
   useEffect(() => { (async () => { setLoading(true); await load(); setLoading(false); })(); }, [load]);
 
-  const s = styles(colors, insets);
+  const bottomSpace = useBottomSpace();
+  const s = styles(colors, { bottom: bottomSpace });
   const spread = stats ? finishSpread(stats) : [];
   const spreadTotal = spread.reduce((a, x) => a + x.count, 0);
   const segColor: Record<string, string> = {
@@ -82,7 +84,7 @@ export default function RiderStatsScreen() {
             {[
               { v: String(stats.starts), l: "Motos" },
               { v: String(stats.totalLaps), l: "Laps" },
-              { v: stats.avgFinish != null ? `P${Math.round(stats.avgFinish)}` : "—", l: "Avg finish" },
+              { v: stats.avgFinish != null ? `P${stats.avgFinish.toFixed(1)}` : "—", l: "Avg finish" },
               { v: stats.bestLap ? fmtLapShort(stats.bestLap.ms) : "—", l: "Best lap" },
             ].map(t => (
               <View key={t.l} style={s.tile}>
@@ -167,7 +169,7 @@ const styles = (colors: ReturnType<typeof useColors>, insets: { bottom: number }
   eyebrow: { fontSize: 12, color: colors.mutedForeground, fontFamily: fonts.display, textTransform: "uppercase", letterSpacing: 1.2 },
   headerTitle: { fontSize: 22, color: colors.foreground, fontFamily: fonts.displayItalic, textTransform: "uppercase" },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
-  content: { padding: 16, paddingBottom: insets.bottom + 32, gap: 12 },
+  content: { padding: 16, paddingBottom: insets.bottom, gap: 12 },
   section: { fontSize: 14, letterSpacing: 1.5, textTransform: "uppercase", color: colors.mutedForeground, fontFamily: fonts.display, marginTop: 8 },
   muted: { fontSize: 13, color: colors.mutedForeground, fontFamily: fonts.regular, lineHeight: 18, textAlign: "center" },
   note: { fontSize: 11, color: colors.mutedForeground, fontFamily: fonts.regular, lineHeight: 15 },

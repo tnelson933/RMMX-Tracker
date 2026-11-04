@@ -1,4 +1,6 @@
 import { Feather } from "@expo/vector-icons";
+import { StatusBarBackdrop } from "@/components/StatusBarBackdrop";
+import { useBottomSpace } from "@/hooks/useBottomSpace";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -56,6 +58,7 @@ interface RacerProfile {
 export default function RacerScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const bottomSpace = useBottomSpace();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { riderFetch } = useRiderAuth();
@@ -128,11 +131,13 @@ export default function RacerScreen() {
 
   return (
     <View style={s.root}>
-      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}>
+      <ScrollView contentContainerStyle={{ paddingBottom: bottomSpace }}>
         {/* Photo header: a stock riding photo until riders can add their own. */}
         <View style={{ height: 250 + insets.top, justifyContent: "flex-end", backgroundColor: "#161616", overflow: "hidden" }}>
           <StockBackdrop />
           <PhotoFade from={0.2} strength={0.92} />
+          {/* Back button scrolls with the photo, so it never sits over content. */}
+          {backButton}
           <View style={{ padding: 16, flexDirection: "row", alignItems: "flex-end", gap: 12 }}>
             <View style={s.avatar}><Text style={s.avatarText}>{initials}</Text></View>
             <View style={{ flex: 1, minWidth: 0 }}>
@@ -279,7 +284,7 @@ export default function RacerScreen() {
           ) : null}
         </View>
       </ScrollView>
-      {backButton}
+      <StatusBarBackdrop color={colors.background} />
     </View>
   );
 }

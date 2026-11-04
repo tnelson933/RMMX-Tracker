@@ -102,13 +102,26 @@ export function gapTakeaway(leaderGaps: Array<number | null>): string | null {
   return `Finished ${fmtSecs(final)} behind the leader.`;
 }
 
-/** Position chart, from positionByLap (1 = leading at the end of that lap). */
+/**
+ * Position chart, from positionByLap (1 = leading at the end of that lap).
+ * Mentions the best (or worst) lap when the race moved around, so a rider who
+ * led mid-race isn't told they "held" a position.
+ */
 export function positionTakeaway(positions: Array<number | null>): string | null {
-  const ps = positions.filter((p): p is number => p != null);
-  if (ps.length < 2) return null;
-  const first = ps[0];
-  const last = ps[ps.length - 1];
-  if (first === last) return first === 1 ? "Led from lap 1 to the flag." : `Held P${first} from lap 1 to the finish.`;
+  const laps = positions.map((p, i) => ({ p, lap: i + 1 })).filter((x): x is { p: number; lap: number } => x.p != null);
+  if (laps.length < 2) return null;
+  const first = laps[0].p;
+  const last = laps[laps.length - 1].p;
+  const best = laps.reduce((a, b) => (b.p < a.p ? b : a));
+  const worst = laps.reduce((a, b) => (b.p > a.p ? b : a));
+  if (best.p === worst.p) return first === 1 ? "Led from lap 1 to the flag." : `Held P${first} from lap 1 to the finish.`;
+  // Higher than both the start and the finish at some point: that's the headline.
+  if (best.p < first && best.p < last) {
+    return best.p === 1
+      ? `Led on lap ${best.lap}, finished P${last}.`
+      : `Ran as high as P${best.p} (lap ${best.lap}), finished P${last}.`;
+  }
+  if (first === last) return `Dropped as low as P${worst.p} (lap ${worst.lap}), back to P${last} by the finish.`;
   const d = first - last;
   return d > 0
     ? `P${first} after lap 1, finished P${last}: up ${d}.`

@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import { useBottomSpace } from "@/hooks/useBottomSpace";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
@@ -83,7 +84,8 @@ export default function FollowScreen() {
     void loadFollowing();
   }, [following, loadFollowing, riderFetch]);
 
-  const s = styles(colors, insets);
+  const bottomSpace = useBottomSpace();
+  const s = styles(colors, { bottom: bottomSpace });
   return (
     <View style={s.root}>
       <View style={[s.header, { paddingTop: insets.top + 8 }]}>
@@ -153,7 +155,7 @@ const styles = (colors: ReturnType<typeof useColors>, insets: { bottom: number }
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, gap: 12 },
   backBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.muted, alignItems: "center", justifyContent: "center" },
   headerTitle: { flex: 1, fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" },
-  content: { padding: 16, paddingBottom: insets.bottom + 32, gap: 10 },
+  content: { padding: 16, paddingBottom: insets.bottom, gap: 10 },
   searchBox: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.card, borderRadius: 999, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 14 },
   searchInput: { flex: 1, paddingVertical: 12, color: colors.foreground, fontFamily: "Roboto_400Regular" },
   section: { fontSize: 14, letterSpacing: 1.5, textTransform: "uppercase", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", marginTop: 10 },

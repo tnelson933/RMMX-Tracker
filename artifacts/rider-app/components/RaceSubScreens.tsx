@@ -1,4 +1,5 @@
 import { TeamLaps, type TeamBreakdown } from "@/components/TeamLaps";
+import { useBottomSpace } from "@/hooks/useBottomSpace";
 import { Feather } from "@expo/vector-icons";
 import React, { useEffect, useState } from "react";
 import {
@@ -207,6 +208,7 @@ export function EventDetailScreen({
   colors: ReturnType<typeof useColors>;
   insets: ReturnType<typeof useSafeAreaInsets>;
 }) {
+  const bottomSpace = useBottomSpace();
   const primary = colors.primary;
   const [gapMode, setGapMode] = useState<"best" | "leader" | "ahead">("best");
   const [motoIdx, setMotoIdx] = useState(0);
@@ -224,7 +226,7 @@ export function EventDetailScreen({
         insets={insets}
       />
 
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: insets.bottom + 32 }}>
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: bottomSpace }}>
         {/* Result hero */}
         <RaceReportHero
           imageUrl={event.eventImageUrl}
@@ -452,6 +454,7 @@ export function EventsListScreen({
   colors: ReturnType<typeof useColors>;
   insets: ReturnType<typeof useSafeAreaInsets>;
 }) {
+  const bottomSpace = useBottomSpace();
   const primary = colors.primary;
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -462,7 +465,7 @@ export function EventsListScreen({
         colors={colors}
         insets={insets}
       />
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 10, paddingBottom: insets.bottom + 32 }}>
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 10, paddingBottom: bottomSpace }}>
         {events.length === 0 ? (
           <View style={{ paddingTop: 48, alignItems: "center", gap: 10 }}>
             <Feather name="award" size={40} color={colors.mutedForeground + "60"} />
@@ -547,6 +550,7 @@ export function SeriesStandingsScreen({
   insets: ReturnType<typeof useSafeAreaInsets>;
   riderFetch: (path: string, options?: RequestInit) => Promise<Response>;
 }) {
+  const bottomSpace = useBottomSpace();
   const primary = colors.primary;
   const router = useRouter();
   const [rows, setRows] = useState<PublicSeriesStandingRow[]>([]);
@@ -594,7 +598,7 @@ export function SeriesStandingsScreen({
           <ActivityIndicator color={colors.primaryText} />
         </View>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: 16, gap: 0, paddingBottom: insets.bottom + 32 }}>
+        <ScrollView contentContainerStyle={{ padding: 16, gap: 0, paddingBottom: bottomSpace }}>
           {/* Section header */}
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 }}>
             <Feather name="award" size={13} color={colors.primaryText} />
@@ -712,6 +716,7 @@ export function PointsScreen({
   colors: ReturnType<typeof useColors>;
   insets: ReturnType<typeof useSafeAreaInsets>;
 }) {
+  const bottomSpace = useBottomSpace();
   const primary = colors.primary;
   const eventsWithPoints = events.filter(e => e.totalPoints > 0 || e.motos.some(m => (m.points ?? 0) > 0));
 
@@ -738,7 +743,7 @@ export function PointsScreen({
         colors={colors}
         insets={insets}
       />
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: insets.bottom + 32 }}>
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: bottomSpace }}>
         {/* Career total card */}
         <View style={{
           borderRadius: 14, borderWidth: 1.5, borderColor: primary + "44",

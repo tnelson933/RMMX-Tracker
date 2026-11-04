@@ -1,4 +1,5 @@
 import { QuickCheckinCard } from "@/components/QuickCheckinCard";
+import { StatusBarBackdrop } from "@/components/StatusBarBackdrop";
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
@@ -384,8 +385,9 @@ export default function HomeScreen() {
         {hasProfile && <FollowingFeed refreshKey={feedRefreshKey} />}
 
         {/* Footer */}
-        <View style={{ height: insets.bottom + 150 }} />
+        <View style={{ height: insets.bottom + 170 }} />
       </ScrollView>
+      <StatusBarBackdrop color={colors.card} />
     </View>
   );
 }

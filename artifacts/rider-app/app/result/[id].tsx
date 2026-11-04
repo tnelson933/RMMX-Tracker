@@ -1,4 +1,5 @@
 import { TeamLaps, type TeamBreakdown } from "@/components/TeamLaps";
+import { useBottomSpace } from "@/hooks/useBottomSpace";
 import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
@@ -68,6 +69,7 @@ export default function ResultDetailScreen() {
   const router = useRouter();
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const bottomSpace = useBottomSpace();
   const { activeProfiles, riderFetch } = useRiderAuth();
 
   const [results, setResults] = useState<EventResult[]>([]);
@@ -175,7 +177,7 @@ export default function ResultDetailScreen() {
         </Text>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 20, paddingBottom: insets.bottom + 40 }}>
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 20, paddingBottom: bottomSpace }}>
         {results.map((ev, ri) => (
           <View key={`${ev.eventId}-${ri}`} style={{ gap: 12 }}>
             {/* Result hero */}

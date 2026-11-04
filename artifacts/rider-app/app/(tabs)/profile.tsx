@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "@/lib/apiBase";
+import { StatusBarBackdrop } from "@/components/StatusBarBackdrop";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
@@ -1165,6 +1166,7 @@ export default function ProfileScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       {isAuthenticated ? <ProfileList /> : <View style={{ flex: 1, paddingTop: insets.top }}><AuthForm /></View>}
+      <StatusBarBackdrop color={colors.background} />
     </View>
   );
 }
