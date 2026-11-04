@@ -815,6 +815,8 @@ router.get("/rider/profiles", requireRiderAuth, async (req, res) => {
         skillLevel: rider.skillLevel ?? null,
         raceTypes: (rider.raceTypes as string[] | null) ?? [],
         aiMaintenanceSuggestions: rider.aiMaintenanceSuggestions ?? false,
+        avatarUrl: rider.avatarUrl ?? null,
+        coverUrl: rider.coverUrl ?? null,
         eventsRaced: uniqueEvents.size,
         totalPoints,
         bestPosition,
@@ -1208,6 +1210,8 @@ router.get("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
     bio: rider.bio ?? null,
     plateColor: rider.plateColor ?? null,
     profileVisibility: rider.profileVisibility ?? null,
+    avatarUrl: rider.avatarUrl ?? null,
+    coverUrl: rider.coverUrl ?? null,
     effectiveVisibility: effectiveVisibility(rider, new Date().toISOString().slice(0, 10)),
     isMinor: (() => { const a = ageOn(rider.dateOfBirth, new Date().toISOString().slice(0, 10)); return a != null && a < 18; })(),
   });

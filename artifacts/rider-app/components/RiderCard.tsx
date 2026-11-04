@@ -10,6 +10,7 @@ import { Pressable, Text, View } from "react-native";
 import Svg, { Circle, Polyline } from "react-native-svg";
 
 import { NumberPlate } from "@/components/NumberPlate";
+import { RiderAvatar } from "@/components/RiderPhoto";
 import { useRiderAuth, type RiderProfile } from "@/context/AuthContext";
 import { fonts } from "@/constants/fonts";
 import { useColors } from "@/hooks/useColors";
@@ -96,19 +97,21 @@ export function RiderCard({ profile, selected, isOnlyOne, onToggle }: {
   }, [selected, profile.id, riderFetch]));
 
   const name = `${profile.firstName} ${profile.lastName}`.trim();
-  const initials = `${profile.firstName?.[0] ?? ""}${profile.lastName?.[0] ?? ""}`.toUpperCase() || "?";
   const summary = cardSummary(profile);
   const checkLabel = selected
     ? (isOnlyOne ? `${name} is shown. At least one rider stays checked.` : `Hide ${name}`)
     : `Show ${name}`;
 
-  const ident = profile.bibNumber
-    ? <NumberPlate number={profile.bibNumber} color={data?.plateColor} size={selected ? 34 : 28} />
-    : (
-      <View style={{ width: selected ? 44 : 38, height: selected ? 44 : 38, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: selected ? colors.primary : colors.muted }}>
-        <Text style={{ fontSize: 14, color: selected ? "#fff" : colors.mutedForeground, fontFamily: fonts.bold }}>{initials}</Text>
-      </View>
-    );
+  const avatarSize = selected ? 44 : 38;
+  const ident = (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+      {(profile.avatarUrl || !profile.bibNumber) && (
+        <RiderAvatar url={profile.avatarUrl} name={name} size={avatarSize}
+          background={selected ? colors.primary : colors.muted} color={selected ? "#fff" : colors.mutedForeground} />
+      )}
+      {profile.bibNumber ? <NumberPlate number={profile.bibNumber} color={data?.plateColor} size={selected ? 34 : 28} /> : null}
+    </View>
+  );
 
   if (!selected) {
     return (

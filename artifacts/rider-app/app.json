@@ -49,6 +49,14 @@
       "expo-local-authentication",
       "expo-secure-store",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "RM Roost uses your photos so you can choose a profile photo and a background photo for your racer profile.",
+          "cameraPermission": "RM Roost uses the camera so you can take a profile photo or a background photo for your racer profile.",
+          "microphonePermission": false
+        }
+      ],
+      [
         "expo-location",
         {
           "locationWhenInUsePermission": "RM Roost uses your location to show races near you and to confirm you're at the track for Quick Check-In.",

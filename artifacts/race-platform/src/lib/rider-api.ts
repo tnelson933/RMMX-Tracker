@@ -60,7 +60,12 @@ export interface RiderProfile {
   bestPosition: number | null;
   lastRaced: string | null;
   bikes: RiderBike[];
+  /** Racer profile photos (/api/storage/... paths), null when not set. */
+  avatarUrl?: string | null;
+  coverUrl?: string | null;
 }
+
+export type PhotoKind = "avatar" | "cover";
 
 export interface MotoResult {
   motoId: number;
@@ -140,6 +145,8 @@ export interface RiderFull {
   bio?: string | null;
   plateColor?: string | null;
   profileVisibility?: "public" | "private" | null;
+  avatarUrl?: string | null;
+  coverUrl?: string | null;
 }
 
 export interface RiderHistoryResponse {
@@ -428,10 +435,17 @@ export const riderApi = {
   racer: (riderId: number): Promise<RacerProfile> =>
     apiFetch(`/rider/riders/${riderId}/public`),
 
-  searchRiders: (q: string): Promise<{ riders: Array<{ id: number; name: string; lastRaced: string | null; clubName: string | null; following: boolean }> }> =>
+  /** Set a profile or background photo (JPEG/PNG/WebP, up to 8 MB). Owner or manager only. */
+  uploadPhoto: (riderId: number, kind: PhotoKind, photo: Blob): Promise<{ avatarUrl: string | null; coverUrl: string | null }> =>
+    apiFetch(`/rider/profiles/${riderId}/photo?kind=${kind}`, { method: "POST", headers: { "Content-Type": photo.type || "application/octet-stream" }, body: photo }),
+
+  removePhoto: (riderId: number, kind: PhotoKind): Promise<{ avatarUrl: string | null; coverUrl: string | null }> =>
+    apiFetch(`/rider/profiles/${riderId}/photo?kind=${kind}`, { method: "DELETE" }),
+
+  searchRiders: (q: string): Promise<{ riders: Array<{ id: number; name: string; avatarUrl?: string | null; lastRaced: string | null; clubName: string | null; following: boolean }> }> =>
     apiFetch(`/rider/riders/search?q=${encodeURIComponent(q)}`),
 
-  follows: (): Promise<{ following: Array<{ riderId: number; name: string; since: string }> }> =>
+  follows: (): Promise<{ following: Array<{ riderId: number; name: string; since: string; avatarUrl?: string | null }> }> =>
     apiFetch("/rider/follows"),
 
   follow: (riderId: number): Promise<unknown> =>
@@ -482,6 +496,7 @@ export interface ProfileManager { id: number; email: string; joined: boolean; is
 export interface FeedItem {
   riderId: number;
   riderName: string;
+  riderAvatarUrl?: string | null;
   eventId: number;
   eventName: string;
   eventDate: string;
@@ -510,7 +525,7 @@ export interface RacerProfile {
     tracks: string[];
     firstYear: string | null;
   };
-  profile?: { number: string | null; plateColor: string | null; state: string | null; bio: string | null };
+  profile?: { number: string | null; plateColor: string | null; state: string | null; bio: string | null; avatarUrl?: string | null; coverUrl?: string | null };
   visibility?: "public" | "private";
   isManager?: boolean;
 }

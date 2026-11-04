@@ -14,6 +14,7 @@ import { riderApi, type RiderProfileDetail } from "@/lib/rider-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { RacerPhotosEditor } from "./RacerPhotos";
 
 export function NumberPlate({ number, color, size = 32 }: { number: string; color?: string | null; size?: number }) {
   const c = PLATE_COLORS[color ?? "white"] ?? PLATE_COLORS.white;
@@ -55,8 +56,11 @@ export function RacerProfileSettings({ riderId }: { riderId: number }) {
         </Link>
       </div>
 
+      <RacerPhotosEditor riderId={riderId} name={`${detail.firstName} ${detail.lastName}`.trim()}
+        avatarUrl={detail.avatarUrl ?? null} coverUrl={detail.coverUrl ?? null} />
+
       <div className="space-y-2">
-        <div className={label}>Who can see the bio and home state</div>
+        <div className={label}>Who can see the photos, bio and home state</div>
         <div role="radiogroup" className="inline-flex rounded-full border border-[#D0D0D0] p-1">
           {(["public", "private"] as const).map(v => (
             <button key={v} type="button" role="radio" aria-checked={vis === v} disabled={save.isPending}
@@ -68,8 +72,8 @@ export function RacerProfileSettings({ riderId }: { riderId: number }) {
         </div>
         <p className="text-[13px] text-[#707070]">
           {vis === "public"
-            ? "Signed-in riders can find this profile and see the bio and home state."
-            : "Other riders see published results only. The profile isn't listed in rider search."}
+            ? "Signed-in riders can find this profile and see the photos, bio and home state."
+            : "Other riders see published results only, with initials instead of photos. The profile isn't listed in rider search."}
           {detail.isMinor && detail.profileVisibility == null ? " Riders under 18 start private." : ""}
         </p>
       </div>

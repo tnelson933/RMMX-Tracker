@@ -5,6 +5,7 @@ import {
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { computeCareerStats, cumulativeMs, type CareerStats } from "./careerStats";
 import { computeResume, effectiveVisibility, type RacerResume } from "./riderResume";
+import { visiblePhotos } from "./riderPhotos";
 import { sendPushNotifications } from "./push";
 import { logger } from "./logger";
 
@@ -82,6 +83,8 @@ export interface FeedItem {
   /** Every race in this item finalized by the organizer; otherwise unofficial results. */
   official: boolean;
   bestPosition: number | null;
+  /** Headshot, only when the profile is public (the feed route adds your own riders' photos). */
+  riderAvatarUrl: string | null;
   motos: Array<{ motoName: string; position: number | null; dnf: boolean; dns: boolean }>;
 }
 
@@ -91,6 +94,8 @@ export async function loadResultsFeed(riderIds: number[], limit = 30): Promise<F
   const rows = await db
     .select({
       riderId: raceResultsTable.riderId, firstName: ridersTable.firstName, lastName: ridersTable.lastName,
+      dateOfBirth: ridersTable.dateOfBirth, profileVisibility: ridersTable.profileVisibility,
+      avatarUrl: ridersTable.avatarUrl, coverUrl: ridersTable.coverUrl,
       eventId: raceResultsTable.eventId, eventName: eventsTable.name, eventDate: eventsTable.date,
       raceClass: raceResultsTable.raceClass, publishedAt: eventPublicationTable.publishedAt,
       motoName: motosTable.name, motoNumber: motosTable.motoNumber, motoType: motosTable.type,
@@ -105,6 +110,7 @@ export async function loadResultsFeed(riderIds: number[], limit = 30): Promise<F
     .where(and(inArray(raceResultsTable.riderId, riderIds), eq(motosTable.status, "completed")))
     .orderBy(desc(eventsTable.date), motosTable.motoNumber);
 
+  const today = new Date().toISOString().slice(0, 10);
   const items = new Map<string, FeedItem>();
   for (const r of rows) {
     if (r.motoType === "practice") continue;
@@ -116,6 +122,7 @@ export async function loadResultsFeed(riderIds: number[], limit = 30): Promise<F
         eventName: r.eventName ?? `Event ${r.eventId}`, eventDate: String(r.eventDate ?? "").slice(0, 10),
         raceClass: r.raceClass, publishedAt: r.publishedAt ? r.publishedAt.toISOString() : null,
         official: true, bestPosition: null, motos: [],
+        riderAvatarUrl: visiblePhotos(r, false, today).avatarUrl,
       });
     }
     const item = items.get(key)!;
@@ -134,6 +141,7 @@ export async function searchPublicRiders(q: string, limit = 20) {
     .select({
       id: ridersTable.id, firstName: ridersTable.firstName, lastName: ridersTable.lastName,
       dateOfBirth: ridersTable.dateOfBirth, profileVisibility: ridersTable.profileVisibility,
+      avatarUrl: ridersTable.avatarUrl,
       lastRaced: sql<string>`max(${eventsTable.date})`,
       clubName: sql<string>`max(${clubsTable.name})`,
     })
@@ -150,7 +158,7 @@ export async function searchPublicRiders(q: string, limit = 20) {
   // Private profiles (under-18 by default) aren't listed in search.
   const today = new Date().toISOString().slice(0, 10);
   return rows.filter(r => effectiveVisibility(r, today) === "public").slice(0, limit).map(r => ({
-    id: r.id, name: `${r.firstName} ${r.lastName}`.trim(),
+    id: r.id, name: `${r.firstName} ${r.lastName}`.trim(), avatarUrl: r.avatarUrl ?? null,
     lastRaced: r.lastRaced ? String(r.lastRaced).slice(0, 10) : null, clubName: r.clubName ?? null,
   }));
 }

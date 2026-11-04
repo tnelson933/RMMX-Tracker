@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import { RiderAvatar } from "@/components/RiderPhoto";
 import React from "react";
 import { Pressable, Text, View } from "react-native";
 import { PositionBadge, podiumColor } from "@/components/RaceStats";
@@ -46,11 +47,13 @@ function shortDate(iso: string | null | undefined): string {
  * date/class/place chips, per-moto finishes and points.
  */
 export function ResultCard({
-  position, dnf, kicker, title, dateIso, raceClass, place, points, motos, onPress, footer, official,
+  position, dnf, kicker, kickerAvatarUrl, title, dateIso, raceClass, place, points, motos, onPress, footer, official,
 }: {
   position: number | null | undefined;
   dnf?: boolean;
   kicker?: string | null;
+  /** Headshot shown beside the kicker (feed items for followed riders). */
+  kickerAvatarUrl?: string | null;
   title: string;
   dateIso?: string | null;
   raceClass?: string | null;
@@ -83,7 +86,10 @@ export function ResultCard({
         <View style={{ flex: 1, gap: 6 }}>
           <View>
             {kicker ? (
-              <Text style={{ fontSize: 12, color: colors.primaryText, fontFamily: "Barlow_700Bold", letterSpacing: 1, textTransform: "uppercase" }} numberOfLines={1}>{kicker}</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                {kickerAvatarUrl ? <RiderAvatar url={kickerAvatarUrl} name={kicker} size={18} /> : null}
+                <Text style={{ flexShrink: 1, fontSize: 12, color: colors.primaryText, fontFamily: "Barlow_700Bold", letterSpacing: 1, textTransform: "uppercase" }} numberOfLines={1}>{kicker}</Text>
+              </View>
             ) : null}
             <Text style={{ fontSize: 15, color: colors.foreground, fontFamily: "Barlow_800ExtraBold_Italic", letterSpacing: 0.3, textTransform: "uppercase" }} numberOfLines={1}>
               {title}

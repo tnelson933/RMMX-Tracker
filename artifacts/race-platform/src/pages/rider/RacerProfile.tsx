@@ -10,6 +10,7 @@ import { fmtLapShort } from "@workspace/rider-insights/raceReport";
 
 import { RiderLayout } from "@/components/layout/RiderLayout";
 import { CHART, ChartCard, PhotoHero, PosBadge, TrendChart } from "@/components/rider/insights";
+import { RiderAvatar } from "@/components/rider/RacerPhotos";
 import { NumberPlate } from "@/components/rider/ProfileSettings";
 import { riderApi, type RacerProfile as Racer } from "@/lib/rider-api";
 import { Button } from "@/components/ui/button";
@@ -62,16 +63,15 @@ function RacerBody({ data, riderId, onToggle, pending }: { data: Racer; riderId:
   const st = data.stats;
   const resume = data.resume;
   const profile = data.profile;
-  const initials = data.name.split(/\s+/).map(w => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
   const sub = [resume?.classes[0], profile?.state ? STATE_NAMES[profile.state] ?? profile.state : null, resume?.firstYear ? `since ${resume.firstYear}` : null].filter(Boolean).join("  ·  ");
   const seasons = (resume?.seasons ?? []).filter(x => x.avgFinish != null);
   const worst = seasons.length ? Math.max(...seasons.map(x => x.avgFinish!)) : 3;
 
   return (
     <div className="space-y-5">
-      <PhotoHero className="min-h-[240px]">
+      <PhotoHero src={profile?.coverUrl} className="min-h-[240px]">
         <div className="flex min-h-[240px] items-end gap-4 p-5 text-white">
-          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full border-[3px] border-white bg-[#3A3A3A] font-heading font-extrabold text-[28px]">{initials}</div>
+          <RiderAvatar url={profile?.avatarUrl} name={data.name} size={80} className="border-[3px] border-white" />
           <div className="min-w-0">
             <div className="font-heading font-extrabold italic uppercase text-[34px] leading-none">{data.name}</div>
             {sub ? <div className="mt-1 text-[15px] text-white/85">{sub}</div> : null}

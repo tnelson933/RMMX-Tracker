@@ -11,7 +11,8 @@ import { NumberPlate } from "@/components/NumberPlate";
 import { ResultCard } from "@/components/RaceCards";
 import { PositionBadge } from "@/components/RaceStats";
 import { formatLap, type CareerStats } from "@/components/ShareCard";
-import { PhotoFade, StockBackdrop } from "@/components/StockBackdrop";
+import { PhotoFade } from "@/components/StockBackdrop";
+import { CoverBackdrop, RiderAvatar } from "@/components/RiderPhoto";
 import { fonts } from "@/constants/fonts";
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
@@ -44,7 +45,7 @@ interface RacerProfile {
   stats: CareerStats;
   recent: Recent[];
   resume?: Resume;
-  profile?: { number: string | null; plateColor: string | null; state: string | null; bio: string | null };
+  profile?: { number: string | null; plateColor: string | null; state: string | null; bio: string | null; avatarUrl?: string | null; coverUrl?: string | null };
   visibility?: "public" | "private";
   isManager?: boolean;
 }
@@ -124,7 +125,6 @@ export default function RacerScreen() {
   const st = data.stats;
   const resume = data.resume;
   const profile = data.profile;
-  const initials = data.name.split(/\s+/).map(w => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
   const sub = [resume?.classes[0], stateNameFromCode(profile?.state), resume?.firstYear ? `since ${resume.firstYear}` : null].filter(Boolean).join("  ·  ");
   const seasons = (resume?.seasons ?? []).filter(x => x.avgFinish != null);
   const worst = seasons.length ? Math.max(...seasons.map(x => x.avgFinish!)) : 3;
@@ -132,14 +132,14 @@ export default function RacerScreen() {
   return (
     <View style={s.root}>
       <ScrollView contentContainerStyle={{ paddingBottom: bottomSpace }}>
-        {/* Photo header: a stock riding photo until riders can add their own. */}
+        {/* Photo header: the rider's background photo, or a stock riding photo. */}
         <View style={{ height: 250 + insets.top, justifyContent: "flex-end", backgroundColor: "#161616", overflow: "hidden" }}>
-          <StockBackdrop />
+          <CoverBackdrop url={profile?.coverUrl} />
           <PhotoFade from={0.2} strength={0.92} />
           {/* Back button scrolls with the photo, so it never sits over content. */}
           {backButton}
           <View style={{ padding: 16, flexDirection: "row", alignItems: "flex-end", gap: 12 }}>
-            <View style={s.avatar}><Text style={s.avatarText}>{initials}</Text></View>
+            <RiderAvatar url={profile?.avatarUrl} name={data.name} size={64} style={{ borderWidth: 3, borderColor: "#FFFFFF" }} />
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={s.name} numberOfLines={2}>{data.name}</Text>
               {sub ? <Text style={s.sub} numberOfLines={1}>{sub}</Text> : null}

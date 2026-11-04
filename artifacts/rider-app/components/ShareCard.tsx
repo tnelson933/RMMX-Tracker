@@ -5,7 +5,8 @@ import { captureRef } from "react-native-view-shot";
 import * as Sharing from "expo-sharing";
 
 import { podiumColor } from "@/components/RaceStats";
-import { PhotoFade, StockBackdrop } from "@/components/StockBackdrop";
+import { PhotoFade } from "@/components/StockBackdrop";
+import { CoverBackdrop } from "@/components/RiderPhoto";
 import { fmtLapShort } from "@/lib/raceReport";
 
 /**
@@ -66,13 +67,13 @@ export function useShareCapture() {
   return { ref, share, sharing };
 }
 
-function CardFrame({ eyebrow, name, sub, children, cardRef }: {
-  eyebrow: string; name: string; sub?: string; children: React.ReactNode; cardRef: React.RefObject<View | null>;
+function CardFrame({ eyebrow, name, sub, children, cardRef, coverUrl }: {
+  eyebrow: string; name: string; sub?: string; children: React.ReactNode; cardRef: React.RefObject<View | null>; coverUrl?: string | null;
 }) {
   return (
     <View ref={cardRef} collapsable={false} style={c.card}>
       <View style={c.photo}>
-        <StockBackdrop />
+        <CoverBackdrop url={coverUrl} />
         <PhotoFade from={0.35} strength={0.95} />
         <Image source={require("../assets/images/brand-banner.png")} style={c.banner} resizeMode="contain" />
         <View style={c.photoText}>
@@ -88,7 +89,7 @@ function CardFrame({ eyebrow, name, sub, children, cardRef }: {
   );
 }
 
-export function StatsShareCard({ name, stats, cardRef }: { name: string; stats: CareerStats; cardRef: React.RefObject<View | null> }) {
+export function StatsShareCard({ name, stats, cardRef, coverUrl }: { name: string; stats: CareerStats; cardRef: React.RefObject<View | null>; coverUrl?: string | null }) {
   const tiles: Array<[string, string]> = [
     ["Wins", String(stats.wins)],
     ["Podiums", String(stats.podiums)],
@@ -98,7 +99,7 @@ export function StatsShareCard({ name, stats, cardRef }: { name: string; stats: 
     ["Best lap", stats.bestLap ? fmtLapShort(stats.bestLap.ms) : "—"],
   ];
   return (
-    <CardFrame cardRef={cardRef} eyebrow="Career stats" name={name} sub={`${stats.starts} motos · ${stats.totalLaps} laps`}>
+    <CardFrame cardRef={cardRef} coverUrl={coverUrl} eyebrow="Career stats" name={name} sub={`${stats.starts} motos · ${stats.totalLaps} laps`}>
       <View style={c.grid}>
         {tiles.map(([label, value]) => (
           <View key={label} style={c.tile}>
@@ -111,7 +112,8 @@ export function StatsShareCard({ name, stats, cardRef }: { name: string; stats: 
   );
 }
 
-export function ResultShareCard({ name, eventName, raceClass, bestPosition, motos, cardRef }: {
+export function ResultShareCard({ name, eventName, raceClass, bestPosition, motos, cardRef, coverUrl }: {
+  coverUrl?: string | null;
   name: string;
   eventName: string;
   raceClass: string;
@@ -121,7 +123,7 @@ export function ResultShareCard({ name, eventName, raceClass, bestPosition, moto
 }) {
   const metal = podiumColor(bestPosition);
   return (
-    <CardFrame cardRef={cardRef} eyebrow={eventName} name={name} sub={raceClass}>
+    <CardFrame cardRef={cardRef} coverUrl={coverUrl} eyebrow={eventName} name={name} sub={raceClass}>
       <View style={c.resultRow}>
         <View style={[c.posBadge, { backgroundColor: metal ?? RED }]}>
           <Text style={[c.posText, { color: metal ? "#14110A" : "#FFFFFF" }]}>{bestPosition ? `P${bestPosition}` : "—"}</Text>
@@ -173,6 +175,7 @@ export function ShareResultButton(props: {
   name: string; eventName: string; raceClass: string; bestPosition: number | null;
   motos: Array<{ motoName: string; position: number | null; dnf?: boolean; dns?: boolean }>;
   color: string;
+  coverUrl?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const { ref, share, sharing } = useShareCapture();

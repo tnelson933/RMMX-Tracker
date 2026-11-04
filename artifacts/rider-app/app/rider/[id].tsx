@@ -34,6 +34,8 @@ interface RiderFull {
   bio?: string | null;
   plateColor?: string | null;
   profileVisibility?: "public" | "private" | null;
+  avatarUrl?: string | null;
+  coverUrl?: string | null;
   effectiveVisibility?: "public" | "private";
   isMinor?: boolean;
   email: string | null;
@@ -962,7 +964,11 @@ export default function RiderDetailScreen() {
                 effectiveVisibility: rider.effectiveVisibility ?? "public",
                 isMinor: rider.isMinor ?? false,
                 bibNumber: rider.bibNumber ?? null,
+                avatarUrl: rider.avatarUrl ?? null,
+                coverUrl: rider.coverUrl ?? null,
               }}
+              name={`${rider.firstName} ${rider.lastName}`.trim()}
+              onPhotosChanged={() => { void refreshProfiles(); }}
             />
           )}
 

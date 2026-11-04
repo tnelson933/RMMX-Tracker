@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { User, ChevronRight, Plus, UserPlus, BarChart3, TrendingUp, Wrench } from "lucide-react";
 import { cardSummary, nextMaintenance, recentFinishes } from "@workspace/rider-insights/profileCard";
 import { NumberPlate } from "@/components/rider/ProfileSettings";
+import { RiderAvatar } from "@/components/rider/RacerPhotos";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { RiderLayout } from "@/components/layout/RiderLayout";
@@ -51,9 +52,8 @@ function ProfileCard({ profile }: { profile: RiderProfile }) {
     <Card className="border-2 border-[#ECECEC]">
       <CardContent className="space-y-4 p-4 sm:p-6">
         <Link href={`/rider/portal/${profile.id}`} className="group flex items-center gap-3">
-          {profile.bibNumber
-            ? <NumberPlate number={profile.bibNumber} color={data?.plateColor} size={36} />
-            : <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-[#242424]"><User size={20} className="text-white" /></span>}
+          {(profile.avatarUrl || !profile.bibNumber) && <RiderAvatar url={profile.avatarUrl} name={name} size={48} />}
+          {profile.bibNumber ? <NumberPlate number={profile.bibNumber} color={data?.plateColor} size={36} /> : null}
           <span className="min-w-0 flex-1">
             <span className="block truncate font-heading font-extrabold text-[22px] uppercase leading-tight text-[#242424] group-hover:text-[#B30000]">{name}</span>
             {data?.className && <span className="block text-[13px] sm:text-[14px] font-semibold leading-tight text-[#B30000]">{data.className}</span>}

@@ -40,6 +40,9 @@ export interface RiderProfile {
   totalPoints: number;
   bestPosition: number | null;
   lastRaced: string | null;
+  /** Racer profile photos (/api/storage/... paths), null when not set. */
+  avatarUrl?: string | null;
+  coverUrl?: string | null;
 }
 
 export interface BikeInfo {

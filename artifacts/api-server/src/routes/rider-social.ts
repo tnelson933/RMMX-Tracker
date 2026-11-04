@@ -1,10 +1,12 @@
-import { Router } from "express";
+import express, { Router } from "express";
 import { db, riderAccountsTable, ridersTable, riderFollowsTable, riderProfileManagersTable, riderMaintenanceTable } from "@workspace/db";
 import { and, asc, count, eq, inArray } from "drizzle-orm";
 import { requireRiderAuth } from "./rider-portal";
 import { canManageRider, managedRiderIds, ownsRider } from "../lib/riderAccess";
 import { loadCareerStats, loadRacerResume, loadResultsFeed, searchPublicRiders } from "../lib/riderCareer";
 import { effectiveVisibility } from "../lib/riderResume";
+import { checkPhoto, photoKind, visiblePhotos } from "../lib/riderPhotos";
+import { saveUpload } from "../lib/uploadStore";
 
 /**
  * Rider career stats, profile managers (multiple accounts per rider) and following.
@@ -41,7 +43,7 @@ router.get("/rider/profiles/:riderId/card", requireRiderAuth, async (req, res) =
   if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
   if (!(await canManageRider(account, rider))) return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   const [[extra], { stats, resume }, recent, [followers], maintenance] = await Promise.all([
-    db.select({ plateColor: ridersTable.plateColor }).from(ridersTable).where(eq(ridersTable.id, rider.id)),
+    db.select({ plateColor: ridersTable.plateColor, avatarUrl: ridersTable.avatarUrl }).from(ridersTable).where(eq(ridersTable.id, rider.id)),
     // Completed motos only, so a race still running doesn't count (matches the racer profile).
     loadRacerResume(rider.id, true),
     loadResultsFeed([rider.id], 6),
@@ -53,6 +55,7 @@ router.get("/rider/profiles/:riderId/card", requireRiderAuth, async (req, res) =
   return res.json({
     riderId: rider.id,
     plateColor: extra?.plateColor ?? null,
+    avatarUrl: extra?.avatarUrl ?? null,
     className: resume.classes[0] ?? null,
     followerCount: Number(followers?.n ?? 0),
     avgFinish: stats.avgFinish,
@@ -150,6 +153,7 @@ router.get("/rider/riders/:riderId/public", requireRiderAuth, async (req, res) =
     id: ridersTable.id, email: ridersTable.email, firstName: ridersTable.firstName, lastName: ridersTable.lastName,
     bibNumber: ridersTable.bibNumber, homeState: ridersTable.homeState, dateOfBirth: ridersTable.dateOfBirth,
     bio: ridersTable.bio, plateColor: ridersTable.plateColor, profileVisibility: ridersTable.profileVisibility,
+    avatarUrl: ridersTable.avatarUrl, coverUrl: ridersTable.coverUrl,
   }).from(ridersTable).where(eq(ridersTable.id, riderId));
   if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
   const [{ stats, resume }, recent, follow, [followers], isManager] = await Promise.all([
@@ -178,6 +182,7 @@ router.get("/rider/riders/:riderId/public", requireRiderAuth, async (req, res) =
       plateColor: rider.plateColor ?? null,
       state: showPersonal ? rider.homeState ?? null : null,
       bio: showPersonal ? rider.bio ?? null : null,
+      ...visiblePhotos(rider, isManager, new Date().toISOString().slice(0, 10)),
     },
     visibility,
     isManager,
@@ -187,10 +192,18 @@ router.get("/rider/riders/:riderId/public", requireRiderAuth, async (req, res) =
 router.get("/rider/follows", requireRiderAuth, async (req, res) => {
   const account = await currentAccount(req);
   if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
-  const rows = await db.select({ riderId: riderFollowsTable.riderId, firstName: ridersTable.firstName, lastName: ridersTable.lastName, since: riderFollowsTable.createdAt })
+  const rows = await db.select({
+    riderId: riderFollowsTable.riderId, firstName: ridersTable.firstName, lastName: ridersTable.lastName, since: riderFollowsTable.createdAt,
+    dateOfBirth: ridersTable.dateOfBirth, profileVisibility: ridersTable.profileVisibility, avatarUrl: ridersTable.avatarUrl, coverUrl: ridersTable.coverUrl,
+  })
     .from(riderFollowsTable).innerJoin(ridersTable, eq(ridersTable.id, riderFollowsTable.riderId))
     .where(eq(riderFollowsTable.riderAccountId, account.id));
-  return res.json({ following: rows.map(r => ({ riderId: r.riderId, name: `${r.firstName} ${r.lastName}`.trim(), since: r.since.toISOString() })) });
+  const mine = new Set(await managedRiderIds(account));
+  const today = new Date().toISOString().slice(0, 10);
+  return res.json({ following: rows.map(r => ({
+    riderId: r.riderId, name: `${r.firstName} ${r.lastName}`.trim(), since: r.since.toISOString(),
+    avatarUrl: visiblePhotos(r, mine.has(r.riderId), today).avatarUrl,
+  })) });
 });
 
 router.post("/rider/follows/:riderId", requireRiderAuth, async (req, res) => {
@@ -219,7 +232,63 @@ router.get("/rider/feed", requireRiderAuth, async (req, res) => {
     .where(eq(riderFollowsTable.riderAccountId, account.id))).map(f => f.riderId);
   const items = await loadResultsFeed([...new Set([...mine, ...followed])], 30);
   const mineSet = new Set(mine);
-  return res.json({ items: items.map(i => ({ ...i, isMine: mineSet.has(i.riderId) })) });
+  // Your own riders show their headshot even when their profile is private.
+  const ownPhotos = mine.length
+    ? new Map((await db.select({ id: ridersTable.id, avatarUrl: ridersTable.avatarUrl }).from(ridersTable)
+        .where(inArray(ridersTable.id, mine))).map(r => [r.id, r.avatarUrl ?? null]))
+    : new Map<number, string | null>();
+  return res.json({ items: items.map(i => ({
+    ...i,
+    isMine: mineSet.has(i.riderId),
+    riderAvatarUrl: mineSet.has(i.riderId) ? ownPhotos.get(i.riderId) ?? null : i.riderAvatarUrl,
+  })) });
+});
+
+/**
+ * Racer profile photos: POST a JPEG/PNG/WebP body (?kind=avatar|cover) to set
+ * one, DELETE to remove it. Owner or profile manager only. The type comes from
+ * the file's bytes; the old file stays in storage.
+ */
+router.post("/rider/profiles/:riderId/photo", requireRiderAuth,
+  express.raw({ type: () => true, limit: "12mb" }),
+  async (req, res) => {
+    const account = await currentAccount(req);
+    if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
+    const kind = photoKind(req.query.kind);
+    if (!kind) return res.status(400).json({ error: "Choose a profile photo or a background photo." });
+    const rider = await loadRider(Number(req.params.riderId));
+    if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
+    if (!(await canManageRider(account, rider))) return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
+    const check = checkPhoto(req.body);
+    if (!check.ok) return res.status(check.status).json({ error: check.error });
+    let objectPath: string;
+    try {
+      objectPath = await saveUpload(req.body as Buffer, check.contentType, check.ext, req.log);
+    } catch (err) {
+      req.log.error({ err }, "Error saving rider photo");
+      return res.status(503).json({ error: "Photo storage isn't responding. Try again in a moment." });
+    }
+    const url = `/api/storage${objectPath}`;
+    const [row] = await db.update(ridersTable)
+      .set(kind === "avatar" ? { avatarUrl: url } : { coverUrl: url })
+      .where(eq(ridersTable.id, rider.id))
+      .returning({ avatarUrl: ridersTable.avatarUrl, coverUrl: ridersTable.coverUrl });
+    return res.status(201).json(row);
+  });
+
+router.delete("/rider/profiles/:riderId/photo", requireRiderAuth, async (req, res) => {
+  const account = await currentAccount(req);
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
+  const kind = photoKind(req.query.kind);
+  if (!kind) return res.status(400).json({ error: "Choose a profile photo or a background photo." });
+  const rider = await loadRider(Number(req.params.riderId));
+  if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
+  if (!(await canManageRider(account, rider))) return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
+  const [row] = await db.update(ridersTable)
+    .set(kind === "avatar" ? { avatarUrl: null } : { coverUrl: null })
+    .where(eq(ridersTable.id, rider.id))
+    .returning({ avatarUrl: ridersTable.avatarUrl, coverUrl: ridersTable.coverUrl });
+  return res.json(row);
 });
 
 export default router;

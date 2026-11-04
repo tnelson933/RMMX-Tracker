@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ResultCard } from "@/components/RaceCards";
 
 interface FeedItem {
-  riderId: number; riderName: string; eventId: number; eventName: string; eventDate: string;
+  riderId: number; riderName: string; riderAvatarUrl?: string | null; eventId: number; eventName: string; eventDate: string;
   raceClass: string; bestPosition: number | null; isMine: boolean; official?: boolean;
   motos: Array<{ motoName: string; position: number | null; dnf: boolean; dns: boolean }>;
 }
@@ -52,6 +52,7 @@ export function FollowingFeed({ refreshKey }: { refreshKey: number }) {
             key={`${i.riderId}-${i.eventId}-${i.raceClass}`}
             position={i.bestPosition}
             kicker={i.riderName}
+            kickerAvatarUrl={i.riderAvatarUrl}
             title={i.eventName}
             dateIso={i.eventDate}
             raceClass={i.raceClass}

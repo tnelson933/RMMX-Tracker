@@ -2,7 +2,6 @@ import express, { Router, type IRouter, type Request, type Response } from "expr
 import { Readable } from "stream";
 import fs from "fs/promises";
 import path from "path";
-import { randomUUID } from "crypto";
 import {
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
@@ -10,16 +9,7 @@ import {
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
 import { ObjectPermission } from "../lib/objectAcl";
 
-// UPLOADS_DIR should point at persistent storage (e.g. a Docker volume) off Replit.
-const UPLOADS_DIR = process.env.UPLOADS_DIR
-  ? path.resolve(process.env.UPLOADS_DIR)
-  : path.join(process.cwd(), ".uploads");
-// Replit object storage is only reachable when its bucket env is provisioned;
-// elsewhere the disk copy is the only copy and cloud calls are skipped.
-const cloudStorageEnabled = Boolean(process.env.PRIVATE_OBJECT_DIR);
-// Ensure directory exists at module load time
-fs.mkdir(UPLOADS_DIR, { recursive: true }).catch(() => {});
-
+import { UPLOADS_DIR, cloudStorageEnabled, saveUpload } from "../lib/uploadStore";
 /** Upload types accepted by POST /storage/uploads/file (and served inline). */
 const UPLOAD_CONTENT_TYPES: Record<string, string> = {
   ".png": "image/png",
@@ -67,33 +57,14 @@ router.post(
       res.status(415).json({ error: "Only PNG, JPEG, GIF, WebP images or PDF files can be uploaded." });
       return;
     }
-    const filename = `${randomUUID()}${ext}`;
-    const filepath = path.join(UPLOADS_DIR, filename);
-
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
       res.status(400).json({ error: "No file was received. Choose the file again and upload it." });
       return;
     }
 
     try {
-      // Always write to local disk first so the file is immediately serveable.
-      await fs.writeFile(filepath, req.body);
-      req.log.info({ size: req.body.length, contentType, filename }, "File written to local disk");
-
-      // Best-effort cloud upload for persistence across redeployments.
-      // If object storage is not provisioned, log a warning and continue —
-      // the disk copy is sufficient for development and single-server deploys.
-      if (cloudStorageEnabled) {
-        try {
-          const cloudPath = await objectStorageService.uploadObjectEntityFromBuffer(req.body, contentType, ext, filename);
-          req.log.info({ cloudPath }, "File also uploaded to object storage");
-        } catch (cloudErr) {
-          req.log.warn({ err: cloudErr }, "Object storage unavailable — file saved to disk only");
-        }
-      }
-
-      // Return the /uploads/ path served by GET /storage/uploads/:filename.
-      const objectPath = `/uploads/${filename}`;
+      // Disk first (immediately serveable), then best-effort object storage.
+      const objectPath = await saveUpload(req.body, contentType, ext, req.log, objectStorageService);
       res.json({ objectPath });
     } catch (error) {
       req.log.error({ err: error }, "Error saving uploaded file");

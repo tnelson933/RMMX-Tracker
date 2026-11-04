@@ -1,4 +1,5 @@
 import React from "react";
+import { photoUri } from "@/components/RiderPhoto";
 import { View, Text, Image, StyleSheet, TouchableOpacity } from "react-native";
 import { useRouter } from "expo-router";
 import { useColors } from "@/hooks/useColors";
@@ -53,7 +54,9 @@ function ProfileAvatars() {
               },
             ]}
           >
-            <Text style={pa.text}>{ini}</Text>
+            {p.avatarUrl
+              ? <Image source={{ uri: photoUri(p.avatarUrl)! }} style={{ width: "100%", height: "100%", borderRadius: CIRCLE / 2 }} accessibilityLabel={`Photo of ${p.firstName}`} />
+              : <Text style={pa.text}>{ini}</Text>}
           </View>
         );
       })}
@@ -81,6 +84,7 @@ const pa = StyleSheet.create({
     width: CIRCLE,
     height: CIRCLE,
     borderRadius: CIRCLE / 2,
+    overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,

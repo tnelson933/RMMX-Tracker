@@ -1,4 +1,5 @@
 import { Feather } from "@expo/vector-icons";
+import { RiderAvatar } from "@/components/RiderPhoto";
 import { useBottomSpace } from "@/hooks/useBottomSpace";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -10,8 +11,8 @@ import { useRiderAuth } from "@/context/AuthContext";
 import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 import { goBack } from "@/lib/navigation";
 
-interface FoundRider { id: number; name: string; lastRaced: string | null; clubName: string | null; following: boolean }
-interface Followed { riderId: number; name: string }
+interface FoundRider { id: number; name: string; avatarUrl?: string | null; lastRaced: string | null; clubName: string | null; following: boolean }
+interface Followed { riderId: number; name: string; avatarUrl?: string | null }
 
 /** Find riders by name and follow them. Following puts their results in your feed and sends a push when results are in. */
 export default function FollowScreen() {
@@ -104,7 +105,7 @@ export default function FollowScreen() {
         <Text style={s.muted}>Follow friends, teammates or rivals. Their results show on your home screen, and you get a notification when their results are official.</Text>
 
         {results.map(r => (
-          <RiderRow key={r.id} title={r.name} subtitle={[r.clubName, r.lastRaced && `Last raced ${r.lastRaced}`].filter(Boolean).join(" · ")}
+          <RiderRow key={r.id} title={r.name} avatarUrl={r.avatarUrl} subtitle={[r.clubName, r.lastRaced && `Last raced ${r.lastRaced}`].filter(Boolean).join(" · ")}
             following={r.following} onToggle={() => toggle(r.id, !r.following)} onOpen={() => router.push(`/racer/${r.id}` as any)} colors={colors} />
         ))}
         {searchError && q.trim().length >= 2 && !searching && <Text style={[s.muted, { color: "#DC2626" }]}>{searchError}</Text>}
@@ -117,7 +118,7 @@ export default function FollowScreen() {
           </Pressable>
         )}
         {following.map(f => (
-          <RiderRow key={f.riderId} title={f.name} following onToggle={() => { void unfollow(f.riderId); }}
+          <RiderRow key={f.riderId} title={f.name} avatarUrl={f.avatarUrl} following onToggle={() => { void unfollow(f.riderId); }}
             onOpen={() => router.push(`/racer/${f.riderId}` as any)} colors={colors} />
         ))}
       </ScrollView>
@@ -125,17 +126,15 @@ export default function FollowScreen() {
   );
 }
 
-function RiderRow({ title, subtitle, following, onToggle, onOpen, colors }: {
-  title: string; subtitle?: string; following: boolean; onToggle: () => void; onOpen: () => void; colors: ReturnType<typeof useColors>;
+function RiderRow({ title, subtitle, following, onToggle, onOpen, colors, avatarUrl }: {
+  title: string; subtitle?: string; following: boolean; onToggle: () => void; onOpen: () => void; colors: ReturnType<typeof useColors>; avatarUrl?: string | null;
 }) {
   return (
     <Pressable onPress={onOpen} style={({ pressed }) => ({
       flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 12, opacity: pressed ? 0.7 : 1,
       backgroundColor: colors.card, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
     })}>
-      <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: colors.muted, alignItems: "center", justifyContent: "center" }}>
-        <Feather name="user" size={16} color={colors.mutedForeground} />
-      </View>
+      <RiderAvatar url={avatarUrl} name={title} size={36} background={colors.muted} color={colors.mutedForeground} />
       <View style={{ flex: 1 }}>
         <Text style={{ fontSize: 15, color: colors.foreground, fontFamily: "Roboto_600SemiBold" }} numberOfLines={1}>{title}</Text>
         {!!subtitle && <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }} numberOfLines={1}>{subtitle}</Text>}

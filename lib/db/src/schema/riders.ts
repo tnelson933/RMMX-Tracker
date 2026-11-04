@@ -35,6 +35,9 @@ export const ridersTable = pgTable("riders", {
   plateColor: text("plate_color"),
   /** "public" | "private"; null = default (private under 18, public otherwise). */
   profileVisibility: text("profile_visibility"),
+  // Racer profile photos (deploy/migrations/0031-rider-photos.sql): /api/storage/uploads/... paths.
+  avatarUrl: text("avatar_url"),
+  coverUrl: text("cover_url"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

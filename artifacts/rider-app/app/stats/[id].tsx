@@ -24,7 +24,7 @@ export default function RiderStatsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { riderFetch } = useRiderAuth();
+  const { riderFetch, profiles } = useRiderAuth();
   const { ref: cardRef, share, sharing } = useShareCapture();
   const [name, setName] = useState("");
   const [stats, setStats] = useState<CareerStats | null>(null);
@@ -149,7 +149,7 @@ export default function RiderStatsScreen() {
 
           <Text style={s.section}>Share</Text>
           <View style={{ alignItems: "center" }}>
-            <StatsShareCard name={name} stats={stats} cardRef={cardRef} />
+            <StatsShareCard name={name} stats={stats} cardRef={cardRef} coverUrl={profiles.find(p => String(p.id) === String(id))?.coverUrl} />
           </View>
           <Pressable onPress={() => share(`${name}'s RM Roost stats`)} disabled={sharing} accessibilityRole="button"
             style={({ pressed }) => [s.primaryBtn, { opacity: pressed || sharing ? 0.7 : 1 }]}>

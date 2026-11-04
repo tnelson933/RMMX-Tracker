@@ -62,6 +62,8 @@ interface EventResult {
   bestPosition: number | null;
   totalPoints: number;
   riderName?: string;
+  /** The rider's background photo, for the share card. */
+  coverUrl?: string | null;
 }
 
 export default function ResultDetailScreen() {
@@ -104,7 +106,7 @@ export default function ResultDetailScreen() {
         const hist: EventResult[] = data.history ?? [];
         const prof = activeProfiles[i];
         for (const ev of hist) {
-          all.push(isMulti ? { ...ev, riderName: `${prof.firstName} ${prof.lastName}` } : ev);
+          all.push({ ...ev, ...(isMulti ? { riderName: `${prof.firstName} ${prof.lastName}` } : {}), coverUrl: prof.coverUrl ?? null });
         }
       }
       if (all.length > 0) {
@@ -201,6 +203,7 @@ export default function ResultDetailScreen() {
               bestPosition={ev.bestPosition ?? null}
               motos={ev.motos.map(m => ({ motoName: m.motoName, position: m.dnf || m.dns ? null : m.position, dnf: m.dnf, dns: m.dns }))}
               color={colors.primaryText}
+              coverUrl={ev.coverUrl}
             />
 
             <MotoChips motos={ev.motos} selected={Math.min(motoIdx[ri] ?? 0, ev.motos.length - 1)} onSelect={i => setMotoIdx(m => ({ ...m, [ri]: i }))} />

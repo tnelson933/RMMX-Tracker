@@ -3,6 +3,7 @@
  * feed): find riders by name, the riders you follow, and their latest results.
  */
 import { useEffect, useState } from "react";
+import { RiderAvatar } from "@/components/rider/RacerPhotos";
 import { Link } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, Search } from "lucide-react";
@@ -27,6 +28,7 @@ export function FollowingFeed({ limit }: { limit?: number }) {
       {items.map(i => (
         <Link key={`${i.riderId}-${i.eventId}-${i.raceClass}`} href={`/rider/racer/${i.riderId}`} className="flex items-center gap-3 px-4 py-3 hover:bg-[#F7F7F7]">
           <PosBadge position={i.bestPosition} size="sm" />
+          <RiderAvatar url={i.riderAvatarUrl} name={i.riderName} size={32} />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-[15px] font-semibold text-[#242424]">{i.riderName}</span>
             <span className="block truncate text-[13px] text-[#707070]">{i.eventName} · {i.raceClass} · {shortDate(i.eventDate)}</span>
@@ -71,6 +73,7 @@ export default function RiderFollowing() {
                 <p className="p-4 text-sm text-[#707070]">{isFetching ? "Searching…" : "No riders with results match that name."}</p>
               ) : found!.riders.map(r => (
                 <div key={r.id} className="flex items-center gap-3 px-4 py-3">
+                  <RiderAvatar url={r.avatarUrl} name={r.name} size={36} />
                   <Link href={`/rider/racer/${r.id}`} className="min-w-0 flex-1 hover:underline">
                     <span className="block truncate text-[15px] font-semibold text-[#242424]">{r.name}</span>
                     <span className="block truncate text-[13px] text-[#707070]">{[r.clubName, r.lastRaced ? `last raced ${shortDate(r.lastRaced)}` : null].filter(Boolean).join(" · ")}</span>
@@ -93,6 +96,7 @@ export default function RiderFollowing() {
             <div className="divide-y divide-[#E2E2E2] rounded-xl border border-[#E2E2E2] bg-white">
               {follows!.following.map(f => (
                 <div key={f.riderId} className="flex items-center gap-3 px-4 py-3">
+                  <RiderAvatar url={f.avatarUrl} name={f.name} size={36} />
                   <Link href={`/rider/racer/${f.riderId}`} className="flex-1 text-[15px] font-semibold text-[#242424] hover:underline">{f.name}</Link>
                   <Button size="sm" variant="outline" disabled={toggle.isPending} onClick={() => toggle.mutate({ id: f.riderId, follow: false })}>Unfollow</Button>
                 </div>
