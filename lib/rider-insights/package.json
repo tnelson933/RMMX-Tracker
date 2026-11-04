@@ -10,6 +10,8 @@
     "./home": "./src/home.ts",
     "./practice": "./src/practice.ts",
     "./career": "./src/career.ts",
-    "./plates": "./src/plates.ts"
+    "./plates": "./src/plates.ts",
+    "./liveRaces": "./src/liveRaces.ts",
+    "./profileCard": "./src/profileCard.ts"
   }
 }

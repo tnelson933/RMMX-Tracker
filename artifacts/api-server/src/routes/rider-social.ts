@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, riderAccountsTable, ridersTable, riderFollowsTable, riderProfileManagersTable } from "@workspace/db";
-import { and, count, eq, inArray } from "drizzle-orm";
+import { db, riderAccountsTable, ridersTable, riderFollowsTable, riderProfileManagersTable, riderMaintenanceTable } from "@workspace/db";
+import { and, asc, count, eq, inArray } from "drizzle-orm";
 import { requireRiderAuth } from "./rider-portal";
 import { canManageRider, managedRiderIds, ownsRider } from "../lib/riderAccess";
 import { loadCareerStats, loadRacerResume, loadResultsFeed, searchPublicRiders } from "../lib/riderCareer";
@@ -28,6 +28,38 @@ async function loadRider(riderId: number) {
 }
 
 // ── #4 Career stats (own and managed profiles: all results) ─────────────────
+
+/**
+ * Everything one rider card on the Profile tab / My Profiles needs, in one call:
+ * plate, main class, followers, average finish, recent published results (for
+ * the sparkline) and maintenance items (for "next due"). Managers only.
+ */
+router.get("/rider/profiles/:riderId/card", requireRiderAuth, async (req, res) => {
+  const account = await currentAccount(req);
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
+  const rider = await loadRider(Number(req.params.riderId));
+  if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
+  if (!(await canManageRider(account, rider))) return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
+  const [[extra], { stats, resume }, recent, [followers], maintenance] = await Promise.all([
+    db.select({ plateColor: ridersTable.plateColor }).from(ridersTable).where(eq(ridersTable.id, rider.id)),
+    loadRacerResume(rider.id, false),
+    loadResultsFeed([rider.id], 6),
+    db.select({ n: count() }).from(riderFollowsTable).where(eq(riderFollowsTable.riderId, rider.id)),
+    db.select({ itemName: riderMaintenanceTable.itemName, intervalDays: riderMaintenanceTable.intervalDays, lastServicedAt: riderMaintenanceTable.lastServicedAt })
+      .from(riderMaintenanceTable).where(eq(riderMaintenanceTable.riderId, rider.id))
+      .orderBy(asc(riderMaintenanceTable.sortOrder), asc(riderMaintenanceTable.id)),
+  ]);
+  return res.json({
+    riderId: rider.id,
+    plateColor: extra?.plateColor ?? null,
+    className: resume.classes[0] ?? null,
+    followerCount: Number(followers?.n ?? 0),
+    avgFinish: stats.avgFinish,
+    recent,
+    maintenance,
+  });
+});
+
 router.get("/rider/profiles/:riderId/stats", requireRiderAuth, async (req, res) => {
   const account = await currentAccount(req);
   if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });

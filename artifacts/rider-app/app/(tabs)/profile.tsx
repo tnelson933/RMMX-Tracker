@@ -26,9 +26,8 @@ import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
 import { useTheme, type ThemePreference } from "@/context/ThemeContext";
 import { BrandBar } from "@/components/BrandBar";
+import { RiderCard } from "@/components/RiderCard";
 import { NETWORK_ERROR_MESSAGE, postJson } from "@/lib/friendlyErrors";
-import { PositionBadge, StatTile } from "@/components/RaceStats";
-import { displayDate } from "@/lib/format";
 
 const BASE_URL = API_BASE_URL;
 const PRIVACY_URL = `${BASE_URL}/privacy`;
@@ -154,7 +153,6 @@ function ProfileList() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedGarageId, setExpandedGarageId] = useState<number | null>(null);
-  const [expandedRiderId, setExpandedRiderId] = useState<number | null>(null);
   const [showLinkHelp, setShowLinkHelp] = useState(false);
   const [garageEdit, setGarageEdit] = useState<{ rideExperience: string; bikeHours: string; raceTypes: string[] }>({ rideExperience: "", bikeHours: "", raceTypes: [] });
   const [garageSaving, setGarageSaving] = useState(false);
@@ -470,7 +468,7 @@ function ProfileList() {
       <View style={s.sectionRow}>
         <View style={{ flex: 1 }}>
           <Text style={s.sectionLabel}>Riders</Text>
-          <Text style={s.sectionHint}>Checked riders drive the app. Tap a rider to show or hide them.</Text>
+          <Text style={s.sectionHint}>Checked riders drive the app. Tap the check to show or hide a rider.</Text>
         </View>
         {profiles.length > 1 && (
           <Pressable
@@ -499,74 +497,17 @@ function ProfileList() {
           </Text>
         </View>
       ) : (
-        <View style={s.listCard}>
-          {profiles.map((profile, idx) => {
+        <View style={{ gap: 10 }}>
+          {profiles.map(profile => {
             const isSelected = selectedProfileIds.includes(profile.id);
-            const isOnlyOne = selectedProfileIds.length === 1 && isSelected;
-            const isOpen = expandedRiderId === profile.id;
-            const initials = `${profile.firstName?.[0] ?? ""}${profile.lastName?.[0] ?? ""}`.toUpperCase();
             return (
-              <View key={profile.id} style={idx > 0 ? { borderTopWidth: 1, borderTopColor: colors.border } : null}>
-                <Pressable
-                  onPress={() => toggleProfile(profile.id)}
-                  style={({ pressed }) => [s.riderRow, { opacity: pressed ? 0.8 : 1 }]}
-                >
-                  <View style={[s.riderInitials, { backgroundColor: isSelected ? colors.primary : colors.muted }]}>
-                    <Text style={{ fontSize: 14, color: isSelected ? "#fff" : colors.mutedForeground, fontFamily: "Roboto_700Bold" }}>{initials || "?"}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.riderName} numberOfLines={1}>{profile.firstName} {profile.lastName}</Text>
-                    <Text style={s.riderMeta} numberOfLines={1}>
-                      {profile.bibNumber ? `#${profile.bibNumber}` : "No bib"} · {profile.eventsRaced} {profile.eventsRaced === 1 ? "event" : "events"}{profile.totalPoints ? ` · ${profile.totalPoints} pts` : ""}
-                    </Text>
-                  </View>
-                  {profile.bestPosition ? <PositionBadge position={profile.bestPosition} size="sm" /> : null}
-                  <View style={[s.checkOuter, { borderColor: isSelected ? colors.primary : colors.border, backgroundColor: isSelected ? colors.primary : "transparent" }]}>
-                    {isSelected && <Feather name="check" size={13} color="#fff" />}
-                  </View>
-                  <Pressable
-                    onPress={() => setExpandedRiderId(isOpen ? null : profile.id)}
-                    hitSlop={10}
-                    accessibilityLabel={isOpen ? "Hide rider details" : "Show rider details"}
-                    style={({ pressed }) => [s.expandBtn, { backgroundColor: colors.muted, opacity: pressed ? 0.6 : 1 }]}
-                  >
-                    <Feather name={isOpen ? "chevron-up" : "chevron-down"} size={16} color={colors.foreground} />
-                  </Pressable>
-                </Pressable>
-
-                {isOpen && (
-                  <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 10 }}>
-                    <View style={s.statsRow}>
-                      <StatTile compact value={profile.eventsRaced} label="Events" />
-                      <StatTile compact value={profile.bestPosition ? `P${profile.bestPosition}` : "—"} label="Best Finish" />
-                      <StatTile compact value={profile.totalPoints} label="Points" highlight />
-                    </View>
-                    {profile.lastRaced && (
-                      <Text style={s.lastRaced}>
-                        Last raced {displayDate(profile.lastRaced).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                        {isOnlyOne ? " · at least one rider must stay checked" : ""}
-                      </Text>
-                    )}
-                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-                      {([
-                        ["edit-2", "Edit profile", `/rider/${profile.id}`],
-                        ["user", "Racer profile", `/racer/${profile.id}`],
-                        ["bar-chart-2", "Career stats", `/stats/${profile.id}`],
-                        ["tool", "Maintenance", `/maintenance/${profile.id}`],
-                      ] as const).map(([icon, label, href]) => (
-                        <Pressable
-                          key={label}
-                          onPress={() => router.push(href as any)}
-                          style={({ pressed }) => [s.actionPill, { opacity: pressed ? 0.7 : 1 }]}
-                        >
-                          <Feather name={icon} size={13} color={colors.primaryText} />
-                          <Text style={s.actionPillText}>{label}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  </View>
-                )}
-              </View>
+              <RiderCard
+                key={profile.id}
+                profile={profile}
+                selected={isSelected}
+                isOnlyOne={isSelected && selectedProfileIds.length === 1}
+                onToggle={() => { void toggleProfile(profile.id); }}
+              />
             );
           })}
         </View>

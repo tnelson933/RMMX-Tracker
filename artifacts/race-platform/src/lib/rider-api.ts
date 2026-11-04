@@ -37,6 +37,16 @@ export interface RiderAccount {
   createdAt: string;
 }
 
+export interface RiderCardData {
+  riderId: number;
+  plateColor: string | null;
+  className: string | null;
+  followerCount: number;
+  avgFinish: number | null;
+  recent: Array<{ motos: Array<{ position: number | null }> }>;
+  maintenance: Array<{ itemName: string; intervalDays: number | null; lastServicedAt: string | null }>;
+}
+
 export interface RiderProfile {
   id: number;
   firstName: string;
@@ -401,6 +411,10 @@ export const riderApi = {
 
   careerStats: (riderId: number): Promise<{ riderId: number; name: string; stats: CareerStats }> =>
     apiFetch(`/rider/profiles/${riderId}/stats`),
+
+  /** Everything one rider card on My Profiles needs (plate, class, followers, recent finishes, maintenance). */
+  card: (riderId: number): Promise<RiderCardData> =>
+    apiFetch(`/rider/profiles/${riderId}/card`),
 
   managers: (riderId: number): Promise<{ isOwner: boolean; managers: ProfileManager[] }> =>
     apiFetch(`/rider/profiles/${riderId}/managers`),

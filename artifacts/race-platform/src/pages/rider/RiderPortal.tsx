@@ -1,75 +1,86 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { FollowingFeed } from "@/pages/rider/RiderFollowing";
-import { Trophy, Calendar, Star, User, ChevronRight, Plus, Clock, UserPlus } from "lucide-react";
+import type { ReactNode } from "react";
+import { User, ChevronRight, Plus, UserPlus, BarChart3, TrendingUp, Wrench } from "lucide-react";
+import { cardSummary, nextMaintenance, recentFinishes } from "@workspace/rider-insights/profileCard";
+import { NumberPlate } from "@/components/rider/ProfileSettings";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RiderLayout } from "@/components/layout/RiderLayout";
 import { useRiderAuth } from "@/contexts/RiderAuthContext";
 import { riderApi, type RiderProfile } from "@/lib/rider-api";
 
-function ProfileCard({ profile }: { profile: RiderProfile }) {
-  const [, navigate] = useLocation();
+/** Finishing positions as a tiny line, P1 at the top (same as the app's rider card). */
+function Sparkline({ values }: { values: number[] }) {
+  if (values.length < 2) return <TrendingUp size={22} className="text-[#8C8C8C]" />;
+  const w = 96, h = 30, pad = 3;
+  const max = Math.max(...values), min = Math.min(...values), span = Math.max(1, max - min);
+  const pts = values.map((v, i) => [pad + (i / (values.length - 1)) * (w - pad * 2), pad + ((v - min) / span) * (h - pad * 2)]);
+  const last = pts[pts.length - 1];
   return (
-    <Card
-      className="cursor-pointer border-2 border-[#ECECEC] hover:border-[#8C8C8C] hover:shadow-[0_12px_20px_-6px_rgba(0,0,0,0.22)] transition-all group"
-      onClick={() => navigate(`/rider/portal/${profile.id}`)}
-    >
-      <CardContent className="p-5 sm:p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-full bg-[#242424] flex items-center justify-center flex-shrink-0">
-              <User size={20} className="text-white" />
-            </div>
-            <div>
-              <h3 className="font-heading font-extrabold text-[22px] uppercase leading-tight text-[#242424]">
-                {profile.firstName} {profile.lastName}
-              </h3>
-              {profile.bibNumber && (
-                <span className="text-[15px] text-[#555] font-bold">#{profile.bibNumber}</span>
-              )}
-              {profile.dateOfBirth && (
-                <span className="text-[13px] text-muted-foreground ml-2">DOB: {profile.dateOfBirth}</span>
-              )}
-            </div>
-          </div>
-          <ChevronRight size={22} className="text-[#555] group-hover:text-[#242424] transition-colors mt-2 flex-shrink-0" />
+    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} preserveAspectRatio="none" className="max-w-[96px]" aria-hidden="true">
+      <polyline points={pts.map(p => p.join(",")).join(" ")} fill="none" stroke="#242424" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={last[0]} cy={last[1]} r={3} fill="#B30000" />
+    </svg>
+  );
+}
+
+const STATUS_DOT: Record<string, string> = { overdue: "#C62828", due_soon: "#D97706", ok: "#16A34A", unknown: "#8C8C8C" };
+
+function Tile({ href, icon, title, children, label }: { href: string; icon: ReactNode; title: string; children: ReactNode; label: string }) {
+  return (
+    <Link href={href} aria-label={label}
+      className="flex min-h-[116px] min-w-0 flex-col gap-2 rounded-xl border-2 border-[#ECECEC] bg-[#F7F7F7] p-2 sm:p-3 transition-colors hover:border-[#8C8C8C] hover:bg-white">
+      <span className="flex items-start gap-1 font-heading font-bold uppercase tracking-0 text-[10px] leading-[12px] sm:tracking-[0.5px] sm:text-[13px] sm:leading-4 text-[#707070]">
+        <span className="mt-px hidden sm:inline">{icon}</span> <span className="min-w-0">{title}</span>
+      </span>
+      <span className="flex flex-1 flex-col justify-between gap-2">{children}</span>
+    </Link>
+  );
+}
+
+function ProfileCard({ profile }: { profile: RiderProfile }) {
+  const { data } = useQuery({ queryKey: ["rider-card", profile.id], queryFn: () => riderApi.card(profile.id) });
+  const name = `${profile.firstName} ${profile.lastName}`.trim();
+  const finishes = data ? recentFinishes(data.recent) : [];
+  const next = data ? nextMaintenance(data.maintenance, Date.now()) : null;
+  const hasBike = (profile.bikes?.length ?? 0) > 0;
+  const followers = data?.followerCount ?? 0;
+  return (
+    <Card className="border-2 border-[#ECECEC]">
+      <CardContent className="space-y-4 p-4 sm:p-6">
+        <Link href={`/rider/portal/${profile.id}`} className="group flex items-center gap-3">
+          {profile.bibNumber
+            ? <NumberPlate number={profile.bibNumber} color={data?.plateColor} size={36} />
+            : <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-[#242424]"><User size={20} className="text-white" /></span>}
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-heading font-extrabold text-[22px] uppercase leading-tight text-[#242424] group-hover:text-[#B30000]">{name}</span>
+            {data?.className && <span className="block text-[13px] sm:text-[14px] font-semibold leading-tight text-[#B30000]">{data.className}</span>}
+            <span className="block text-[14px] text-[#555]">{cardSummary(profile)}</span>
+          </span>
+          <ChevronRight size={22} className="flex-shrink-0 text-[#555] group-hover:text-[#242424]" />
+        </Link>
+
+        <div className="grid grid-cols-3 gap-1.5 sm:gap-3">
+          <Tile href={`/rider/racer/${profile.id}`} icon={<User size={14} />} title="Racer Profile"
+            label={`Racer profile, ${followers} ${followers === 1 ? "follower" : "followers"}`}>
+            {profile.bibNumber ? <NumberPlate number={profile.bibNumber} color={data?.plateColor} size={26} /> : <User size={22} className="text-[#242424]" />}
+            <span className="text-[13px] sm:text-[14px] font-semibold leading-tight text-[#242424]">{followers} {followers === 1 ? "follower" : "followers"}</span>
+          </Tile>
+          <Tile href={`/rider/portal/${profile.id}?tab=stats`} icon={<BarChart3 size={14} />} title="Career Stats"
+            label={`Career stats${data?.avgFinish != null ? `, average finish P${data.avgFinish.toFixed(1)}` : ""}`}>
+            <Sparkline values={finishes} />
+            <span className="text-[13px] sm:text-[14px] font-semibold leading-tight text-[#242424]">{data?.avgFinish != null ? `Avg P${data.avgFinish.toFixed(1)}` : "No races yet"}</span>
+          </Tile>
+          <Tile href={`/rider/portal/${profile.id}?tab=profile`} icon={<Wrench size={14} />} title="Maintenance"
+            label={`Maintenance, ${next ? next.label : hasBike ? "set up reminders in the app" : "add your bike"}`}>
+            <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: next ? STATUS_DOT[next.status] : "#D4D4D4" }} />
+            <span className={`text-[13px] sm:text-[14px] font-semibold leading-tight ${next?.status === "overdue" ? "text-[#C62828]" : "text-[#242424]"}`}>
+              {next ? next.label : hasBike ? "Set up reminders in the app" : "Add your bike"}
+            </span>
+          </Tile>
         </div>
-
-        <div className="mt-4 grid grid-cols-3 gap-3">
-          <div className="bg-[#F2F2F2] rounded-[10px] p-3 text-center">
-            <div className="flex items-center justify-center gap-1 text-[#707070] text-[13px] font-bold uppercase tracking-[0.5px] mb-1">
-              <Calendar size={13} className="hidden sm:block" /> Events
-            </div>
-            <div className="font-heading font-extrabold text-2xl text-[#242424]">{profile.eventsRaced}</div>
-          </div>
-          <div className="bg-[#F2F2F2] rounded-[10px] p-3 text-center">
-            <div className="flex items-center justify-center gap-1 text-[#707070] text-[13px] font-bold uppercase tracking-[0.5px] mb-1">
-              <Trophy size={13} className="hidden sm:block" /> Best Finish
-            </div>
-            <div className="font-heading font-extrabold text-2xl text-[#242424]">
-              {profile.bestPosition ? `P${profile.bestPosition}` : "—"}
-            </div>
-          </div>
-          <div className="bg-[#F2F2F2] rounded-[10px] p-3 text-center">
-            <div className="flex items-center justify-center gap-1 text-[#707070] text-[13px] font-bold uppercase tracking-[0.5px] mb-1">
-              <Star size={13} className="hidden sm:block" /> Points
-            </div>
-            <div className="font-heading font-extrabold text-2xl text-primary">{profile.totalPoints}</div>
-          </div>
-        </div>
-
-        {profile.lastRaced && (
-          <div className="mt-3 flex items-center gap-1.5 text-[13px] text-muted-foreground">
-            <Clock size={13} />
-            Last raced: {new Date(profile.lastRaced).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}
-          </div>
-        )}
-
-        {profile.eventsRaced === 0 && (
-          <Badge variant="outline" className="mt-3 rounded-full border-2 border-[#ECECEC] px-3 py-1 text-[13px] font-medium text-[#555]">No race results yet</Badge>
-        )}
       </CardContent>
     </Card>
   );

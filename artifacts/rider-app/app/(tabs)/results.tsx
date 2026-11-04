@@ -22,6 +22,8 @@ import { EmptyState } from "@/components/EmptyState";
 import { RacerLink } from "@/components/RacerLink";
 import { placeLabel } from "@/lib/format";
 import { EventCard as RaceEventCard } from "@/components/RaceCards";
+import { defaultSide, nextScheduled, splitLivePast } from "@/lib/liveRaces";
+import { router } from "expo-router";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -163,13 +165,6 @@ function ordinalSuffix(n: number): string {
   const s = ["th", "st", "nd", "rd"];
   const v = n % 100;
   return n + (s[(v - 20) % 10] ?? s[v] ?? s[0]);
-}
-
-function isEventToday(e: BrowseEvent): boolean {
-  const todayStr = localDateString();
-  const start = e.date ? e.date.substring(0, 10) : "";
-  const end = e.endDate ? e.endDate.substring(0, 10) : start;
-  return !!start && start <= todayStr && todayStr <= end;
 }
 
 function chipFor(status: string): { label: string; color: string } {
@@ -1087,12 +1082,14 @@ function EventCard({
   event,
   colors,
   onPress,
+  live = false,
 }: {
   event: BrowseEvent;
   colors: ReturnType<typeof useColors>;
   onPress: () => void;
+  live?: boolean;
 }) {
-  const isLive = event.status === "race_day";
+  const isLive = live;
   const multiDay = !!event.endDate && event.endDate.slice(0, 10) !== event.date.slice(0, 10);
   return (
     <RaceEventCard
@@ -1491,6 +1488,10 @@ export default function ResultsScreen() {
   const seriesDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [seriesDebouncedQ, setSeriesDebouncedQ] = useState("");
 
+  // Live / Past toggle: null until the rider picks a side, then theirs.
+  const [pickedSide, setPickedSide] = useState<"live" | "past" | null>(null);
+  const [upcoming, setUpcoming] = useState<BrowseEvent[]>([]);
+
   // Reset to root when tab icon is pressed
   useEffect(() => {
     return onTabReset("results", () => {
@@ -1509,6 +1510,23 @@ export default function ResultsScreen() {
   }, []);
 
   useEffect(() => { void loadEvents(racesDebouncedQ); }, [racesDebouncedQ, loadEvents]);
+
+  // Scheduled races, for the "No races live right now" state.
+  const loadUpcoming = useCallback(async () => {
+    try {
+      const res = await publicFetch("/api/public/upcoming");
+      if (res.ok) {
+        const rows = await res.json() as Array<Record<string, unknown>>;
+        setUpcoming(rows.map(r => ({
+          eventId: Number(r.id ?? r.eventId), name: String(r.name ?? ""), state: (r.state as string) ?? "",
+          date: String(r.date ?? ""), endDate: (r.endDate as string | null) ?? null,
+          location: (r.location as string | null) ?? null, trackName: (r.trackName as string | null) ?? null,
+          status: String(r.status ?? ""), clubName: (r.clubName as string | null) ?? null,
+        }) as BrowseEvent));
+      }
+    } catch { /* silently ignore */ }
+  }, []);
+  useEffect(() => { void loadUpcoming(); }, [loadUpcoming]);
 
   useEffect(() => {
     const t = setInterval(() => { void loadEvents(racesDebouncedQ); }, 30_000);
@@ -1567,14 +1585,11 @@ export default function ResultsScreen() {
     );
   }
 
-  const liveEvents = events.filter(e => e.status === "race_day" && isEventToday(e));
-  const pastEvents = events
-    .filter(e => e.status === "completed" || (e.status === "race_day" && !isEventToday(e)))
-    .sort((a, b) => {
-      const aDate = (a.endDate || a.date || "").substring(0, 10);
-      const bDate = (b.endDate || b.date || "").substring(0, 10);
-      return bDate.localeCompare(aDate);
-    });
+  const todayYmd = localDateString();
+  const { live: liveEvents, past: pastEvents } = splitLivePast(events, todayYmd);
+  const side = pickedSide ?? defaultSide(liveEvents.length);
+  const shown = side === "live" ? liveEvents : pastEvents;
+  const comingUp = nextScheduled(upcoming, todayYmd, 4);
 
   // Filter series client-side by name/club/state when query exists
   const filteredSeries = seriesDebouncedQ
@@ -1686,6 +1701,40 @@ export default function ResultsScreen() {
             </Pressable>
           )}
         </View>
+
+        {/* Live / Past toggle */}
+        {tab === "races" && (
+          <View accessibilityRole="tablist" style={{ flexDirection: "row", gap: 8, marginTop: 12 }}>
+            {(["live", "past"] as const).map(k => {
+              const active = side === k;
+              return (
+                <Pressable
+                  key={k}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: active }}
+                  accessibilityLabel={k === "live" ? `Live, ${liveEvents.length} running` : `Past, ${pastEvents.length} events`}
+                  onPress={() => setPickedSide(k)}
+                  style={{
+                    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+                    paddingVertical: 8, borderRadius: 999, borderWidth: 1.5,
+                    borderColor: active ? colors.foreground : colors.border,
+                    backgroundColor: active ? colors.foreground : "transparent",
+                  }}
+                >
+                  {k === "live" && <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: liveEvents.length > 0 ? "#ef4444" : colors.mutedForeground }} />}
+                  <Text style={{ fontSize: 13, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 1, color: active ? colors.background : colors.foreground }}>
+                    {k === "live" ? "Live" : "Past"}
+                  </Text>
+                  {k === "live" && liveEvents.length > 0 && (
+                    <View style={{ minWidth: 18, paddingHorizontal: 5, height: 18, borderRadius: 9, backgroundColor: "#D32F2F", alignItems: "center", justifyContent: "center" }}>
+                      <Text style={{ fontSize: 11, color: "#fff", fontFamily: "Roboto_700Bold" }}>{liveEvents.length}</Text>
+                    </View>
+                  )}
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
       </View>
 
       {/* ── RACES TAB ─────────────────────────────────────────────────────────── */}
@@ -1697,48 +1746,52 @@ export default function ResultsScreen() {
             <View style={{ paddingVertical: 80, alignItems: "center" }}>
               <ActivityIndicator color={colors.primaryText} />
             </View>
-          ) : events.length === 0 ? (
-            <EmptyState
-              icon={racesDebouncedQ ? "search" : "flag"}
-              title={racesDebouncedQ ? "No matching races" : "No races yet"}
-              message={racesDebouncedQ
-                ? "Try a state (UT), a city, a track or an event name."
-                : "Live and finished races show up here as soon as they start."}
-            />
           ) : (
             <>
-              {liveEvents.length > 0 && (
+              {shown.length > 0 ? (
                 <>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 16, paddingTop: 20, paddingBottom: 10 }}>
-                    <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: "#ef4444" }} />
-                    <Text style={{ fontSize: 13, fontWeight: "700", color: "#ef4444", fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>
-                      Live Now
-                    </Text>
-                    <View style={{ marginLeft: 4, backgroundColor: "#ef444420", paddingHorizontal: 6, paddingVertical: 1, borderRadius: 10 }}>
-                      <Text style={{ fontSize: 10, fontWeight: "700", color: "#ef4444", fontFamily: "Roboto_700Bold" }}>{liveEvents.length}</Text>
-                    </View>
-                  </View>
-                  {liveEvents.map(e => (
-                    <EventCard key={e.eventId} event={e} colors={colors} onPress={() => setSelectedEvent(e)} />
-                  ))}
-                </>
-              )}
-
-              {pastEvents.length > 0 && (
-                <>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 16, paddingTop: liveEvents.length > 0 ? 8 : 20, paddingBottom: 10 }}>
-                    <Feather name="flag" size={12} color={colors.primaryText} />
-                    <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>
-                      Past Races
+                    {side === "live"
+                      ? <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: "#ef4444" }} />
+                      : <Feather name="flag" size={12} color={colors.primaryText} />}
+                    <Text style={{ fontSize: 13, fontWeight: "700", color: side === "live" ? "#D32F2F" : colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>
+                      {side === "live" ? "Live Now" : "Past Races"}
                     </Text>
                     <Text style={{ marginLeft: "auto", fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
-                      {pastEvents.length} events
+                      {shown.length} {shown.length === 1 ? "event" : "events"}
                     </Text>
                   </View>
-                  {pastEvents.map(e => (
-                    <EventCard key={e.eventId} event={e} colors={colors} onPress={() => setSelectedEvent(e)} />
+                  {shown.map(e => (
+                    <EventCard key={e.eventId} event={e} colors={colors} live={side === "live"} onPress={() => setSelectedEvent(e)} />
                   ))}
                 </>
+              ) : side === "live" ? (
+                <>
+                  <EmptyState
+                    icon="radio"
+                    title={racesDebouncedQ ? "No matching races live" : "No races live right now"}
+                    message={racesDebouncedQ ? "Nothing running today matches your search." : "Races show up here on race day while they're running."}
+                  />
+                  {!racesDebouncedQ && comingUp.length > 0 && (
+                    <>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 10 }}>
+                        <Feather name="calendar" size={12} color={colors.primaryText} />
+                        <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 1 }}>
+                          Coming up
+                        </Text>
+                      </View>
+                      {comingUp.map(e => (
+                        <EventCard key={e.eventId} event={e} colors={colors} onPress={() => router.push(`/event/${e.eventId}`)} />
+                      ))}
+                    </>
+                  )}
+                </>
+              ) : (
+                <EmptyState
+                  icon={racesDebouncedQ ? "search" : "flag"}
+                  title={racesDebouncedQ ? "No matching past races" : "No past races yet"}
+                  message={racesDebouncedQ ? "Try a state (UT), a city, a track or an event name." : "Finished races show up here."}
+                />
               )}
 
               <View style={{ height: insets.bottom + 170 }} />
