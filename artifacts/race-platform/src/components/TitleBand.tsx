@@ -29,7 +29,7 @@ export function TitleBand({
               {title}
             </h1>
           </div>
-          {subtitle && <p className="text-white/75 mt-4 text-base leading-[1.7] max-w-2xl">{subtitle}</p>}
+          {subtitle && <div className="text-white/75 mt-4 text-base leading-[1.7] max-w-2xl">{subtitle}</div>}
         </div>
         {children && <div className="shrink-0 w-full md:w-auto">{children}</div>}
       </div>

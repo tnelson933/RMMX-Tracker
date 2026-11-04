@@ -119,6 +119,7 @@ export function ProfileManagers({ riderId }: { riderId: number }) {
   const remove = useMutation({
     mutationFn: (id: number) => riderApi.removeManager(riderId, id),
     onSuccess: (_r, id) => {
+      setMsg(null);
       const me = data?.managers.find(m => m.id === id)?.isYou;
       if (me) window.location.assign("/rider/portal"); else refresh();
     },

@@ -164,12 +164,14 @@ function OrganizerOnlyRoute({ children }: { children: React.ReactNode }) {
 
 function RiderProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useRiderAuth();
+  // Remember where the rider was going so sign-in can bring them back.
+  const here = typeof window !== "undefined" ? window.location.pathname + window.location.search : "/rider/portal";
   if (isLoading) return (
     <div className="flex items-center justify-center h-screen">
       <div className="font-heading text-xl uppercase tracking-widest animate-pulse text-muted-foreground">Loading...</div>
     </div>
   );
-  if (!isAuthenticated) return <Redirect to="/rider/login" />;
+  if (!isAuthenticated) return <Redirect to={`/rider/login?next=${encodeURIComponent(here)}`} />;
   return <>{children}</>;
 }
 

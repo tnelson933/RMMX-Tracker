@@ -318,6 +318,10 @@ export const riderApi = {
   login: (email: string, password: string): Promise<RiderAccount> =>
     apiFetch("/rider/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
 
+  /** Emails a reset link if an account exists (always answers ok, so emails can't be probed). */
+  forgotPassword: (email: string): Promise<{ ok: boolean }> =>
+    apiFetch("/rider/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) }),
+
   logout: (): Promise<{ ok: boolean }> =>
     apiFetch("/rider/auth/logout", { method: "POST" }),
 

@@ -957,7 +957,7 @@ function EventPracticePanel({
             )}
             {event.eventDate && (
               <span className="text-xs text-muted-foreground">
-                {new Date(event.eventDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                {new Date(event.eventDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}
               </span>
             )}
           </div>
@@ -2067,7 +2067,7 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
             {event.eventDate && (
               <span className="flex items-center gap-1">
                 <Calendar size={12} />
-                {new Date(event.eventDate).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                {new Date(event.eventDate).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" })}
               </span>
             )}
             {(event.eventLocation || event.eventState) && (
@@ -2776,7 +2776,7 @@ export default function RiderHistory() {
                               {event.eventDate && (
                                 <span className="flex items-center gap-1">
                                   <Calendar size={13} />
-                                  {new Date(event.eventDate).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+                                  {new Date(event.eventDate).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" })}
                                 </span>
                               )}
                               {(event.eventLocation || event.eventState) && (

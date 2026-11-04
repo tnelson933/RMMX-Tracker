@@ -63,7 +63,7 @@ function ProfileCard({ profile }: { profile: RiderProfile }) {
         {profile.lastRaced && (
           <div className="mt-3 flex items-center gap-1.5 text-[13px] text-muted-foreground">
             <Clock size={13} />
-            Last raced: {new Date(profile.lastRaced).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+            Last raced: {new Date(profile.lastRaced).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}
           </div>
         )}
 

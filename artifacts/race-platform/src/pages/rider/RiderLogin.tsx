@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Mail, Lock, UserPlus, LogIn, AlertCircle } from "lucide-react";
+import { Mail, Lock, UserPlus, LogIn, AlertCircle, KeyRound, CheckCircle2 } from "lucide-react";
 import { TitleBand } from "@/components/TitleBand";
 import { RmCashWidget } from "@/components/layout/RiderLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +24,14 @@ export default function RiderLogin() {
   const [regConfirm, setRegConfirm] = useState("");
   // true after a successful registration — triggers profile-tab deep-link
   const [fromRegister, setFromRegister] = useState(false);
+  // Forgot password: request a reset email from the Sign In tab.
+  const search = useSearch();
+  // ?forgot=1 (from an expired reset link) opens straight to the reset form.
+  const [forgotMode, setForgotMode] = useState(() => new URLSearchParams(search).get("forgot") === "1");
+  const [forgotSent, setForgotSent] = useState<string | null>(null);
+  // The page a signed-out rider was trying to open (only rider pages).
+  const nextParam = new URLSearchParams(search).get("next");
+  const next = nextParam && nextParam.startsWith("/rider/") && !nextParam.startsWith("//") && !nextParam.startsWith("/rider/login") ? nextParam : null;
 
   // Navigate once the auth context confirms the session is live.
   useEffect(() => {
@@ -39,9 +47,14 @@ export default function RiderLogin() {
         }
       }).catch(() => navigate("/rider/portal"));
     } else {
-      navigate("/rider/portal");
+      navigate(next ?? "/rider/portal");
     }
-  }, [isAuthenticated, fromRegister, navigate]);
+  }, [isAuthenticated, fromRegister, navigate, next]);
+
+  const forgotMutation = useMutation({
+    mutationFn: () => riderApi.forgotPassword(loginEmail.trim()),
+    onSuccess: () => setForgotSent(loginEmail.trim()),
+  });
 
   const loginMutation = useMutation({
     mutationFn: () => riderApi.login(loginEmail, loginPassword),
@@ -83,6 +96,55 @@ export default function RiderLogin() {
           </TabsList>
 
           <TabsContent value="login">
+            {forgotMode ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="font-heading font-extrabold uppercase text-[22px] text-[#242424] flex items-center gap-2">
+                  <KeyRound size={20} /> Reset Password
+                </CardTitle>
+                <CardDescription className="text-[15px] leading-[1.6]">
+                  We'll email you a link to choose a new password.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {forgotSent ? (
+                  <div className="space-y-4">
+                    <p className="flex items-start gap-2 text-[15px] leading-[1.6] text-[#242424]">
+                      <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-[#1A8409]" />
+                      If an account exists for {forgotSent}, we've emailed a reset link. It expires in 1 hour.
+                    </p>
+                    <Button type="button" variant="outline" className="w-full min-h-[52px]"
+                      onClick={() => { setForgotMode(false); setForgotSent(null); }}>
+                      Back to Sign In
+                    </Button>
+                  </div>
+                ) : (
+                  <form onSubmit={(e) => { e.preventDefault(); forgotMutation.mutate(); }} className="space-y-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="forgot-email">Email address</Label>
+                      <div className="relative">
+                        <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#555]" />
+                        <Input id="forgot-email" type="email" placeholder="you@example.com" className="pl-10"
+                          value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} required />
+                      </div>
+                    </div>
+                    {forgotMutation.error && (
+                      <div className="flex items-center gap-2 text-destructive text-sm bg-destructive/10 rounded-md px-3 py-2">
+                        <AlertCircle size={14} />
+                        {(forgotMutation.error as Error).message}
+                      </div>
+                    )}
+                    <Button type="submit" className="w-full min-h-[52px] text-base bg-[#242424] border-[#242424] text-white hover:bg-black" disabled={forgotMutation.isPending}>
+                      {forgotMutation.isPending ? "Sending…" : "Email Me a Reset Link"}
+                    </Button>
+                    <button type="button" onClick={() => setForgotMode(false)} className="w-full text-center text-[15px] font-medium text-[#333] underline underline-offset-2">
+                      Back to Sign In
+                    </button>
+                  </form>
+                )}
+              </CardContent>
+            </Card>
+            ) : (
             <Card>
               <CardHeader>
                 <CardTitle className="font-heading font-extrabold uppercase text-[22px] text-[#242424] flex items-center gap-2">
@@ -126,6 +188,12 @@ export default function RiderLogin() {
                         required
                       />
                     </div>
+                    <div className="flex justify-end">
+                      <button type="button" onClick={() => { setForgotMode(true); setForgotSent(null); }}
+                        className="text-[14px] font-medium text-[#333] underline underline-offset-2 hover:text-[#B30000]">
+                        Forgot password?
+                      </button>
+                    </div>
                   </div>
                   {loginMutation.error && (
                     <div className="flex items-center gap-2 text-destructive text-sm bg-destructive/10 rounded-md px-3 py-2">
@@ -139,6 +207,7 @@ export default function RiderLogin() {
                 </form>
               </CardContent>
             </Card>
+            )}
           </TabsContent>
 
           <TabsContent value="register">

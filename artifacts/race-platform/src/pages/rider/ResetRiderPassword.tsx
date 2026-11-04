@@ -78,7 +78,12 @@ export default function ResetRiderPassword() {
         {status === "error" && (
           <div className="flex items-start gap-2 text-sm text-primary bg-[#FEDEDE] rounded-[6px] p-3">
             <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-            <span>{errorMsg}</span>
+            <span>
+              {errorMsg}
+              {/expired|invalid|incomplete/i.test(errorMsg) && (
+                <> <a href="/rider/login?forgot=1" className="font-semibold underline underline-offset-2">Request a new link</a></>
+              )}
+            </span>
           </div>
         )}
 

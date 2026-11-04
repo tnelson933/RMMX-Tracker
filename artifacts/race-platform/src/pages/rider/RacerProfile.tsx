@@ -40,7 +40,10 @@ export default function RacerProfile() {
   });
 
   return (
-    <RiderLayout showBack backTo="/rider/following" backLabel="Following" eyebrow="Racer profile" title={data?.name}>
+    <RiderLayout showBack
+      backTo={data?.isManager ? `/rider/portal/${riderId}` : "/rider/following"}
+      backLabel={data?.isManager ? "Rider page" : "Following"}
+      eyebrow="Racer profile" title={data?.name}>
       {isLoading ? (
         <div className="h-64 animate-pulse rounded-2xl bg-muted" />
       ) : error || !data ? (
