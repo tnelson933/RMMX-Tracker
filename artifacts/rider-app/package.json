@@ -61,6 +61,7 @@
   },
   "dependencies": {
     "@react-navigation/bottom-tabs": "7.18.0",
+    "@stripe/stripe-react-native": "0.50.3",
     "expo": "~54.0.37",
     "expo-dev-client": "~6.0.21",
     "expo-device": "^8.0.10",

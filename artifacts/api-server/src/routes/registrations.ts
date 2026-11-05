@@ -25,7 +25,7 @@ import { isMasked, maskDateOfBirth, maskName, maskPhone, maskStreet, maskZip } f
 import { parseTeamInput, parseTeamGear, saveTeamRoster, saveTeamTags, listTeamMembers, teamRegistrationId, teamRegistrationHasRoster, teamTagConflict, teamGearCounts } from "../lib/teams";
 import { eventTrackrPrice } from "../lib/sellItems";
 import { addonIsPaid, confirmAddonPayment, parseCashTendered, recordCardAddonPending, recordCashAddon, type AddonItem } from "../lib/addonPayments";
-import { browserAccount, chargeOnReader, embeddedAllowed, checkoutUiParams, clubStripeOf, onClub, onClubOrPlatform, registrationClubStripe, retrievePayment, transferTo } from "../lib/stripePayments";
+import { browserAccount, chargeOnReader, embeddedAllowed, checkoutUiParams, clubStripeOf, onClub, onClubOrPlatform, registrationClubStripe, retrievePayment, transferTo, RIDER_APP_PAYMENT, paymentIntentAsPaid } from "../lib/stripePayments";
 import { acknowledgementSnapshot, clubWaiverSettings, waiverPdfOf } from "../lib/waiverSettings";
 
 /** Payment-check failures: an unknown/invalid Stripe session is the caller's error (404), anything else a 500 without Stripe's internals. */
@@ -172,9 +172,8 @@ function submittedRiderProfile(
   copy("bikeModel");
   copy("bikeYear");
   copy("sponsors");
-  if (Object.prototype.hasOwnProperty.call(body, "myLapsTransponderNumber")) {
-    profile.mylapsTransponderId = normalizedTransponderNumber;
-  }
+  // Like the fields above, no number (renting or buying one this time) keeps the saved one.
+  if (normalizedTransponderNumber) profile.mylapsTransponderId = normalizedTransponderNumber;
 
   return profile;
 }
@@ -1382,6 +1381,8 @@ router.get("/public/events/:eventId/rider-classes", async (req, res) => {
       eq(registrationsTable.eventId, eventId),
       eq(registrationsTable.riderId, riderId),
       ne(registrationsTable.status, "void"),
+      // An unfinished payment doesn't hold the class; registering again clears it.
+      or(eq(registrationsTable.paymentStatus, "paid"), eq(registrationsTable.status, "confirmed")),
     ));
 
   return res.json({ registeredClasses: rows.map(r => r.raceClass) });
@@ -1459,8 +1460,15 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
     if (detail && detail.trim()) classDetails[cls] = detail.trim();
   }
 
+  // The entry fee charged today (early-bird by the track's local date, the same
+  // rule the register endpoint uses), so the rider app needn't know time zones.
+  const earlyBirdActive = !!(e.earlyBirdEndsAt && eventToday(e) <= e.earlyBirdEndsAt && e.earlyBirdFee);
+  const currentEntryFee = earlyBirdActive ? Number(e.earlyBirdFee) : (e.entryFee ? Number(e.entryFee) : null);
+
   return res.json({
     ...e,
+    earlyBirdActive,
+    currentEntryFee,
     // Which kinds of tag the event's readers use (RM TrackR, RFID or both).
     timingTags: await eventTimingTags(eventId),
     entryFee: e.entryFee ? Number(e.entryFee) : null,
@@ -1641,6 +1649,15 @@ router.post("/public/events/:eventId/register", async (req, res) => {
           : null;
         if (session?.payment_status === "paid") await confirmRegistrationSession(session);
         else if (session?.status === "open") await onClubOrPlatform(priorClub, o => stripe!.checkout.sessions.expire(sessionId, undefined, o)).catch(() => {});
+        // An unfinished rider-app payment sheet: record it if it went through,
+        // otherwise cancel it so the old sheet can't charge for a voided entry.
+        if (stripe && sessionId.startsWith("pi_")) {
+          const pi = await onClubOrPlatform(priorClub, o => stripe.paymentIntents.retrieve(sessionId, undefined, o)).catch(() => null);
+          if (pi?.status === "succeeded") await confirmRegistrationSession(paymentIntentAsPaid(pi));
+          else if (pi && pi.metadata?.source === RIDER_APP_PAYMENT && pi.status !== "canceled" && pi.status !== "processing") {
+            await onClubOrPlatform(priorClub, o => stripe.paymentIntents.cancel(sessionId, undefined, o)).catch(() => {});
+          }
+        }
       }
     }
     const current = earlier.length
@@ -2058,6 +2075,62 @@ router.post("/public/events/:eventId/register", async (req, res) => {
 
         const primaryRegId = insertedRegs[0].id;
         const allRegIds = insertedRegs.map(r => r.id).join(",");
+        // Each entry's own charge: its class fee; add-ons ride on the first entry.
+        const recordCharge = async (paymentId: string) => {
+          for (const [idx, reg] of insertedRegs.entries()) {
+            const cents = (classChargeCents[idx] ?? 0) + (idx === 0 ? addOnCents : 0);
+            await db.update(registrationsTable)
+              .set({ stripeSessionId: paymentId, amountDue: (cents / 100).toFixed(2) })
+              .where(eq(registrationsTable.id, reg.id));
+          }
+        };
+
+        // The rider app takes the card in its own Stripe payment sheet: a
+        // PaymentIntent instead of a Checkout page, on the same account and
+        // confirmed by the same code (verify-payment, webhooks, sweeper).
+        const sheetKey = req.body?.paymentSheet === true
+          ? await (await import("../stripeClient")).getStripePublishableKey().catch(() => "")
+          : "";
+        // The app never sends riders to a web page to pay: without the key, undo and say so.
+        if (req.body?.paymentSheet === true && !sheetKey) {
+          throw Object.assign(new Error("No publishable key for the payment sheet"), { code: "NO_CHECKOUT" });
+        }
+        if (sheetKey) {
+          const c = clubStripeOf(club)!;
+          const pi = await stripe.paymentIntents.create({
+            amount: netCents,
+            currency: "usd",
+            // Cards, Apple Pay and Google Pay: settled at once, nothing leaves the app.
+            // (Bank debits take days, so the entry would sit unconfirmed; and "link"
+            // fails on club accounts that haven't turned Link on.)
+            payment_method_types: ["card"],
+            description: `${events[0].name}: ${raceClassList.join(", ")}`.slice(0, 200),
+            receipt_email: email,
+            ...transferTo(c),
+            metadata: {
+              registrationId: String(primaryRegId),
+              registrationIds: allRegIds,
+              eventId: String(eventId),
+              type: "registration",
+              source: RIDER_APP_PAYMENT,
+            },
+          }, onClub(c));
+          await recordCharge(pi.id);
+          return res.status(201).json({
+            requiresPayment: true,
+            checkoutUrl: null,
+            clientSecret: null,
+            paymentSheet: { clientSecret: pi.client_secret, publishableKey: sheetKey, stripeAccount: browserAccount(c) },
+            sessionId: pi.id,
+            registrationId: primaryRegId,
+            riderName: `${rider.firstName} ${rider.lastName}`,
+            raceClasses: raceClassList,
+            eventName: events[0].name,
+            entryFee: netFee,
+            rentalFee: rentalFeeNum,
+            purchaseOptionsTotal,
+          });
+        }
 
         const session = await stripe.checkout.sessions.create({
           mode: "payment",
@@ -2078,13 +2151,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
           customer_email: email,
         }, onClub(clubStripeOf(club)!));
 
-        // Each entry's own charge: its class fee; add-ons ride on the first entry.
-        for (const [idx, reg] of insertedRegs.entries()) {
-          const cents = (classChargeCents[idx] ?? 0) + (idx === 0 ? addOnCents : 0);
-          await db.update(registrationsTable)
-            .set({ stripeSessionId: session.id, amountDue: (cents / 100).toFixed(2) })
-            .where(eq(registrationsTable.id, reg.id));
-        }
+        await recordCharge(session.id);
 
         if (session.url || session.client_secret) {
           return res.status(201).json({

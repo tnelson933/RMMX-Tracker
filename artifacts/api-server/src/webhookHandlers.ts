@@ -1,6 +1,6 @@
 import { getStripeSync, getUncachableStripeClient } from "./stripeClient";
 import { logger } from "./lib/logger";
-import { paymentIntentAsPaid, registrationClubStripe, type PaidLike } from "./lib/stripePayments";
+import { isRegistrationIntent, paymentIntentAsPaid, registrationClubStripe, type PaidLike } from "./lib/stripePayments";
 
 const PAID_CHECKOUT_EVENTS = new Set(["checkout.session.completed", "checkout.session.async_payment_succeeded"]);
 
@@ -22,7 +22,7 @@ export class WebhookHandlers {
       if (event.type === "payment_intent.succeeded" && sessionId && event.data?.object?.object === "payment_intent") {
         const stripe = await getUncachableStripeClient();
         const pi = paymentIntentAsPaid(await stripe.paymentIntents.retrieve(sessionId));
-        if (pi.metadata?.readerId) {
+        if (isRegistrationIntent(pi)) {
           const { confirmRegistrationSession, confirmAddonSession } = await import("./routes/registrations");
           const confirmed = await confirmRegistrationSession(pi);
           if (confirmed.length) logger.info({ paymentIntentId: sessionId }, "Registration paid on card reader (Stripe webhook)");
@@ -66,7 +66,8 @@ export async function processConnectWebhook(payload: Buffer, signature: string):
     paid = { id: s.id, payment_status: s.payment_status, amount_total: s.amount_total, metadata: (s.metadata ?? null) as Record<string, string> | null };
   } else if (event.type === "payment_intent.succeeded") {
     const pi = await stripe.paymentIntents.retrieve((event.data.object as { id: string }).id, undefined, o);
-    if (!pi.metadata?.readerId) return; // online payments arrive as checkout.session.completed
+    // Website payments arrive as checkout.session.completed; card readers and the rider app's sheet as PaymentIntents.
+    if (!isRegistrationIntent(pi)) return;
     paid = paymentIntentAsPaid(pi);
   }
   if (!paid || paid.payment_status !== "paid") return;

@@ -1,13 +1,11 @@
 import { API_BASE_URL } from "@/lib/apiBase";
 import { useBottomSpace } from "@/hooks/useBottomSpace";
 import { Feather } from "@expo/vector-icons";
-import * as Linking from "expo-linking";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -18,6 +16,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useRiderAuth } from "@/context/AuthContext";
+import { nativePaymentSheetAvailable } from "@/lib/payments";
 import { useColors } from "@/hooks/useColors";
 import { RmCashWidget } from "@/components/RmCashWidget";
 import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
@@ -90,14 +89,13 @@ function fmtStartTime(t: string | null | undefined): string {
   return `${displayH}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
-function openRegistration(eventId: number, email?: string | null) {
-  const emailParam = email ? `?email=${encodeURIComponent(email)}` : "";
-  const path = `/register/${eventId}${emailParam}`;
-  if (Platform.OS === "web") {
-    if (typeof window !== "undefined") window.open(window.location.origin + path, "_blank");
-  } else {
-    void Linking.openURL(`${BASE_URL}${path}`);
+/** In-app registration (with in-app payment) in builds that have it; older builds keep the website form. */
+function startRegistration(router: ReturnType<typeof useRouter>, eventId: number, query: string, email?: string | null) {
+  if (nativePaymentSheetAvailable()) {
+    router.push(`/register/${eventId}?${query}` as any);
+    return;
   }
+  void WebBrowser.openBrowserAsync(`${BASE_URL}/register/${eventId}${email ? `?email=${encodeURIComponent(email)}` : ""}`);
 }
 
 export default function EventDetailScreen() {
@@ -801,13 +799,13 @@ export default function EventDetailScreen() {
             {(profiles ?? []).length === 0 ? (
               <>
                 <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", lineHeight: 20, marginBottom: 16 }}>
-                  No rider profiles linked. Register for an event through the club website first to link your profile.
+                  No rider profile on your account yet. Fill in your details once and they're saved for next time.
                 </Text>
                 <Pressable
                   style={[s.primaryBtn, { marginTop: 4 }]}
-                  onPress={() => { setShowRegisterModal(false); openRegistration(event.id, account?.email); }}
+                  onPress={() => { setShowRegisterModal(false); startRegistration(router, event.id, "newRider=1", account?.email); }}
                 >
-                  <Text style={s.btnText}>Register Online</Text>
+                  <Text style={s.btnText}>Start registration</Text>
                 </Pressable>
               </>
             ) : (event.raceClasses ?? []).length > 0 && (event.raceClasses ?? []).every(cls => registeredClasses.has(cls)) ? (
@@ -819,12 +817,12 @@ export default function EventDetailScreen() {
                 <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginBottom: 10 }}>
                   {registeredClasses.size > 0
                     ? "Tap a profile to register for additional classes."
-                    : "Tap a profile to open the registration form with your details pre-filled."}
+                    : "Pick who's racing. We'll fill in their details from their profile."}
                 </Text>
                 {(profiles ?? []).map(p => (
                   <Pressable
                     key={p.id}
-                    onPress={() => { setShowRegisterModal(false); openRegistration(event.id, p.email ?? account?.email); }}
+                    onPress={() => { setShowRegisterModal(false); startRegistration(router, event.id, `riderId=${p.id}`, p.email ?? account?.email); }}
                     style={({ pressed }) => ({
                       marginBottom: 10,
                       padding: 12,
@@ -850,6 +848,13 @@ export default function EventDetailScreen() {
                     <Text style={{ fontSize: 18, color: colors.primaryText }}>›</Text>
                   </Pressable>
                 ))}
+                <Pressable
+                  onPress={() => { setShowRegisterModal(false); startRegistration(router, event.id, "newRider=1", account?.email); }}
+                  style={({ pressed }) => ({ marginBottom: 10, padding: 12, borderRadius: 10, borderWidth: 1, borderStyle: "dashed", borderColor: pressed ? colors.primary : colors.border, flexDirection: "row", alignItems: "center", gap: 8 })}
+                >
+                  <Feather name="user-plus" size={16} color={colors.primaryText} />
+                  <Text style={{ fontSize: 15, color: colors.primaryText, fontFamily: "Roboto_600SemiBold" }}>Someone else (new rider)</Text>
+                </Pressable>
               </>
             )}
             <Pressable style={[s.mutedBtn, { marginTop: 4 }]} onPress={() => setShowRegisterModal(false)}>

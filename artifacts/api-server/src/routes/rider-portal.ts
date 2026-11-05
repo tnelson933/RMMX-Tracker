@@ -578,6 +578,8 @@ router.get("/rider/events/:eventId/my-registrations", requireRiderAuth, async (r
       eq(registrationsTable.eventId, eventId),
       inArray(registrationsTable.riderId, familyRiderIds),
       ne(registrationsTable.status, "void"),
+      // A payment the rider backed out of doesn't hold the class; registering again clears it.
+      or(eq(registrationsTable.paymentStatus, "paid"), eq(registrationsTable.status, "confirmed")),
     ));
 
   return res.json({
@@ -1184,11 +1186,20 @@ router.get("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
     return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   }
 
+  // What the profile has no column for, from the rider's latest entry (registration prefill).
+  const [lastEntry] = await db.select({ clubIdNumber: registrationsTable.clubIdNumber, statsEmailOptIn: registrationsTable.statsEmailOptIn })
+    .from(registrationsTable)
+    .where(and(eq(registrationsTable.riderId, riderId), ne(registrationsTable.status, "void")))
+    .orderBy(desc(registrationsTable.createdAt))
+    .limit(1);
+
   return res.json({
     id: rider.id,
     firstName: rider.firstName,
     lastName: rider.lastName,
     email: rider.email,
+    lastClubIdNumber: lastEntry?.clubIdNumber ?? null,
+    lastStatsEmailOptIn: lastEntry?.statsEmailOptIn ?? false,
     phone: rider.phone ?? null,
     dateOfBirth: rider.dateOfBirth ?? null,
     emergencyContact: rider.emergencyContact ?? null,

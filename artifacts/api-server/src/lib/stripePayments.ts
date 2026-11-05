@@ -14,6 +14,14 @@ import { eq } from "drizzle-orm";
  * it switches on the Payments page.
  */
 
+/** `metadata.source` of a registration paid in the rider app's Stripe payment sheet (a PaymentIntent). */
+export const RIDER_APP_PAYMENT = "rider_app";
+
+/** PaymentIntents the registration code confirms: card readers and the rider app's payment sheet. */
+export function isRegistrationIntent(pi: { metadata?: Record<string, string> | null }): boolean {
+  return !!pi.metadata?.readerId || pi.metadata?.source === RIDER_APP_PAYMENT;
+}
+
 /** A club's Stripe account and how it's charged. */
 export interface ClubStripe {
   accountId: string;
