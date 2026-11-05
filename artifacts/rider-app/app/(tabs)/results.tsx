@@ -23,7 +23,7 @@ import { RacerLink } from "@/components/RacerLink";
 import { placeLabel } from "@/lib/format";
 import { EventCard as RaceEventCard } from "@/components/RaceCards";
 import { defaultSide, nextScheduled, splitLivePast } from "@/lib/liveRaces";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1491,6 +1491,31 @@ export default function ResultsScreen() {
   // Live / Past toggle: null until the rider picks a side, then theirs.
   const [pickedSide, setPickedSide] = useState<"live" | "past" | null>(null);
   const [upcoming, setUpcoming] = useState<BrowseEvent[]>([]);
+
+  // Opened on one race from elsewhere in the app (an event's "Full results").
+  const { eventId: openEventId } = useLocalSearchParams<{ eventId?: string }>();
+  useEffect(() => {
+    const id = Number(openEventId);
+    if (!Number.isInteger(id) || id <= 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await publicFetch(`/api/events/${id}`);
+        if (!res.ok || cancelled) return;
+        const r = await res.json() as Record<string, unknown>;
+        setTab("races");
+        setSelectedSeries(null);
+        setSelectedEvent({
+          eventId: id, name: String(r.name ?? ""), state: (r.state as string) ?? "",
+          date: String(r.date ?? ""), endDate: (r.endDate as string | null) ?? null,
+          location: (r.location as string) ?? "", trackName: (r.trackName as string) ?? "",
+          status: String(r.status ?? ""), clubName: (r.clubName as string) ?? "",
+        });
+      } catch { /* stay on the list */ }
+      finally { router.setParams({ eventId: undefined } as never); }
+    })();
+    return () => { cancelled = true; };
+  }, [openEventId]);
 
   // Reset to root when tab icon is pressed
   useEffect(() => {

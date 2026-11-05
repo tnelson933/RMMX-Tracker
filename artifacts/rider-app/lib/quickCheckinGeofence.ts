@@ -28,6 +28,13 @@ export type GeofenceEvent = {
 
 const isNative = Platform.OS === "ios" || Platform.OS === "android";
 
+/**
+ * Location "all the time" (the closed-app geofence) is iPhone only. Android
+ * builds don't ask for background location (Google Play policy); there the
+ * race-day watch below runs as a foreground service with "while using".
+ */
+export const ALWAYS_LOCATION_SUPPORTED = Platform.OS === "ios";
+
 /** Today's date (YYYY-MM-DD) at the event's track; the phone's own date if the zone is unknown. */
 export function todayAtTrack(timeZone?: string): string {
   try {
@@ -101,8 +108,11 @@ export async function arrivalAlertStatus(): Promise<ArrivalAlertStatus> {
   if (!isNative) return "unsupported";
   const [notif, fg] = await Promise.all([Notifications.getPermissionsAsync(), Location.getForegroundPermissionsAsync()]);
   if (!notif.granted || !fg.granted) return "off";
-  const bg = await Location.getBackgroundPermissionsAsync();
-  return bg.granted ? "always" : "while-using";
+  // Android builds have no background-location permission at all, and asking
+  // about it throws there.
+  if (!ALWAYS_LOCATION_SUPPORTED) return "while-using";
+  const bg = await Location.getBackgroundPermissionsAsync().catch(() => null);
+  return bg?.granted ? "always" : "while-using";
 }
 
 /** Asks for notifications and location while using the app. */
@@ -116,6 +126,7 @@ export async function enableArrivalAlerts(): Promise<ArrivalAlertStatus> {
 /** Optional upgrade to "all the time" so the alert also works with the app closed. */
 export async function requestAlwaysLocation(): Promise<ArrivalAlertStatus> {
   if (!isNative) return "unsupported";
+  if (!ALWAYS_LOCATION_SUPPORTED) return arrivalAlertStatus();
   await Location.requestBackgroundPermissionsAsync().catch(() => null);
   return arrivalAlertStatus();
 }
@@ -126,6 +137,7 @@ export async function syncArrivalGeofences(events: GeofenceEvent[]): Promise<voi
   const meta = Object.fromEntries(events.map(e => [`event-${e.eventId}`, e]));
   await AsyncStorage.setItem(META_KEY, JSON.stringify(meta));
 
+  if (!ALWAYS_LOCATION_SUPPORTED) return; // geofences need location all the time (iPhone only)
   const running = await Location.hasStartedGeofencingAsync(TASK).catch(() => false);
   if ((await arrivalAlertStatus()) !== "always" || events.length === 0) {
     if (running) await Location.stopGeofencingAsync(TASK).catch(() => {});
@@ -154,6 +166,8 @@ export async function syncArrivalGeofences(events: GeofenceEvent[]): Promise<voi
 
 const WATCH_TASK = "rm-quick-checkin-arrival-watch";
 const WATCH_KEY = "quickCheckin.watchEvents";
+/** Whether this app launch has (re)started the watch: see syncArrivalWatch. */
+let startedThisLaunch = false;
 const RADIUS_MILES_TOLERANCE = QUICK_CHECKIN_RADIUS_MILES;
 
 async function watchedEvents(): Promise<GeofenceEvent[]> {
@@ -196,7 +210,12 @@ export async function syncArrivalWatch(events: GeofenceEvent[]): Promise<void> {
     if (running) await Location.stopLocationUpdatesAsync(WATCH_TASK).catch(() => {});
     return;
   }
-  if (running) return;
+  // The OS remembers the watch as started even after it closed the app and
+  // stopped its service, so start it again once each time the app launches
+  // (starting a task that's already registered replaces it; stopping first
+  // breaks Android's task store).
+  if (running && startedThisLaunch) return;
+  startedThisLaunch = true;
   const track = todays[0].trackName ?? "the track";
   await Location.startLocationUpdatesAsync(WATCH_TASK, {
     // GPS: "balanced" uses Wi-Fi/cell positions, which Android stops updating

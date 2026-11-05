@@ -21,6 +21,7 @@ import Leaderboard from "@/pages/public/Leaderboard";
 import Login from "@/pages/public/Login";
 import ForgotPassword from "@/pages/public/ForgotPassword";
 import Register from "@/pages/public/Register";
+import PdfView from "@/pages/public/PdfView";
 import LiveLeaderboard from "@/pages/public/LiveLeaderboard";
 
 import Dashboard from "@/pages/organizer/Dashboard";
@@ -217,6 +218,10 @@ function Router() {
       </Route>
       <Route path="/forgot-password">
         <PublicLayout><ForgotPassword /></PublicLayout>
+      </Route>
+      {/* The rider app's in-app PDF viewer (waivers): no site header. */}
+      <Route path="/pdf-view">
+        <PdfView />
       </Route>
       <Route path="/register/:eventId">
         <PublicLayout><Register /></PublicLayout>

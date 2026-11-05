@@ -1,6 +1,5 @@
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import * as Linking from "expo-linking";
 import React, { useEffect, useState } from "react";
 import {
   Pressable,
@@ -14,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { goBack } from "@/lib/navigation";
+import { openInApp } from "@/lib/inAppBrowser";
 
 export default function RmCashScreen() {
   const colors = useColors();
@@ -192,10 +192,10 @@ export default function RmCashScreen() {
 
       <Pressable
         style={({ pressed }) => [s.useBtn, pressed && { opacity: 0.85 }]}
-        onPress={() => Linking.openURL("https://www.rockymountainatvmc.com")}
+        onPress={() => void openInApp("https://www.rockymountainatvmc.com")}
       >
         <Text style={s.useBtnText}>Use your cash</Text>
-        <Feather name="external-link" size={16} color="#fff" />
+        <Feather name="shopping-bag" size={16} color="#fff" />
       </Pressable>
     </View>
   );

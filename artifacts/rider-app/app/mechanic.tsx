@@ -5,7 +5,6 @@ import {
   ActivityIndicator,
   FlatList,
   KeyboardAvoidingView,
-  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -24,6 +23,7 @@ import { goBack } from "@/lib/navigation";
 import { ROCKY_QUICK_QUESTIONS, RockyAvatar } from "@/components/RockyAvatar";
 import { ROCKY_HINT_PENDING_KEY, ROCKY_INTRO_SEEN_KEY } from "@/components/RockyLauncher";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { openInApp } from "@/lib/inAppBrowser";
 
 const CONFIRM_CLEAR_LABEL = "Clear chat";
 
@@ -50,7 +50,7 @@ function LinkedText({
             <Text
               key={i}
               style={{ color: linkColor, textDecorationLine: "underline" }}
-              onPress={() => Linking.openURL(part).catch(() => {})}
+              onPress={() => void openInApp(part)}
               accessibilityRole="link"
             >
               {part}

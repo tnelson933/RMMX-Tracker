@@ -19,7 +19,8 @@ import { resolvePurchaseOptions } from "../lib/purchaseOptions";
 import { getUncachableStripeClient } from "../stripeClient";
 import { confirmRegistrationSession } from "./registrations";
 import { riderCardError } from "../lib/stripeErrors";
-import { clubStripeOf, onClub, onClubOrPlatform, transferTo } from "../lib/stripePayments";
+import type Stripe from "stripe";
+import { browserAccount, clubStripeOf, onClub, onClubOrPlatform, paymentIntentAsPaid, RIDER_APP_PAYMENT, transferTo } from "../lib/stripePayments";
 import { acknowledgementSnapshot, liabilityWaiverSnapshot, waiverPdfOf } from "../lib/waiverSettings";
 import { sendLiabilityWaiverConfirmation } from "../lib/email";
 
@@ -110,10 +111,75 @@ router.post("/rider/registrations/:regId/checkout", requireRiderAuth, async (req
     const stripe = await getUncachableStripeClient();
     const appUrl = getAppUrl();
     const cs = clubStripeOf(club)!;
+
+    // The rider app pays in its own Stripe payment sheet (a PaymentIntent),
+    // never on a web page. Confirmed by verify-payment, webhooks and the sweeper.
+    if (req.body?.paymentSheet === true) {
+      const { getStripePublishableKey } = await import("../stripeClient");
+      const publishableKey = await getStripePublishableKey().catch(() => "");
+      if (!publishableKey) return res.status(503).json({ error: "Card payments aren't available in the app right now. Pay at the gate." });
+      const totalCents = lineItems.reduce((sum, li) => sum + Math.round(li.amount * 100), 0);
+      const sheet = (pi: Stripe.PaymentIntent) => res.json({
+        paymentSheet: { clientSecret: pi.client_secret, publishableKey, stripeAccount: browserAccount(cs) },
+        sessionId: pi.id, registrationId: first.id, total: totalCents / 100,
+      });
+      for (const id of new Set(pending.map(r => r.stripeSessionId).filter((v): v is string => !!v))) {
+        if (id.startsWith("pi_")) {
+          // An unfinished sheet from registration or an earlier tap: reuse it if the amount still matches.
+          const pi = await onClubOrPlatform(cs, o => stripe.paymentIntents.retrieve(id, undefined, o)).catch(() => null);
+          if (!pi || pi.metadata?.source !== RIDER_APP_PAYMENT) continue;
+          if (pi.status === "succeeded" || pi.status === "processing") {
+            if (pi.status === "succeeded") await confirmRegistrationSession(paymentIntentAsPaid(pi));
+            return res.status(409).json({ error: "Your payment went through. It can take a minute to show; pull down to refresh." });
+          }
+          if (pi.status !== "canceled" && pi.amount === totalCents) return sheet(pi);
+          if (pi.status !== "canceled") await onClubOrPlatform(cs, o => stripe.paymentIntents.cancel(id, undefined, o)).catch(() => {});
+        } else if (id.startsWith("cs_")) {
+          // An open web checkout for the same entries must not be payable as well.
+          const s = await onClubOrPlatform(cs, o => stripe.checkout.sessions.retrieve(id, undefined, o)).catch(() => null);
+          if (s?.payment_status === "paid") {
+            await confirmRegistrationSession(s);
+            return res.status(409).json({ error: "Your payment went through. It can take a minute to show; pull down to refresh." });
+          }
+          if (s?.status === "open") await onClubOrPlatform(cs, o => stripe.checkout.sessions.expire(id, undefined, o)).catch(() => {});
+        }
+      }
+      const pi = await stripe.paymentIntents.create({
+        amount: totalCents,
+        currency: "usd",
+        payment_method_types: ["card"],
+        description: `${event.name}: ${pending.map(r => r.raceClass).join(", ")}`.slice(0, 200),
+        receipt_email: rider.email ?? undefined,
+        ...transferTo(cs),
+        metadata: { registrationId: String(first.id), registrationIds: pending.map(r => r.id).join(","), eventId: String(event.id), type: "registration", source: RIDER_APP_PAYMENT },
+      }, onClub(cs));
+      const classCents = perClass > 0 ? Math.round(perClass * 100) : 0;
+      const addOnCents = totalCents - classCents * pending.length;
+      for (const [idx, r] of pending.entries()) {
+        await db.update(registrationsTable)
+          .set({ stripeSessionId: pi.id, amountDue: ((classCents + (idx === 0 ? addOnCents : 0)) / 100).toFixed(2) })
+          .where(eq(registrationsTable.id, r.id));
+      }
+      return sheet(pi);
+    }
+
     // Never start a second charge for the same entries: reuse a checkout that's
     // still open (from registration or an earlier tap), and stop if one was paid.
     // The entries' own checkout sessions first (exact, however busy Stripe is).
     for (const sessionId of new Set(pending.map(r => r.stripeSessionId).filter((v): v is string => !!v))) {
+      if (sessionId.startsWith("pi_")) {
+        // An in-app payment sheet for the same entries: record it if paid, otherwise
+        // cancel it so the rider can't pay twice.
+        const pi = await onClubOrPlatform(cs, o => stripe.paymentIntents.retrieve(sessionId, undefined, o)).catch(() => null);
+        if (pi?.status === "succeeded") {
+          await confirmRegistrationSession(paymentIntentAsPaid(pi));
+          return res.status(409).json({ error: "Your payment went through. It can take a minute to show; pull down to refresh." });
+        }
+        if (pi && pi.metadata?.source === RIDER_APP_PAYMENT && pi.status !== "canceled" && pi.status !== "processing") {
+          await onClubOrPlatform(cs, o => stripe.paymentIntents.cancel(sessionId, undefined, o)).catch(() => {});
+        }
+        continue;
+      }
       if (!sessionId.startsWith("cs_")) continue;
       const own = await onClubOrPlatform(cs, o => stripe.checkout.sessions.retrieve(sessionId, undefined, o)).catch(() => null);
       if (own?.payment_status === "paid") {

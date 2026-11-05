@@ -2,7 +2,7 @@
   "expo": {
     "name": "RM Roost",
     "slug": "rider-app",
-    "version": "1.0.23",
+    "version": "1.0.24",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "rider-app",
@@ -32,7 +32,8 @@
     "android": {
       "package": "com.rockymountain.riderapp",
       "versionCode": 27,
-      "googleServicesFile": "./google-services.json"
+      "googleServicesFile": "./google-services.json",
+      "blockedPermissions": ["android.permission.ACCESS_BACKGROUND_LOCATION"]
     },
     "web": {
       "favicon": "./assets/images/icon.png"
@@ -63,7 +64,7 @@
           "locationAlwaysAndWhenInUsePermission": "RM Roost uses your location in the background on race day to notify you when you arrive at the track, so you can check in from your phone and skip the line.",
           "locationAlwaysPermission": "RM Roost uses your location in the background on race day to notify you when you arrive at the track, so you can check in from your phone and skip the line.",
           "isIosBackgroundLocationEnabled": true,
-          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": false,
           "isAndroidForegroundServiceEnabled": true
         }
       ],

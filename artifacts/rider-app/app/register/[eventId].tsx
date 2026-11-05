@@ -1,10 +1,10 @@
 import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, KeyboardTypeOptions, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
+import { PdfViewer } from "@/components/PdfViewer";
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { API_BASE_URL } from "@/lib/apiBase";
@@ -197,6 +197,7 @@ export default function RegisterScreen() {
   const [asGuardian, setAsGuardian] = useState(false);
   const [esignConsent, setEsignConsent] = useState(false);
   const [signatureId, setSignatureId] = useState<number | null>(null);
+  const [pdf, setPdf] = useState<{ url: string; title: string } | null>(null);
 
   // Discount code
   const [compInput, setCompInput] = useState("");
@@ -793,7 +794,7 @@ export default function RegisterScreen() {
         <Card colors={colors} title="Rider acknowledgement">
           {info.waiverText ? <Text style={[s.note, { color: colors.foreground, marginBottom: 10 }]}>{info.waiverText}</Text> : null}
           {info.waiverPdfUrl ? (
-            <Pressable onPress={() => void WebBrowser.openBrowserAsync(info.waiverPdfUrl!.startsWith("http") ? info.waiverPdfUrl! : `${API_BASE_URL}${info.waiverPdfUrl}`)} style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 12 }}>
+            <Pressable onPress={() => setPdf({ url: info.waiverPdfUrl!, title: "Rider acknowledgement" })} style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 12 }}>
               <Feather name="file-text" size={16} color={colors.primaryText} />
               <Text style={[s.link, { textDecorationLine: "underline" }]}>Read the full form</Text>
             </Pressable>
@@ -812,7 +813,7 @@ export default function RegisterScreen() {
             <>
               {info.liabilityWaiverText ? <Text style={[s.note, { color: colors.foreground, marginBottom: 10 }]} numberOfLines={30}>{info.liabilityWaiverText}</Text> : null}
               {info.liabilityWaiverPdfUrl ? (
-                <Pressable onPress={() => void WebBrowser.openBrowserAsync(info.liabilityWaiverPdfUrl!.startsWith("http") ? info.liabilityWaiverPdfUrl! : `${API_BASE_URL}${info.liabilityWaiverPdfUrl}`)} style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 12 }}>
+                <Pressable onPress={() => setPdf({ url: info.liabilityWaiverPdfUrl!, title: "Liability waiver" })} style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 12 }}>
                   <Feather name="file-text" size={16} color={colors.primaryText} />
                   <Text style={[s.link, { textDecorationLine: "underline" }]}>Read the full waiver</Text>
                 </Pressable>
@@ -921,6 +922,8 @@ export default function RegisterScreen() {
         {bodies[step]()}
         {stepError ? <Text style={[s.err, { marginTop: 4 }]}>{stepError}</Text> : null}
       </KeyboardAwareScrollViewCompat>
+
+      <PdfViewer url={pdf?.url ?? null} title={pdf?.title ?? ""} onClose={() => setPdf(null)} />
 
       <View style={s.footer}>
         {submitError ? <Text style={s.err}>{submitError}</Text> : null}

@@ -13,6 +13,7 @@ import {
   enableArrivalAlerts,
   notifyArrival,
   requestAlwaysLocation,
+  ALWAYS_LOCATION_SUPPORTED,
   syncArrivalGeofences,
   syncArrivalWatch,
   type ArrivalAlertStatus,
@@ -98,7 +99,7 @@ export function QuickCheckinCard() {
         if (r.trackLat == null || r.trackLng == null || !r.eligible || r.checkedIn) continue;
         watch.set(r.eventId, { eventId: r.eventId, eventName: r.eventName, eventDate: r.eventDate, timeZone: r.timeZone, trackName: r.trackName, trackLat: r.trackLat, trackLng: r.trackLng });
       }
-      await syncArrivalWatch([...watch.values()]).catch(() => {});
+      await syncArrivalWatch([...watch.values()]).catch(e => { if (__DEV__) console.warn("[arrival watch]", e?.message ?? e); });
 
       if (today.length > 0) {
         const perm = await Location.getForegroundPermissionsAsync();
@@ -199,7 +200,7 @@ export function QuickCheckinCard() {
     await AsyncStorage.setItem(ALWAYS_DISMISSED_KEY, "1").catch(() => {});
   }
 
-  const showAlertsPrompt = upcoming.length > 0 && (alertStatus === "off" || (alertStatus === "while-using" && !alwaysDismissed));
+  const showAlertsPrompt = upcoming.length > 0 && (alertStatus === "off" || (alertStatus === "while-using" && !alwaysDismissed && ALWAYS_LOCATION_SUPPORTED));
   if (events.length === 0 && !showAlertsPrompt) return null;
 
   const card = { marginHorizontal: 16, marginBottom: 16, borderRadius: 14, padding: 16, borderWidth: 1, gap: 10 } as const;

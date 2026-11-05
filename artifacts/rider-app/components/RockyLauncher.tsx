@@ -14,7 +14,8 @@ export const ROCKY_INTRO_SEEN_KEY = "rocky_intro_seen";
 /** Set when the rider minimizes the intro, so the launcher shows a one-time "I'm here" hint. */
 export const ROCKY_HINT_PENDING_KEY = "rocky_hint_pending";
 
-const HIDDEN_ROUTES = new Set(["/login", "/mechanic"]);
+// Screens with their own button where the launcher would sit.
+const HIDDEN_ROUTES = new Set(["/login", "/mechanic", "/rm-cash"]);
 
 /**
  * Rocky, minimized: a floating button on every signed-in screen that expands

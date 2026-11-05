@@ -751,9 +751,9 @@ export default function EventDetailScreen() {
               : "This race is in the books. Check the full results, or find your next race."}
             primary={myRegistrations.length > 0 || registeredClasses.size > 0
               ? { label: "Your results", icon: "award", onPress: () => router.push(`/result/${event.id}` as any) }
-              : { label: "Full results", icon: "list", onPress: () => void WebBrowser.openBrowserAsync(`${BASE_URL}/results/${event.id}`) }}
+              : { label: "Full results", icon: "list", onPress: () => router.push(`/(tabs)/results?eventId=${event.id}` as any) }}
             secondary={myRegistrations.length > 0 || registeredClasses.size > 0
-              ? { label: "Full results", onPress: () => void WebBrowser.openBrowserAsync(`${BASE_URL}/results/${event.id}`) }
+              ? { label: "Full results", onPress: () => router.push(`/(tabs)/results?eventId=${event.id}` as any) }
               : { label: "Find your next race", onPress: () => router.push("/(tabs)/my-races?filter=near_me" as any) }}
           />
         )}

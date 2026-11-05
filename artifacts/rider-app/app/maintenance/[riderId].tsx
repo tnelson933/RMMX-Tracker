@@ -1,7 +1,6 @@
 import { localDateString } from "@/lib/format";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import * as Linking from "expo-linking";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -24,6 +23,7 @@ import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 import { goBack } from "@/lib/navigation";
+import { openInApp } from "@/lib/inAppBrowser";
 
 interface MaintenanceItem {
   id: number;
@@ -198,7 +198,7 @@ export default function MaintenanceScreen() {
 
   function handleShop(item: MaintenanceItem) {
     const url = `https://www.rockymountainatvmc.com/search#q=${encodeURIComponent(item.itemName)}`;
-    Linking.openURL(url);
+    void openInApp(url);
   }
 
   async function handleDelete(item: MaintenanceItem) {

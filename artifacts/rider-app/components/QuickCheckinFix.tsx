@@ -1,9 +1,11 @@
 import { Feather } from "@expo/vector-icons";
-import * as WebBrowser from "expo-web-browser";
 import React, { useState } from "react";
 import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
+import { PdfViewer } from "@/components/PdfViewer";
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { API_BASE_URL } from "@/lib/apiBase";
+import { nativePaymentSheetAvailable, payWithSheet } from "@/lib/payments";
 
 // One "fix it" control per Quick Check-In blocker, so riders can make
 // themselves eligible without waiting on staff: pay, sign the waiver, or enter
@@ -29,6 +31,7 @@ export function QuickCheckinFix({ registrationId, reason, onFixed }: Props) {
   const [waiver, setWaiver] = useState<{ kind: string; text: string | null; pdfUrl: string | null; riderName: string } | null>(null);
   const [consent, setConsent] = useState(false);
   const [asGuardian, setAsGuardian] = useState(false);
+  const [pdfOpen, setPdfOpen] = useState(false);
 
   const post = async (path: string, body: unknown, fallback: string) => {
     setBusy(true);
@@ -63,10 +66,26 @@ export function QuickCheckinFix({ registrationId, reason, onFixed }: Props) {
 
   if (reason === "payment_required") {
     body = button("Pay now", async () => {
-      const data = await post(`/api/rider/registrations/${registrationId}/checkout`, {}, "Couldn't start the payment.");
-      if (data?.checkoutUrl) {
-        await WebBrowser.openBrowserAsync(data.checkoutUrl);
-        onFixed(); // re-check once they're back from the payment page
+      // Paid in the app's own Stripe payment sheet; riders never leave the app.
+      const data = await post(`/api/rider/registrations/${registrationId}/checkout`, { paymentSheet: true }, "Couldn't start the payment.");
+      if (!data?.paymentSheet?.clientSecret) return;
+      if (!nativePaymentSheetAvailable()) { setError("Update RM Roost to pay in the app, or pay at the gate."); return; }
+      setBusy(true);
+      try {
+        const r = await payWithSheet({ ...data.paymentSheet, merchantName: "RM Roost", primaryColor: colors.primary });
+        if (r.status === "failed") { setError(r.message); return; }
+        if (r.status === "canceled") return;
+        // Record it now (the webhook and background check would too, a little later).
+        for (let i = 0; i < 6; i++) {
+          const v = await fetch(`${API_BASE_URL}/api/public/registrations/${data.registrationId}/verify-payment`, {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: data.sessionId }),
+          }).catch(() => null);
+          if (v && v.status !== 402) break;
+          await new Promise(res => setTimeout(res, 1500));
+        }
+        onFixed();
+      } finally {
+        setBusy(false);
       }
     });
   } else if (reason === "missing_transponder") {
@@ -112,7 +131,7 @@ export function QuickCheckinFix({ registrationId, reason, onFixed }: Props) {
           <Text style={{ fontSize: 12, color: colors.foreground, fontFamily: "Roboto_400Regular", maxHeight: 220 }} numberOfLines={14}>{waiver.text}</Text>
         ) : null}
         {waiver.pdfUrl ? (
-          <Pressable onPress={() => void WebBrowser.openBrowserAsync(waiver.pdfUrl!)} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <Pressable onPress={() => setPdfOpen(true)} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
             <Feather name="file-text" size={14} color={colors.primaryText} />
             <Text style={{ color: colors.primaryText, fontFamily: "Roboto_600SemiBold", textDecorationLine: "underline" }}>Read the full waiver</Text>
           </Pressable>
@@ -140,6 +159,7 @@ export function QuickCheckinFix({ registrationId, reason, onFixed }: Props) {
   return (
     <View style={{ gap: 6, marginTop: 6 }}>
       {body}
+      <PdfViewer url={pdfOpen ? waiver?.pdfUrl ?? null : null} title="Waiver" onClose={() => setPdfOpen(false)} />
       {error && <Text style={{ fontSize: 12, color: colors.destructive, fontFamily: "Roboto_400Regular" }}>{error}</Text>}
     </View>
   );

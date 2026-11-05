@@ -15,7 +15,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter, useSegments } from "expo-router";
 import * as Notifications from "expo-notifications";
 import * as SplashScreen from "expo-splash-screen";
-import * as WebBrowser from "expo-web-browser";
 import React, { useEffect, useRef } from "react";
 import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -28,6 +27,7 @@ import { AuthProvider, useRiderAuth } from "@/context/AuthContext";
 import { RockyChatProvider } from "@/context/RockyChatContext";
 import { ThemeProvider, useTheme } from "@/context/ThemeContext";
 import { StatusBar } from "react-native";
+import { openInApp } from "@/lib/inAppBrowser";
 
 /** Status bar icons follow the in-app Appearance setting. */
 function ThemedStatusBar() {
@@ -87,7 +87,7 @@ function useNotificationNavigation(ready: boolean) {
       return;
     }
     if (typeof data.url === "string" && /^https?:\/\//i.test(data.url)) {
-      void WebBrowser.openBrowserAsync(data.url).catch(() => { /* ignore */ });
+      void openInApp(data.url);
     }
   }, [ready, response]);
 }
