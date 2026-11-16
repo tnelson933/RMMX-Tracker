@@ -375,7 +375,7 @@ router.post("/practice", (req, res) => {
   const clubId = getClubId(req);
   if (!clubId) return res.status(403).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
 
-  const { name, debounceMs, venueName } = req.body as { name?: string; debounceMs?: number; venueName?: string };
+  const { name, debounceMs, venueName, trackId: pickedTrackId } = req.body as { name?: string; debounceMs?: number; venueName?: string; trackId?: unknown };
   if (!name) return res.status(400).json({ error: "Enter a name." });
   if (!venueName?.trim()) return res.status(400).json({ error: "Enter a track name." });
 
@@ -383,11 +383,30 @@ router.post("/practice", (req, res) => {
   // One live practice per club, as in the cloud: reads go to the newest.
   db.prepare("UPDATE practice_sessions SET status = 'ended', ended_at = ? WHERE club_id = ? AND status = 'active'")
     .run(new Date().toISOString(), clubId);
+  // The library track (picked, or matched by name) and its course right now:
+  // its split readers give sector times for this session (same as the cloud).
+  let track = pickedTrackId != null && pickedTrackId !== ""
+    ? db.prepare("SELECT id, course FROM tracks WHERE id = ? AND club_id = ?").get(Number(pickedTrackId), clubId) as { id: number; course: string | null } | undefined
+    : undefined;
+  track ??= db.prepare("SELECT id, course FROM tracks WHERE club_id = ? AND lower(trim(name)) = lower(trim(?)) LIMIT 1").get(clubId, venueName) as { id: number; course: string | null } | undefined;
+  let course: string | null = null;
+  if (track?.course) {
+    try {
+      const points = JSON.parse(track.course) as Array<{ readerId: number; role: string; sequence?: number; label?: string | null }>;
+      if (Array.isArray(points) && points.length > 0) {
+        const finish = points.find(p => p.role === "finish");
+        const splits = points.filter(p => p.role === "split")
+          .sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0))
+          .map((p, i) => ({ readerId: p.readerId, sequence: i + 1, label: p.label?.trim() || `Split ${i + 1}` }));
+        course = JSON.stringify({ finishReaderId: finish?.readerId ?? null, splits });
+      }
+    } catch { /* an unreadable course means no sector times */ }
+  }
   const ins = db
     .prepare(
-      "INSERT INTO practice_sessions (club_id, name, debounce_ms, venue_name, status, started_at) VALUES (?, ?, ?, ?, 'active', ?)",
+      "INSERT INTO practice_sessions (club_id, name, debounce_ms, venue_name, track_id, course, status, started_at) VALUES (?, ?, ?, ?, ?, ?, 'active', ?)",
     )
-    .run(clubId, name, debounceMs ? Number(debounceMs) : 10000, venueName.trim(), new Date().toISOString());
+    .run(clubId, name, debounceMs ? Number(debounceMs) : 10000, venueName.trim(), track?.id ?? null, course, new Date().toISOString());
 
   const session = db
     .prepare("SELECT * FROM practice_sessions WHERE id = ?")

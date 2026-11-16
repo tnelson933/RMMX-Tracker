@@ -44,6 +44,8 @@ import { syncEventPublication } from "../lib/resultsVisibility";
 import { notifyFollowersOfResults } from "../lib/riderCareer";
 import { sendRaceDayStats } from "../lib/raceDayStats";
 import { queueRaceGasCredits } from "../lib/raceGasCredits";
+import { teamMemberRiderId } from "../lib/teams";
+import { practiceCourseFor, resolveTrackId } from "../lib/trackCourse";
 
 const router = Router();
 
@@ -1322,11 +1324,23 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       const registrationId = await cloudRegistrationId(m.registration_id, eventId, m.captain_rider_id);
       if (!registrationId) { skip("team_members", m as { id?: unknown }, "team registration not found in this event"); continue; }
       const tag = (v: unknown) => (v != null && String(v).trim() ? String(v).trim().slice(0, 64) : null);
-      const [existing] = await tx.select({ id: teamMembersTable.id }).from(teamMembersTable)
+      const [existing] = await tx.select({ id: teamMembersTable.id, riderId: teamMembersTable.riderId }).from(teamMembersTable)
         .where(and(eq(teamMembersTable.registrationId, registrationId), eq(teamMembersTable.position, position)));
+      // Each member is linked to a rider profile, as when a team registers on the
+      // website: the captain is the entry's rider; team mates are matched by email
+      // and name, or get a new profile. Their saved numbers then pre-fill at check-in.
+      const memberEmail = m.email != null && String(m.email).trim() ? String(m.email).trim().toLowerCase() : null;
+      const memberRiderId = async (): Promise<number | null> => {
+        if (position === 1) {
+          const [reg] = await tx.select({ riderId: registrationsTable.riderId }).from(registrationsTable).where(eq(registrationsTable.id, registrationId));
+          return reg?.riderId ?? null;
+        }
+        return memberEmail ? await teamMemberRiderId({ firstName, lastName, email: memberEmail }) : null;
+      };
       if (existing) {
         // The desktop's row is a deliberate edit at check-in (rows it only pulled are never pushed).
         await tx.update(teamMembersTable).set({
+          ...(existing.riderId == null ? { riderId: await memberRiderId() } : {}),
           firstName, lastName,
           rfidNumber: tag(m.rfid_number), trackrNumber: tag(m.trackr_number),
           updatedAt: new Date(),
@@ -1334,7 +1348,8 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       } else {
         await tx.insert(teamMembersTable).values({
           eventId, registrationId, position, firstName, lastName,
-          email: m.email != null && String(m.email).trim() ? String(m.email).trim().toLowerCase() : null,
+          riderId: await memberRiderId(),
+          email: memberEmail,
           rfidNumber: tag(m.rfid_number), trackrNumber: tag(m.trackr_number),
           trackrChoice: m.trackr_choice != null ? String(m.trackr_choice) : null,
           rfidPurchased: isTrue(m.rfid_purchased),
@@ -1425,9 +1440,13 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
           .set(updateSet as any)
           .where(eq(practiceSessionsTable.id, sessionId));
       } else {
+        // The library track and its course, as when a practice starts on the website.
+        const practiceTrackId = await resolveTrackId(clubId, s.track_id, s.venue_name);
         const insertRow: Record<string, unknown> = {
           id:         sessionId,
           clubId,
+          trackId:    practiceTrackId,
+          course:     await practiceCourseFor(practiceTrackId),
           name:       s.name        != null ? String(s.name)        : "Practice",
           venueName:  s.venue_name  != null ? String(s.venue_name).trim() || null : null,
           status:     s.status      != null ? String(s.status)      : "idle",
@@ -2069,6 +2088,8 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
   const regRiderIds = [...new Set([
     ...registrations.map((r) => r.riderId), ...directRiderIds,
     ...checkins.map((c) => c.riderId), ...raceResults.map((r) => r.riderId),
+    // Group race team mates: their saved numbers pre-fill the team screen.
+    ...teamMembers.map((t) => t.riderId),
   ].filter((id): id is number => id != null))];
   const ridersWithEmail =
     regRiderIds.length > 0
