@@ -4,7 +4,16 @@ import { compareStandings, computeFinishAt, everyoneFinished, finishGraceMs, fla
 import type { Response } from "express";
 import { getDb, parseJsonArr, parseJson } from "../db";
 import { rejectForeignBrowserIngest } from "../lib/request-origin";
-import { LIVE_WINDOW_MS, resolvePracticeRider } from "./practice";
+import { LIVE_WINDOW_MS, broadcastPracticeBoard, resolvePracticeRider } from "./practice";
+import {
+  computeMotoSectors,
+  isSplitReader,
+  latestSplitGaps,
+  recordPracticeSplit,
+  recordSplitCrossing,
+  refileSplitsAfterLapDelete,
+  splitForReader,
+} from "../lib/sectors";
 import {
   ENDURO_ALL_CLASSES,
   ENDURO_MAX_RUN_MS,
@@ -255,6 +264,33 @@ export function buildLeaderboard(motoId: number) {
     };
   });
 
+  // Sector times when the event's course map has split readers (null otherwise).
+  const sectors = computeMotoSectors(motoId);
+  // Gap to the leader and the rider ahead at each rider's latest timing point.
+  const running = withGaps.filter(e => e.riderId != null && !e.dnf && !e.dns).map(e => e.riderId as number);
+  const splitGaps = sectors
+    ? latestSplitGaps(running, new Map([...sectors.byRider].map(([id, r]) => [id, r.points])))
+    : null;
+  const withSectors = sectors
+    ? withGaps.map((entry) => {
+      const rider = entry.riderId != null ? sectors.byRider.get(entry.riderId) : undefined;
+      const completed = rider?.laps.filter(l => l.complete) ?? [];
+      const current = rider?.laps.find(l => !l.complete) ?? null;
+      const latest = entry.riderId != null ? splitGaps?.get(entry.riderId) ?? null : null;
+      return {
+        ...entry,
+        sectors: {
+          lastLapMs: completed.at(-1)?.sectorsMs ?? null,
+          bestMs: rider?.best ?? null,
+          currentLapMs: current?.sectorsMs ?? null,
+          laps: rider?.laps ?? [],
+          // Last course point passed: its name, and the gaps there.
+          latest: latest ? { ...latest, pointName: sectors.pointNames[latest.point - 1] ?? null } : null,
+        },
+      };
+    })
+    : withGaps;
+
   return {
     motoId,
     motoName: moto.name ?? "",
@@ -265,7 +301,10 @@ export function buildLeaderboard(motoId: number) {
     pausedAt: moto.paused_at ?? null,
     totalPausedMs: moto.total_paused_ms ?? 0,
     resultsOfficial: moto.results_finalized_at != null || moto.type === "practice",
-    leaderboard: withGaps,
+    leaderboard: withSectors,
+    sectorNames: sectors?.names ?? null,
+    // The race's fastest time in each sector (purple on the timing screens).
+    sectorFieldBestMs: sectors?.fieldBest ?? null,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -740,6 +779,8 @@ function raceDayEventIds(): number[] {
  * True exactly when the hardware ingest would take a read: a live moto, a live
  * practice, an enduro test waiting for its first start read, or (for readers
  * that send their id) a time check or test gate on today's only event.
+ * Split readers add no case of their own: a split is only recorded during a
+ * live moto or a live practice, which already count.
  */
 function readsAccepted(): boolean {
   if (getFacilityMoto() || getActivePracticeSession()) return true;
@@ -929,6 +970,74 @@ function handleEnduroGateRead(res: Response, opts: {
   return true;
 }
 
+/**
+ * Record a split for the moto the rider is racing in (a staggered start runs
+ * several motos over one course) and publish the leaderboard. A split from a
+ * rider whose moto already finished isn't recorded anywhere.
+ */
+function recordSplitForRider(routed: Parameters<typeof recordSplitCrossing>[0]): { recorded: boolean; lapNumber: number } {
+  let motoId: number;
+  try {
+    motoId = motoForRider(routed.motoId, routed.rfidNumber);
+  } catch {
+    return { recorded: false, lapNumber: 0 };
+  }
+  const result = recordSplitCrossing({ ...routed, motoId });
+  if (result.recorded) {
+    const snapshot = buildLeaderboard(motoId);
+    if (snapshot) sseBroadcast(motoId, snapshot);
+  }
+  return result;
+}
+
+/**
+ * A read from a reader the organizer placed as a split on the course map (the
+ * cloud's /timing/readers/:token/crossing, step 3 for a practice and step 4b
+ * for a moto). A split read only stores a sector time: it never scores a lap.
+ * Returns false when the reader has no split to record here, so the caller
+ * handles the read as before.
+ */
+function handleSplitRead(res: Response, opts: { assignmentReader: number; rfidNumber: string; crossingTime: Date }): boolean {
+  const { assignmentReader, crossingTime } = opts;
+  const rfidNumber = opts.rfidNumber.trim();
+  const live = getActiveMotoForAnyEvent();
+  if (!live) {
+    // A split reader on the running practice's track: sector times, not laps.
+    const practice = getActivePracticeSession();
+    if (!practice) return false;
+    const result = recordPracticeSplit({ session: practice, readerId: assignmentReader, rfidNumber, crossingTime });
+    if (!result) return false;
+    if (result.recorded) broadcastPracticeBoard(practice.id);
+    res.json({
+      ok: true,
+      message: result.recorded ? `${result.label} recorded` : `${result.label} not recorded (no lap in progress, or already recorded)`,
+    });
+    return true;
+  }
+
+  const eventId: number = live.event_id;
+  const assignments = getDb()
+    .prepare("SELECT * FROM event_reader_assignments WHERE event_id = ? AND reader_id = ? ORDER BY id")
+    .all(eventId, assignmentReader) as any[];
+  const course = assignments.find(a => a.moto_id == null && (a.role === "finish" || a.role === "split"));
+  if (course?.role !== "split") return false;
+  // Enduro tests keep their own start/finish gates (handleEnduroGateRead).
+  const activeMoto = getActiveMotoForEvent(eventId) ?? live;
+  if (activeMoto.type === "enduro_test" || assignments.some(a => a.moto_id === activeMoto.id)) return false;
+
+  const split = splitForReader(eventId, assignmentReader);
+  if (!split) {
+    res.status(422).json({ ok: false, message: "Reader has no matching checkpoint assignment" });
+    return true;
+  }
+  const riderId = resolveRider(rfidNumber, eventId);
+  const { recorded, lapNumber } = recordSplitForRider({
+    eventId, motoId: activeMoto.id, split, readerId: assignmentReader, rfidNumber, riderId, crossingTime,
+  });
+  res.json({ ok: true, message: recorded ? `${split.label} recorded (lap ${lapNumber})` : `${split.label} already recorded for lap ${lapNumber}` });
+  return true;
+}
+
 function processPracticeCrossing(opts: {
   rfidNumber: string;
   session: any;
@@ -1091,11 +1200,12 @@ router.post("/timing/active/crossing", rejectForeignBrowserIngest, (req, res) =>
   const rawTime = body?.crossingTime ?? body?.passingTime ?? body?.timestamp ?? body?.passTime;
   const crossingTime = canonicalizeDirectActiveTimestamp(rawTime, body, "active_generic_ingest");
 
-  // A reader the organizer placed as an enduro test gate or time check is
-  // handled by its role. Any other read (no readerId, or no such assignment)
-  // is a single-reader read: on an enduro test it toggles start/finish.
+  // A reader the organizer placed as a course split, an enduro test gate or a
+  // time check is handled by its role. Any other read (no readerId, or no such
+  // assignment) is a single-reader read: on an enduro test it toggles start/finish.
   const assignmentReader = assignmentReaderId(body?.readerId);
   if (assignmentReader != null) {
+    if (handleSplitRead(res, { assignmentReader, rfidNumber: String(rfidNumber), crossingTime })) return;
     const handled = handleEnduroGateRead(res, {
       assignmentReader,
       rfidNumber: String(rfidNumber),
@@ -1105,6 +1215,15 @@ router.post("/timing/active/crossing", rejectForeignBrowserIngest, (req, res) =>
       ingestStartedAt,
     });
     if (handled) return;
+    // A split reader with nothing to record here (no moto running, or a moto
+    // on an event it isn't placed on) must never score a race or practice lap.
+    const liveMoto = getActiveMotoForAnyEvent();
+    const placedOnLiveEvent = !!liveMoto && !!getDb()
+      .prepare("SELECT 1 FROM event_reader_assignments WHERE event_id = ? AND reader_id = ? LIMIT 1")
+      .get(liveMoto.event_id, assignmentReader);
+    if (!placedOnLiveEvent && isSplitReader(assignmentReader)) {
+      return res.status(409).json({ ok: false, message: "Split readers only record sector times during a moto" });
+    }
   }
 
   const moto = getFacilityMoto();
@@ -1358,6 +1477,9 @@ router.delete("/timing/crossings/:crossingId", (req, res) => {
       if (riderId) rescoreEnduroRider(moto, riderId);
       rerankEnduroTest(motoId);
     } else {
+      // Split reads are filed under the lap in progress; refile them for the
+      // new numbering.
+      refileSplitsAfterLapDelete(motoId, riderId ?? null, rfidNumber);
       rescoreRider(moto, riderId ?? null, rfidNumber);
     }
   })();

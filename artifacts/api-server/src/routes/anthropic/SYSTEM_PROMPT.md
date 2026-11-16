@@ -899,7 +899,7 @@ The event's **Course Map** tab places readers on the course. Readers come from R
 
 **Where segment times show:** the public live page's **Segments** tab (best per segment, fastest in green), the Race Day Management leaderboard (**Last lap segments** and **Best segments** under the leaderboard), expanded motos on the public results page, and the rider app's race results (**Best segments** card).
 
-**Desktop app / offline:** the Course Map tab works in the desktop app and syncs with the cloud. The desktop app connects to readers itself (it never uses RM Connect); today it times the finish line, and timing split readers offline is not available yet.
+**Desktop app / offline:** the Course Map tab works in the desktop app and syncs with the cloud. The desktop app connects to readers itself (it never uses RM Connect); today it times the finish line. Segment times recorded online (races and practices) show in the desktop app after it syncs, in the same places as on the website (Race Day Management leaderboard, results, practice board). Timing split readers from the desktop app's own reader connection is not available yet.
 
 ### Readers and enduro checkpoints
 

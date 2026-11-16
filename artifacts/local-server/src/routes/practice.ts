@@ -2,6 +2,7 @@ import { Router } from "express";
 import type { Response } from "express";
 import { getDb } from "../db";
 import { rejectForeignBrowserIngest } from "../lib/request-origin";
+import { listPracticeSplits, practiceCourseOf, practiceSectors } from "../lib/sectors";
 
 const router = Router();
 
@@ -14,6 +15,8 @@ type PracticeSessionRow = {
   status: string;
   debounce_ms: number;
   venue_name: string | null;
+  /** The track's course when the session started (JSON): its split readers give sector times. */
+  course?: string | null;
   started_at: string | null;
   ended_at: string | null;
   created_at: string;
@@ -50,6 +53,7 @@ function serializeSession(s: PracticeSessionRow) {
     status: s.status,
     debounceMs: s.debounce_ms,
     venueName: s.venue_name ?? null,
+    course: practiceCourseOf(s),
     startedAt: toIsoUtc(s.started_at),
     endedAt: s.ended_at ?? null,
     createdAt: s.created_at,
@@ -73,6 +77,9 @@ function buildLiveBoard(session: PracticeSessionRow, crossings: PracticeCrossing
     lastLapMs: number | null;
     lastCrossingTime: string;
     laps: { lapNumber: number; lapTimeMs: number | null; crossingTime: string }[];
+    /** Sector times per timed lap, when the practice's track has split readers. */
+    sectorLaps?: Array<{ lapNumber: number; sectorsMs: Array<number | null>; complete: boolean }>;
+    bestSectors?: Array<number | null>;
   }> = [];
 
   for (const [rfidNumber, riderCrossings] of byRfid) {
@@ -110,7 +117,21 @@ function buildLiveBoard(session: PracticeSessionRow, crossings: PracticeCrossing
     return a.bestLapMs - b.bestLapMs;
   });
 
-  return { session: serializeSession(session), riders };
+  // Sector times, when the track's course has splits (as the cloud's board).
+  const course = practiceCourseOf(session);
+  const sectors = practiceSectors(
+    course,
+    crossings.map((c) => ({ rfidNumber: c.rfid_number, crossingTime: new Date(c.crossing_time) })),
+    course?.splits.length ? listPracticeSplits(session.id) : [],
+  );
+  if (sectors) {
+    for (const row of riders) {
+      const mine = sectors.byTag.get(row.rfidNumber.toLowerCase());
+      if (mine) { row.sectorLaps = mine.laps; row.bestSectors = mine.best; }
+    }
+  }
+
+  return { session: serializeSession(session), riders, sectorNames: sectors?.names ?? [] };
 }
 
 function broadcast(sessionId: number, payload: object) {
@@ -125,6 +146,18 @@ function broadcast(sessionId: number, payload: object) {
       clients.delete(res);
     }
   }
+}
+
+/** Push the current board to everyone watching the session. */
+export function broadcastPracticeBoard(sessionId: number): void {
+  if (!sseClients.get(sessionId)?.size) return;
+  const db = getDb();
+  const session = db.prepare("SELECT * FROM practice_sessions WHERE id = ?").get(sessionId) as PracticeSessionRow | undefined;
+  if (!session) return;
+  const crossings = db
+    .prepare("SELECT * FROM practice_crossings WHERE session_id = ? ORDER BY crossing_time ASC")
+    .all(sessionId) as PracticeCrossingRow[];
+  broadcast(sessionId, buildLiveBoard(session, crossings));
 }
 
 function getClubId(req: any): number | null {
@@ -426,6 +459,7 @@ router.delete("/practice/:id", (req, res) => {
   if (!existing) return res.status(404).json({ error: "Not found" });
   if (existing.club_id !== clubId) return res.status(403).json({ error: "Forbidden" });
 
+  db.prepare("DELETE FROM practice_split_crossings WHERE session_id = ?").run(id);
   db.prepare("DELETE FROM practice_crossings WHERE session_id = ?").run(id);
   db.prepare("DELETE FROM practice_sessions WHERE id = ?").run(id);
   return res.status(204).send();

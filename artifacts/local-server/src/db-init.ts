@@ -725,6 +725,9 @@ export function initDb() {
     ["events", "track_id                   INTEGER"],
     ["events", "course_source              TEXT NOT NULL DEFAULT 'track'"],
     ["practice_sessions", "track_id INTEGER"],
+    // The track's course when the practice started (JSON, pulled from the
+    // cloud): its split readers give sector times.
+    ["practice_sessions", "course   TEXT"],
     // race_results
     ["race_results", "event_id   INTEGER"],
     ["race_results", "race_class TEXT"],
@@ -940,12 +943,63 @@ export function initDb() {
     BEGIN
       INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('enduro_checkpoint_arrivals', OLD.id, 'delete');
     END;
+
+    -- A rider passing a split reader on the course map (sector times only:
+    -- never a lap or a placing). Same key as the cloud: once per moto, tag,
+    -- split and lap. Reads recorded here are pushed once; a later renumbering
+    -- (a finish pass deleted here) stays local, like the deleted pass itself.
+    CREATE TABLE IF NOT EXISTS split_crossings (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id       INTEGER NOT NULL,
+      moto_id        INTEGER NOT NULL,
+      assignment_id  INTEGER,
+      reader_id      INTEGER,
+      split_sequence INTEGER NOT NULL,
+      label          TEXT,
+      rider_id       INTEGER,
+      rfid_number    TEXT NOT NULL,
+      lap_number     INTEGER NOT NULL,
+      crossing_time  TEXT NOT NULL,
+      created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (moto_id, rfid_number, split_sequence, lap_number)
+    );
+    CREATE INDEX IF NOT EXISTS split_crossings_moto_rider_idx ON split_crossings (moto_id, rider_id);
+    CREATE TRIGGER IF NOT EXISTS _wq_split_crossings_insert
+    AFTER INSERT ON split_crossings
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('split_crossings', NEW.id, 'insert');
+    END;
+
+    -- The same for a practice at a track whose course has split readers
+    -- (practice_sessions.course, the copy the cloud took when it started).
+    CREATE TABLE IF NOT EXISTS practice_split_crossings (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id     INTEGER NOT NULL,
+      reader_id      INTEGER,
+      split_sequence INTEGER NOT NULL,
+      label          TEXT,
+      rider_id       INTEGER,
+      rfid_number    TEXT NOT NULL,
+      lap_number     INTEGER NOT NULL,
+      crossing_time  TEXT NOT NULL,
+      created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (session_id, rfid_number, split_sequence, lap_number)
+    );
+    CREATE TRIGGER IF NOT EXISTS _wq_practice_split_crossings_insert
+    AFTER INSERT ON practice_split_crossings
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('practice_split_crossings', NEW.id, 'insert');
+    END;
   `);
   for (const table of [
     "liability_waiver_signatures",
     "enduro_time_checks",
     "enduro_checkpoint_arrivals",
     "event_reader_assignments",
+    "split_crossings",
+    "practice_split_crossings",
   ]) {
     raiseAutoincrementFloor(db, table, 9999999);
   }

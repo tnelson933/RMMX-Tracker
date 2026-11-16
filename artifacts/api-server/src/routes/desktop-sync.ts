@@ -20,6 +20,7 @@ import {
   pointsTablesTable,
   practiceSessionsTable,
   practiceCrossingsTable,
+  practiceSplitCrossingsTable,
   discountCategoriesTable,
   compCodesTable,
   riderAccountsTable,
@@ -779,6 +780,54 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
     results["lap_crossings"] = crossingsUpserted;
     total += crossingsUpserted;
 
+    // ── split_crossings (course split reads on the desktop: sector times) ─────
+    // Insert-only and idempotent on the table's own key (moto, tag, split, lap),
+    // so a retried push, or a split the cloud already has, is stored once.
+    const splitRows = (payload["split_crossings"] ?? []) as Array<Record<string, unknown>>;
+    let splitsUpserted = 0;
+    for (const c of splitRows) {
+      const eventId = mapEventId(c.event_id);
+      const motoId = mapMotoId(c.moto_id);
+      if (!eventId || !motoId) { skip("split_crossings", c, "missing event_id or moto_id"); continue; }
+      if (!await isClubEvent(eventId)) { skip("split_crossings", c, "event not found for this club"); continue; }
+      if (!await motoInEvent(motoId, eventId)) { skip("split_crossings", c, "moto not found in this event"); continue; }
+      const rfidNumber = String(c.rfid_number ?? "");
+      const splitSequence = Number(c.split_sequence);
+      const lapNumber = Number(c.lap_number);
+      const crossingTime = toDate(c.crossing_time);
+      if (!rfidNumber || !Number.isInteger(splitSequence) || splitSequence < 1 || !Number.isInteger(lapNumber) || lapNumber < 1 || !crossingTime) {
+        skip("split_crossings", c, "missing rfid_number, split_sequence, lap_number or crossing_time");
+        continue;
+      }
+      let riderId: number | null = c.rider_id != null && Number(c.rider_id) > 0 ? Number(c.rider_id) : null;
+      if (riderId) {
+        const [rider] = await tx.select({ id: ridersTable.id }).from(ridersTable).where(eq(ridersTable.id, riderId));
+        if (!rider) riderId = null;
+      }
+      const requestedId = c.id != null && Number(c.id) > 0 ? Number(c.id) : undefined;
+      const clientId = requestedId && await idIsFree(splitCrossingsTable, requestedId) ? requestedId : undefined;
+      const inserted = await tx.insert(splitCrossingsTable).values({
+        ...(clientId ? { id: clientId } : {}),
+        eventId,
+        motoId,
+        assignmentId: c.assignment_id != null ? Number(c.assignment_id) || null : null,
+        readerId: c.reader_id != null ? Number(c.reader_id) || null : null,
+        splitSequence,
+        label: c.label != null ? String(c.label) : null,
+        riderId,
+        rfidNumber,
+        lapNumber,
+        crossingTime,
+      }).onConflictDoNothing().returning({ id: splitCrossingsTable.id });
+      if (inserted.length > 0) {
+        if (clientId) explicitIdTables.add("split_crossings");
+        affectedMotoIds.add(motoId);
+      }
+      splitsUpserted++;
+    }
+    results["split_crossings"] = splitsUpserted;
+    total += splitsUpserted;
+
     // ── race_results ──────────────────────────────────────────────────────────
     const raceResults = (payload["race_results"] ?? []) as Array<{
       id?: unknown;
@@ -1377,6 +1426,49 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
     results["practice_crossings"] = practiceCrossingsUpserted;
     total += practiceCrossingsUpserted;
 
+    // ── practice_split_crossings (split reads during a desktop practice) ──────
+    // Insert-only, idempotent on (session, tag, split, lap).
+    const practiceSplitRows = (payload["practice_split_crossings"] ?? []) as Array<Record<string, unknown>>;
+    let practiceSplitsUpserted = 0;
+    for (const c of practiceSplitRows) {
+      const sessionId = Number(c.session_id);
+      const rfidNumber = String(c.rfid_number ?? "");
+      const splitSequence = Number(c.split_sequence);
+      const lapNumber = Number(c.lap_number);
+      const crossingTime = toDate(c.crossing_time);
+      if (!sessionId || !rfidNumber || !Number.isInteger(splitSequence) || splitSequence < 1 || !Number.isInteger(lapNumber) || lapNumber < 1 || !crossingTime) {
+        skip("practice_split_crossings", c, "missing session_id, rfid_number, split_sequence, lap_number or crossing_time");
+        continue;
+      }
+      const [session] = await tx
+        .select({ clubId: practiceSessionsTable.clubId })
+        .from(practiceSessionsTable)
+        .where(eq(practiceSessionsTable.id, sessionId));
+      if (!session || session.clubId !== clubId) { skip("practice_split_crossings", c, "session not found for this club"); continue; }
+      let riderId: number | null = c.rider_id != null && Number(c.rider_id) > 0 ? Number(c.rider_id) : null;
+      if (riderId) {
+        const [rider] = await tx.select({ id: ridersTable.id }).from(ridersTable).where(eq(ridersTable.id, riderId));
+        if (!rider) riderId = null;
+      }
+      const requestedId = c.id != null && Number(c.id) > 0 ? Number(c.id) : undefined;
+      const clientId = requestedId && await idIsFree(practiceSplitCrossingsTable, requestedId) ? requestedId : undefined;
+      const inserted = await tx.insert(practiceSplitCrossingsTable).values({
+        ...(clientId ? { id: clientId } : {}),
+        sessionId,
+        readerId: c.reader_id != null ? Number(c.reader_id) || null : null,
+        splitSequence,
+        label: c.label != null ? String(c.label) : null,
+        riderId,
+        rfidNumber,
+        lapNumber,
+        crossingTime,
+      }).onConflictDoNothing().returning({ id: practiceSplitCrossingsTable.id });
+      if (inserted.length > 0 && clientId) explicitIdTables.add("practice_split_crossings");
+      practiceSplitsUpserted++;
+    }
+    results["practice_split_crossings"] = practiceSplitsUpserted;
+    total += practiceSplitsUpserted;
+
     // ── liability_waiver_signatures (signed at desktop check-in) ──────────────
     // Legal records: insert-only, never updated or deleted from a push. A retry
     // after a lost response finds the same signature and doesn't duplicate it.
@@ -1782,6 +1874,14 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
           .from(practiceCrossingsTable)
           .where(inArray(practiceCrossingsTable.sessionId, practiceSessionIds))
       : [];
+  // Split reads (sector times) of those practices.
+  const practiceSplitCrossings =
+    practiceSessionIds.length > 0
+      ? await db
+          .select()
+          .from(practiceSplitCrossingsTable)
+          .where(inArray(practiceSplitCrossingsTable.sessionId, practiceSessionIds))
+      : [];
 
   // Club waiver texts/PDFs for offline check-in (desktop table keys rows by id).
   const [clubSettingsRow] = await db.select().from(clubSettingsTable).where(eq(clubSettingsTable.clubId, clubId));
@@ -1815,6 +1915,8 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
       compCodes,
       practiceSessions,
       practiceCrossings,
+      splitCrossings: [],
+      practiceSplitCrossings,
       riderAccounts: [],
       riderPushTokens: [],
     });
@@ -1855,6 +1957,8 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     // Group race rosters: every team member's tags, so the desktop times teams offline.
     db.select().from(teamMembersTable).where(inArray(teamMembersTable.eventId, clubEventIds)),
   ]);
+  // Course split reads (sector times), so the desktop shows the same sectors as the website.
+  const splitCrossings = await db.select().from(splitCrossingsTable).where(inArray(splitCrossingsTable.eventId, clubEventIds));
   // Paid check-in add-ons, so the desktop shows them paid and totals them in the event report.
   const addonPayments = await db.select().from(addonPaymentsTable)
     .where(and(inArray(addonPaymentsTable.eventId, clubEventIds), eq(addonPaymentsTable.status, "paid")));
@@ -1943,6 +2047,8 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     compCodes,
     practiceSessions,
     practiceCrossings,
+    splitCrossings,
+    practiceSplitCrossings,
     riderAccounts,
     riderPushTokens,
     clubSettings,
