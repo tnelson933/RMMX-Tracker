@@ -46,6 +46,11 @@ import { sendRaceDayStats } from "../lib/raceDayStats";
 import { queueRaceGasCredits } from "../lib/raceGasCredits";
 import { teamMemberRiderId } from "../lib/teams";
 import { practiceCourseFor, resolveTrackId } from "../lib/trackCourse";
+import { rentalTranspondersTable } from "@workspace/db";
+import { newOrgPushContext, ORG_PUSH_CAPABILITY, pushOrgAfterEvents, pushOrgBeforeEvents, usableCategoryId, usableScoringTableId, type OrgPushContext } from "../lib/desktopOrgPush";
+import { rentalsOut } from "./rental-transponders";
+import { recalculateSeriesPoints } from "./results";
+import { rescoreUsers } from "./points-tables";
 
 const router = Router();
 
@@ -110,6 +115,8 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
   const explicitIdTables = new Set<string>();
   // Follow-up work done after the transaction commits.
   let pushedEnduroEventIds = new Set<number>();
+  // Club setup pushed from the desktop (profile, scoring tables, series, discounts, sell items, rentals).
+  let org: OrgPushContext | null = null;
   let pushedWaiverEmails: Array<{ to: string; signerName: string; eventId: number; signedAt: Date; contentHash: string; waiverSnapshot: string }> = [];
 
   await db.transaction(async (tx) => {
@@ -239,6 +246,11 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       total++;
     }
 
+    // ── club setup that events refer to (scoring tables, discount categories…) ─
+    const orgPush = newOrgPushContext({ tx, clubId, user, payload, deletes, results, skip, mapEventId });
+    org = orgPush;
+    await pushOrgBeforeEvents(orgPush);
+
     // ── events (full field updates made on desktop) ───────────────────────────
     // Desktop queue sends raw SQLite rows (snake_case).  Accept every field the
     // organizer can edit in the desktop app so changes like race date, name, and
@@ -249,6 +261,10 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
     for (const e of events) {
       const eventId = Number(e.id);
       if (!eventId) { skip("events", e, "missing id"); continue; }
+      // The event's scoring table and entry-fee category, under their cloud ids.
+      // undefined: not one this club can use (left as the cloud has it).
+      const scoringTableRef = e.scoring_table_id === undefined ? undefined : await usableScoringTableId(orgPush, e.scoring_table_id);
+      const feeCategoryRef = e.entry_fee_category_id === undefined ? undefined : await usableCategoryId(orgPush, e.entry_fee_category_id);
 
       // Helper: parse a SQLite JSON string stored in e into the proper JS type.
       const parseEventFields = () => {
@@ -330,8 +346,8 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
           transponderRentalFee:     e.transponder_rental_fee != null ? Number(e.transponder_rental_fee) || null : null,
           noDuplicateBibs:          !!e.no_duplicate_bibs,
           requireClubId:            !!e.require_club_id,
-          scoringTableId:           e.scoring_table_id      != null ? Number(e.scoring_table_id)      || null : null,
-          entryFeeCategoryId:       e.entry_fee_category_id != null ? Number(e.entry_fee_category_id) || null : null,
+          scoringTableId:           scoringTableRef ?? null,
+          entryFeeCategoryId:       feeCategoryRef ?? null,
           minLapMs:                 e.min_lap_ms            != null ? Number(e.min_lap_ms)            || null : null,
           registrationOpen:         e.registration_open  != null ? String(e.registration_open)  : null,
           registrationClose:        e.registration_close != null ? String(e.registration_close) : null,
@@ -449,8 +465,10 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       if (e.transponder_rental_fee != null) updateSet.transponderRentalFee = Number(e.transponder_rental_fee) || null;
       if (e.no_duplicate_bibs != null) updateSet.noDuplicateBibs = !!e.no_duplicate_bibs;
       if (e.require_club_id != null) updateSet.requireClubId = !!e.require_club_id;
-      if (e.scoring_table_id != null) updateSet.scoringTableId = Number(e.scoring_table_id) || null;
-      if (e.entry_fee_category_id != null) updateSet.entryFeeCategoryId = Number(e.entry_fee_category_id) || null;
+      // Like the other event fields, only a value is applied: an empty one never
+      // blanks what the website has (it may have been set there since the last pull).
+      if (scoringTableRef != null) updateSet.scoringTableId = scoringTableRef;
+      if (feeCategoryRef != null) updateSet.entryFeeCategoryId = feeCategoryRef;
       if (e.min_lap_ms != null) updateSet.minLapMs = Number(e.min_lap_ms) || null;
       if (e.image_url  != null) updateSet.imageUrl  = String(e.image_url);
       if (e.ama_event_id != null) updateSet.amaEventId = String(e.ama_event_id);
@@ -1772,6 +1790,9 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
     pushedEnduroEventIds = enduroEventIds;
     pushedWaiverEmails = signedWaiverEmails;
 
+    // ── club setup that refers to events and riders (series, codes, rentals) ───
+    await pushOrgAfterEvents(orgPush, rentalsOut);
+
     // Explicit-id inserts don't advance serial sequences; move each one past the
     // highest id so the next cloud-side insert doesn't collide.
     for (const table of explicitIdTables) {
@@ -1874,13 +1895,29 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
     }
   }
 
+  // Standings follow series and scoring tables changed on the desktop, as after the website's own edits.
+  const pushedOrg = org as OrgPushContext | null;
+  if (pushedOrg) {
+    if (pushedOrg.seriesToRecalculate.size > 0) {
+      void recalculateSeriesPoints([...pushedOrg.seriesToRecalculate]).catch(err => req.log.warn({ err }, "desktop-push: series recalculation failed"));
+    }
+    for (const t of pushedOrg.rescoredTables) rescoreUsers(t.tableId, t.clubId);
+  }
+
   const skippedCount = Object.values(skipped).reduce((n, rows) => n + rows.length, 0);
   if (skippedCount > 0) req.log.warn({ clubId, skipped }, "desktop-push skipped rows");
   req.log.info({ clubId, results, total, eventIdRemaps, motoIdRemaps, skippedCount }, "desktop-push complete");
   // Backward compatible: older desktops read only idRemaps.events. `skipped` lists rows
   // (by desktop id, per table) that were not applied; `idRemaps.motos` lists moto ids
   // that collided with another club's moto and were given a new cloud id.
-  return res.json({ ok: true, results, total, idRemaps: { events: eventIdRemaps, motos: motoIdRemaps }, skipped });
+  // `capabilities` tells the desktop which newer tables this cloud stores; the other
+  // idRemaps keys are club-setup rows saved under a different id (lib/desktopOrgPush.ts).
+  return res.json({
+    ok: true, results, total,
+    idRemaps: { events: eventIdRemaps, motos: motoIdRemaps, ...(pushedOrg?.remaps ?? {}) },
+    skipped,
+    capabilities: [ORG_PUSH_CAPABILITY],
+  });
 });
 
 // ─── POST /clubs/:clubId/sync-pull ────────────────────────────────────────────
@@ -1985,6 +2022,9 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     .where(eq(liabilityWaiverSignaturesTable.clubId, clubId));
   // The club's Sell Items prices (Admin → Sell Items), so desktop check-in charges the same offline.
   const clubSellItems = await db.select().from(clubSellItemsTable).where(eq(clubSellItemsTable.clubId, clubId));
+  // The rental transponder inventory (Admin → Rentals). Its presence also tells the
+  // desktop this cloud sends the whole club setup, so rows missing here were removed.
+  const rentalTransponders = await db.select().from(rentalTranspondersTable).where(eq(rentalTranspondersTable.clubId, clubId));
   // The club's readers (never their tokens): the desktop matches its own reader
   // connections to them, so enduro gates and course-map splits work offline.
   const readers = await db.select({
@@ -2012,6 +2052,7 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
       tracks,
       clubSettings,
       clubSellItems,
+      rentalTransponders,
       readers,
       addonPayments: [],
       teamMembers: [],
@@ -2192,6 +2233,7 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     eventReaderAssignments,
     teamMembers,
     clubSellItems,
+    rentalTransponders,
     readers,
     addonPayments,
     tracks,

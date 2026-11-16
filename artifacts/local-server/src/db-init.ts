@@ -1,4 +1,5 @@
 import { getDb } from "./db";
+import { DESKTOP_ID_FLOOR, ORG_TABLES, newDesktopId } from "./lib/desktop-ids";
 
 export function initDb() {
   const db = getDb();
@@ -1198,6 +1199,59 @@ export function initDb() {
     }
   }
 
+  // ── Club setup that syncs both ways ──────────────────────────────────────
+  // Rental transponder inventory (Admin → Rentals), mirrored from the cloud.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS rental_transponders (
+      id                 INTEGER PRIMARY KEY,
+      club_id            INTEGER NOT NULL,
+      transponder_number TEXT NOT NULL,
+      label              TEXT,
+      missing            INTEGER NOT NULL DEFAULT 0,
+      retired            INTEGER NOT NULL DEFAULT 0,
+      notes              TEXT,
+      created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (club_id, transponder_number)
+    );
+  `);
+  // Series, scoring tables, discount categories and codes, sell items and rental
+  // units made, changed or removed on the desktop go to the cloud (rows pulled
+  // from it are written under _cloud_pull_guard and are not queued back).
+  for (const table of ORG_TABLES) {
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS _wq_${table}_insert
+      AFTER INSERT ON ${table}
+      WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+      BEGIN
+        INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('${table}', NEW.id, 'upsert');
+      END;
+      CREATE TRIGGER IF NOT EXISTS _wq_${table}_update
+      AFTER UPDATE ON ${table}
+      WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+      BEGIN
+        INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('${table}', NEW.id, 'upsert');
+      END;
+      CREATE TRIGGER IF NOT EXISTS _wq_${table}_delete
+      AFTER DELETE ON ${table}
+      WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+      BEGIN
+        INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('${table}', OLD.id, 'delete');
+      END;
+    `);
+  }
+  // Club profile (Dashboard → Club Profile): only the fields an organizer edits.
+  // Payment state and retry counters on the same row are not profile edits.
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS _wq_clubs_profile_update
+    AFTER UPDATE OF name, state, contact_email, contact_phone, logo_url, website, description,
+                    auto_dnf_enabled, auto_dnf_threshold ON clubs
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('clubs', NEW.id, 'upsert');
+    END;
+  `);
+  queueLegacyClubSetup(db);
+
   // Seed autoincrement sequences so desktop-created rows start at a high ID range
   // and never collide with cloud-assigned sequential IDs (1, 2, 3...).
   // An already-elevated sequence is never lowered. (practice_sessions has no
@@ -1223,4 +1277,84 @@ function raiseAutoincrementFloor(db: ReturnType<typeof getDb>, table: string, fl
   } catch {
     // sqlite_sequence exists once any AUTOINCREMENT table has been created.
   }
+}
+
+/**
+ * Before club setup synced, a series, scoring table, discount category or code
+ * made on this desktop stayed here, numbered right after the rows pulled from
+ * the cloud. Once: move each into the desktop's id range (so a pulled row can
+ * never land on it), re-point what refers to it, and queue it for the cloud.
+ * Such rows are told apart by their timestamp: SQLite's "YYYY-MM-DD HH:MM:SS",
+ * where a pulled row carries the cloud's ISO time.
+ */
+function queueLegacyClubSetup(db: ReturnType<typeof getDb>): void {
+  const done = db.prepare("SELECT 1 FROM _local_data_migrations WHERE name = 'queue-local-club-setup'").get();
+  if (done) return;
+  const madeHere = "created_at NOT LIKE '%T%'";
+  const queue = db.prepare("INSERT INTO _write_queue (table_name, record_id, operation) VALUES (?, ?, 'upsert')");
+  const jsonIds = (text: unknown): number[] => {
+    try { const v = JSON.parse(String(text ?? "[]")); return Array.isArray(v) ? v.map(Number) : []; } catch { return []; }
+  };
+  db.transaction(() => {
+    const requeue = { events: new Set<number>(), series: new Set<number>(), comp_codes: new Set<number>() };
+    db.prepare("INSERT OR IGNORE INTO _cloud_pull_guard VALUES(1)").run();
+    try {
+      for (const table of ["points_tables", "discount_categories", "series", "comp_codes"] as const) {
+        const ownOnly = table === "points_tables" ? " AND club_id IS NOT NULL AND is_system_default = 0" : "";
+        const rows = db.prepare(`SELECT id FROM ${table} WHERE id < ? AND ${madeHere}${ownOnly}`)
+          .all(DESKTOP_ID_FLOOR) as Array<{ id: number }>;
+        for (const { id } of rows) {
+          const next = newDesktopId(db, table);
+          db.prepare(`UPDATE ${table} SET id = ? WHERE id = ?`).run(next, id);
+          if (table === "points_tables") {
+            for (const e of db.prepare("SELECT id FROM events WHERE scoring_table_id = ?").all(id) as Array<{ id: number }>) requeue.events.add(e.id);
+            for (const s of db.prepare("SELECT id FROM series WHERE scoring_table_id = ?").all(id) as Array<{ id: number }>) requeue.series.add(s.id);
+            db.prepare("UPDATE events SET scoring_table_id = ? WHERE scoring_table_id = ?").run(next, id);
+            db.prepare("UPDATE series SET scoring_table_id = ? WHERE scoring_table_id = ?").run(next, id);
+          } else if (table === "discount_categories") {
+            for (const e of db.prepare("SELECT id FROM events WHERE entry_fee_category_id = ?").all(id) as Array<{ id: number }>) requeue.events.add(e.id);
+            db.prepare("UPDATE events SET entry_fee_category_id = ? WHERE entry_fee_category_id = ?").run(next, id);
+            for (const c of db.prepare("SELECT id, category_ids FROM comp_codes").all() as Array<{ id: number; category_ids: string | null }>) {
+              const ids = jsonIds(c.category_ids);
+              if (!ids.includes(id)) continue;
+              db.prepare("UPDATE comp_codes SET category_ids = ? WHERE id = ?").run(JSON.stringify(ids.map(n => (n === id ? next : n))), c.id);
+              requeue.comp_codes.add(c.id);
+            }
+          } else if (table === "series") {
+            if (requeue.series.delete(id)) requeue.series.add(next);
+            db.prepare("UPDATE series_points SET series_id = ? WHERE series_id = ?").run(next, id);
+            const events = db.prepare("SELECT id, race_class_series_map FROM events WHERE race_class_series_map IS NOT NULL")
+              .all() as Array<{ id: number; race_class_series_map: string }>;
+            for (const e of events) {
+              let map: Record<string, unknown>;
+              try { map = JSON.parse(e.race_class_series_map); } catch { continue; }
+              if (!map || typeof map !== "object") continue;
+              let touched = false;
+              for (const [cls, ids] of Object.entries(map)) {
+                if (!Array.isArray(ids) || !ids.map(Number).includes(id)) continue;
+                map[cls] = ids.map(n => (Number(n) === id ? next : n));
+                touched = true;
+              }
+              if (!touched) continue;
+              db.prepare("UPDATE events SET race_class_series_map = ? WHERE id = ?").run(JSON.stringify(map), e.id);
+              requeue.events.add(e.id);
+            }
+          } else if (requeue.comp_codes.delete(id)) {
+            requeue.comp_codes.add(next);
+          }
+          queue.run(table, next);
+        }
+      }
+    } finally {
+      db.prepare("DELETE FROM _cloud_pull_guard").run();
+    }
+    // Rows that referred to a renumbered one carry its new id to the cloud.
+    const alreadyQueued = db.prepare(
+      "SELECT 1 FROM _write_queue WHERE table_name = ? AND record_id = ? AND synced_at IS NULL AND operation != 'delete'",
+    );
+    for (const [table, ids] of Object.entries(requeue)) {
+      for (const id of ids) if (!alreadyQueued.get(table, id)) queue.run(table, id);
+    }
+    db.prepare("INSERT OR IGNORE INTO _local_data_migrations (name) VALUES ('queue-local-club-setup')").run();
+  })();
 }

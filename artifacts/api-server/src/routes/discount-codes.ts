@@ -222,7 +222,8 @@ router.post("/discount-codes", async (req, res) => {
       createdAt: row.createdAt.toISOString(),
     });
   } catch (err: any) {
-    if (err?.code === "23505") {
+    // The driver's error may be wrapped by the query builder.
+    if ((err?.code ?? err?.cause?.code) === "23505") {
       return res.status(409).json({ error: "That code is already in use. Pick a different code." });
     }
     throw err;

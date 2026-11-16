@@ -1,5 +1,7 @@
 import { Router } from "express";
 import { getDb } from "../db";
+import { newDesktopId } from "../lib/desktop-ids";
+import { isoTime } from "../lib/cloud-shape";
 
 const router = Router();
 
@@ -8,8 +10,7 @@ function serializeCategory(c: Record<string, unknown>) {
     id: c.id,
     clubId: c.club_id,
     name: c.name,
-    description: c.description ?? null,
-    createdAt: c.created_at,
+    createdAt: isoTime(c.created_at),
   };
 }
 
@@ -67,9 +68,13 @@ router.post("/discount-categories", (req, res) => {
   if (!String(name ?? "").trim()) return res.status(400).json({ error: "Enter a name." });
 
   const db = getDb();
+  // A club's category names are unique (the website's database enforces it).
+  if (db.prepare("SELECT 1 FROM discount_categories WHERE club_id = ? AND name = ?").get(clubId, String(name).trim())) {
+    return res.status(409).json({ error: "You already have a category with this name." });
+  }
   const result = db
-    .prepare("INSERT INTO discount_categories (club_id, name) VALUES (?, ?)")
-    .run(clubId, String(name).trim());
+    .prepare("INSERT INTO discount_categories (id, club_id, name) VALUES (?, ?, ?)")
+    .run(newDesktopId(db, "discount_categories"), clubId, String(name).trim());
 
   const row = db
     .prepare("SELECT * FROM discount_categories WHERE id = ?")
@@ -89,6 +94,9 @@ router.patch("/discount-categories/:categoryId", (req, res) => {
   if (!String(name ?? "").trim()) return res.status(400).json({ error: "Enter a name." });
 
   const db = getDb();
+  if (db.prepare("SELECT 1 FROM discount_categories WHERE club_id = ? AND name = ? AND id != ?").get(clubId, String(name).trim(), categoryId)) {
+    return res.status(409).json({ error: "You already have a category with this name." });
+  }
   db.prepare("UPDATE discount_categories SET name = ? WHERE id = ? AND club_id = ?")
     .run(String(name).trim(), categoryId, clubId);
 
@@ -112,6 +120,10 @@ router.delete("/discount-categories/:categoryId", (req, res) => {
     .prepare("SELECT id FROM discount_categories WHERE id = ? AND club_id = ?")
     .get(categoryId, clubId) as any;
   if (!row) return res.status(404).json({ error: "This category couldn't be found. It may have been deleted. Refresh the page and try again." });
+
+  // An event's entry-fee category can't be removed (the website's database refuses it too).
+  const inUse = db.prepare("SELECT name FROM events WHERE entry_fee_category_id = ? LIMIT 1").get(categoryId) as { name: string } | undefined;
+  if (inUse) return res.status(409).json({ error: `This category is the entry-fee category of "${inUse.name}". Choose another category for that event first.` });
 
   db.prepare("DELETE FROM discount_categories WHERE id = ? AND club_id = ?").run(categoryId, clubId);
   return res.json({ ok: true });

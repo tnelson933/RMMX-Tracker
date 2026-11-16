@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { getDb } from "../db";
 import crypto from "crypto";
+import { newDesktopId } from "../lib/desktop-ids";
+import { isoTime } from "../lib/cloud-shape";
 
 const router = Router();
 
@@ -35,7 +37,7 @@ function eventClub(eventId: number): { club_id: number | null; entry_fee_categor
  * Local riders have no club column. A rider may get a club's code unless they are
  * evidently another club's: registered only at other clubs' events.
  */
-function riderUsableByClub(riderId: number, clubId: number): boolean {
+export function riderUsableByClub(riderId: number, clubId: number): boolean {
   const db = getDb();
   if (!db.prepare("SELECT id FROM riders WHERE id = ?").get(riderId)) return false;
   const own = db.prepare(
@@ -81,26 +83,24 @@ router.get("/events/:eventId/comp-codes", (req, res) => {
        FROM comp_codes cc
        LEFT JOIN riders r ON cc.rider_id = r.id
        WHERE cc.event_id = ?
-       ORDER BY cc.created_at ASC`,
+       ORDER BY julianday(cc.created_at) ASC, cc.id ASC`,
     )
     .all(eventId) as any[];
 
   return res.json(
     rows.map((r: any) => ({
       id: r.id,
-      eventId: r.event_id ?? null,
-      clubId: r.club_id ?? null,
-      riderId: r.rider_id ?? null,
-      riderName: r.rider_name ?? null,
       code: r.code,
-      discountType: r.discount_type,
       amount: Number(r.amount),
+      discountType: r.discount_type,
       maxUses: r.max_uses,
       usesCount: r.uses_count,
       isActive: r.is_active === 1,
-      expiresAt: r.expires_at ?? null,
+      expiresAt: isoTime(r.expires_at),
       categoryIds: r.category_ids ? JSON.parse(r.category_ids) : [],
-      createdAt: r.created_at,
+      createdAt: isoTime(r.created_at),
+      riderId: r.rider_id ?? null,
+      riderName: r.rider_name ?? null,
     })),
   );
 });
@@ -141,11 +141,21 @@ router.post("/events/:eventId/comp-codes", (req, res) => {
   if (!ev) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
   if (ev.club_id != null && ev.club_id !== clubId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
 
-  const insert = db.prepare(
+  // Codes are unique (the website's database enforces it across RM Roost).
+  const codeTaken = db.prepare("SELECT 1 FROM comp_codes WHERE code = ?");
+  const insertRow = db.prepare(
     `INSERT INTO comp_codes
-       (event_id, club_id, code, discount_type, amount, max_uses, uses_count, is_active, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?)`,
+       (id, event_id, club_id, code, discount_type, amount, max_uses, uses_count, is_active, expires_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)`,
   );
+  // Each code a millisecond after the last, so the list keeps the order they were made in.
+  let madeAt = Date.now();
+  const insert = {
+    run: (...args: Array<string | number | null>) => {
+      if (codeTaken.get(args[2])) throw new Error("UNIQUE constraint failed: comp_codes.code");
+      return insertRow.run(newDesktopId(db, "comp_codes"), ...args, new Date(madeAt++).toISOString());
+    },
+  };
 
   if (customCode) {
     const codeStr = String(customCode).trim().toUpperCase();
@@ -255,7 +265,7 @@ router.get("/clubs/:clubId/riders/:riderId/discount-code", (req, res) => {
     amount: Number(row.amount),
     maxUses: row.max_uses,
     usesCount: row.uses_count,
-    createdAt: row.created_at,
+    createdAt: isoTime(row.created_at),
     riderId: row.rider_id,
     riderName: `${rider.first_name} ${rider.last_name}`,
   });
@@ -294,34 +304,33 @@ router.post("/clubs/:clubId/riders/:riderId/discount-code", (req, res) => {
     return res.status(409).json({ error: "This rider already has a discount code. Delete it first before generating a new one." });
   }
   const rider = db.prepare("SELECT first_name, last_name FROM riders WHERE id = ?").get(riderId) as { first_name: string; last_name: string };
-  const code = customCode ? String(customCode).trim().toUpperCase() : generateCode();
+  let code = customCode ? String(customCode).trim().toUpperCase() : generateCode();
+  const codeTaken = db.prepare("SELECT 1 FROM comp_codes WHERE code = ?");
+  for (let attempts = 0; !customCode && codeTaken.get(code) && attempts < 20; attempts++) code = generateCode();
 
   try {
+    if (codeTaken.get(code)) throw new Error("UNIQUE constraint failed: comp_codes.code");
     const result = db
       .prepare(
         `INSERT INTO comp_codes
-           (club_id, rider_id, code, discount_type, amount, max_uses, uses_count, is_active, expires_at)
-         VALUES (?, ?, ?, ?, ?, 1, 0, 1, ?)`,
+           (id, club_id, rider_id, code, discount_type, amount, max_uses, uses_count, is_active, expires_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, 1, 0, 1, ?, ?)`,
       )
-      .run(clubId, riderId, code, discountType, String(amount), expiresAt ?? null);
+      .run(newDesktopId(db, "comp_codes"), clubId, riderId, code, discountType, String(amount), expiresAt ?? null, new Date().toISOString());
 
     const row = db
       .prepare("SELECT * FROM comp_codes WHERE id = ?")
       .get(Number(result.lastInsertRowid)) as any;
+    // The website's reply for a new rider code.
     return res.status(201).json({
-      riderName: `${rider.first_name} ${rider.last_name}`,
       id: row.id,
-      eventId: row.event_id ?? null,
-      clubId: row.club_id ?? null,
-      riderId: row.rider_id ?? null,
       code: row.code,
-      discountType: row.discount_type,
       amount: Number(row.amount),
       maxUses: row.max_uses,
       usesCount: row.uses_count,
-      isActive: row.is_active === 1,
-      expiresAt: row.expires_at ?? null,
-      createdAt: row.created_at,
+      createdAt: isoTime(row.created_at),
+      riderId: row.rider_id,
+      riderName: `${rider.first_name} ${rider.last_name}`,
     });
   } catch (err: any) {
     if (err?.message?.includes("UNIQUE")) {

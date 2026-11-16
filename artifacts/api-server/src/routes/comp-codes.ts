@@ -90,7 +90,8 @@ router.post("/events/:eventId/comp-codes", async (req, res) => {
       }).returning({ code: compCodesTable.code });
       return res.status(201).json({ codes: row ? [row.code] : [], amount: Number(amount), discountType });
     } catch (err: any) {
-      if (err?.code === "23505") return res.status(409).json({ error: "That code is already in use. Pick a different code." });
+      // The driver's error may be wrapped by the query builder.
+      if ((err?.code ?? err?.cause?.code) === "23505") return res.status(409).json({ error: "That code is already in use. Pick a different code." });
       throw err;
     }
   }

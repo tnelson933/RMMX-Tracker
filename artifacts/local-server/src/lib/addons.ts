@@ -3,6 +3,7 @@ import { checkinSellPrices, eventTrackrPrice, summarizeAddonSales } from "@works
 import type { AddonItem, AddonSales, CashTender, MethodTotal, SellItemKind } from "@workspace/api-zod";
 import { getDb, paidAddons, parseJsonArr } from "../db";
 import { RM_TRACKR_NAME, RM_TRACKR_PRICE } from "./rm-trackr";
+import { newDesktopId } from "./desktop-ids";
 
 /**
  * Check-in add-ons on the desktop server: the club's Sell Items prices (pulled
@@ -11,6 +12,32 @@ import { RM_TRACKR_NAME, RM_TRACKR_PRICE } from "./rm-trackr";
  */
 
 export interface SellItem { id: number; kind: SellItemKind; name: string; price: number | null; hidden: boolean }
+
+/**
+ * The RM TrackR Transponder and RFID Tag always exist, as on the website
+ * (created the first time the list is opened). Rows made here for a club that
+ * has none yet are not sent to the cloud until the organizer changes one.
+ */
+export function ensureBuiltInSellItems(clubId: number): void {
+  const db = getDb();
+  const kinds = new Set((db.prepare("SELECT kind FROM club_sell_items WHERE club_id = ?").all(clubId) as Array<{ kind: string }>).map(r => r.kind));
+  const missing = [
+    { kind: "rm_trackr", name: RM_TRACKR_NAME, price: RM_TRACKR_PRICE.toFixed(2), sortOrder: 0 },
+    { kind: "rfid_tag", name: "RFID Tag", price: null, sortOrder: 1 },
+  ].filter(b => !kinds.has(b.kind));
+  if (missing.length === 0) return;
+  db.transaction(() => {
+    db.prepare("INSERT OR IGNORE INTO _cloud_pull_guard VALUES(1)").run();
+    try {
+      for (const b of missing) {
+        db.prepare("INSERT INTO club_sell_items (id, club_id, kind, name, price, hidden, sort_order, created_at) VALUES (?, ?, ?, ?, ?, 0, ?, datetime('now'))")
+          .run(newDesktopId(db, "club_sell_items"), clubId, b.kind, b.name, b.price, b.sortOrder);
+      }
+    } finally {
+      db.prepare("DELETE FROM _cloud_pull_guard").run();
+    }
+  })();
+}
 
 /**
  * The club's sell items as last pulled from the cloud. Like the cloud, the RM

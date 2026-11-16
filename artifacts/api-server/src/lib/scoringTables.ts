@@ -1,6 +1,6 @@
 import { db, pointsTablesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { formulaPoints } from "./safeFormula";
+import { evaluateFormula, formulaPoints } from "./safeFormula";
 import { AMA_POINTS, isLowerBetter, olympicPenalty } from "./overallOrder";
 
 export const SCORING_METHODS = ["highest_points", "lowest_positions", "per_rider", "formula"] as const;
@@ -30,6 +30,18 @@ export function scoringMethodError(method: unknown): string | null {
   return (SCORING_METHODS as readonly unknown[]).includes(method)
     ? null
     : `scoringMethod must be one of: ${SCORING_METHODS.join(", ")}`;
+}
+
+/** Reject formulas the points engine can't evaluate, so a bad one doesn't silently score 0. */
+export function formulaError(formula: unknown): string | null {
+  if (formula == null || formula === "") return null;
+  if (typeof formula !== "string") return "scoringFormula must be a string";
+  try {
+    evaluateFormula(formula, { position: 1, riders: 10 });
+    return null;
+  } catch (err) {
+    return `Invalid scoring formula: ${(err as Error).message}. Use position, riders, numbers, + - * / % **, comparisons, ?:, and Math functions.`;
+  }
 }
 
 /** No scoring table: the current AMA scale (see lib/overallOrder.ts). */

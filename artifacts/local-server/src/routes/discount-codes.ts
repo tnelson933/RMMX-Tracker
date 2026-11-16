@@ -1,6 +1,50 @@
 import { Router } from "express";
 import crypto from "crypto";
 import { getDb } from "../db";
+import { newDesktopId } from "../lib/desktop-ids";
+import { isoTime } from "../lib/cloud-shape";
+import { riderUsableByClub } from "./comp-codes";
+
+const MAX_USES_UNLIMITED = 999999;
+
+/** maxUses from the request: -1 = unlimited, otherwise a whole number >= 1. Undefined = invalid. */
+function parseMaxUses(raw: unknown): number | undefined {
+  const n = Number(raw);
+  if (raw === null || raw === "" || typeof raw === "boolean" || !Number.isInteger(n)) return undefined;
+  if (n === -1) return MAX_USES_UNLIMITED;
+  if (n < 1 || n > MAX_USES_UNLIMITED) return undefined;
+  return n;
+}
+
+/** Validated category ids, all this club's; a string error otherwise. */
+function parseCategoryIds(raw: unknown, clubId: number): number[] | string {
+  if (raw == null) return [];
+  if (!Array.isArray(raw)) return "categoryIds must be a list";
+  const ids = [...new Set(raw.map(Number))];
+  if (ids.some(id => !Number.isInteger(id) || id <= 0)) return "categoryIds must be category ids";
+  if (ids.length === 0) return [];
+  const owned = getDb()
+    .prepare(`SELECT id FROM discount_categories WHERE club_id = ? AND id IN (${ids.map(() => "?").join(",")})`)
+    .all(clubId, ...ids);
+  if (owned.length !== ids.length) return "One or more categories were not found";
+  return ids;
+}
+
+/** A rider id the club may attach a code to (null clears it); a string error otherwise. */
+function parseRiderId(raw: unknown, clubId: number): number | null | string {
+  if (raw == null || raw === "") return null;
+  const id = Number(raw);
+  if (!Number.isInteger(id) || id <= 0) return "Invalid rider";
+  if (!riderUsableByClub(id, clubId)) return "Rider not found";
+  return id;
+}
+
+/** An expiry from the request: null clears it; undefined = invalid date. */
+function parseExpiresAt(raw: unknown): string | null | undefined {
+  if (raw == null || raw === "") return null;
+  const d = new Date(String(raw));
+  return isNaN(d.getTime()) ? undefined : d.toISOString();
+}
 
 const router = Router();
 
@@ -38,11 +82,11 @@ function formatRow(r: any): object {
     maxUses: r.max_uses,
     usesCount: r.uses_count,
     isActive: r.is_active === 1 || r.is_active === true,
-    expiresAt: r.expires_at ?? null,
+    expiresAt: isoTime(r.expires_at),
     categoryIds: r.category_ids
       ? (() => { try { return JSON.parse(r.category_ids); } catch { return []; } })()
       : [],
-    createdAt: r.created_at,
+    createdAt: isoTime(r.created_at),
   };
 }
 
@@ -67,7 +111,7 @@ router.get("/discount-codes", (req, res) => {
        LEFT JOIN riders r ON cc.rider_id = r.id
        WHERE cc.club_id = ?
          ${filterRiderId ? "AND cc.rider_id = ?" : ""}
-       ORDER BY cc.created_at ASC`,
+       ORDER BY julianday(cc.created_at) ASC, cc.id ASC`,
     )
     .all(...([clubId, ...(filterRiderId ? [filterRiderId] : [])] as any[])) as any[];
 
@@ -81,32 +125,47 @@ router.post("/discount-codes", (req, res) => {
 
   const { code: customCode, discountType = "fixed", amount, maxUses, expiresAt, categoryIds, riderId } = req.body;
 
-  if (amount == null || Number(amount) <= 0) {
+  if (discountType !== "fixed" && discountType !== "percentage") {
+    return res.status(400).json({ error: "Choose a dollar amount or a percentage discount." });
+  }
+  const amountNum = Number(amount);
+  if (amount == null || amount === "" || !Number.isFinite(amountNum) || amountNum <= 0) {
     return res.status(400).json({ error: "Enter an amount greater than $0." });
   }
-  if (discountType === "percentage" && Number(amount) > 100) {
+  if (discountType === "percentage" && amountNum > 100) {
     return res.status(400).json({ error: "A percentage discount can't be more than 100%." });
   }
 
   const db = getDb();
-  const riderIdNum = riderId ? Number(riderId) : null;
-  const maxUsesNum = maxUses === -1 ? 999999 : Math.max(1, Number(maxUses) || 1);
+  const riderIdParsed = parseRiderId(riderId, clubId);
+  if (typeof riderIdParsed === "string") return res.status(400).json({ error: riderIdParsed });
+  const riderIdNum = riderIdParsed;
 
+  const maxUsesNum = maxUses === undefined ? 1 : parseMaxUses(maxUses);
+  if (maxUsesNum === undefined) return res.status(400).json({ error: "Enter how many times the code can be used (1 or more), or choose Unlimited." });
+
+  const categoryIdsParsed = parseCategoryIds(categoryIds, clubId);
+  if (typeof categoryIdsParsed === "string") return res.status(400).json({ error: categoryIdsParsed });
+
+  const expiresAtValue = parseExpiresAt(expiresAt);
+  if (expiresAtValue === undefined) return res.status(400).json({ error: "Enter a valid expiry date." });
+
+  const codeTaken = db.prepare("SELECT id FROM comp_codes WHERE code = ?");
   let codeStr: string;
   if (customCode) {
     codeStr = String(customCode).trim().toUpperCase();
+    if (!codeStr) return res.status(400).json({ error: "Enter a code." });
   } else {
     codeStr = generateCode();
     let attempts = 0;
     while (attempts < 20) {
-      const existing = db
-        .prepare("SELECT id FROM comp_codes WHERE code = ?")
-        .get(codeStr);
-      if (!existing) break;
+      if (!codeTaken.get(codeStr)) break;
       codeStr = generateCode();
       attempts++;
     }
   }
+  // Codes are unique (the website's database enforces it across RM Roost).
+  if (codeTaken.get(codeStr)) return res.status(409).json({ error: "That code is already in use. Pick a different code." });
 
   let riderName: string | null = null;
   if (riderIdNum) {
@@ -119,19 +178,21 @@ router.post("/discount-codes", (req, res) => {
   try {
     const result = db
       .prepare(
-        `INSERT INTO comp_codes (club_id, code, discount_type, amount, max_uses, uses_count,
+        `INSERT INTO comp_codes (id, club_id, code, discount_type, amount, max_uses, uses_count,
            is_active, expires_at, category_ids, rider_id, created_at)
-         VALUES (?, ?, ?, ?, ?, 0, 1, ?, ?, ?, datetime('now'))`,
+         VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?, ?)`,
       )
       .run(
+        newDesktopId(db, "comp_codes"),
         clubId,
         codeStr,
-        discountType === "percentage" ? "percentage" : "fixed",
-        String(amount),
+        discountType,
+        amountNum.toFixed(2),
         maxUsesNum,
-        expiresAt ? String(expiresAt) : null,
-        Array.isArray(categoryIds) ? JSON.stringify(categoryIds) : "[]",
+        expiresAtValue,
+        JSON.stringify(categoryIdsParsed),
         riderIdNum,
+        new Date().toISOString(),
       );
 
     const row = db
@@ -159,43 +220,63 @@ router.patch("/discount-codes/:codeId", (req, res) => {
 
   const codeId = Number(req.params.codeId);
   const db = getDb();
+  const notFound = { error: "This discount code couldn't be found. It may have been deleted. Refresh the page and try again." };
+  if (!Number.isInteger(codeId) || codeId <= 0) return res.status(404).json(notFound);
+  const current = db.prepare("SELECT * FROM comp_codes WHERE id = ? AND club_id = ?").get(codeId, clubId) as any;
+  if (!current) return res.status(404).json(notFound);
 
+  // The website's checks and messages, in its order.
   const fields: string[] = [];
   const values: unknown[] = [];
 
   if (req.body.isActive !== undefined) {
+    if (typeof req.body.isActive !== "boolean") return res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
     fields.push("is_active = ?");
     values.push(req.body.isActive ? 1 : 0);
   }
+  let effectiveType: string = current.discount_type;
   if (req.body.discountType !== undefined) {
+    if (req.body.discountType !== "fixed" && req.body.discountType !== "percentage") {
+      return res.status(400).json({ error: "Choose a dollar amount or a percentage discount." });
+    }
+    effectiveType = req.body.discountType;
     fields.push("discount_type = ?");
     values.push(req.body.discountType);
   }
+  let amt = Number(current.amount);
   if (req.body.amount !== undefined) {
-    const amt = Number(req.body.amount);
-    if (isNaN(amt) || amt <= 0) return res.status(400).json({ error: "Enter an amount greater than $0." });
-    if (req.body.discountType === "percentage" && amt > 100) {
-      return res.status(400).json({ error: "A percentage discount can't be more than 100%." });
+    amt = Number(req.body.amount);
+    if (req.body.amount === null || req.body.amount === "" || !Number.isFinite(amt) || amt <= 0) {
+      return res.status(400).json({ error: "Enter an amount greater than $0." });
     }
     fields.push("amount = ?");
-    values.push(String(amt));
+    values.push(amt.toFixed(2));
   }
+  // The percentage cap applies to the type the code will have after this change.
+  if (effectiveType === "percentage" && amt > 100) return res.status(400).json({ error: "A percentage discount can't be more than 100%." });
   if (req.body.maxUses !== undefined) {
-    const raw = Number(req.body.maxUses);
+    const parsed = parseMaxUses(req.body.maxUses);
+    if (parsed === undefined) return res.status(400).json({ error: "Enter how many times the code can be used (1 or more), or choose Unlimited." });
     fields.push("max_uses = ?");
-    values.push(raw === -1 ? 999999 : Math.max(1, raw));
+    values.push(parsed);
   }
   if ("riderId" in req.body) {
+    const parsed = parseRiderId(req.body.riderId, clubId);
+    if (typeof parsed === "string") return res.status(400).json({ error: parsed });
     fields.push("rider_id = ?");
-    values.push(req.body.riderId ? Number(req.body.riderId) : null);
+    values.push(parsed);
   }
   if (req.body.expiresAt !== undefined) {
+    const parsed = parseExpiresAt(req.body.expiresAt);
+    if (parsed === undefined) return res.status(400).json({ error: "Enter a valid expiry date." });
     fields.push("expires_at = ?");
-    values.push(req.body.expiresAt ? String(req.body.expiresAt) : null);
+    values.push(parsed);
   }
   if (req.body.categoryIds !== undefined) {
+    const parsed = parseCategoryIds(req.body.categoryIds, clubId);
+    if (typeof parsed === "string") return res.status(400).json({ error: parsed });
     fields.push("category_ids = ?");
-    values.push(JSON.stringify(Array.isArray(req.body.categoryIds) ? req.body.categoryIds : []));
+    values.push(JSON.stringify(parsed));
   }
 
   if (fields.length === 0) return res.status(400).json({ error: "Nothing was changed. Edit a field, then save." });
@@ -247,7 +328,7 @@ router.get("/discount-codes/:codeId/usage", (req, res) => {
        FROM registrations r
        INNER JOIN riders ri ON r.rider_id = ri.id
        INNER JOIN events e ON r.event_id = e.id
-       WHERE r.comp_code = ?
+       WHERE r.comp_code = ? AND r.status != 'void'
        ORDER BY r.created_at ASC`,
     )
     .all(codeRow.code) as any[];

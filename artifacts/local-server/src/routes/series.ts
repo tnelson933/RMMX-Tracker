@@ -2,6 +2,8 @@ import { Router } from "express";
 import { compareOverall, isLowerBetter, olympicPenalty, overallPositions } from "../lib/overallOrder";
 import { getDb } from "../db";
 import { computeSeriesStandings } from "../lib/series-standings";
+import { newDesktopId } from "../lib/desktop-ids";
+import { isoTime } from "../lib/cloud-shape";
 
 const router = Router();
 
@@ -15,14 +17,14 @@ function seasonOf(s: any): number | string {
 function serializeSeries(s: any) {
   return {
     id: s.id,
-    clubId: s.club_id,
     name: s.name,
+    clubId: s.club_id,
     season: seasonOf(s),
     classes: (() => { try { return JSON.parse(s.classes || "[]"); } catch { return []; } })(),
     eventIds: (() => { try { return JSON.parse(s.event_ids || "[]"); } catch { return []; } })(),
     scoringTableId: s.scoring_table_id ?? null,
     pointsSystem: s.points_system ?? "standard",
-    createdAt: s.created_at,
+    createdAt: isoTime(s.created_at),
   };
 }
 
@@ -45,6 +47,23 @@ function seriesLowerIsBetter(series: any): boolean {
 /** Event ids without duplicates (a duplicate would count an event twice). */
 function uniqueIds(ids: unknown): number[] {
   return Array.isArray(ids) ? [...new Set(ids.map(Number).filter(Number.isFinite))] : [];
+}
+
+/** A system scoring table or one of this club's own (the website's rule for events and series). */
+function scoringTableUsable(tableId: unknown, clubId: number): boolean {
+  if (tableId == null || tableId === "") return true;
+  const table = getDb().prepare("SELECT club_id FROM points_tables WHERE id = ?").get(Number(tableId)) as { club_id: number | null } | undefined;
+  return !!table && (table.club_id == null || table.club_id === clubId);
+}
+
+/** Event ids from `eventIds` that aren't this club's events. */
+function foreignEventIds(eventIds: unknown, clubId: number): number[] {
+  if (!Array.isArray(eventIds) || eventIds.length === 0) return [];
+  const ids = eventIds.map(Number);
+  const own = new Set(
+    (getDb().prepare(`SELECT id FROM events WHERE club_id = ? AND id IN (${ids.map(() => "?").join(",")})`).all(clubId, ...ids) as Array<{ id: number }>).map(r => r.id),
+  );
+  return ids.filter(id => !own.has(id));
 }
 
 /** A class's standings are official once all its finished races are finalized (as in the cloud). */
@@ -80,12 +99,18 @@ router.post("/series", (req, res) => {
     return res.status(400).json({ error: "Enter a series name and season." });
   }
 
+  // The website's checks, in its order.
+  if (!scoringTableUsable(scoringTableId, clubId)) return res.status(400).json({ error: "That scoring table isn't available to this club." });
+  const foreignOnCreate = foreignEventIds(eventIds, clubId);
+  if (foreignOnCreate.length > 0) return res.status(400).json({ error: `Events ${foreignOnCreate.join(", ")} don't belong to this club.` });
+
   const result = db
     .prepare(
-      `INSERT INTO series (club_id, name, season, year, classes, event_ids, points_system, scoring_table_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+      `INSERT INTO series (id, club_id, name, season, year, classes, event_ids, points_system, scoring_table_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
     )
     .run(
+      newDesktopId(db, "series"),
       clubId, String(name), String(season),
       Number(season) || 0,
       JSON.stringify(classes ?? []),
@@ -107,6 +132,32 @@ router.patch("/series/:seriesId", (req, res) => {
 
   const db = getDb();
   const id = Number(req.params.seriesId);
+  const existing = db.prepare("SELECT * FROM series WHERE id = ?").get(id) as any;
+  if (!existing) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
+
+  // The website's checks, in its order.
+  const { eventIds, scoringTableId } = req.body;
+  const foreignOnUpdate = foreignEventIds(eventIds, existing.club_id);
+  if (foreignOnUpdate.length > 0) return res.status(400).json({ error: `Events ${foreignOnUpdate.join(", ")} don't belong to this club.` });
+  if (scoringTableId !== undefined && !scoringTableUsable(scoringTableId, existing.club_id)) {
+    return res.status(400).json({ error: "That scoring table isn't available to this club." });
+  }
+  // Events must match the series' scoring format, whether the events or the table change.
+  const existingIds = uniqueIds((() => { try { return JSON.parse(existing.event_ids || "[]"); } catch { return []; } })());
+  const checkIds = eventIds !== undefined ? uniqueIds(eventIds) : existingIds;
+  if (checkIds.length > 0 && (eventIds !== undefined || scoringTableId !== undefined)) {
+    const tableId = scoringTableId !== undefined ? (scoringTableId ?? null) : existing.scoring_table_id;
+    if (tableId) {
+      const events = db.prepare(`SELECT id, scoring_table_id FROM events WHERE id IN (${checkIds.map(() => "?").join(",")})`)
+        .all(...checkIds) as Array<{ id: number; scoring_table_id: number | null }>;
+      const mismatched = events.filter(e => e.scoring_table_id !== Number(tableId));
+      if (mismatched.length > 0) {
+        return res.status(400).json({
+          error: `Events ${mismatched.map(e => e.id).join(", ")} use a different scoring format than this series. All events in a series must use the same scoring format.`,
+        });
+      }
+    }
+  }
 
   const fields: string[] = [];
   const values: unknown[] = [];
@@ -118,7 +169,6 @@ router.patch("/series/:seriesId", (req, res) => {
   }
   if (req.body.classes !== undefined) { fields.push("classes = ?"); values.push(JSON.stringify(req.body.classes)); }
   if (req.body.eventIds !== undefined) { fields.push("event_ids = ?"); values.push(JSON.stringify(uniqueIds(req.body.eventIds))); }
-  if (req.body.pointsSystem !== undefined) { fields.push("points_system = ?"); values.push(String(req.body.pointsSystem)); }
   if (req.body.scoringTableId !== undefined) { fields.push("scoring_table_id = ?"); values.push(req.body.scoringTableId ?? null); }
 
   if (fields.length === 0) return res.status(400).json({ error: "No fields to update" });
@@ -131,17 +181,8 @@ router.patch("/series/:seriesId", (req, res) => {
   return res.json(serializeSeries(row));
 });
 
-// DELETE /series/:seriesId
-router.delete("/series/:seriesId", (req, res) => {
-  const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
-
-  const db = getDb();
-  const id = Number(req.params.seriesId);
-  const result = db.prepare("DELETE FROM series WHERE id = ?").run(id);
-  if (result.changes === 0) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
-  return res.status(204).send();
-});
+// A series can't be deleted on the website, so there is no delete here either:
+// one removed only on this computer would come back with the next sync.
 
 // GET /series/:seriesId/leaderboard — computed standings (matches OpenAPI spec)
 router.get("/series/:seriesId/leaderboard", (req, res) => {

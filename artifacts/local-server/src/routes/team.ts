@@ -1,30 +1,16 @@
 import { Router } from "express";
-import bcrypt from "bcryptjs";
-import crypto from "crypto";
 import { getDb } from "../db";
+import { cloudReachable } from "../lib/cloud-proxy";
 
+/**
+ * Team (staff) management belongs to the cloud: invitations are emailed, and
+ * accounts, passwords and permissions are the website's. Nothing is saved on
+ * this computer, where it would differ from the website and never reach it.
+ * Adding, changing or removing a team member is passed to the cloud (it answers
+ * "needs an internet connection" when offline); the list is shown from the last
+ * sync when there is no internet.
+ */
 const router = Router();
-
-const VALID_PERMISSIONS = new Set([
-  "dashboard",
-  "events",
-  "practice",
-  "riders",
-  "series",
-  "points_tables",
-  "payments",
-  "discount_codes",
-  "reader_setup",
-  "offline_mode",
-  "gate_schedule",
-]);
-
-function sanitizePermissions(raw: unknown): string[] {
-  if (!Array.isArray(raw)) return [];
-  return (raw as unknown[]).filter(
-    (p): p is string => typeof p === "string" && VALID_PERMISSIONS.has(p),
-  );
-}
 
 function requireOrganizer(req: any, res: any): { userId: number; clubId: number } | null {
   const userId = (req.session as any)?.userId;
@@ -56,179 +42,25 @@ function formatMember(u: any): object {
   };
 }
 
-function makeSetupUrl(token: string): string {
-  const base = process.env.APP_URL ?? "http://localhost:9090";
-  return `${base}/organizer/team/setup?token=${token}`;
-}
-
-// GET /organizer/team
-router.get("/organizer/team", (req, res) => {
+// GET /organizer/team — the cloud's list when online, else the copy from the last sync.
+router.get("/organizer/team", async (req, res, next) => {
   const auth = requireOrganizer(req, res);
   if (!auth) return;
+  if (await cloudReachable()) return next();
 
-  const db = getDb();
-  const members = db
+  const members = getDb()
     .prepare("SELECT * FROM users WHERE club_id = ? AND role = 'staff' ORDER BY created_at ASC")
     .all(auth.clubId) as any[];
-
   return res.json(members.map(formatMember));
 });
 
-// POST /organizer/team — create staff user + return setup URL (no email on desktop)
-router.post("/organizer/team", async (req, res) => {
-  const auth = requireOrganizer(req, res);
-  if (!auth) return;
-
-  const { name, email, permissions } = req.body;
-  if (!name || !email) {
-    return res.status(400).json({ error: "Enter a name and an email address." });
-  }
-
-  const trimmedEmail = String(email).toLowerCase().trim();
-  const db = getDb();
-
-  const existing = db
-    .prepare("SELECT id, role, club_id FROM users WHERE lower(email) = lower(?)")
-    .get(trimmedEmail) as any;
-  if (existing) {
-    if (existing.role === "staff" && existing.club_id === auth.clubId) {
-      return res.status(409).json({ error: "This person is already a team member for your club." });
-    }
-    return res.status(409).json({ error: "This email is already associated with another account on the platform." });
-  }
-
-  const perms = sanitizePermissions(permissions);
-
-  const result = db
-    .prepare(
-      `INSERT INTO users (club_id, email, name, role, password_hash, permissions, created_at)
-       VALUES (?, ?, ?, 'staff', NULL, ?, datetime('now'))`,
-    )
-    .run(auth.clubId, trimmedEmail, String(name).trim(), JSON.stringify(perms));
-
-  const newUserId = Number(result.lastInsertRowid);
-
-  const token = crypto.randomBytes(32).toString("hex");
-  const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
-  db.prepare(
-    "INSERT INTO password_setup_tokens (user_id, token, expires_at) VALUES (?, ?, ?)",
-  ).run(newUserId, token, expiresAt);
-
-  const newUser = db.prepare("SELECT * FROM users WHERE id = ?").get(newUserId) as any;
-
-  return res.status(201).json({
-    ...formatMember(newUser),
-    emailSent: false,
-    setupUrl: makeSetupUrl(token),
+// Invite, change, remove: only the club's organizer, and only through the cloud
+// (the pass-through mounted after the local routes).
+for (const method of ["post", "patch", "delete"] as const) {
+  router[method](["/organizer/team", "/organizer/team/:userId"], (req, res, next) => {
+    if (!requireOrganizer(req, res)) return;
+    return next();
   });
-});
-
-// PATCH /organizer/team/:userId
-router.patch("/organizer/team/:userId", async (req, res) => {
-  const auth = requireOrganizer(req, res);
-  if (!auth) return;
-
-  const targetUserId = Number(req.params.userId);
-  const db = getDb();
-  const member = db
-    .prepare("SELECT * FROM users WHERE id = ? AND club_id = ? AND role = 'staff'")
-    .get(targetUserId, auth.clubId) as any;
-
-  if (!member) {
-    return res.status(404).json({ error: "This team member couldn't be found. It may have been deleted. Refresh the Team page." });
-  }
-
-  const { name, email, permissions, resendInvite } = req.body;
-  const fields: string[] = [];
-  const values: unknown[] = [];
-
-  if (name !== undefined && String(name).trim()) {
-    fields.push("name = ?");
-    values.push(String(name).trim());
-  }
-  if (email !== undefined) {
-    const trimmedEmail = String(email).toLowerCase().trim();
-    if (trimmedEmail !== member.email) {
-      const dup = db
-        .prepare("SELECT id FROM users WHERE lower(email) = lower(?) AND id != ?")
-        .get(trimmedEmail, targetUserId);
-      if (dup) return res.status(409).json({ error: "That email address already has an account. Use a different email, or sign in with it." });
-      fields.push("email = ?");
-      values.push(trimmedEmail);
-    }
-  }
-  if (Array.isArray(permissions)) {
-    fields.push("permissions = ?");
-    values.push(JSON.stringify(sanitizePermissions(permissions)));
-  }
-
-  if (fields.length > 0) {
-    values.push(targetUserId);
-    db.prepare(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`).run(...(values as any[]));
-  }
-
-  let setupUrl: string | undefined;
-  if (resendInvite) {
-    const token = crypto.randomBytes(32).toString("hex");
-    const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
-    db.prepare(
-      "INSERT INTO password_setup_tokens (user_id, token, expires_at) VALUES (?, ?, ?)",
-    ).run(targetUserId, token, expiresAt);
-    setupUrl = makeSetupUrl(token);
-  }
-
-  const updated = db.prepare("SELECT * FROM users WHERE id = ?").get(targetUserId) as any;
-  return res.json({ ...formatMember(updated), emailSent: false, setupUrl });
-});
-
-// DELETE /organizer/team/:userId
-router.delete("/organizer/team/:userId", (req, res) => {
-  const auth = requireOrganizer(req, res);
-  if (!auth) return;
-
-  const targetUserId = Number(req.params.userId);
-  if (targetUserId === auth.userId) {
-    return res.status(400).json({ error: "You can't remove your own account. Ask another owner to do it." });
-  }
-
-  const db = getDb();
-  const member = db
-    .prepare("SELECT id FROM users WHERE id = ? AND club_id = ? AND role = 'staff'")
-    .get(targetUserId, auth.clubId);
-  if (!member) {
-    return res.status(404).json({ error: "This team member couldn't be found. It may have been deleted. Refresh the Team page." });
-  }
-
-  db.prepare("DELETE FROM users WHERE id = ?").run(targetUserId);
-  return res.json({ ok: true });
-});
-
-// POST /organizer/team/:userId/setup-password — staff sets their own password via token
-router.post("/organizer/team/setup-password", async (req, res) => {
-  const { token, password } = req.body;
-  if (!token || !password) {
-    return res.status(400).json({ error: "token and password are required" });
-  }
-  if (String(password).length < 8) {
-    return res.status(400).json({ error: "Password must be at least 8 characters" });
-  }
-
-  const db = getDb();
-  const tokenRow = db
-    .prepare(
-      "SELECT * FROM password_setup_tokens WHERE token = ? AND expires_at > datetime('now')",
-    )
-    .get(String(token)) as any;
-
-  if (!tokenRow) {
-    return res.status(400).json({ error: "Invalid or expired setup link" });
-  }
-
-  const hash = await bcrypt.hash(String(password), 10);
-  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hash, tokenRow.user_id);
-  db.prepare("DELETE FROM password_setup_tokens WHERE token = ?").run(String(token));
-
-  return res.json({ ok: true });
-});
+}
 
 export default router;

@@ -2,8 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { pointsTablesTable, usersTable, seriesTable, eventsTable } from "@workspace/db";
 import { eq, isNull, or } from "drizzle-orm";
-import { evaluateFormula } from "../lib/safeFormula";
-import { pointsScaleError, scoringMethodError } from "../lib/scoringTables";
+import { formulaError, pointsScaleError, scoringMethodError } from "../lib/scoringTables";
 import { recalculateSeriesPoints, scoreMotoPoints } from "./results";
 import { motosTable } from "@workspace/db";
 import { and, inArray, ne } from "drizzle-orm";
@@ -14,7 +13,7 @@ import { logger } from "../lib/logger";
  * it and rebuild the series that use it, so standings follow the new points.
  * Runs in the background; the edit itself is already saved.
  */
-function rescoreUsers(tableId: number, clubId: number | null) {
+export function rescoreUsers(tableId: number, clubId: number | null) {
   setImmediate(() => {
     void (async () => {
       try {
@@ -40,18 +39,6 @@ function rescoreUsers(tableId: number, clubId: number | null) {
 }
 
 const router = Router();
-
-/** Reject formulas the points engine can't evaluate, so a bad one doesn't silently score 0. */
-function formulaError(formula: unknown): string | null {
-  if (formula == null || formula === "") return null;
-  if (typeof formula !== "string") return "scoringFormula must be a string";
-  try {
-    evaluateFormula(formula, { position: 1, riders: 10 });
-    return null;
-  } catch (err) {
-    return `Invalid scoring formula: ${(err as Error).message}. Use position, riders, numbers, + - * / % **, comparisons, ?:, and Math functions.`;
-  }
-}
 
 router.get("/points-tables", async (req, res) => {
   const userId = (req.session as any).userId;

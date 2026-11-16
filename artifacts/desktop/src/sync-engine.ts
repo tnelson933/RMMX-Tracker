@@ -17,6 +17,19 @@ type WriteQueueRow = {
 const MAX_ATTEMPTS = 5;
 const PROBE_TIMEOUT_MS = 8_000;
 
+/**
+ * Club setup that syncs both ways: scoring tables, series, discount categories
+ * and codes, Sell Items and the rental transponder inventory (local-server
+ * lib/desktop-ids.ts; cloud lib/desktopOrgPush.ts).
+ */
+const ORG_TABLES = ["points_tables", "series", "discount_categories", "comp_codes", "club_sell_items", "rental_transponders"] as const;
+/** Pushed tables only a cloud with the "org_tables" capability stores (ORG_TABLES and the club profile). */
+const ORG_PUSH_TABLES: ReadonlyArray<string> = [...ORG_TABLES, "clubs"];
+const ORG_PUSH_CAPABILITY = "org_tables";
+/** How long club-setup rows wait before the cloud is asked again whether it stores them. */
+const ORG_HOLD_MS = 5 * 60_000;
+const sqlList = (names: ReadonlyArray<string>) => names.map((n) => `'${n}'`).join(", ");
+
 export class SyncEngine {
   private db: Database.Database;
   private cloudUrl: string;
@@ -44,6 +57,12 @@ export class SyncEngine {
   private listeners: StateChangeCallback[] = [];
   private flushPromise: Promise<void> | null = null;
   private pollIntervalMs: number;
+  /**
+   * Set when the cloud answered a push without the club-setup capability (an
+   * older release): until this time those rows stay queued and are left out of
+   * pushes, so they are neither lost nor in the way of race-day rows.
+   */
+  private orgHoldUntil = 0;
 
   constructor(opts: {
     dbPath: string;
@@ -377,11 +396,15 @@ export class SyncEngine {
   }
 
   private async pushQueue(): Promise<void> {
+    // Scoring tables and discount categories go first: events, series and codes
+    // in the same or a later batch refer to them. Everything else in order.
+    const holdOrg = Date.now() < this.orgHoldUntil;
     const rows = this.db
       .prepare(
         `SELECT * FROM _write_queue
          WHERE synced_at IS NULL AND attempt_count < ?
-         ORDER BY id ASC
+           ${holdOrg ? `AND table_name NOT IN (${sqlList(ORG_PUSH_TABLES)})` : ""}
+         ORDER BY CASE WHEN operation != 'delete' AND table_name IN ('points_tables', 'discount_categories') THEN 0 ELSE 1 END, id ASC
          LIMIT 100`,
       )
       .all(MAX_ATTEMPTS) as WriteQueueRow[];
@@ -424,6 +447,7 @@ export class SyncEngine {
           "split_crossings",
           "practice_split_crossings",
           "enduro_checkpoint_arrivals",
+          "comp_codes",
         ].includes(table)
       ) {
         const cloudIdFor = this.db.prepare(
@@ -456,6 +480,12 @@ export class SyncEngine {
             const mapped = cloudIdFor.get(Number(reg.rider_id)) as { cloud_rider_id: number | null } | undefined;
             return { ...row, [riderKey]: mapped?.cloud_rider_id ?? reg.rider_id };
           });
+      }
+      // Only this club's profile and setup are the cloud's to store (the
+      // placeholder club a new install starts with is not the signed-in club).
+      if (table === "clubs") tableRows = tableRows.filter((row) => String(row.id) === String(this.clubId));
+      if ((ORG_TABLES as ReadonlyArray<string>).includes(table)) {
+        tableRows = tableRows.filter((row) => String(row.club_id) === String(this.clubId));
       }
       payload[table] = tableRows;
     }
@@ -510,7 +540,9 @@ export class SyncEngine {
 
     type IdRemap = { localId: number; cloudId: number };
     type PushResponse = {
-      idRemaps?: { events?: IdRemap[]; motos?: IdRemap[] };
+      idRemaps?: { events?: IdRemap[]; motos?: IdRemap[] } & Record<string, IdRemap[] | undefined>;
+      /** Newer tables this cloud stores; absent on an older cloud, which ignores them. */
+      capabilities?: string[];
       // Rows the cloud did not apply, keyed by table (deletes use
       // "<table>_deleted"), identified by the desktop id that was sent.
       skipped?: Record<string, Array<{ id: number | null; reason: string }>>;
@@ -543,7 +575,18 @@ export class SyncEngine {
       }
     }
 
-    const syncedRows = rows.filter((r) => !skippedReasonByQueueId.has(r.id));
+    // An older cloud answers OK without storing club setup. Those rows stay
+    // queued (not failed) and are offered again later, when it may be newer.
+    const cloudStoresOrg = Array.isArray(pushResponse?.capabilities) && pushResponse.capabilities.includes(ORG_PUSH_CAPABILITY);
+    const heldQueueIds = new Set<number>(
+      cloudStoresOrg ? [] : rows.filter((r) => ORG_PUSH_TABLES.includes(r.table_name)).map((r) => r.id),
+    );
+    if (heldQueueIds.size > 0) {
+      this.orgHoldUntil = Date.now() + ORG_HOLD_MS;
+      console.warn(`[sync] The cloud does not store club setup yet; ${heldQueueIds.size} change(s) stay queued`);
+    }
+
+    const syncedRows = rows.filter((r) => !skippedReasonByQueueId.has(r.id) && !heldQueueIds.has(r.id));
     const markResults = this.db.transaction(() => {
       if (syncedRows.length > 0) {
         this.db
@@ -579,6 +622,115 @@ export class SyncEngine {
     if (motoRemaps.length > 0) {
       this.applyMotoIdRemaps(motoRemaps);
     }
+    for (const table of ORG_TABLES) {
+      const remaps = pushResponse?.idRemaps?.[table];
+      if (Array.isArray(remaps) && remaps.length > 0) this.applyOrgIdRemaps(table, remaps);
+    }
+  }
+
+  /** What refers to a club-setup row by id, and how the id is stored there. */
+  private static readonly ORG_REFERENCES: Readonly<Record<string, ReadonlyArray<{
+    table: string; column: string; kind: "scalar" | "jsonArray" | "jsonMap"; push: boolean;
+  }>>> = {
+    points_tables: [
+      { table: "series", column: "scoring_table_id", kind: "scalar", push: true },
+      { table: "events", column: "scoring_table_id", kind: "scalar", push: true },
+    ],
+    discount_categories: [
+      { table: "events", column: "entry_fee_category_id", kind: "scalar", push: true },
+      { table: "comp_codes", column: "category_ids", kind: "jsonArray", push: true },
+    ],
+    series: [
+      { table: "events", column: "race_class_series_map", kind: "jsonMap", push: true },
+      { table: "series_points", column: "series_id", kind: "scalar", push: false },
+    ],
+  };
+
+  /**
+   * Rewrites every reference to `fromId` in `table.column` and returns the ids
+   * of the rows it changed. Must run under _cloud_pull_guard.
+   */
+  private rewriteReferences(
+    ref: { table: string; column: string; kind: "scalar" | "jsonArray" | "jsonMap" },
+    fromId: number,
+    toId: number,
+  ): number[] {
+    if (!this.localColumns(ref.table).has(ref.column)) return [];
+    if (ref.kind === "scalar") {
+      const ids = (this.db.prepare(`SELECT id FROM ${ref.table} WHERE ${ref.column} = ?`).all(fromId) as Array<{ id: number }>).map((r) => r.id);
+      if (ids.length > 0) this.db.prepare(`UPDATE ${ref.table} SET ${ref.column} = ? WHERE ${ref.column} = ?`).run(toId, fromId);
+      return ids;
+    }
+    const swap = (list: unknown): unknown[] | null =>
+      Array.isArray(list) && list.some((n) => Number(n) === fromId) ? list.map((n) => (Number(n) === fromId ? toId : n)) : null;
+    const changed: number[] = [];
+    const save = this.db.prepare(`UPDATE ${ref.table} SET ${ref.column} = ? WHERE id = ?`);
+    for (const row of this.db.prepare(`SELECT id, ${ref.column} AS value FROM ${ref.table} WHERE ${ref.column} IS NOT NULL`).all() as Array<{ id: number; value: string }>) {
+      let parsed: unknown;
+      try { parsed = JSON.parse(row.value); } catch { continue; }
+      let next: unknown = null;
+      if (ref.kind === "jsonArray") {
+        next = swap(parsed);
+      } else if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const map = { ...(parsed as Record<string, unknown>) };
+        let touched = false;
+        for (const [key, list] of Object.entries(map)) {
+          const swapped = swap(list);
+          if (swapped) { map[key] = swapped; touched = true; }
+        }
+        next = touched ? map : null;
+      }
+      if (next == null) continue;
+      save.run(JSON.stringify(next), row.id);
+      changed.push(row.id);
+    }
+    return changed;
+  }
+
+  /** Queues rows for the cloud (an upsert each) unless one already waits. Safe under the guard. */
+  private enqueueUpserts(table: string, ids: number[]): void {
+    const hasPending = this.db.prepare(
+      `SELECT 1 FROM _write_queue
+       WHERE table_name = ? AND record_id = ? AND synced_at IS NULL
+         AND attempt_count < ? AND operation != 'delete'
+       LIMIT 1`,
+    );
+    const enqueue = this.db.prepare("INSERT INTO _write_queue (table_name, record_id, operation) VALUES (?, ?, 'upsert')");
+    for (const id of ids) if (!hasPending.get(table, id, MAX_ATTEMPTS)) enqueue.run(table, id);
+  }
+
+  /**
+   * The cloud saved a club-setup row under a different id than the desktop's
+   * (the same thing already existed there, or the id was taken). Renumbers the
+   * local row, everything that refers to it and its queue entries; rows whose
+   * reference changed are pushed again so the cloud has the new id too.
+   */
+  private applyOrgIdRemaps(table: string, remaps: Array<{ localId: number; cloudId: number }>): void {
+    const doRemap = this.db.transaction(() => {
+      this.db.prepare("INSERT OR IGNORE INTO _cloud_pull_guard VALUES(1)").run();
+      try {
+        for (const { localId, cloudId } of remaps) {
+          if (!localId || !cloudId || localId === cloudId) continue;
+          const mine = this.db.prepare(`SELECT 1 FROM ${table} WHERE id = ?`).get(localId);
+          if (mine) {
+            // The cloud's row may already be here (pulled): then this copy goes.
+            const theirs = this.db.prepare(`SELECT 1 FROM ${table} WHERE id = ?`).get(cloudId);
+            if (theirs) this.db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(localId);
+            else this.db.prepare(`UPDATE ${table} SET id = ? WHERE id = ?`).run(cloudId, localId);
+          }
+          for (const ref of SyncEngine.ORG_REFERENCES[table] ?? []) {
+            const changed = this.rewriteReferences(ref, localId, cloudId);
+            if (ref.push) this.enqueueUpserts(ref.table, changed);
+          }
+          this.db
+            .prepare("UPDATE _write_queue SET record_id = ? WHERE table_name = ? AND record_id = ?")
+            .run(cloudId, table, localId);
+        }
+      } finally {
+        this.db.prepare("DELETE FROM _cloud_pull_guard").run();
+      }
+    });
+    doRemap();
   }
 
   private async pushRiderProfiles(): Promise<void> {
@@ -677,6 +829,7 @@ export class SyncEngine {
     ["enduro_checkpoint_arrivals",  "event_id"],
     ["team_members",      "event_id"],
     ["addon_payments",    "event_id"],
+    ["comp_codes",        "event_id"],
   ];
 
   /**
@@ -772,6 +925,8 @@ export class SyncEngine {
           // children so they push under the new id.
           this.remapChildForeignKeys(SyncEngine.EVENT_CHILD_TABLES, localId, cloudId);
           this.remapEnduroSetup("event_id", localId, cloudId);
+          // Series list their events by id.
+          this.enqueueUpserts("series", this.rewriteReferences({ table: "series", column: "event_ids", kind: "jsonArray" }, localId, cloudId));
 
           // Keep the write-queue entry pointing at the new id.
           this.db
@@ -1020,6 +1175,7 @@ export class SyncEngine {
       eventReaderAssignments?: Record<string, unknown>[];
       teamMembers?: Record<string, unknown>[];
       clubSellItems?: Record<string, unknown>[];
+      rentalTransponders?: Record<string, unknown>[];
       readers?: Record<string, unknown>[];
       addonPayments?: Record<string, unknown>[];
       tracks?: Record<string, unknown>[];
@@ -1043,7 +1199,7 @@ export class SyncEngine {
           ["series",              data.series              ?? []],
           ["series_points",       data.seriesPoints        ?? []],
           ["discount_categories", data.discountCategories  ?? []],
-          ["comp_codes",          data.compCodes           ?? []],
+          ["comp_codes",          this.localizeCompCodeRiders(data.compCodes ?? [])],
           ["practice_sessions",   data.practiceSessions    ?? []],
           ["practice_crossings",  data.practiceCrossings   ?? []],
           ["registrations",       data.registrations       ?? []],
@@ -1061,6 +1217,7 @@ export class SyncEngine {
           ["enduro_checkpoint_arrivals", data.enduroCheckpointArrivals ?? []],
           ["event_reader_assignments", data.eventReaderAssignments ?? []],
           ["club_sell_items",     data.clubSellItems       ?? []],
+          ["rental_transponders", this.pulledRentalUnits(data.rentalTransponders ?? [])],
           ["readers",             data.readers             ?? []],
           ["tracks",              data.tracks              ?? []],
         ];
@@ -1078,8 +1235,8 @@ export class SyncEngine {
             .run(table, now);
         }
         this.pruneEnduroRows(data);
-        // Tables keyed differently here than in the cloud (an older cloud omits them).
-        if (Array.isArray(data.clubSellItems)) this.pruneSellItems(data.clubSellItems);
+        // Club setup removed on the website (a cloud that sends the rental inventory sends all of it).
+        if (Array.isArray(data.rentalTransponders)) totalChanged += this.pruneOrgTables(data);
         if (Array.isArray(data.readers)) {
           // Readers the club removed on the website.
           const keep = new Set(data.readers.map((r) => Number(r["id"])));
@@ -1273,12 +1430,103 @@ export class SyncEngine {
    *   "table has no column" errors when cloud schema is ahead of local schema).
    * - Throws on genuine SQL errors so the caller can mark sync state as error.
    */
-  /** Sell items the club removed in the cloud. */
-  private pruneSellItems(rows: Record<string, unknown>[]): void {
-    const keep = new Set(rows.map((r) => Number(r["id"])));
-    const local = this.db.prepare("SELECT id FROM club_sell_items").all() as Array<{ id: number }>;
-    const remove = this.db.prepare("DELETE FROM club_sell_items WHERE id = ?");
-    for (const { id } of local) if (!keep.has(id)) remove.run(id);
+  /**
+   * Club setup the website no longer has: scoring tables, series, discount
+   * categories and codes, sell items and rental units missing from the cloud's
+   * answer are removed here too. A row with anything still queued for the
+   * cloud stays (made or changed here and not sent yet, or refused: its error
+   * shows in the sync status), so nothing made on the desktop is dropped unseen.
+   * Runs under _cloud_pull_guard, so the removals are not queued back.
+   */
+  private pruneOrgTables(data: Record<string, unknown>): number {
+    // Rows made here before club setup synced are queued by the offline server
+    // at startup (local-server db-init queueLegacyClubSetup); never prune before that.
+    try {
+      if (!this.db.prepare("SELECT 1 FROM _local_data_migrations WHERE name = 'queue-local-club-setup'").get()) return 0;
+    } catch {
+      return 0;
+    }
+    const sets: Array<[string, unknown]> = [
+      ["comp_codes", data["compCodes"]],
+      ["series", data["series"]],
+      ["discount_categories", data["discountCategories"]],
+      ["points_tables", data["pointsTables"]],
+      ["club_sell_items", data["clubSellItems"]],
+      ["rental_transponders", data["rentalTransponders"]],
+    ];
+    let removed = 0;
+    for (const [table, rows] of sets) {
+      if (!Array.isArray(rows) || !this.localColumns(table).has("id")) continue;
+      const keep = new Set(rows.map((r) => Number((r as Record<string, unknown>)["id"])));
+      const queued = new Set(
+        (this.db
+          .prepare("SELECT record_id FROM _write_queue WHERE table_name = ? AND synced_at IS NULL")
+          .all(table) as Array<{ record_id: number }>).map((r) => r.record_id),
+      );
+      // The RM TrackR and RFID Tag always exist: a club that hasn't opened Sell
+      // Items on the website has none there yet, and keeps the ones made here.
+      const cloudKinds = table === "club_sell_items"
+        ? new Set(rows.map((r) => String((r as Record<string, unknown>)["kind"])))
+        : null;
+      const local = this.db
+        .prepare(`SELECT id, club_id${cloudKinds ? ", kind" : ""} FROM ${table}`)
+        .all() as Array<{ id: number; club_id: number | null; kind?: string }>;
+      const remove = this.db.prepare(`DELETE FROM ${table} WHERE id = ?`);
+      for (const row of local) {
+        if (keep.has(row.id) || queued.has(row.id)) continue;
+        // Only this club's rows (and the built-in scoring tables) mirror the cloud.
+        const mirrored = String(row.club_id) === String(this.clubId) || (table === "points_tables" && row.club_id == null);
+        if (!mirrored) continue;
+        if (cloudKinds && row.kind !== "custom" && !cloudKinds.has(String(row.kind))) continue;
+        removed += remove.run(row.id).changes;
+      }
+    }
+    return removed;
+  }
+
+  /**
+   * Discount codes for one rider carry the cloud's rider id; here the rider may
+   * have another id (made on this desktop). Uses the desktop's id, and keeps
+   * the one the local code already has when it is the same rider.
+   */
+  private localizeCompCodeRiders(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+    if (!rows.some((r) => r["riderId"] != null) || !this.localColumns("comp_codes").has("rider_id")) return rows;
+    const localFor = this.db.prepare(
+      "SELECT local_rider_id FROM _rider_cloud_map WHERE cloud_rider_id = ? ORDER BY local_rider_id LIMIT 1",
+    );
+    const cloudFor = this.db.prepare("SELECT cloud_rider_id FROM _rider_cloud_map WHERE local_rider_id = ?");
+    const current = this.db.prepare("SELECT rider_id FROM comp_codes WHERE id = ?");
+    return rows.map((r) => {
+      if (r["riderId"] == null) return r;
+      const cloudRider = Number(r["riderId"]);
+      const mine = current.get(Number(r["id"])) as { rider_id: number | null } | undefined;
+      if (mine?.rider_id != null) {
+        const known = cloudFor.get(mine.rider_id) as { cloud_rider_id: number | null } | undefined;
+        if (known?.cloud_rider_id === cloudRider) return { ...r, riderId: mine.rider_id };
+      }
+      const mapped = localFor.get(cloudRider) as { local_rider_id: number } | undefined;
+      return mapped ? { ...r, riderId: mapped.local_rider_id } : r;
+    });
+  }
+
+  /**
+   * Rental units are one per number. A unit listed here under another id (added
+   * on this desktop, or at check-in) is the same unit: one still waiting to be
+   * pushed keeps the desktop's row for now (the push pairs the two); otherwise
+   * the cloud's row replaces it.
+   */
+  private pulledRentalUnits(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+    if (rows.length === 0 || !this.localColumns("rental_transponders").has("transponder_number")) return [];
+    const twin = this.db.prepare("SELECT id FROM rental_transponders WHERE club_id = ? AND transponder_number = ? AND id != ?");
+    const queued = this.db.prepare("SELECT 1 FROM _write_queue WHERE table_name = 'rental_transponders' AND record_id = ? AND synced_at IS NULL LIMIT 1");
+    const remove = this.db.prepare("DELETE FROM rental_transponders WHERE id = ?");
+    return rows.filter((r) => {
+      const mine = twin.get(Number(r["clubId"]), String(r["transponderNumber"]), Number(r["id"])) as { id: number } | undefined;
+      if (!mine) return true;
+      if (queued.get(mine.id)) { this.pullSkippedPending++; return false; }
+      remove.run(mine.id);
+      return true;
+    });
   }
 
   private pendingIds(table: string): Set<number> {

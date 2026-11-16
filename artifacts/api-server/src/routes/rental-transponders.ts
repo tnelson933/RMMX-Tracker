@@ -26,8 +26,8 @@ async function clubIdFor(req: any, res: Response): Promise<number | null> {
 }
 
 /** Units currently out: unreturned rentals at this club's events, newest event first. */
-export async function rentalsOut(clubId: number) {
-  const rows = await db.select({
+export async function rentalsOut(clubId: number, exec: Pick<typeof db, "select"> = db) {
+  const rows = await exec.select({
     number: sql<string>`lower(trim(${registrationsTable.myLapsTransponderNumber}))`,
     registrationId: registrationsTable.id,
     riderId: registrationsTable.riderId,

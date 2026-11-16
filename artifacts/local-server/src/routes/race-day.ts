@@ -7,6 +7,7 @@ import { eventTimingTags } from "../lib/cloud-shape";
 import { clubSellItems, eventSellPrices, paidAddonsAtEvent, recordCashAddon } from "../lib/addons";
 import { getDb, paidAddons, parseBool, parseJson, parseJsonArr } from "../db";
 import { RM_TRACKR_NAME, fulfillRmTrackr, markRmTrackrPurchased } from "../lib/rm-trackr";
+import { noteRentalHandedOut, rentalsOut } from "./rental-transponders";
 
 /**
  * Race-day registration endpoints that must work offline. Each mirrors the
@@ -340,7 +341,7 @@ router.post("/events/:eventId/registrations/:regId/assign-rental-transponder", (
   if (!reg) return res.status(404).json({ error: "This registration couldn't be found. It may have been cancelled. Refresh the page and try again." });
   if (reg.transponder_rental !== 1) return res.status(400).json({ error: "This registration doesn't have a rental transponder." });
 
-  const event = db.prepare("SELECT date, end_date FROM events WHERE id = ?").get(eventId) as { date: string; end_date: string | null } | undefined;
+  const event = db.prepare("SELECT date, end_date, club_id FROM events WHERE id = ?").get(eventId) as { date: string; end_date: string | null; club_id: number } | undefined;
   if (!event) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
   // The unit is the rider's only for this event; removed automatically after it.
   const expiresAt = rentalExpiry(event);
@@ -352,7 +353,17 @@ router.post("/events/:eventId/registrations/:regId/assign-rental-transponder", (
     return res.status(409).json({ error: `Transponder ${tag} is already assigned to another rider for this event` });
   }
 
+  // A unit still out from an earlier event (not marked returned) can't go to a new rider.
+  const stillOut = rentalsOut(event.club_id).get(tag);
+  if (stillOut && stillOut.eventId !== eventId) {
+    return res.status(409).json({
+      error: `Rental ${tag} is still out from ${stillOut.eventName} (${stillOut.eventDate}). Mark it returned on that event's Transponder Rentals tab first.`,
+    });
+  }
+
   db.transaction(() => {
+    // Keep the club's rental inventory complete, and a unit handed out isn't missing.
+    noteRentalHandedOut(event.club_id, tag);
     // Rental = temporary: does NOT update riders.rfid_number.
     const existing = db.prepare("SELECT id FROM rfid_assignments WHERE rider_id = ? AND event_id = ? LIMIT 1")
       .get(reg.rider_id, eventId) as { id: number } | undefined;

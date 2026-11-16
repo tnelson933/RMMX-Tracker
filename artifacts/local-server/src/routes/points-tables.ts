@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { getDb } from "../db";
 import { evaluateFormula } from "../lib/safeFormula";
+import { newDesktopId } from "../lib/desktop-ids";
+import { isoTime } from "../lib/cloud-shape";
 
 const router = Router();
 
@@ -17,7 +19,7 @@ function serializeTable(t: any) {
     isSystemDefault: t.is_system_default === 1,
     autoDnfEnabled: t.auto_dnf_enabled === 1,
     autoDnfThreshold: t.auto_dnf_threshold ?? 75,
-    createdAt: t.created_at,
+    createdAt: isoTime(t.created_at),
   };
 }
 
@@ -41,7 +43,7 @@ router.get("/points-tables", (req, res) => {
     .prepare(
       `SELECT * FROM points_tables
        WHERE club_id IS NULL ${clubId ? "OR club_id = ?" : ""}
-       ORDER BY is_system_default DESC, created_at ASC`,
+       ORDER BY is_system_default ASC, julianday(created_at) ASC, id ASC`,
     )
     .all(...(clubId ? [clubId] : [])) as any[];
 
@@ -56,10 +58,13 @@ function tableInputError(body: any): string | null {
   }
   if (body.pointsScale !== undefined) {
     const scale = body.pointsScale;
-    if (!Array.isArray(scale) || !scale.every((v: unknown) => typeof v === "number" && Number.isInteger(v) && v >= 0)) {
+    if (!Array.isArray(scale)) return "pointsScale must be a list of points";
+    if (scale.length > 200) return "pointsScale can list at most 200 positions";
+    if (!scale.every((v: unknown) => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 100_000)) {
       return "Points must be whole numbers of 0 or more";
     }
   }
+  if (body.scoringFormula != null && body.scoringFormula !== "" && typeof body.scoringFormula !== "string") return "scoringFormula must be a string";
   if (body.scoringFormula) {
     try {
       evaluateFormula(String(body.scoringFormula), { position: 1, riders: 10 });
@@ -93,13 +98,13 @@ router.post("/points-tables", (req, res) => {
   const result = db
     .prepare(
       `INSERT INTO points_tables
-         (club_id, name, description, scoring_method, main_event_only,
+         (id, club_id, name, description, scoring_method, main_event_only,
           points_scale, scoring_formula, is_system_default,
           auto_dnf_enabled, auto_dnf_threshold, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, datetime('now'))`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, datetime('now'))`,
     )
     .run(
-      clubId, String(name), description ?? "",
+      newDesktopId(db, "points_tables"), clubId, String(name), description ?? "",
       String(scoringMethod), mainEventOnly ? 1 : 0,
       JSON.stringify(pointsScale), scoringFormula ?? null,
       autoDnfEnabled ? 1 : 0,
@@ -119,9 +124,10 @@ router.patch("/points-tables/:tableId", (req, res) => {
 
   const db = getDb();
   const id = Number(req.params.tableId);
-  const existing = db.prepare("SELECT is_system_default FROM points_tables WHERE id = ?").get(id) as any;
+  const existing = db.prepare("SELECT is_system_default, club_id FROM points_tables WHERE id = ?").get(id) as any;
   if (!existing) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   if (existing.is_system_default === 1) return res.status(403).json({ error: "Built-in scoring tables can't be edited. Make a copy, then edit the copy." });
+  if (existing.club_id !== getUserClubId(session)) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   const invalid = tableInputError(req.body);
   if (invalid) return res.status(400).json({ error: invalid });
 
@@ -154,19 +160,24 @@ router.delete("/points-tables/:tableId", (req, res) => {
 
   const db = getDb();
   const id = Number(req.params.tableId);
-  const row = db.prepare("SELECT is_system_default FROM points_tables WHERE id = ?").get(id) as any;
+  const row = db.prepare("SELECT is_system_default, club_id FROM points_tables WHERE id = ?").get(id) as any;
   if (!row) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   if (row.is_system_default === 1) return res.status(403).json({ error: "Built-in scoring tables can't be deleted." });
+  if (row.club_id !== getUserClubId(session)) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
 
-  const seriesUse = db
-    .prepare("SELECT id FROM series WHERE scoring_table_id = ? LIMIT 1")
-    .get(id) as any;
-  const eventUse = db
-    .prepare("SELECT id FROM events WHERE scoring_table_id = ? LIMIT 1")
-    .get(id) as any;
-  if (seriesUse || eventUse) {
+  // The website's checks and messages: named series first, then named events.
+  const seriesUsing = db.prepare("SELECT name FROM series WHERE scoring_table_id = ?").all(id) as Array<{ name: string }>;
+  if (seriesUsing.length > 0) {
+    const names = seriesUsing.map(s => `"${s.name}"`).join(", ");
     return res.status(409).json({
-      error: "This scoring table is still in use and can't be deleted.",
+      error: `This scoring table is used by ${seriesUsing.length === 1 ? "a series" : "series"}: ${names}. Remove it from ${seriesUsing.length === 1 ? "that series" : "those series"} before deleting.`,
+    });
+  }
+  const eventsUsing = db.prepare("SELECT name FROM events WHERE scoring_table_id = ?").all(id) as Array<{ name: string }>;
+  if (eventsUsing.length > 0) {
+    const names = eventsUsing.map(e => `"${e.name}"`).join(", ");
+    return res.status(409).json({
+      error: `This scoring table is used by ${eventsUsing.length === 1 ? "an event" : "events"}: ${names}. Remove it from ${eventsUsing.length === 1 ? "that event" : "those events"} before deleting.`,
     });
   }
 
