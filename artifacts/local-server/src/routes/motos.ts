@@ -340,6 +340,7 @@ router.delete("/motos/:motoId", (req, res) => {
   const moto = db.prepare("SELECT id, status FROM motos WHERE id = ?").get(id) as any;
   if (!moto) return res.status(404).json({ error: "Not found" });
 
+  db.prepare("DELETE FROM split_crossings WHERE moto_id = ?").run(id);
   db.prepare("DELETE FROM lap_crossings WHERE moto_id = ?").run(id);
   if (moto.status !== "completed") {
     db.prepare("DELETE FROM race_results WHERE moto_id = ?").run(id);
@@ -366,6 +367,7 @@ router.delete("/events/:eventId/motos", (req, res) => {
   const ids = targets.map((m: any) => m.id);
   const placeholders = ids.map(() => "?").join(",");
 
+  db.prepare(`DELETE FROM split_crossings WHERE moto_id IN (${placeholders})`).run(...ids);
   db.prepare(`DELETE FROM lap_crossings WHERE moto_id IN (${placeholders})`).run(
     ...ids,
   );
@@ -387,6 +389,7 @@ router.post("/motos/:motoId/restart", (req, res) => {
   const moto = db.prepare("SELECT * FROM motos WHERE id = ?").get(id) as any;
   if (!moto) return res.status(404).json({ error: "Not found" });
 
+  db.prepare("DELETE FROM split_crossings WHERE moto_id = ?").run(id);
   db.prepare("DELETE FROM lap_crossings WHERE moto_id = ?").run(id);
   db.prepare(
     "UPDATE race_results SET lap_times = '[]', total_time = NULL WHERE moto_id = ?",

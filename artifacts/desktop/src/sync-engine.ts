@@ -421,6 +421,8 @@ export class SyncEngine {
           "race_results",
           "lap_crossings",
           "practice_crossings",
+          "split_crossings",
+          "practice_split_crossings",
           "enduro_checkpoint_arrivals",
         ].includes(table)
       ) {
@@ -669,6 +671,7 @@ export class SyncEngine {
     ["rfid_assignments",  "event_id"],
     ["race_results",      "event_id"],
     ["lap_crossings",     "event_id"],
+    ["split_crossings",   "event_id"],
     ["practice_sessions", "event_id"],
     ["liability_waiver_signatures", "event_id"],
     ["enduro_checkpoint_arrivals",  "event_id"],
@@ -788,6 +791,7 @@ export class SyncEngine {
   // Child tables that carry a moto_id FK (see local-server db-init.ts).
   private static readonly MOTO_CHILD_TABLES: ReadonlyArray<[string, string]> = [
     ["lap_crossings", "moto_id"],
+    ["split_crossings", "moto_id"],
     ["race_results",  "moto_id"],
   ];
 
@@ -795,6 +799,8 @@ export class SyncEngine {
   private static readonly QUEUE_OPERATION: Readonly<Record<string, string>> = {
     lap_crossings: "insert",
     practice_crossings: "insert",
+    split_crossings: "insert",
+    practice_split_crossings: "insert",
     liability_waiver_signatures: "insert",
     addon_payments: "insert",
   };
@@ -1005,6 +1011,8 @@ export class SyncEngine {
       compCodes?: Record<string, unknown>[];
       practiceSessions?: Record<string, unknown>[];
       practiceCrossings?: Record<string, unknown>[];
+      splitCrossings?: Record<string, unknown>[];
+      practiceSplitCrossings?: Record<string, unknown>[];
       clubSettings?: Record<string, unknown>[];
       liabilityWaiverSignatures?: Record<string, unknown>[];
       enduroTimeChecks?: Record<string, unknown>[];
@@ -1069,6 +1077,8 @@ export class SyncEngine {
         if (Array.isArray(data.clubSellItems)) this.pruneSellItems(data.clubSellItems);
         if (Array.isArray(data.teamMembers)) totalChanged += this.upsertPulledTeamMembers(data.teamMembers);
         if (Array.isArray(data.addonPayments)) totalChanged += this.upsertPulledAddonPayments(data.addonPayments);
+        if (Array.isArray(data.splitCrossings)) totalChanged += this.upsertPulledSplits("split_crossings", "moto_id", data.splitCrossings);
+        if (Array.isArray(data.practiceSplitCrossings)) totalChanged += this.upsertPulledSplits("practice_split_crossings", "session_id", data.practiceSplitCrossings);
       } finally {
         // Always clear the guard, even if an upsert threw.
         this.db.prepare("DELETE FROM _cloud_pull_guard").run();
@@ -1266,6 +1276,58 @@ export class SyncEngine {
         String(r["firstName"]), String(r["lastName"]), text(r["email"]),
         text(r["rfidNumber"]), text(r["trackrNumber"]), text(r["trackrChoice"]), r["rfidPurchased"] ? 1 : 0,
       ).changes;
+    }
+    return changed;
+  }
+
+  /**
+   * Split reads (course sector times) for motos and practices. A split is
+   * identified as in the cloud, by its moto (or practice session), tag, split
+   * and lap, not by id: the desktop numbers its own rows. One recorded here and
+   * not yet pushed keeps the desktop's version. The cloud's rider id becomes
+   * the desktop's own id for that rider where the two differ. Tables or
+   * columns an older local database lacks are skipped.
+   */
+  private upsertPulledSplits(
+    table: "split_crossings" | "practice_split_crossings",
+    parentCol: "moto_id" | "session_id",
+    rows: Record<string, unknown>[],
+  ): number {
+    const known = this.localColumns(table);
+    if (!known.has(parentCol) || rows.length === 0) return 0;
+    const toSnake = (k: string) => k.replace(/([A-Z])/g, "_$1").toLowerCase();
+    const keyCols = [parentCol, "rfid_number", "split_sequence", "lap_number"];
+    const dataCols = ["event_id", "assignment_id", "reader_id", "label", "rider_id", "crossing_time"].filter((c) => known.has(c));
+    const cols = [...keyCols, ...dataCols];
+    const pending = this.pendingIds(table);
+    const find = this.db.prepare(
+      `SELECT id FROM ${table} WHERE ${keyCols.map((c) => `${c} = ?`).join(" AND ")}`,
+    );
+    const upsert = this.db.prepare(
+      `INSERT INTO ${table} (${cols.join(", ")})
+       VALUES (${cols.map(() => "?").join(", ")})
+       ON CONFLICT(${keyCols.join(", ")}) DO UPDATE SET
+         ${dataCols.map((c) => `${c} = excluded.${c}`).join(", ")}
+       WHERE ${dataCols.map((c) => `${table}.${c} IS NOT excluded.${c}`).join(" OR ")}`,
+    );
+    const localRiderFor = this.db.prepare(
+      "SELECT local_rider_id FROM _rider_cloud_map WHERE cloud_rider_id = ? ORDER BY local_rider_id LIMIT 1",
+    );
+    let changed = 0;
+    for (const r of rows) {
+      const row: Record<string, string | number | null> = {};
+      for (const [k, v] of Object.entries(r)) {
+        row[toSnake(k)] = v == null ? null : typeof v === "number" ? v : String(v);
+      }
+      if (row.rider_id != null) {
+        const mapped = localRiderFor.get(Number(row.rider_id)) as { local_rider_id: number } | undefined;
+        if (mapped) row.rider_id = mapped.local_rider_id;
+      }
+      const key = [Number(row[parentCol]), row.rfid_number == null ? "" : String(row.rfid_number), Number(row.split_sequence), Number(row.lap_number)];
+      if (!key[0] || !key[1] || !key[2] || !Number.isFinite(key[3] as number) || row.crossing_time == null) continue;
+      const local = find.get(...key) as { id: number } | undefined;
+      if (local && pending.has(local.id)) { this.pullSkippedPending++; continue; }
+      changed += upsert.run(...key, ...dataCols.map((c) => row[c] ?? null)).changes;
     }
     return changed;
   }

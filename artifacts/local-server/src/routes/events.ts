@@ -519,6 +519,7 @@ router.delete("/events/:eventId", (req, res) => {
   db.prepare("DELETE FROM enduro_time_checks WHERE event_id = ?").run(id);
   db.prepare("DELETE FROM event_reader_assignments WHERE event_id = ?").run(id);
   db.prepare("DELETE FROM race_results WHERE event_id = ?").run(id);
+  db.prepare("DELETE FROM split_crossings WHERE event_id = ?").run(id);
   db.prepare("DELETE FROM lap_crossings WHERE event_id = ?").run(id);
   db.prepare("DELETE FROM motos WHERE event_id = ?").run(id);
   db.prepare("DELETE FROM checkins WHERE event_id = ?").run(id);
