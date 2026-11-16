@@ -9,24 +9,24 @@ const router = Router();
 
 router.get("/rfid", (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const user = db
     .prepare("SELECT club_id FROM users WHERE id = ?")
     .get(userId) as { club_id: number } | undefined;
-  if (!user) return res.status(401).json({ error: "Not authenticated" });
+  if (!user) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const { eventId, riderId, assignmentType } = req.query;
   const isActiveTransponder = assignmentType === "active_transponder";
   if (assignmentType != null && assignmentType !== "rfid" && !isActiveTransponder) {
-    return res.status(400).json({ error: "Invalid assignmentType" });
+    return res.status(400).json({ error: "Choose RFID sticker or active transponder." });
   }
 
   if (isActiveTransponder) {
     if (!eventId) {
       return res.status(400).json({
-        error: "eventId required for active transponder assignments",
+        error: "Choose an event for this transponder.",
       });
     }
     const activeRows = db
@@ -64,7 +64,8 @@ router.get("/rfid", (req, res) => {
     "FROM rfid_assignments ra " +
     "LEFT JOIN riders r ON r.id = ra.rider_id " +
     "INNER JOIN events e ON e.id = ra.event_id " +
-    "WHERE e.club_id = ?";
+    // A rental's tag link ends when its rental expires (as on the website).
+    "WHERE e.club_id = ? AND (ra.expires_at IS NULL OR julianday(ra.expires_at) > julianday('now'))";
   const params: (number | string)[] = [user.club_id];
 
   if (eventId) {
@@ -92,15 +93,15 @@ router.get("/rfid", (req, res) => {
 
 router.post("/rfid", (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const { riderId, rfidNumber, eventId, assignmentType } = req.body;
   if (!riderId || !rfidNumber) {
-    return res.status(400).json({ error: "riderId and rfidNumber required" });
+    return res.status(400).json({ error: "Pick a rider and enter a tag number." });
   }
   const isActiveTransponder = assignmentType === "active_transponder";
   if (assignmentType != null && assignmentType !== "rfid" && !isActiveTransponder) {
-    return res.status(400).json({ error: "Invalid assignmentType" });
+    return res.status(400).json({ error: "Choose RFID sticker or active transponder." });
   }
 
   const db = getDb();
@@ -112,7 +113,7 @@ router.post("/rfid", (req, res) => {
       normalizeActiveTransponderIdentifier(rfidNumber);
     if (!activeTransponderNumber) {
       return res.status(400).json({
-        error: "rfidNumber must be a 1–9 character hexadecimal active transponder ID",
+        error: "Enter the ID printed on the transponder (up to 9 numbers or letters A–F).",
       });
     }
 
@@ -328,7 +329,7 @@ router.post("/rfid", (req, res) => {
 
 router.post("/rfid/assign", (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const { riderId, rfidNumber, eventId } = req.body;
   if (!riderId || !rfidNumber) {

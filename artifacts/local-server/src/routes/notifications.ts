@@ -10,7 +10,7 @@ const WINDOW_BEFORE_MS = 24 * 60 * 60 * 1000; // 24h before event
 // POST /admin/notifications/broadcast
 router.post("/admin/notifications/broadcast", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
 
@@ -18,7 +18,7 @@ router.post("/admin/notifications/broadcast", async (req, res) => {
     .prepare("SELECT role FROM users WHERE id = ?")
     .get(userId) as { role: string } | undefined;
 
-  if (!callingUser) return res.status(401).json({ error: "Not authenticated" });
+  if (!callingUser) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const isSuperAdmin = callingUser.role === "super_admin";
 
@@ -29,7 +29,7 @@ router.post("/admin/notifications/broadcast", async (req, res) => {
   };
 
   if (!title?.trim() || !body?.trim()) {
-    return res.status(400).json({ error: "title and body are required" });
+    return res.status(400).json({ error: "Enter a title and a message." });
   }
 
   if (!isSuperAdmin && !eventId) {

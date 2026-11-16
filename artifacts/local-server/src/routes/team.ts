@@ -29,7 +29,7 @@ function sanitizePermissions(raw: unknown): string[] {
 function requireOrganizer(req: any, res: any): { userId: number; clubId: number } | null {
   const userId = (req.session as any)?.userId;
   if (!userId) {
-    res.status(401).json({ error: "Not authenticated" });
+    res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
     return null;
   }
   const db = getDb();
@@ -37,7 +37,7 @@ function requireOrganizer(req: any, res: any): { userId: number; clubId: number 
     .prepare("SELECT id, club_id, role FROM users WHERE id = ?")
     .get(userId) as any;
   if (!user || !["organizer", "club_organizer"].includes(user.role) || !user.club_id) {
-    res.status(403).json({ error: "Forbidden" });
+    res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
     return null;
   }
   return { userId: user.id, clubId: user.club_id };
@@ -81,7 +81,7 @@ router.post("/organizer/team", async (req, res) => {
 
   const { name, email, permissions } = req.body;
   if (!name || !email) {
-    return res.status(400).json({ error: "name and email are required" });
+    return res.status(400).json({ error: "Enter a name and an email address." });
   }
 
   const trimmedEmail = String(email).toLowerCase().trim();
@@ -94,7 +94,7 @@ router.post("/organizer/team", async (req, res) => {
     if (existing.role === "staff" && existing.club_id === auth.clubId) {
       return res.status(409).json({ error: "This person is already a team member for your club." });
     }
-    return res.status(409).json({ error: "This email is already associated with another account." });
+    return res.status(409).json({ error: "This email is already associated with another account on the platform." });
   }
 
   const perms = sanitizePermissions(permissions);
@@ -135,7 +135,7 @@ router.patch("/organizer/team/:userId", async (req, res) => {
     .get(targetUserId, auth.clubId) as any;
 
   if (!member) {
-    return res.status(404).json({ error: "Team member not found" });
+    return res.status(404).json({ error: "This team member couldn't be found. It may have been deleted. Refresh the Team page." });
   }
 
   const { name, email, permissions, resendInvite } = req.body;
@@ -152,7 +152,7 @@ router.patch("/organizer/team/:userId", async (req, res) => {
       const dup = db
         .prepare("SELECT id FROM users WHERE lower(email) = lower(?) AND id != ?")
         .get(trimmedEmail, targetUserId);
-      if (dup) return res.status(409).json({ error: "Email already in use" });
+      if (dup) return res.status(409).json({ error: "That email address already has an account. Use a different email, or sign in with it." });
       fields.push("email = ?");
       values.push(trimmedEmail);
     }
@@ -188,7 +188,7 @@ router.delete("/organizer/team/:userId", (req, res) => {
 
   const targetUserId = Number(req.params.userId);
   if (targetUserId === auth.userId) {
-    return res.status(400).json({ error: "Cannot remove your own account" });
+    return res.status(400).json({ error: "You can't remove your own account. Ask another owner to do it." });
   }
 
   const db = getDb();
@@ -196,7 +196,7 @@ router.delete("/organizer/team/:userId", (req, res) => {
     .prepare("SELECT id FROM users WHERE id = ? AND club_id = ? AND role = 'staff'")
     .get(targetUserId, auth.clubId);
   if (!member) {
-    return res.status(404).json({ error: "Team member not found" });
+    return res.status(404).json({ error: "This team member couldn't be found. It may have been deleted. Refresh the Team page." });
   }
 
   db.prepare("DELETE FROM users WHERE id = ?").run(targetUserId);

@@ -49,7 +49,7 @@ function formatRow(r: any): object {
 // GET /discount-codes
 router.get("/discount-codes", (req, res) => {
   const clubId = getClubId(req);
-  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  if (!clubId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const filterRiderId = req.query.riderId ? Number(req.query.riderId) : null;
@@ -77,15 +77,15 @@ router.get("/discount-codes", (req, res) => {
 // POST /discount-codes
 router.post("/discount-codes", (req, res) => {
   const clubId = getClubId(req);
-  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  if (!clubId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const { code: customCode, discountType = "fixed", amount, maxUses, expiresAt, categoryIds, riderId } = req.body;
 
   if (amount == null || Number(amount) <= 0) {
-    return res.status(400).json({ error: "Amount required and must be greater than 0" });
+    return res.status(400).json({ error: "Enter an amount greater than $0." });
   }
   if (discountType === "percentage" && Number(amount) > 100) {
-    return res.status(400).json({ error: "Percentage discount cannot exceed 100%" });
+    return res.status(400).json({ error: "A percentage discount can't be more than 100%." });
   }
 
   const db = getDb();
@@ -146,7 +146,7 @@ router.post("/discount-codes", (req, res) => {
     return res.status(201).json(formatRow(row));
   } catch (err: any) {
     if (err?.code === "SQLITE_CONSTRAINT_UNIQUE" || String(err?.message).includes("UNIQUE")) {
-      return res.status(409).json({ error: "A code with that string already exists" });
+      return res.status(409).json({ error: "That code is already in use. Pick a different code." });
     }
     throw err;
   }
@@ -155,7 +155,7 @@ router.post("/discount-codes", (req, res) => {
 // PATCH /discount-codes/:codeId
 router.patch("/discount-codes/:codeId", (req, res) => {
   const clubId = getClubId(req);
-  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  if (!clubId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const codeId = Number(req.params.codeId);
   const db = getDb();
@@ -173,9 +173,9 @@ router.patch("/discount-codes/:codeId", (req, res) => {
   }
   if (req.body.amount !== undefined) {
     const amt = Number(req.body.amount);
-    if (isNaN(amt) || amt <= 0) return res.status(400).json({ error: "Amount must be greater than 0" });
+    if (isNaN(amt) || amt <= 0) return res.status(400).json({ error: "Enter an amount greater than $0." });
     if (req.body.discountType === "percentage" && amt > 100) {
-      return res.status(400).json({ error: "Percentage cannot exceed 100%" });
+      return res.status(400).json({ error: "A percentage discount can't be more than 100%." });
     }
     fields.push("amount = ?");
     values.push(String(amt));
@@ -198,7 +198,7 @@ router.patch("/discount-codes/:codeId", (req, res) => {
     values.push(JSON.stringify(Array.isArray(req.body.categoryIds) ? req.body.categoryIds : []));
   }
 
-  if (fields.length === 0) return res.status(400).json({ error: "No fields to update" });
+  if (fields.length === 0) return res.status(400).json({ error: "Nothing was changed. Edit a field, then save." });
 
   values.push(codeId, clubId);
   db.prepare(
@@ -216,14 +216,14 @@ router.patch("/discount-codes/:codeId", (req, res) => {
     )
     .get(codeId, clubId) as any;
 
-  if (!row) return res.status(404).json({ error: "Discount code not found" });
+  if (!row) return res.status(404).json({ error: "This discount code couldn't be found. It may have been deleted. Refresh the page and try again." });
   return res.json(formatRow(row));
 });
 
 // GET /discount-codes/:codeId/usage
 router.get("/discount-codes/:codeId/usage", (req, res) => {
   const clubId = getClubId(req);
-  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  if (!clubId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const codeId = Number(req.params.codeId);
   const db = getDb();
@@ -231,7 +231,7 @@ router.get("/discount-codes/:codeId/usage", (req, res) => {
   const codeRow = db
     .prepare("SELECT code FROM comp_codes WHERE id = ? AND club_id = ?")
     .get(codeId, clubId) as any;
-  if (!codeRow) return res.status(404).json({ error: "Discount code not found" });
+  if (!codeRow) return res.status(404).json({ error: "This discount code couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   const rows = db
     .prepare(
@@ -269,7 +269,7 @@ router.get("/discount-codes/:codeId/usage", (req, res) => {
 // DELETE /discount-codes/:codeId
 router.delete("/discount-codes/:codeId", (req, res) => {
   const clubId = getClubId(req);
-  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  if (!clubId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const codeId = Number(req.params.codeId);
   const db = getDb();
@@ -277,7 +277,7 @@ router.delete("/discount-codes/:codeId", (req, res) => {
   const existing = db
     .prepare("SELECT id FROM comp_codes WHERE id = ? AND club_id = ?")
     .get(codeId, clubId);
-  if (!existing) return res.status(404).json({ error: "Discount code not found" });
+  if (!existing) return res.status(404).json({ error: "This discount code couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   db.prepare("DELETE FROM comp_codes WHERE id = ? AND club_id = ?").run(codeId, clubId);
   return res.json({ ok: true });

@@ -45,6 +45,24 @@ function toIsoUtc(value: string | null | undefined): string | null {
     : value;
 }
 
+/** The pass just saved, as the website returns it. */
+function savedPassJson(crossings: PracticeCrossingRow[], id: number) {
+  const saved = crossings.find((c) => c.id === id);
+  if (!saved) return { id };
+  return {
+    id: saved.id,
+    sessionId: saved.session_id,
+    rfidNumber: saved.rfid_number,
+    riderId: saved.rider_id ?? null,
+    riderName: saved.rider_name ?? null,
+    bibNumber: saved.bib_number ?? null,
+    crossingTime: saved.crossing_time,
+    lapNumber: saved.lap_number,
+    lapTimeMs: saved.lap_time_ms ?? null,
+    createdAt: toIsoUtc(saved.created_at),
+  };
+}
+
 function serializeSession(s: PracticeSessionRow) {
   return {
     id: s.id,
@@ -53,10 +71,11 @@ function serializeSession(s: PracticeSessionRow) {
     status: s.status,
     debounceMs: s.debounce_ms,
     venueName: s.venue_name ?? null,
+    trackId: (s as { track_id?: number | null }).track_id ?? null,
     course: practiceCourseOf(s),
     startedAt: toIsoUtc(s.started_at),
     endedAt: s.ended_at ?? null,
-    createdAt: s.created_at,
+    createdAt: toIsoUtc(s.created_at),
   };
 }
 
@@ -275,14 +294,14 @@ function processCrossing(
 router.post("/practice/active/crossing", rejectForeignBrowserIngest, (req, res) => {
   const clubId = Number(req.query.clubId);
   if (!clubId || isNaN(clubId)) {
-    return res.status(400).json({ error: "clubId query param is required" });
+    return res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
   }
 
   const body = req.body as any;
   const rfidNumber: string | undefined =
     body?.rfidNumber ?? body?.transponder ?? body?.transponderId ?? body?.id;
   if (!rfidNumber) {
-    return res.status(400).json({ error: "rfidNumber (or transponder) is required" });
+    return res.status(400).json({ error: "Enter a transponder or tag number." });
   }
 
   const rawTime: string | undefined =
@@ -303,7 +322,7 @@ router.post("/practice/active/crossing", rejectForeignBrowserIngest, (req, res) 
 
   if (!session) {
     return res.status(409).json({
-      error: "No active practice session for this club",
+      error: "No practice session is running. Start one on the Practice page.",
       hint: "Start a practice session in the organizer portal first.",
     });
   }
@@ -318,15 +337,15 @@ router.post("/practice/active/crossing", rejectForeignBrowserIngest, (req, res) 
     .all(session.id) as PracticeCrossingRow[];
   broadcast(session.id, buildLiveBoard(session, crossings));
 
-  return res.status(201).json({ id: result.id });
+  return res.status(201).json(savedPassJson(crossings, result.id));
 });
 
 // GET /practice
 router.get("/practice", (req, res) => {
   const userId = (req.session as any)?.userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const clubId = getClubId(req);
-  if (!clubId) return res.status(403).json({ error: "No club" });
+  if (!clubId) return res.status(403).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
 
   const db = getDb();
   const sessions = db
@@ -340,25 +359,25 @@ router.get("/practice", (req, res) => {
 // GET /practice/:id
 router.get("/practice/:id", (req, res) => {
   const userId = (req.session as any)?.userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const db = getDb();
   const session = db
     .prepare("SELECT * FROM practice_sessions WHERE id = ?")
     .get(Number(req.params.id)) as PracticeSessionRow | undefined;
-  if (!session) return res.status(404).json({ error: "Not found" });
+  if (!session) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   return res.json(serializeSession(session));
 });
 
 // POST /practice
 router.post("/practice", (req, res) => {
   const userId = (req.session as any)?.userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const clubId = getClubId(req);
-  if (!clubId) return res.status(403).json({ error: "No club" });
+  if (!clubId) return res.status(403).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
 
   const { name, debounceMs, venueName } = req.body as { name?: string; debounceMs?: number; venueName?: string };
-  if (!name) return res.status(400).json({ error: "name required" });
-  if (!venueName?.trim()) return res.status(400).json({ error: "Track name is required" });
+  if (!name) return res.status(400).json({ error: "Enter a name." });
+  if (!venueName?.trim()) return res.status(400).json({ error: "Enter a track name." });
 
   const db = getDb();
   // One live practice per club, as in the cloud: reads go to the newest.
@@ -379,7 +398,7 @@ router.post("/practice", (req, res) => {
 // PATCH /practice/:id — start / end / rename / debounce
 router.patch("/practice/:id", (req, res) => {
   const userId = (req.session as any)?.userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const clubId = getClubId(req);
   const id = Number(req.params.id);
   const db = getDb();
@@ -387,8 +406,8 @@ router.patch("/practice/:id", (req, res) => {
   const existing = db
     .prepare("SELECT * FROM practice_sessions WHERE id = ?")
     .get(id) as PracticeSessionRow | undefined;
-  if (!existing) return res.status(404).json({ error: "Not found" });
-  if (existing.club_id !== clubId) return res.status(403).json({ error: "Forbidden" });
+  if (!existing) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
+  if (existing.club_id !== clubId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
 
   const sets: string[] = [];
   const vals: unknown[] = [];
@@ -399,19 +418,22 @@ router.patch("/practice/:id", (req, res) => {
   }
   if (req.body.venueName !== undefined) {
     const venueName = String(req.body.venueName).trim();
-    if (!venueName) return res.status(400).json({ error: "Track name is required" });
+    if (!venueName) return res.status(400).json({ error: "Enter a track name." });
     sets.push("venue_name = ?");
     vals.push(venueName);
   }
   if (req.body.debounceMs !== undefined) {
     const debounceMs = Number(req.body.debounceMs);
     if (!Number.isInteger(debounceMs) || debounceMs < 0 || debounceMs > 600_000) {
-      return res.status(400).json({ error: "debounceMs must be a whole number of milliseconds between 0 and 600000" });
+      return res.status(400).json({ error: "Enter a minimum lap time between 0 and 600 seconds." });
     }
     sets.push("debounce_ms = ?");
     vals.push(debounceMs);
   }
   if (req.body.status !== undefined) {
+    if (!["idle", "active", "ended"].includes(String(req.body.status))) {
+      return res.status(400).json({ error: "status must be one of: idle, active, ended" });
+    }
     sets.push("status = ?");
     vals.push(req.body.status);
     if (req.body.status === "active" && existing.status !== "active") {
@@ -448,7 +470,7 @@ router.patch("/practice/:id", (req, res) => {
 // DELETE /practice/:id
 router.delete("/practice/:id", (req, res) => {
   const userId = (req.session as any)?.userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const clubId = getClubId(req);
   const id = Number(req.params.id);
   const db = getDb();
@@ -456,8 +478,8 @@ router.delete("/practice/:id", (req, res) => {
   const existing = db
     .prepare("SELECT * FROM practice_sessions WHERE id = ?")
     .get(id) as PracticeSessionRow | undefined;
-  if (!existing) return res.status(404).json({ error: "Not found" });
-  if (existing.club_id !== clubId) return res.status(403).json({ error: "Forbidden" });
+  if (!existing) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
+  if (existing.club_id !== clubId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
 
   db.prepare("DELETE FROM practice_split_crossings WHERE session_id = ?").run(id);
   db.prepare("DELETE FROM practice_crossings WHERE session_id = ?").run(id);
@@ -468,7 +490,7 @@ router.delete("/practice/:id", (req, res) => {
 // GET /practice/:id/crossings
 router.get("/practice/:id/crossings", (req, res) => {
   const userId = (req.session as any)?.userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const id = Number(req.params.id);
   const db = getDb();
   const crossings = db
@@ -495,22 +517,22 @@ router.get("/practice/:id/crossings", (req, res) => {
 // POST /practice/:id/crossing — crossing by explicit session ID
 router.post("/practice/:id/crossing", (req, res) => {
   const userId = (req.session as any)?.userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const sessionId = Number(req.params.id);
   const db = getDb();
 
   const session = db
     .prepare("SELECT * FROM practice_sessions WHERE id = ?")
     .get(sessionId) as PracticeSessionRow | undefined;
-  if (!session) return res.status(404).json({ error: "Session not found" });
+  if (!session) return res.status(404).json({ error: "This session couldn't be found. It may have been deleted. Refresh the page and try again." });
   if (session.status !== "active") {
-    return res.status(409).json({ error: "Session not active" });
+    return res.status(409).json({ error: "This practice session has ended. Start a new session on the Practice page." });
   }
 
   const body = req.body as any;
   const rfidNumber: string | undefined =
     body?.rfidNumber ?? body?.transponder ?? body?.transponderId;
-  if (!rfidNumber) return res.status(400).json({ error: "rfidNumber required" });
+  if (!rfidNumber) return res.status(400).json({ error: "Enter a transponder or tag number." });
 
   const rawTime: string | undefined =
     body?.crossingTime ?? body?.passingTime ?? body?.timestamp;
@@ -527,14 +549,14 @@ router.post("/practice/:id/crossing", (req, res) => {
     .all(session.id) as PracticeCrossingRow[];
   broadcast(session.id, buildLiveBoard(session, crossings));
 
-  return res.status(201).json({ id: result.id });
+  return res.status(201).json(savedPassJson(crossings, result.id));
 });
 
 // GET /practice/:id/live — SSE live board
 router.get("/practice/:id/live", (req, res) => {
   const userId = (req.session as any)?.userId;
   if (!userId) {
-    res.status(401).json({ error: "Unauthorized" });
+    res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
     return;
   }
   const id = Number(req.params.id);
@@ -543,7 +565,7 @@ router.get("/practice/:id/live", (req, res) => {
     .prepare("SELECT * FROM practice_sessions WHERE id = ?")
     .get(id) as PracticeSessionRow | undefined;
   if (!session) {
-    res.status(404).json({ error: "Not found" });
+    res.status(404).json({ error: "This session couldn't be found. It may have been deleted. Refresh the page and try again." });
     return;
   }
 

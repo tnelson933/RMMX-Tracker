@@ -4,6 +4,8 @@ import { compareStandings, computeFinishAt, everyoneFinished, finishGraceMs, fla
 import type { Response } from "express";
 import { getDb, parseJsonArr, parseJson } from "../db";
 import { rejectForeignBrowserIngest } from "../lib/request-origin";
+import { scoreMotoPoints } from "./results";
+import { buildRaceAnalytics, normalizeLapMs, parseTimeToMs, raceTimeRemainingMs } from "../lib/leaderboard-shape";
 import { LIVE_WINDOW_MS, broadcastPracticeBoard, resolvePracticeRider } from "./practice";
 import {
   computeMotoSectors,
@@ -224,18 +226,32 @@ export function buildLeaderboard(motoId: number) {
     ORDER BY rr.position ASC NULLS LAST
   `).all(motoId) as any[];
 
+  // Group race: results are filed under each team's captain; show the team.
+  const teamNames = new Map<number, string>();
+  for (const reg of db.prepare(
+    "SELECT rider_id, team_name FROM registrations WHERE event_id = ? AND team_name IS NOT NULL AND status != 'void' ORDER BY id",
+  ).all(moto.event_id) as Array<{ rider_id: number; team_name: string | null }>) {
+    if (reg.team_name && !teamNames.has(reg.rider_id)) teamNames.set(reg.rider_id, reg.team_name);
+  }
+  // What each row shows, the same way the website builds it: the stored total
+  // (hand-entered or corrected results have one) before the sum of the laps.
   const leaderboard = results.map((r: any) => {
-    const lapMs = parseJsonArr<number>(r.lap_times);
-    const totalMs = lapMs.reduce((s, t) => s + t, 0);
+    const raw = parseJsonArr<unknown>(r.lap_times);
+    const lapMs = raw.map(normalizeLapMs).filter(t => t > 0);
+    const storedTotalMs = r.total_time ? parseTimeToMs(String(r.total_time)) : 0;
+    const lapTotalMs = lapMs.reduce((s, t) => s + t, 0);
+    // Enduro tests keep the exact sum of their runs (the stored text is rounded to 1/100 s).
+    const totalMs = moto.type === "enduro_test" ? (lapTotalMs || storedTotalMs) : (storedTotalMs || lapTotalMs);
     const lastMs = lapMs.length > 0 ? lapMs[lapMs.length - 1] : null;
-    const eligibleLapMs = lapMs.filter(
+    const eligibleLapMs = raw.map(normalizeLapMs).filter(
       (t, index) => (!excludeFirstLapFromBest || index >= 1) && t > 0,
     );
     const bestMs = eligibleLapMs.length ? Math.min(...eligibleLapMs) : null;
     return {
       position: r.position ?? 999,
       riderId: r.rider_id,
-      riderName: `${r.first_name ?? ""} ${r.last_name ?? ""}`.trim() || "Unknown",
+      riderName: teamNames.get(r.rider_id)
+        ?? ([r.first_name, r.last_name].filter(Boolean).join(" ") || (r.bib_number ? `#${r.bib_number}` : "Unknown rider")),
       bibNumber: r.bib_number ?? null,
       laps: lapMs.length,
       lapTimes: lapMs.map(formatLapTime),
@@ -244,16 +260,18 @@ export function buildLeaderboard(motoId: number) {
       bestLapMs: bestMs,
       bestLap: bestMs != null ? formatLapTime(bestMs) : null,
       totalMs,
-      totalTime: lapMs.length ? formatLapTime(totalMs) : null,
+      totalTime: r.total_time ?? (lapTotalMs ? formatLapTime(lapTotalMs) : null),
       dnf: r.dnf === 1,
       dns: r.dns === 1,
     };
   });
 
-  const leader = leaderboard[0];
+  // The leader is the first rider still racing (a DNF/DNS can't be the reference).
+  const leader = leaderboard.find(e => !e.dnf && !e.dns) ?? leaderboard[0];
   const withGaps = leaderboard.map((entry) => {
-    if (!leader || entry.position === 1) return { ...entry, gap: "Leader" };
-    if (entry.laps < leader.laps)
+    if (!leader || entry === leader) return { ...entry, gap: "Leader" };
+    if (entry.dnf || entry.dns) return { ...entry, gap: entry.dns ? "DNS" : "DNF" };
+    if (entry.laps > 0 && leader.laps > 0 && entry.laps < leader.laps)
       return { ...entry, gap: `+${leader.laps - entry.laps} lap${leader.laps - entry.laps > 1 ? "s" : ""}` };
     return {
       ...entry,
@@ -295,16 +313,33 @@ export function buildLeaderboard(motoId: number) {
     motoId,
     motoName: moto.name ?? "",
     raceClass: moto.race_class,
+    motoType: moto.type,
+    fieldSize: parseJsonArr<unknown>(moto.lineup).length,
     status: moto.status,
     startedAt: moto.started_at ?? null,
     completedAt: moto.completed_at ?? null,
+    lapCount: moto.lap_count ?? null,
+    timeLimitMs: moto.time_limit_ms ?? null,
+    plusLaps: moto.plus_laps ?? null,
+    timeExpiredAt: moto.time_expired_at ?? null,
     pausedAt: moto.paused_at ?? null,
     totalPausedMs: moto.total_paused_ms ?? 0,
+    timeRemainingMs: raceTimeRemainingMs(moto),
+    // Shared announcer state is the cloud's (its sequence only goes up there);
+    // the desktop never writes it and returns what it last pulled.
+    announcerStartedAt: moto.announcer_started_at ?? null,
+    announcerLastLap: moto.announcer_last_lap ?? 0,
+    announcerTimeExpiredAt: moto.announcer_time_expired_at ?? null,
+    announcerExpiryLeaderLap: moto.announcer_expiry_leader_lap ?? null,
+    announcerLastExtraLap: moto.announcer_last_extra_lap ?? 0,
+    announcerSequence: moto.announcer_sequence ?? 0,
+    announcerFinishedAt: moto.announcer_finished_at ?? null,
     resultsOfficial: moto.results_finalized_at != null || moto.type === "practice",
     leaderboard: withSectors,
     sectorNames: sectors?.names ?? null,
     // The race's fastest time in each sector (purple on the timing screens).
     sectorFieldBestMs: sectors?.fieldBest ?? null,
+    analytics: buildRaceAnalytics(motoId, event?.race_style, withGaps),
     updatedAt: new Date().toISOString(),
   };
 }
@@ -513,6 +548,8 @@ export function completeTimedMotoIfFinished(motoId: number, nowMs = Date.now()):
   const changed = db.prepare("UPDATE motos SET status = 'completed', completed_at = ? WHERE id = ? AND status = 'in_progress'")
     .run(new Date().toISOString(), motoId);
   if (changed.changes > 0) {
+    // Points from the finishing order, as when the cloud's race clock closes a race.
+    scoreMotoPoints(motoId);
     const snapshot = buildLeaderboard(motoId);
     if (snapshot) sseBroadcast(motoId, snapshot);
   }
@@ -602,9 +639,9 @@ function processCrossing(opts: {
     if (!moto) throw new Error("Moto not found");
     if (moto.status !== "in_progress") {
       if (moto.type === "enduro_test") throw new EnduroCrossingRejected(`${moto.name} is finished — reopen it to record more runs`);
-      throw new Error("Moto is not in progress");
+      throw new Error("This moto isn't running. Start it on the Motos page first.");
     }
-    if (!moto.started_at) throw new Error("Moto has no start time");
+    if (!moto.started_at) throw new Error("This moto hasn't been started. Start it on the Motos page first.");
 
     const riderId: number | null = overrideRiderId !== undefined ? overrideRiderId : resolveRider(tagNumber, moto.event_id);
 
@@ -692,7 +729,7 @@ function processCrossing(opts: {
       return { debounced: true, crossing: null, lapNumber: null, lapTimeMs: null };
     }
     if (crossingTime.getTime() < new Date(moto.started_at).getTime()) {
-      throw new Error("Crossing time precedes the moto start");
+      throw new Error("That time is before the moto started. Check the time and try again.");
     }
 
     const insResult = db.prepare(`
@@ -1370,12 +1407,12 @@ router.post("/timing/zebra-crossing", rejectForeignBrowserIngest, (req, res) => 
 // POST /timing/manual-crossing — record a lap by riderId (no RFID required)
 router.post("/timing/manual-crossing", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const { riderId, motoId } = req.body;
-  if (!riderId || !motoId) return res.status(400).json({ error: "riderId and motoId are required" });
+  if (!riderId || !motoId) return res.status(400).json({ error: "Pick a rider and a moto." });
   const db = getDb();
   const moto = db.prepare("SELECT * FROM motos WHERE id = ?").get(Number(motoId)) as any;
-  if (!moto) return res.status(404).json({ error: `Moto ${motoId} not found` });
+  if (!moto) return res.status(404).json({ error: "This moto couldn't be found. Motos may have been regenerated. Refresh the Motos page." });
   const assignment = db
     .prepare("SELECT rfid_number FROM rfid_assignments WHERE rider_id = ? AND event_id = ? LIMIT 1")
     .get(Number(riderId), moto.event_id) as any;
@@ -1395,7 +1432,7 @@ router.post("/timing/manual-crossing", (req, res) => {
     if (snapshot) sseBroadcast(Number(motoId), snapshot);
     const enduro = !result.debounced && result.enduroAction
       ? { enduroAction: result.enduroAction, elapsedMs: result.elapsedMs ?? null, elapsed: result.elapsedMs != null ? formatLapTime(result.elapsedMs) : null }
-      : {};
+      : { enduroAction: null, elapsedMs: null, elapsed: null };
     return res.json({ ok: true, crossingId: result.crossing?.id ?? null, lapNumber: result.lapNumber, lapTime: result.lapTimeMs != null ? formatLapTime(result.lapTimeMs) : null, lapTimeMs: result.lapTimeMs, ...enduro });
   } catch (err: any) {
     return res.status(err instanceof EnduroCrossingRejected ? 409 : 500).json({ error: err.message });
@@ -1447,8 +1484,47 @@ router.get("/timing/live/:motoId", (req, res) => {
 // GET /timing/leaderboard/:motoId — polling fallback snapshot
 router.get("/timing/leaderboard/:motoId", (req, res) => {
   const snapshot = buildLeaderboard(Number(req.params.motoId));
-  if (!snapshot) return res.status(404).json({ error: "Moto not found" });
+  if (!snapshot) return res.status(404).json({ error: "This moto couldn't be found. Motos may have been regenerated. Refresh the Motos page." });
   return res.json(snapshot);
+});
+
+// GET /motos/:motoId/open-runs — enduro riders currently on course (a start
+// read with no finish yet), as the website lists them on the Motos page.
+router.get("/motos/:motoId/open-runs", (req, res) => {
+  if (!(req.session as any)?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
+  const motoId = Number(req.params.motoId);
+  if (!Number.isInteger(motoId) || motoId <= 0) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
+  const db = getDb();
+  const moto = db.prepare("SELECT id, type FROM motos WHERE id = ?").get(motoId) as { id: number; type: string } | undefined;
+  if (!moto) return res.status(404).json({ error: "This moto couldn't be found. Motos may have been regenerated. Refresh the Motos page." });
+  if (moto.type !== "enduro_test") return res.json([]);
+  const rows = db.prepare(`
+    SELECT lc.id, lc.rider_id AS riderId, lc.crossing_time AS crossingTime, r.first_name AS firstName, r.last_name AS lastName
+    FROM lap_crossings lc LEFT JOIN riders r ON r.id = lc.rider_id
+    WHERE lc.moto_id = ? AND lc.rider_id IS NOT NULL
+    ORDER BY lc.id ASC
+  `).all(motoId) as Array<{ id: number; riderId: number; crossingTime: string; firstName: string | null; lastName: string | null }>;
+  const byRider = new Map<number, typeof rows>();
+  for (const r of rows) byRider.set(r.riderId, [...(byRider.get(r.riderId) ?? []), r]);
+  const bibs = new Map(
+    (db.prepare("SELECT rider_id, bib_number FROM race_results WHERE moto_id = ?").all(motoId) as Array<{ rider_id: number; bib_number: string | null }>)
+      .map(r => [r.rider_id, r.bib_number]),
+  );
+  const now = Date.now();
+  const open = [...byRider.entries()]
+    .map(([riderId, list]) => ({ riderId, list, run: pairEnduroRuns(list) }))
+    .filter(x => x.run.open != null)
+    .map(({ riderId, list, run }) => ({
+      riderId,
+      riderName: [list[0].firstName, list[0].lastName].filter(Boolean).join(" ") || `Rider #${riderId}`,
+      bibNumber: bibs.get(riderId) ?? null,
+      runNumber: run.runs.length + 1,
+      startCrossingId: run.open!.id,
+      startedAt: new Date(run.open!.crossingTime).toISOString(),
+      overMax: now - new Date(run.open!.crossingTime).getTime() > ENDURO_MAX_RUN_MS,
+    }))
+    .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
+  return res.json(open);
 });
 
 // GET /timing/crossings/:motoId — all raw crossings (debug / replay / delete UI)
@@ -1489,17 +1565,17 @@ router.get("/timing/crossings/:motoId", (req, res) => {
 // DELETE /timing/crossings/:crossingId — remove a phantom/bad crossing and recalculate
 router.delete("/timing/crossings/:crossingId", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const crossingId = Number(req.params.crossingId);
-  if (!crossingId || isNaN(crossingId)) return res.status(400).json({ error: "Invalid crossingId" });
+  if (!crossingId || isNaN(crossingId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
   const db = getDb();
   const crossing = db.prepare("SELECT * FROM lap_crossings WHERE id = ?").get(crossingId) as any;
-  if (!crossing) return res.status(404).json({ error: "Crossing not found" });
+  if (!crossing) return res.status(404).json({ error: "This lap couldn't be found. It may have been deleted. Refresh the page." });
 
   const { moto_id: motoId, rfid_number: rfidNumber, rider_id: riderId } = crossing;
   const moto = db.prepare("SELECT * FROM motos WHERE id = ?").get(motoId) as any;
-  if (!moto) return res.status(404).json({ error: "Moto not found" });
+  if (!moto) return res.status(404).json({ error: "This moto couldn't be found. Motos may have been regenerated. Refresh the Motos page." });
 
   // Rebuild the rider's laps from everything left (every tag and manual entry).
   // Enduro: rebuild the rider's runs as start/finish pairs, then re-rank the test.

@@ -19,7 +19,7 @@ export function parseTeamInput(body: Record<string, any>, ridersPerGroup: number
   if (!teamName) return { error: "Enter a team name." };
   const raw = Array.isArray(body.teamMembers) ? body.teamMembers : [];
   const members = raw.map((m: any) => ({ firstName: clean(m?.firstName), lastName: clean(m?.lastName), email: clean(m?.email, 254).toLowerCase() }));
-  if (members.length !== size - 1) return { error: `This is a group race with ${size} riders per team. Enter the other ${size - 1} team members.` };
+  if (members.length !== size - 1) return { error: `This is a group race with ${size} riders per team. Enter the other ${size - 1} team member${size - 1 === 1 ? "" : "s"}.` };
   for (let i = 0; i < members.length; i++) {
     if (!members[i].firstName || !members[i].lastName) return { error: `Team member ${i + 2} needs a first and last name.` };
     if (!EMAIL_RE.test(members[i].email)) return { error: `Team member ${i + 2} needs a valid email address.` };

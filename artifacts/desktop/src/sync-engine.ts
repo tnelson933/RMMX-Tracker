@@ -1022,6 +1022,8 @@ export class SyncEngine {
       clubSellItems?: Record<string, unknown>[];
       readers?: Record<string, unknown>[];
       addonPayments?: Record<string, unknown>[];
+      tracks?: Record<string, unknown>[];
+      eventPublication?: Record<string, unknown>[];
     };
 
     const now = new Date().toISOString();
@@ -1060,6 +1062,7 @@ export class SyncEngine {
           ["event_reader_assignments", data.eventReaderAssignments ?? []],
           ["club_sell_items",     data.clubSellItems       ?? []],
           ["readers",             data.readers             ?? []],
+          ["tracks",              data.tracks              ?? []],
         ];
 
         for (const [table, rows] of tableMap) {
@@ -1083,6 +1086,45 @@ export class SyncEngine {
           const remove = this.db.prepare("DELETE FROM readers WHERE id = ?");
           for (const { id } of this.db.prepare("SELECT id FROM readers").all() as Array<{ id: number }>) {
             if (!keep.has(id)) remove.run(id);
+          }
+        }
+        if (Array.isArray(data.tracks)) {
+          // Track Library rows removed on the website (ones waiting to be pushed stay).
+          const keep = new Set(data.tracks.map((t) => Number(t["id"])));
+          const pending = new Set(
+            (this.db
+              .prepare("SELECT record_id FROM _write_queue WHERE table_name = 'tracks' AND synced_at IS NULL AND attempt_count < ?")
+              .all(MAX_ATTEMPTS) as Array<{ record_id: number }>).map((r) => r.record_id),
+          );
+          const remove = this.db.prepare("DELETE FROM tracks WHERE id = ?");
+          for (const { id } of this.db.prepare("SELECT id FROM tracks").all() as Array<{ id: number }>) {
+            if (!keep.has(id) && !pending.has(id)) totalChanged += remove.run(id).changes;
+          }
+        }
+        if (Array.isArray(data.eventPublication)) {
+          // Whether each event's results are official (one row per event, keyed by the event).
+          const save = this.db.prepare(
+            `INSERT INTO event_publication (event_id, published, published_at, updated_at)
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT(event_id) DO UPDATE SET
+               published = excluded.published, published_at = excluded.published_at, updated_at = excluded.updated_at
+             WHERE event_publication.published IS NOT excluded.published
+                OR event_publication.published_at IS NOT excluded.published_at`,
+          );
+          const pendingMotoEvents = new Set(
+            (this.db
+              .prepare(
+                `SELECT DISTINCT m.event_id AS event_id FROM _write_queue q JOIN motos m ON m.id = q.record_id
+                 WHERE q.table_name = 'motos' AND q.synced_at IS NULL AND q.attempt_count < ?`,
+              )
+              .all(MAX_ATTEMPTS) as Array<{ event_id: number }>).map((r) => r.event_id),
+          );
+          for (const row of data.eventPublication) {
+            const eventId = Number(row["eventId"]);
+            // A race finalized here and not pushed yet keeps the desktop's state.
+            if (!eventId || pendingMotoEvents.has(eventId)) continue;
+            const at = row["publishedAt"] != null ? String(row["publishedAt"]) : null;
+            totalChanged += save.run(eventId, row["published"] ? 1 : 0, at, String(row["updatedAt"] ?? now)).changes;
           }
         }
         if (Array.isArray(data.teamMembers)) totalChanged += this.upsertPulledTeamMembers(data.teamMembers);

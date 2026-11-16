@@ -15,13 +15,13 @@ function serializeCategory(c: Record<string, unknown>) {
 
 router.get("/discount-categories", (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const user = db
     .prepare("SELECT club_id FROM users WHERE id = ?")
     .get(userId) as { club_id: number } | null;
-  if (!user) return res.status(401).json({ error: "User not found" });
+  if (!user) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const categories = db
     .prepare(
@@ -34,7 +34,7 @@ router.get("/discount-categories", (req, res) => {
 
 router.get("/clubs/:clubId/discount-categories", (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const clubId = Number(req.params.clubId);
@@ -58,13 +58,13 @@ function getClubIdForUser(userId: number): number | null {
 
 router.post("/discount-categories", (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const clubId = getClubIdForUser(userId);
-  if (!clubId) return res.status(403).json({ error: "No club associated with account" });
+  if (!clubId) return res.status(403).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
 
   const { name } = req.body;
-  if (!String(name ?? "").trim()) return res.status(400).json({ error: "name required" });
+  if (!String(name ?? "").trim()) return res.status(400).json({ error: "Enter a name." });
 
   const db = getDb();
   const result = db
@@ -79,14 +79,14 @@ router.post("/discount-categories", (req, res) => {
 
 router.patch("/discount-categories/:categoryId", (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const clubId = getClubIdForUser(userId);
-  if (!clubId) return res.status(403).json({ error: "No club associated with account" });
+  if (!clubId) return res.status(403).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
 
   const categoryId = Number(req.params.categoryId);
   const { name } = req.body;
-  if (!String(name ?? "").trim()) return res.status(400).json({ error: "name required" });
+  if (!String(name ?? "").trim()) return res.status(400).json({ error: "Enter a name." });
 
   const db = getDb();
   db.prepare("UPDATE discount_categories SET name = ? WHERE id = ? AND club_id = ?")
@@ -95,23 +95,23 @@ router.patch("/discount-categories/:categoryId", (req, res) => {
   const row = db
     .prepare("SELECT * FROM discount_categories WHERE id = ? AND club_id = ?")
     .get(categoryId, clubId) as Record<string, unknown> | undefined;
-  if (!row) return res.status(404).json({ error: "Category not found" });
+  if (!row) return res.status(404).json({ error: "This category couldn't be found. It may have been deleted. Refresh the page and try again." });
   return res.json(serializeCategory(row));
 });
 
 router.delete("/discount-categories/:categoryId", (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const clubId = getClubIdForUser(userId);
-  if (!clubId) return res.status(403).json({ error: "No club associated with account" });
+  if (!clubId) return res.status(403).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
 
   const categoryId = Number(req.params.categoryId);
   const db = getDb();
   const row = db
     .prepare("SELECT id FROM discount_categories WHERE id = ? AND club_id = ?")
     .get(categoryId, clubId) as any;
-  if (!row) return res.status(404).json({ error: "Category not found" });
+  if (!row) return res.status(404).json({ error: "This category couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   db.prepare("DELETE FROM discount_categories WHERE id = ? AND club_id = ?").run(categoryId, clubId);
   return res.json({ ok: true });

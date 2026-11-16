@@ -8,7 +8,7 @@ const router = Router();
 // Requires an active session (desktop organizer must be logged in).
 router.post("/admin/sync/pull", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   if (!AUTO_SYNC_ENABLED) {
     return res.status(503).json({
