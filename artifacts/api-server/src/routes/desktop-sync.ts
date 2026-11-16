@@ -1028,6 +1028,8 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       transponder_returned?: unknown;
       refund_verified_at?: unknown;
       team_name?: unknown;
+      cash_tendered?: unknown;
+      cash_change?: unknown;
     }>;
 
     // Race-day fields set on the desktop (check-in add-ons, rentals, refunds).
@@ -1051,6 +1053,11 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       if (refundVerifiedAt) set.refundVerifiedAt = refundVerifiedAt;
       if (r.mylaps_transponder_number != null && String(r.mylaps_transponder_number).trim()) {
         set.myLapsTransponderNumber = String(r.mylaps_transponder_number);
+      }
+      // Cash taken at the desktop's gate: what was handed over and the change given.
+      if (r.cash_tendered != null && r.cash_tendered !== "" && Number.isFinite(Number(r.cash_tendered))) {
+        set.cashTendered = Number(r.cash_tendered).toFixed(2);
+        if (r.cash_change != null && Number.isFinite(Number(r.cash_change))) set.cashChange = Number(r.cash_change).toFixed(2);
       }
       // Group race teams registered on the desktop.
       if (r.team_name != null && String(r.team_name).trim()) set.teamName = String(r.team_name).trim().slice(0, 80);

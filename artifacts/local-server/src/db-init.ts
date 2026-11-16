@@ -772,6 +772,9 @@ export function initDb() {
     ["events", "track_lat                  REAL"],
     ["events", "track_lng                  REAL"],
     ["registrations", "team_name          TEXT"],
+    // Cash at the gate: what the rider handed over and the change given (amount_paid is what's kept).
+    ["registrations", "cash_tendered      TEXT"],
+    ["registrations", "cash_change        TEXT"],
     ["team_members",  "trackr_choice      TEXT"],
     ["team_members",  "rfid_purchased     INTEGER NOT NULL DEFAULT 0"],
     // registrations — check-in add-ons, waiver acknowledgment and rider cancellations

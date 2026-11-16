@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
+import { normalizeActiveTransponderIdentifier, parseCashTendered } from "@workspace/api-zod";
 import { getDb, parseBool, parseJsonArr } from "../db";
 import { resolveRegistrationRider } from "../registration-rider";
 import { markRiderFieldsDirty } from "../rider-profile-dirty";
@@ -21,6 +21,8 @@ function deserializeReg(r: Record<string, unknown>) {
     clubIdNumber: r.club_id_number,
     amountPaid: r.amount_paid != null ? Number(r.amount_paid) : null,
     paymentMethod: r.payment_method,
+    cashTendered: r.cash_tendered ?? null,
+    cashChange: r.cash_change ?? null,
     statsEmailOptIn: parseBool(r.stats_email_opt_in as number),
     transponderRental: parseBool(r.transponder_rental as number),
     selectedPurchaseOptions: parseJsonArr(r.selected_purchase_options as string),
@@ -213,6 +215,15 @@ router.patch("/registrations/:registrationId", (req, res) => {
   if (bibNumber !== undefined) { updates.push("bib_number = ?"); params.push(bibNumber || null); }
   if (amountPaid !== undefined) { updates.push("amount_paid = ?"); params.push(amountPaid !== null ? String(amountPaid) : null); }
   if (paymentMethod !== undefined) { updates.push("payment_method = ?"); params.push(paymentMethod); }
+  // Cash at the gate: log what the rider handed over and the change given (same rule as the cloud).
+  if (paymentMethod === "cash" && req.body.cashTendered !== undefined) {
+    const tender = parseCashTendered(req.body.cashTendered, Number(amountPaid ?? 0));
+    if (tender && "error" in tender) return res.status(400).json({ error: tender.error });
+    if (tender) {
+      updates.push("cash_tendered = ?", "cash_change = ?");
+      params.push(tender.tendered.toFixed(2), tender.change.toFixed(2));
+    }
+  }
   if (riderId !== undefined) { updates.push("rider_id = ?"); params.push(Number(riderId)); }
   if (displayFirstName !== undefined) { updates.push("display_first_name = ?"); params.push(displayFirstName || null); }
   if (displayLastName !== undefined) { updates.push("display_last_name = ?"); params.push(displayLastName || null); }
