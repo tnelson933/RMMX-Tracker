@@ -135,7 +135,7 @@ router.post(
 router.get("/storage/uploads/:filename", async (req, res) => {
   const filename = req.params.filename as string;
   if (filename.includes("..") || filename.includes("/")) {
-    return res.status(400).json({ error: "Invalid filename" });
+    return res.status(400).json({ error: "That file name isn't allowed. Rename the file and upload it again." });
   }
   const filepath = path.join(UPLOADS_DIR, filename);
   const ext = path.extname(filename).toLowerCase();
@@ -180,7 +180,7 @@ router.get("/storage/uploads/:filename", async (req, res) => {
     }
   }
 
-  return res.status(404).json({ error: "File not found" });
+  return res.status(404).json({ error: "This file couldn't be found. It may have been deleted. Refresh the page and try again." });
 });
 
 /**

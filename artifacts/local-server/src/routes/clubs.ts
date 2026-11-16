@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { getDb } from "../db";
 import { isoTime, parseJson } from "../lib/cloud-shape";
+import { checkAcknowledgement, checkBrands, checkDefaultClasses, checkPdfUrl, checkWaiverFields } from "../lib/clubSettingsInput";
 
 const router = Router();
 
@@ -165,13 +166,27 @@ router.put("/clubs/:clubId/settings", (req, res) => {
   const text = (v: unknown) => (typeof v === "string" && v.trim() ? v : null);
   const columns: Record<string, unknown> = {};
   const b = req.body ?? {};
-  if (b.riderAcknowledgement !== undefined) columns.rider_acknowledgement = text(b.riderAcknowledgement);
-  if (b.waiverPdfUrl !== undefined) columns.waiver_pdf_url = text(b.waiverPdfUrl);
-  if (b.liabilityWaiverText !== undefined) columns.liability_waiver_text = text(b.liabilityWaiverText);
-  if (b.liabilityWaiverPdfUrl !== undefined) columns.liability_waiver_pdf_url = text(b.liabilityWaiverPdfUrl);
-  if (b.liabilityWaiverFields !== undefined) columns.liability_waiver_fields = b.liabilityWaiverFields == null ? null : JSON.stringify(b.liabilityWaiverFields);
-  if (b.defaultClasses !== undefined) columns.default_classes = JSON.stringify(Array.isArray(b.defaultClasses) ? b.defaultClasses : []);
-  if (b.brandContingencies !== undefined) columns.brand_contingencies = JSON.stringify(Array.isArray(b.brandContingencies) ? b.brandContingencies : []);
+  // The website's checks and messages, in the website's order.
+  const checks = [
+    b.riderAcknowledgement !== undefined && checkAcknowledgement(b.riderAcknowledgement),
+    b.waiverPdfUrl !== undefined && checkPdfUrl(b.waiverPdfUrl, "acknowledgement form"),
+    b.liabilityWaiverText !== undefined && checkAcknowledgement(b.liabilityWaiverText),
+    b.liabilityWaiverPdfUrl !== undefined && checkPdfUrl(b.liabilityWaiverPdfUrl, "liability waiver"),
+    b.liabilityWaiverFields !== undefined && checkWaiverFields(b.liabilityWaiverFields),
+    b.defaultClasses !== undefined && checkDefaultClasses(b.defaultClasses),
+    b.brandContingencies !== undefined && checkBrands(b.brandContingencies),
+  ];
+  for (const result of checks) {
+    if (result && !result.ok) return res.status(400).json({ error: result.error });
+  }
+  const checked = (i: number) => (checks[i] as { ok: true; value: unknown }).value;
+  if (b.riderAcknowledgement !== undefined) columns.rider_acknowledgement = text(checked(0));
+  if (b.waiverPdfUrl !== undefined) columns.waiver_pdf_url = text(checked(1));
+  if (b.liabilityWaiverText !== undefined) columns.liability_waiver_text = text(checked(2));
+  if (b.liabilityWaiverPdfUrl !== undefined) columns.liability_waiver_pdf_url = text(checked(3));
+  if (b.liabilityWaiverFields !== undefined) columns.liability_waiver_fields = checked(4) == null ? null : JSON.stringify(checked(4));
+  if (b.defaultClasses !== undefined) columns.default_classes = JSON.stringify(checked(5));
+  if (b.brandContingencies !== undefined) columns.brand_contingencies = JSON.stringify(checked(6));
   if (b.trackName !== undefined) columns.track_name = typeof b.trackName === "string" && b.trackName.trim() ? b.trackName.trim().slice(0, 120) : null;
 
   db.prepare("INSERT OR IGNORE INTO club_settings (id, club_id) VALUES (?, ?)").run(id, id);

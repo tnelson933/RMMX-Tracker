@@ -252,17 +252,21 @@ function serializeEvent(e: any, mode: "list" | "one" | "write" = "write") {
 }
 
 // GET /events?clubId=...
+// Readable without signing in, like the website's: the gate schedule and race-day
+// display run on tablets and TVs on the track's network (they ask for
+// ?clubId=…&status=race_day), which were getting "signed out" from the desktop.
 router.get("/events", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const db = getDb();
 
-  const { clubId } = req.query;
+  const { clubId, state, status } = req.query;
   let events: any[];
   if (clubId) {
     events = db
       .prepare("SELECT * FROM events WHERE club_id = ? ORDER BY date ASC, id ASC")
       .all(Number(clubId)) as any[];
+  } else if (!session?.userId) {
+    events = db.prepare("SELECT * FROM events ORDER BY date ASC, id ASC").all() as any[];
   } else {
     // Return events for the user's club
     const user = db
@@ -286,6 +290,9 @@ router.get("/events", (req, res) => {
       e.status = nextStatus;
     }
   }
+  // The website's ?state= and ?status= filters (the gate pages ask for race_day only).
+  if (state) events = events.filter(e => e.state === String(state));
+  if (status) events = events.filter(e => e.status === String(status));
   const tags = eventsTimingTags(db, events.map(e => e.id));
   return res.json(events.map(e => ({ ...serializeEvent(e, "list"), timingTags: tags.get(e.id) })));
 });
@@ -404,10 +411,8 @@ router.post("/events", (req, res) => {
   return res.status(201).json(serializeEvent(event));
 });
 
-// GET /events/:eventId
+// GET /events/:eventId — a public read on the website too (results page, widgets, live boards).
 router.get("/events/:eventId", (req, res) => {
-  const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const db = getDb();
   const id = Number(req.params.eventId);
   const event = db.prepare("SELECT * FROM events WHERE id = ?").get(id) as any;

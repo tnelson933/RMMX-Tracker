@@ -4,6 +4,7 @@ import { getDb, parseBool, parseJsonArr } from "../db";
 import { resolveRegistrationRider } from "../registration-rider";
 import { markRiderFieldsDirty } from "../rider-profile-dirty";
 import { registrationJson } from "../lib/registration-json";
+import { maskDateOfBirth, maskName, maskPhone, maskStreet, maskZip } from "../lib/privacyMask";
 
 const router = Router();
 
@@ -349,22 +350,47 @@ router.get("/public/riders/lookup", (req, res) => {
        LIMIT 1`,
     );
 
+  // Contact, DOB, address and emergency details go in full only to the signed-in
+  // organizer; a device on the track's network that isn't signed in gets them partly hidden.
+  const canSeePrivate = !!(req.session as any)?.userId;
+  const priv = (v: unknown, mask: (v: string | null | undefined) => string) =>
+    (canSeePrivate ? (v as string | null) ?? "" : mask(v as string | null));
+
+  // Numbers a rider used on a group race team (filed on the team, not their entry).
+  const teamRows = db.prepare(
+    "SELECT rfid_number, trackr_number, trackr_choice FROM team_members WHERE rider_id = ? ORDER BY updated_at DESC, id DESC",
+  );
+  const lastTeam = (riderId: unknown) => {
+    const last: { rfidNumber: string | null; trackrNumber: string | null } = { rfidNumber: null, trackrNumber: null };
+    for (const t of teamRows.all(riderId) as Array<Record<string, any>>) {
+      // A rented transponder went back after that event.
+      last.rfidNumber = last.rfidNumber ?? t.rfid_number ?? null;
+      last.trackrNumber = last.trackrNumber ?? (t.trackr_choice === "rent" ? null : t.trackr_number ?? null);
+    }
+    return last;
+  };
+
   const result = riders.map((rider) => {
     const lastReg = latestRegistration.get(rider.id) as
       | Record<string, unknown>
       | undefined;
+    const team = lastTeam(rider.id);
     return {
       id: rider.id,
       firstName: rider.first_name ?? "",
       lastName: rider.last_name ?? "",
-      phone: rider.phone ?? "",
-      dateOfBirth: rider.date_of_birth ?? "",
-      emergencyContact: rider.emergency_contact ?? "",
-      emergencyPhone: rider.emergency_phone ?? "",
-      streetAddress: rider.street_address ?? "",
+      email: rider.email ?? "",
+      /** Some details are partly hidden ("*") for anyone who isn't signed in, as on the website. */
+      detailsHidden: !canSeePrivate,
+      rfidNumber: rider.rfid_number || team.rfidNumber || "",
+      phone: priv(rider.phone, maskPhone),
+      dateOfBirth: priv(rider.date_of_birth, maskDateOfBirth),
+      emergencyContact: priv(rider.emergency_contact, maskName),
+      emergencyPhone: priv(rider.emergency_phone, maskPhone),
+      streetAddress: priv(rider.street_address, maskStreet),
       city: rider.city ?? "",
       homeState: rider.home_state ?? "",
-      zip: rider.zip ?? "",
+      zip: priv(rider.zip, maskZip),
       amaNumber: lastReg?.ama_number ?? rider.ama_number ?? "",
       clubIdNumber: lastReg?.club_id_number ?? "",
       bikeBrand: lastReg?.bike_brand ?? rider.bike_manufacturer ?? "",
@@ -376,7 +402,7 @@ router.get("/public/riders/lookup", (req, res) => {
           : rider.bib_number ?? "",
       sponsors: lastReg?.sponsors ?? rider.sponsors ?? "",
       myLapsTransponderNumber:
-        lastReg?.mylaps_transponder_number ?? rider.mylaps_transponder_id ?? "",
+        lastReg?.mylaps_transponder_number || rider.mylaps_transponder_id || team.trackrNumber || "",
     };
   });
 
@@ -385,6 +411,20 @@ router.get("/public/riders/lookup", (req, res) => {
     count: result.length,
     riders: result,
   });
+});
+
+// Public: classes a rider is already registered for at an event (same answer as the cloud).
+router.get("/public/events/:eventId/rider-classes", (req, res) => {
+  const eventId = Number(req.params.eventId);
+  const riderId = Number(req.query.riderId);
+  if (!riderId || isNaN(riderId)) return res.json({ registeredClasses: [] });
+  // An unfinished payment doesn't hold the class; registering again clears it.
+  const rows = getDb().prepare(
+    `SELECT race_class FROM registrations
+     WHERE event_id = ? AND rider_id = ? AND COALESCE(status, '') != 'void'
+       AND (payment_status = 'paid' OR status = 'confirmed')`,
+  ).all(eventId, riderId) as Array<{ race_class: string }>;
+  return res.json({ registeredClasses: rows.map(r => r.race_class) });
 });
 
 // ── Public: check if a bib number is already taken for an event ───────────────

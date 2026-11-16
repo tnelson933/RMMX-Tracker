@@ -4,6 +4,8 @@ import { formulaPoints } from "../lib/safeFormula";
 import { AMA_POINTS, isLowerBetter, olympicPenalty } from "../lib/overallOrder";
 import { buildContingencyReport } from "@workspace/api-zod";
 import { computeEventOverall } from "../lib/eventOverall";
+import { lapTimeToMs } from "../lib/lapScoring";
+import { ENDURO_ALL_CLASSES, loadEnduroRiderClasses, rerankEnduroTest } from "../lib/enduroScoring";
 
 const router = Router();
 
@@ -195,9 +197,18 @@ router.post("/events/:eventId/results", (req, res) => {
   }
 
   const moto = db
-    .prepare("SELECT id, type FROM motos WHERE id = ?")
+    .prepare("SELECT id, event_id, name, type, race_class, lap_count, time_limit_ms, status FROM motos WHERE id = ?")
     .get(Number(motoId)) as any;
-  if (!moto) return res.status(404).json({ error: "This moto couldn't be found. Motos may have been regenerated. Refresh the Motos page." });
+  // The moto must belong to this event, as on the cloud.
+  if (!moto || moto.event_id !== eventId) return res.status(404).json({ error: "This moto couldn't be found. Motos may have been regenerated. Refresh the Motos page." });
+  const isEnduroTest = moto.type === "enduro_test";
+  // Enduro tests are "All Classes"; each result is scored in the rider's class.
+  const enduroClasses = isEnduroTest ? loadEnduroRiderClasses(eventId) : null;
+  const classFor = (r: any): string => {
+    if (!enduroClasses) return moto.race_class ?? "";
+    const sent = typeof r.raceClass === "string" ? r.raceClass.trim() : "";
+    return enduroClasses.get(Number(r.riderId)) ?? (sent && sent !== ENDURO_ALL_CLASSES ? sent : (moto.race_class ?? ""));
+  };
 
   // Look up scoring table + club auto-DNF for this event
   const event = db
@@ -247,26 +258,23 @@ router.post("/events/:eventId/results", (req, res) => {
       .map((r: any) => Array.isArray(r.lapTimes) ? r.lapTimes.length : 0),
   );
 
-  const upsert = db.prepare(
+  // The page sends each rider's result without a row id and with lap times as
+  // text ("1:05.32"). One row per rider in the moto: the rider's existing row is
+  // updated (so the same row syncs), otherwise a new one is added. Laps are
+  // stored as milliseconds and capped to the moto's lap count, like the cloud.
+  const findRow = db.prepare("SELECT id FROM race_results WHERE moto_id = ? AND rider_id = ? ORDER BY id ASC LIMIT 1");
+  const insertRow = db.prepare(
     `INSERT INTO race_results
        (event_id, moto_id, rider_id, race_class, position, total_time, lap_times, points, dnf, dns, bib_number, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-     ON CONFLICT(id) DO UPDATE SET
-       position = excluded.position,
-       total_time = excluded.total_time,
-       lap_times = excluded.lap_times,
-       points = excluded.points,
-       dnf = excluded.dnf,
-       dns = excluded.dns,
-       bib_number = excluded.bib_number`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
   );
-
-  const upsertById = db.prepare(
+  const updateRow = db.prepare(
     `UPDATE race_results SET
-       position = ?, total_time = ?, lap_times = ?,
+       race_class = ?, position = ?, total_time = ?, lap_times = ?,
        points = ?, dnf = ?, dns = ?, bib_number = ?
      WHERE id = ?`,
   );
+  const lapCap = moto.time_limit_ms ? null : moto.lap_count;
 
   const upsertTx = db.transaction(() => {
     for (const r of raw as any[]) {
@@ -287,28 +295,36 @@ router.post("/events/:eventId/results", (req, res) => {
         leaderLapsCompleted: leaderLaps,
       });
 
-      const lapTimesJson = JSON.stringify(Array.isArray(r.lapTimes) ? r.lapTimes : []);
-      const totalTime = r.totalTime ?? null;
-      const bibNumber = r.bibNumber ?? null;
+      const sentLaps: unknown[] = Array.isArray(r.lapTimes) ? r.lapTimes : [];
+      const laps = (lapCap != null && lapCap > 0 ? sentLaps.slice(0, lapCap) : sentLaps)
+        .map(lapTimeToMs)
+        .filter((ms): ms is number => ms != null);
+      const lapTimesJson = JSON.stringify(laps);
+      const totalTime = r.totalTime || null;
+      const bibNumber = r.bibNumber || null;
       const dnfVal = r.dnf ? 1 : 0;
       const dnsVal = r.dns ? 1 : 0;
+      const raceClass = classFor(r);
 
-      if (r.id) {
-        upsertById.run(
-          r.position ?? 999, totalTime, lapTimesJson,
-          pts, dnfVal, dnsVal, bibNumber, r.id,
-        );
+      const existing = (r.id
+        ? db.prepare("SELECT id FROM race_results WHERE id = ? AND moto_id = ?").get(Number(r.id), Number(motoId))
+        : findRow.get(Number(motoId), Number(r.riderId))) as { id: number } | undefined;
+      if (existing) {
+        updateRow.run(raceClass, r.position ?? 999, totalTime, lapTimesJson, pts, dnfVal, dnsVal, bibNumber, existing.id);
       } else {
-        upsert.run(
-          eventId, Number(motoId), r.riderId, r.raceClass ?? "",
-          r.position ?? 999, totalTime, lapTimesJson,
-          pts, dnfVal, dnsVal, bibNumber,
-        );
+        insertRow.run(eventId, Number(motoId), r.riderId, raceClass, r.position ?? 999, totalTime, lapTimesJson, pts, dnfVal, dnsVal, bibNumber);
       }
+    }
+    // Entering results finishes the race, as on the cloud.
+    if (moto.status !== "completed") {
+      db.prepare("UPDATE motos SET status = 'completed', completed_at = COALESCE(completed_at, ?) WHERE id = ?")
+        .run(new Date().toISOString(), Number(motoId));
     }
   });
 
   upsertTx();
+  // Enduro tests: positions come from run times within each class.
+  if (isEnduroTest) rerankEnduroTest(Number(motoId));
 
   // Return updated results for this moto
   const updated = db
@@ -321,11 +337,12 @@ router.post("/events/:eventId/results", (req, res) => {
     )
     .all(Number(motoId)) as any[];
 
-  return res.json(
+  return res.status(201).json(
     updated.map((r: any) => ({
       id: r.id,
       eventId: r.event_id,
       motoId: r.moto_id,
+      motoName: moto.name,
       riderId: r.rider_id,
       riderName: r.first_name
         ? `${r.first_name} ${r.last_name ?? ""}`.trim()
@@ -348,27 +365,35 @@ router.patch("/events/:eventId/results/:resultId/laps", (req, res) => {
   if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
+  const eventId = Number(req.params.eventId);
   const resultId = Number(req.params.resultId);
-  const { lapTimes, totalTime } = req.body;
+  const { lapTimes } = req.body as { lapTimes?: unknown };
 
-  if (!Array.isArray(lapTimes)) {
+  if (!Array.isArray(lapTimes) || lapTimes.some((t) => typeof t !== "number")) {
     return res.status(400).json({ error: "Some lap times aren't valid. Check the times and try again." });
   }
 
-  db.prepare(
-    "UPDATE race_results SET lap_times = ?, total_time = ? WHERE id = ?",
-  ).run(JSON.stringify(lapTimes), totalTime ?? null, resultId);
+  const existing = db
+    .prepare("SELECT id, moto_id FROM race_results WHERE id = ? AND event_id = ?")
+    .get(resultId, eventId) as { id: number; moto_id: number } | undefined;
+  if (!existing) return res.status(404).json({ error: "This result couldn't be found. It may have been deleted. Refresh the page and try again." });
 
-  const row = db
-    .prepare("SELECT * FROM race_results WHERE id = ?")
-    .get(resultId) as any;
-  if (!row) return res.status(404).json({ error: "This result couldn't be found. It may have been deleted. Refresh the page and try again." });
+  // Like the cloud: laps are capped to the moto's lap count and the total time
+  // is worked out from them (the page sends the laps only; the total used to be
+  // wiped here).
+  const lapMoto = db.prepare("SELECT lap_count, type FROM motos WHERE id = ?").get(existing.moto_id) as { lap_count: number | null; type: string | null } | undefined;
+  const capped = (lapMoto?.lap_count != null && lapMoto.lap_count > 0 ? lapTimes.slice(0, lapMoto.lap_count) : lapTimes) as number[];
+  const totalMs = capped.reduce((s, ms) => s + ms, 0);
+  const formatMs = (ms: number) => ms <= 0
+    ? "0:00.00"
+    : `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, "0")}.${String(Math.floor((ms % 1000) / 10)).padStart(2, "0")}`;
+  const totalTime = capped.length > 0 ? formatMs(totalMs) : null;
 
-  return res.json({
-    id: row.id,
-    lapTimes,
-    totalTime: row.total_time ?? null,
-  });
+  db.prepare("UPDATE race_results SET lap_times = ?, total_time = ? WHERE id = ?")
+    .run(JSON.stringify(capped), totalTime, resultId);
+  if (lapMoto?.type === "enduro_test") rerankEnduroTest(existing.moto_id);
+
+  return res.json({ id: existing.id, lapTimes: capped, totalTime });
 });
 
 // GET /events/:eventId/ama-export — CSV download for AMA reporting

@@ -42,6 +42,16 @@ router.get("/sell-items", async (req, res, next) => {
   return res.json(clubSellItems(user.club_id));
 });
 
+// RM Connect connections for the club. The desktop drives its readers itself and
+// never uses RM Connect, so with no internet the honest answer is "none" (the
+// course map, Reader Setup and the timing status ask every few seconds and
+// would otherwise get an error each time). Online, the cloud's answer is shown.
+router.get("/readers/connector-status", async (req, res, next) => {
+  if (!signedIn(req, res)) return;
+  if (await cloudReachable()) return next();
+  return res.json([]);
+});
+
 // The club's readers (for the course map and enduro gate pickers). Online the
 // cloud answers; offline, the last pulled copy. Adding or changing readers needs the cloud.
 router.get("/readers", async (req, res, next) => {

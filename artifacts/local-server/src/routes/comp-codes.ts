@@ -286,6 +286,14 @@ router.post("/clubs/:clubId/riders/:riderId/discount-code", (req, res) => {
   if (!riderUsableByClub(riderId, clubId)) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   const db = getDb();
+  // One code per rider, like the website: the rider page shows a single code.
+  const existing = db
+    .prepare("SELECT id FROM comp_codes WHERE event_id IS NULL AND club_id = ? AND rider_id = ? LIMIT 1")
+    .get(clubId, riderId);
+  if (existing) {
+    return res.status(409).json({ error: "This rider already has a discount code. Delete it first before generating a new one." });
+  }
+  const rider = db.prepare("SELECT first_name, last_name FROM riders WHERE id = ?").get(riderId) as { first_name: string; last_name: string };
   const code = customCode ? String(customCode).trim().toUpperCase() : generateCode();
 
   try {
@@ -301,6 +309,7 @@ router.post("/clubs/:clubId/riders/:riderId/discount-code", (req, res) => {
       .prepare("SELECT * FROM comp_codes WHERE id = ?")
       .get(Number(result.lastInsertRowid)) as any;
     return res.status(201).json({
+      riderName: `${rider.first_name} ${rider.last_name}`,
       id: row.id,
       eventId: row.event_id ?? null,
       clubId: row.club_id ?? null,
@@ -335,8 +344,13 @@ router.delete("/clubs/:clubId/riders/:riderId/discount-code", (req, res) => {
   const riderId = Number(req.params.riderId);
   const db = getDb();
 
-  db.prepare("UPDATE comp_codes SET is_active = 0 WHERE rider_id = ? AND club_id = ?")
-    .run(riderId, clubId);
+  // Removed, as on the website (a code that was only switched off would still
+  // show on the rider's page and block a new one).
+  const existing = db
+    .prepare("SELECT id FROM comp_codes WHERE event_id IS NULL AND club_id = ? AND rider_id = ? ORDER BY created_at ASC, id ASC LIMIT 1")
+    .get(clubId, riderId) as { id: number } | undefined;
+  if (!existing) return res.status(404).json({ error: "This rider doesn't have a discount code yet. Generate one first." });
+  db.prepare("DELETE FROM comp_codes WHERE id = ?").run(existing.id);
 
   return res.json({ ok: true });
 });

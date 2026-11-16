@@ -1488,6 +1488,22 @@ router.get("/timing/leaderboard/:motoId", (req, res) => {
   return res.json(snapshot);
 });
 
+// GET /public/motos/:motoId/detail — what the public results page shows for one
+// race: the leaderboard snapshot plus the gate lineup (same shape as the cloud).
+router.get("/public/motos/:motoId/detail", (req, res) => {
+  const motoId = Number(req.params.motoId);
+  if (isNaN(motoId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
+  const snapshot = buildLeaderboard(motoId);
+  if (!snapshot) return res.status(404).json({ error: "This moto couldn't be found. Motos may have been regenerated. Refresh the Motos page." });
+  const moto = getDb().prepare("SELECT lineup FROM motos WHERE id = ?").get(motoId) as { lineup: string | null } | undefined;
+  let rawLineup: Array<{ position: number; riderName: string; bibNumber?: string | null }> = [];
+  try { const parsed = moto?.lineup ? JSON.parse(moto.lineup) : []; if (Array.isArray(parsed)) rawLineup = parsed; } catch { rawLineup = []; }
+  const lineup = rawLineup
+    .sort((a, b) => a.position - b.position)
+    .map(e => ({ gate: e.position, riderName: e.riderName, bibNumber: e.bibNumber ?? null }));
+  return res.json({ ...snapshot, lineup });
+});
+
 // GET /motos/:motoId/open-runs — enduro riders currently on course (a start
 // read with no finish yet), as the website lists them on the Motos page.
 router.get("/motos/:motoId/open-runs", (req, res) => {

@@ -74,7 +74,7 @@ export function PdfFieldEditor({ url, initialFields = [], onSave, onCancel }: Pr
         setNumPages(doc.numPages);
         setLoading(false);
       } catch (e: any) {
-        if (!dead) { setPdfError("Could not load PDF."); setLoading(false); }
+        if (!dead) { setPdfError(navigator.onLine === false ? "The PDF viewer needs an internet connection. Connect to the internet, then open this again." : "Could not load PDF."); setLoading(false); }
       }
     })();
     return () => { dead = true; };
