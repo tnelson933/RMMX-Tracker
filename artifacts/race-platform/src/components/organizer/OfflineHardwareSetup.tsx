@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
-  CheckCircle2, Globe, Loader2, Radar, RefreshCw, Router, WifiOff, XCircle,
+  CheckCircle2, Circle, Clock, Globe, Loader2, Pencil, Play, Plus, Radar, RefreshCw, Router, Settings, Square,
+  Trash2, WifiOff, XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +27,37 @@ interface RfidNetworkStatus {
 interface ActiveStatus {
   connected: boolean; state: string; deviceIp: string | null; error: string | null; diagnosis: string;
   passingCount: number; ready: boolean;
+  machineId?: string | null; batteryPercent?: number | null;
+  activeChannel?: number; activePower?: number; loopEnabled?: [boolean, boolean]; loopsReading?: boolean;
+}
+
+// Several readers at once: each has its own id and name, sent with every read.
+type ReaderKind = "rm_trackr" | "rfid";
+type ReaderState = "disconnected" | "connecting" | "connected_idle" | "reading" | "testing" | "retrying" | "error";
+interface ReaderStatus {
+  id: string; name: string; kind: ReaderKind; address: string; hardware: RfidHardware | null; autoConnect: boolean;
+  state: ReaderState; connected: boolean; error: string | null; message: string;
+  readCount: number; lastReadAt: string | null;
+  active: ActiveStatus | null; rfid: RfidNetworkStatus | null;
+}
+interface ReaderSettings { activeChannel: number; activePower: number; loopEnabled: [boolean, boolean] }
+interface ReadersApi {
+  list(): Promise<ReaderStatus[]>;
+  add(input: { name?: string; kind: ReaderKind; address: string; hardware?: RfidHardware }): Promise<ReaderStatus>;
+  update(id: string, changes: { name?: string; address?: string; hardware?: RfidHardware }): Promise<ReaderStatus>;
+  remove(id: string): Promise<void>;
+  connect(id: string): Promise<void>;
+  disconnect(id: string): Promise<void>;
+  startTest(id: string): Promise<void>;
+  stopTest(id: string): Promise<void>;
+  configure(id: string, settings: ReaderSettings): Promise<void>;
+  syncClock(id: string): Promise<void>;
+  onStatus(cb: (s: ReaderStatus) => void): () => void;
+  onChanged(cb: (list: ReaderStatus[]) => void): () => void;
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(err);
 }
 
 interface DesktopApi {
@@ -47,6 +79,8 @@ interface DesktopApi {
     getStatus(): Promise<ActiveStatus>;
     onStatus(cb: (s: ActiveStatus) => void): () => void;
   };
+  /** Missing on older desktop builds, which connect one reader of each kind. */
+  readers?: ReadersApi;
 }
 
 function desktopApi(): DesktopApi | null {
@@ -76,6 +110,7 @@ export function ConnectionModeChooser({ tech }: { tech: Tech }) {
   if (!api) return null;
 
   return (
+    <>
     <section className="rounded-xl border-2 border-primary/25 bg-card p-5 space-y-4">
       <div>
         <p className="font-heading font-bold uppercase tracking-wider text-sm">2. Connect the reader to this computer</p>
@@ -87,10 +122,13 @@ export function ConnectionModeChooser({ tech }: { tech: Tech }) {
         </p>
         <p className="text-sm text-muted-foreground mt-1">
           The reader only needs to share a local network (a router) with this computer. Nothing else to install.
+          {api.readers && " Timing with more than one reader (a finish line plus section or split readers)? Add each one here and give it a name."}
         </p>
       </div>
       <OfflineHardwareSetup tech={tech} api={api} />
     </section>
+    {api.readers && <ReadersPanel readers={api.readers} />}
+    </>
   );
 }
 
@@ -243,11 +281,17 @@ function OfflineHardwareSetup({ tech, api }: { tech: Tech; api: DesktopApi }) {
         )}
       </Step>
 
-      <Step n={4} title="Connect and test">
-        {tech === "rfid"
-          ? <RfidConnect api={api} address={address} setAddress={setAddress} />
-          : <ActiveConnect api={api} address={address} />}
-      </Step>
+      {api.readers ? (
+        <Step n={4} title="Name it and add it">
+          <AddReader readers={api.readers} tech={tech} address={address} onAdded={() => { setAddress(""); setCheckResult(null); }} />
+        </Step>
+      ) : (
+        <Step n={4} title="Connect and test">
+          {tech === "rfid"
+            ? <RfidConnect api={api} address={address} setAddress={setAddress} />
+            : <ActiveConnect api={api} address={address} />}
+        </Step>
+      )}
     </div>
   );
 }
@@ -305,7 +349,7 @@ function RfidConnect({ api, address, setAddress }: { api: DesktopApi; address: s
         <div className="rounded-lg border bg-emerald-500/5 border-emerald-500/30 p-3 text-sm space-y-1">
           <p className="font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5"><CheckCircle2 size={15} /> Connected to {status!.host}</p>
           <p>Hold a tag near an antenna: the read count should go up. <strong>{status!.readCount}</strong> reads{status!.antennaIds.length ? ` · antennas ${status!.antennaIds.join(", ")}` : ""}.</p>
-          <p className="text-xs text-muted-foreground">Reads are timed whenever a moto or practice is running. Close RM Connect if it's open: a reader accepts only one connection.</p>
+          <p className="text-xs text-muted-foreground">Reads are timed whenever a moto or practice is running. Close any other program connected to this reader: it accepts only one connection.</p>
         </div>
       )}
     </div>
@@ -355,6 +399,341 @@ function ActiveConnect({ api, address }: { api: DesktopApi; address: string }) {
           <p>Pass an RM TrackR Transponder through the loop: <strong>{status!.passingCount}</strong> passings so far. Use the RM TrackR diagnostic below for a full crossing test.</p>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Several readers at once ───────────────────────────────────────────────────
+
+function AddReader({ readers, tech, address, onAdded }: { readers: ReadersApi; tech: Tech; address: string; onAdded: () => void }) {
+  const [name, setName] = useState("");
+  const [hardware, setHardware] = useState<RfidHardware>("impinj");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  async function add() {
+    setBusy(true);
+    setError(null);
+    setNote(null);
+    try {
+      const added = await readers.add({
+        name: name.trim() || undefined,
+        kind: tech === "rfid" ? "rfid" : "rm_trackr",
+        address,
+        hardware: tech === "rfid" ? hardware : undefined,
+      });
+      setName("");
+      onAdded();
+      try {
+        await readers.connect(added.id);
+        setNote(`${added.name} is added and connected. It's in the reader list below.`);
+      } catch (err) {
+        setNote(`${added.name} is added, but it isn't answering yet. This computer keeps trying by itself. (${errorText(err)})`);
+      }
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-2">
+        <Input value={name} onChange={e => setName(e.target.value)} maxLength={60}
+          placeholder="Name, e.g. Finish line or Section 3 start" className="h-9 text-sm w-64" />
+        {tech === "rfid" && (
+          <Select value={hardware} onValueChange={v => setHardware(v as RfidHardware)}>
+            <SelectTrigger className="w-48 h-9 bg-background"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="impinj">Impinj (R700, Speedway)</SelectItem>
+              <SelectItem value="zebra">Zebra (FX7500, FX9600)</SelectItem>
+              <SelectItem value="generic">Other LLRP reader</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+        <Button size="sm" className="h-9 gap-1.5" onClick={add} disabled={busy || !address.trim()}>
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+          Add reader{address.trim() ? ` at ${address.trim()}` : ""}
+        </Button>
+      </div>
+      {!address.trim() && <p className="text-xs text-muted-foreground">Pick a reader from the scan or enter its address in step 3 first.</p>}
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      {note && <p className="text-sm text-muted-foreground">{note}</p>}
+      <p className="text-xs text-muted-foreground">
+        The name tells you which reader a read came from, so use where it sits on the course. To add another reader, repeat step 3 and add it with its own name.
+      </p>
+    </div>
+  );
+}
+
+const STATE_LABEL: Record<ReaderState, string> = {
+  connected_idle: "Connected, idle",
+  reading: "Reading",
+  testing: "Loop test running",
+  connecting: "Connecting…",
+  retrying: "Not connected, retrying",
+  error: "Needs attention",
+  disconnected: "Not connected",
+};
+
+function stateTone(state: ReaderState): { box: string; text: string } {
+  if (state === "connected_idle" || state === "reading") return { box: "bg-emerald-500/5 border-emerald-500/30", text: "text-emerald-700 dark:text-emerald-400" };
+  if (state === "error") return { box: "bg-red-500/5 border-red-500/30", text: "text-red-700 dark:text-red-400" };
+  if (state === "disconnected") return { box: "bg-muted/20 border-border", text: "text-muted-foreground" };
+  return { box: "bg-amber-500/5 border-amber-500/30", text: "text-amber-700 dark:text-amber-400" };
+}
+
+function ReadersPanel({ readers }: { readers: ReadersApi }) {
+  const [list, setList] = useState<ReaderStatus[] | null>(null);
+
+  useEffect(() => {
+    readers.list().then(setList).catch(() => setList([]));
+    const offChanged = readers.onChanged(setList);
+    const offStatus = readers.onStatus(status => setList(prev => prev ? prev.map(r => (r.id === status.id ? status : r)) : prev));
+    return () => { offChanged(); offStatus(); };
+  }, []);
+
+  return (
+    <section className="rounded-xl border-2 border-primary/25 bg-card p-5 space-y-4">
+      <div>
+        <p className="font-heading font-bold uppercase tracking-wider text-sm">3. Readers on this computer</p>
+        <p className="text-sm text-muted-foreground mt-1">
+          Every reader here times at once. Connected readers reconnect by themselves when the app opens, and keep retrying if a cable or the network drops.
+        </p>
+      </div>
+      {list === null ? (
+        <p className="text-sm text-muted-foreground flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Loading readers…</p>
+      ) : list.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No readers yet. Find one above, give it a name, and add it.</p>
+      ) : (
+        <div className="space-y-3">
+          {list.map(reader => <ReaderRow key={reader.id} reader={reader} readers={readers} />)}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ReaderRow({ reader, readers }: { reader: ReaderStatus; readers: ReadersApi }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(reader.name);
+  const [address, setAddress] = useState(reader.address);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [testStartCount, setTestStartCount] = useState<number | null>(null);
+
+  const tone = stateTone(reader.state);
+  const isRmTrackr = reader.kind === "rm_trackr";
+  const wanted = reader.state !== "disconnected";
+  const testing = reader.state === "testing";
+  const testRead = testing && testStartCount !== null && reader.readCount > testStartCount;
+
+  async function run(action: () => Promise<unknown>) {
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveEdit() {
+    await run(async () => {
+      await readers.update(reader.id, {
+        name: name.trim(),
+        address: address.trim() !== reader.address ? address.trim() : undefined,
+      });
+      setEditing(false);
+    });
+  }
+
+  return (
+    <div className={`rounded-lg border p-3 space-y-2 ${tone.box}`}>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="font-semibold text-sm truncate">{reader.name}</p>
+          <p className="text-xs text-muted-foreground">
+            {isRmTrackr ? "RM TrackR" : "RFID reader"} · <span className="font-mono">{reader.address}</span>
+            {reader.active?.machineId ? <> · ID <span className="font-mono">{reader.active.machineId}</span></> : null}
+          </p>
+        </div>
+        <p className={`text-sm font-semibold flex items-center gap-1.5 ${tone.text}`}>
+          {reader.state === "connecting" || reader.state === "retrying" || reader.state === "testing"
+            ? <Loader2 size={15} className="animate-spin" />
+            : reader.state === "error" ? <XCircle size={15} />
+              : reader.state === "disconnected" ? <Circle size={15} />
+                : <CheckCircle2 size={15} />}
+          {STATE_LABEL[reader.state]}
+        </p>
+      </div>
+
+      {reader.state !== "disconnected" && (
+        <p className={`text-sm ${reader.state === "error" ? "text-red-700 dark:text-red-400" : "text-muted-foreground"}`}>
+          {reader.state === "error" ? reader.error ?? reader.message : reader.message}
+        </p>
+      )}
+
+      {reader.connected && (
+        <p className="text-xs text-muted-foreground">
+          <strong className="text-foreground tabular-nums">{reader.readCount}</strong> reads
+          {reader.lastReadAt ? ` · last at ${new Date(reader.lastReadAt).toLocaleTimeString()}` : ""}
+          {isRmTrackr && reader.active?.loopEnabled
+            ? ` · loops ${[reader.active.loopEnabled[0] ? "1" : null, reader.active.loopEnabled[1] ? "2" : null].filter(Boolean).join(" and ") || "off"}${reader.active.loopsReading ? ": reading" : ""}`
+            : ""}
+          {isRmTrackr && reader.active?.batteryPercent != null ? ` · battery ${reader.active.batteryPercent}%` : ""}
+          {!isRmTrackr && reader.rfid?.antennaIds.length ? ` · antennas ${reader.rfid.antennaIds.join(", ")}` : ""}
+        </p>
+      )}
+
+      {testing && (
+        <p className={`text-sm font-medium ${testRead ? "text-emerald-700 dark:text-emerald-400" : "text-amber-700 dark:text-amber-400"}`}>
+          {testRead ? "Read received. This reader works." : "Pass an RM TrackR Transponder over a loop now…"}
+        </p>
+      )}
+
+      {editing ? (
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Input value={name} onChange={e => setName(e.target.value)} maxLength={60} placeholder="Reader name" className="h-9 text-sm w-56" />
+          <Input value={address} onChange={e => setAddress(e.target.value)} placeholder="Address" className="h-9 text-sm w-56 font-mono" />
+          <Button size="sm" className="h-9" onClick={saveEdit} disabled={busy || !name.trim() || !address.trim()}>Save</Button>
+          <Button size="sm" variant="ghost" className="h-9" onClick={() => { setEditing(false); setName(reader.name); setAddress(reader.address); setError(null); }}>Cancel</Button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2 pt-1">
+          {wanted ? (
+            <Button size="sm" variant="outline" className="h-8" disabled={busy} onClick={() => run(() => readers.disconnect(reader.id))}>Disconnect</Button>
+          ) : (
+            // A reader that doesn't answer isn't an error here: the row shows
+            // "Not connected, retrying" with the reason while the app keeps trying.
+            <Button size="sm" className="h-8 gap-1.5" disabled={busy} onClick={() => run(() => readers.connect(reader.id).catch(() => {}))}>
+              {busy && <Loader2 size={14} className="animate-spin" />} Connect
+            </Button>
+          )}
+          {isRmTrackr && reader.connected && (
+            testing ? (
+              <Button size="sm" variant="outline" className="h-8 gap-1.5" disabled={busy}
+                onClick={() => run(async () => { await readers.stopTest(reader.id); setTestStartCount(null); })}>
+                <Square size={13} /> Stop loop test
+              </Button>
+            ) : (
+              <Button size="sm" variant="outline" className="h-8 gap-1.5" disabled={busy}
+                onClick={() => run(async () => { setTestStartCount(reader.readCount); await readers.startTest(reader.id); })}>
+                <Play size={13} /> Loop test
+              </Button>
+            )
+          )}
+          {isRmTrackr && (
+            <Button size="sm" variant="ghost" className="h-8 gap-1.5" onClick={() => setShowSettings(v => !v)}>
+              <Settings size={13} /> Settings
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" className="h-8 gap-1.5" onClick={() => { setName(reader.name); setAddress(reader.address); setEditing(true); }}>
+            <Pencil size={13} /> Rename
+          </Button>
+          {confirmRemove ? (
+            <>
+              <Button size="sm" variant="destructive" className="h-8" disabled={busy} onClick={() => run(() => readers.remove(reader.id))}>Remove {reader.name}</Button>
+              <Button size="sm" variant="ghost" className="h-8" onClick={() => setConfirmRemove(false)}>Keep</Button>
+            </>
+          ) : (
+            <Button size="sm" variant="ghost" className="h-8 gap-1.5" onClick={() => setConfirmRemove(true)}>
+              <Trash2 size={13} /> Remove
+            </Button>
+          )}
+        </div>
+      )}
+
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      {isRmTrackr && showSettings && <RmTrackrSettings reader={reader} readers={readers} />}
+    </div>
+  );
+}
+
+/** Channel, power, enabled loops and clock for one RM TrackR. Saved per reader and applied on every connect. */
+function RmTrackrSettings({ reader, readers }: { reader: ReaderStatus; readers: ReadersApi }) {
+  const [channel, setChannel] = useState(reader.active?.activeChannel ?? 0);
+  const [power, setPower] = useState(String(reader.active?.activePower ?? 100));
+  const [loop1, setLoop1] = useState(reader.active?.loopEnabled?.[0] ?? true);
+  const [loop2, setLoop2] = useState(reader.active?.loopEnabled?.[1] ?? true);
+  const [busy, setBusy] = useState<"apply" | "clock" | null>(null);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const powerNumber = Number(power);
+  const powerValid = power.trim() !== "" && Number.isInteger(powerNumber) && powerNumber >= 0 && powerNumber <= 100;
+  const identified = reader.connected && !!reader.active?.machineId;
+
+  async function apply() {
+    setBusy("apply");
+    setResult(null);
+    try {
+      await readers.configure(reader.id, { activeChannel: channel, activePower: powerNumber, loopEnabled: [loop1, loop2] });
+      setResult({ ok: true, message: reader.connected ? "Settings sent to the reader and saved." : "Settings saved. They are sent when the reader connects." });
+    } catch (err) {
+      setResult({ ok: false, message: errorText(err) });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function syncClock() {
+    setBusy("clock");
+    setResult(null);
+    try {
+      await readers.syncClock(reader.id);
+      setResult({ ok: true, message: "The reader's clock now matches this computer." });
+    } catch (err) {
+      setResult({ ok: false, message: errorText(err) });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="rounded-lg border bg-background/60 p-3 space-y-3">
+      <div className="flex flex-wrap items-end gap-4">
+        <label className="space-y-1">
+          <span className="block text-xs text-muted-foreground">Channel</span>
+          <Select value={String(channel)} onValueChange={v => setChannel(Number(v))}>
+            <SelectTrigger className="w-24 h-9 bg-background"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {[0, 1, 2, 3, 4, 5].map(n => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </label>
+        <label className="space-y-1">
+          <span className="block text-xs text-muted-foreground">Power (0 to 100)</span>
+          <Input type="number" min={0} max={100} step={1} value={power} onChange={e => setPower(e.target.value)} className="h-9 w-24 text-sm" />
+        </label>
+        <div className="space-y-1">
+          <span className="block text-xs text-muted-foreground">Loops in use</span>
+          <div className="flex items-center gap-4 h-9 text-sm">
+            <label className="flex items-center gap-1.5"><input type="checkbox" checked={loop1} onChange={e => setLoop1(e.target.checked)} /> Loop 1</label>
+            <label className="flex items-center gap-1.5"><input type="checkbox" checked={loop2} onChange={e => setLoop2(e.target.checked)} /> Loop 2</label>
+          </div>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" className="h-8 gap-1.5" onClick={apply} disabled={busy !== null || !powerValid || (!loop1 && !loop2)}>
+          {busy === "apply" && <Loader2 size={14} className="animate-spin" />} Apply settings
+        </Button>
+        <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={syncClock} disabled={busy !== null || !identified}>
+          {busy === "clock" ? <Loader2 size={14} className="animate-spin" /> : <Clock size={13} />} Sync clock
+        </Button>
+      </div>
+      {!powerValid && <p className="text-xs text-amber-700 dark:text-amber-400">Power must be a whole number from 0 to 100.</p>}
+      {!loop1 && !loop2 && <p className="text-xs text-amber-700 dark:text-amber-400">Keep at least one loop in use.</p>}
+      {result && <p className={`text-sm ${result.ok ? "text-emerald-700 dark:text-emerald-400" : "text-destructive"}`}>{result.message}</p>}
+      <p className="text-xs text-muted-foreground">
+        Readers close to each other should use different channels. The clock is also set every time the reader connects.
+        {!identified && " Sync clock needs the reader connected."}
+      </p>
     </div>
   );
 }

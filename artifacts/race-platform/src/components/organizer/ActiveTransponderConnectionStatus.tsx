@@ -16,6 +16,19 @@ interface ActiveTransponderStatus {
   reader2Working: string | null;
   loopEnabled?: [boolean, boolean];
   loopsReading?: boolean;
+  state?: string;
+}
+
+/** One reader from the desktop app's reader list (it can connect several at once). */
+interface DesktopReader {
+  id: string;
+  name: string;
+  kind: "rm_trackr" | "rfid";
+  state: string;
+  connected: boolean;
+  error: string | null;
+  readCount: number;
+  active: ActiveTransponderStatus | null;
 }
 
 /**
@@ -33,9 +46,21 @@ export function ActiveTransponderConnectionStatus({ className = "" }: { classNam
   const isDesktop = typeof (window as any).electronAPI !== "undefined";
   const [activeStatus, setActiveStatus] = useState<ActiveTransponderStatus | null>(null);
 
+  const [desktopReaders, setDesktopReaders] = useState<DesktopReader[] | null>(null);
+
   // Desktop direct mode
   useEffect(() => {
     if (!isDesktop) return;
+    const readersApi = (window as any).electronAPI?.readers;
+    if (readersApi) {
+      // Several RM TrackRs can be connected at once.
+      const keep = (list: DesktopReader[]) => setDesktopReaders(list.filter(r => r.kind === "rm_trackr"));
+      readersApi.list().then(keep).catch(() => {});
+      const offChanged = readersApi.onChanged(keep);
+      const offStatus = readersApi.onStatus((status: DesktopReader) =>
+        setDesktopReaders(prev => prev ? prev.map(r => (r.id === status.id ? status : r)) : prev));
+      return () => { offChanged(); offStatus(); };
+    }
     const api = (window as any).electronAPI?.activeTransponder;
     if (!api) return;
     api.getStatus().then(setActiveStatus).catch(() => {});
@@ -56,9 +81,30 @@ export function ActiveTransponderConnectionStatus({ className = "" }: { classNam
   let loops: { l1: LoopShow; l2: LoopShow } | null = null;
   let battery: number | null = null;
 
-  if (isDesktop && activeStatus) {
+  // Not connected yet, but the app keeps trying by itself: a warning, not an error.
+  let isRetrying = false;
+  let readerSummary: string | null = null;
+
+  if (isDesktop && desktopReaders && desktopReaders.length > 1) {
+    const connectedCount = desktopReaders.filter(r => r.connected).length;
+    isConnected = connectedCount > 0;
+    hasError = desktopReaders.some(r => r.state === "error") || connectedCount < desktopReaders.length;
+    isRetrying = connectedCount === 0 && desktopReaders.some(r => r.state === "retrying" || r.state === "connecting");
+    readCount = desktopReaders.reduce((sum, r) => sum + r.readCount, 0);
+    readerSummary = `${connectedCount} of ${desktopReaders.length} connected`;
+  } else if (isDesktop && desktopReaders && desktopReaders.length === 1 && desktopReaders[0].active) {
+    const only = desktopReaders[0];
+    const status = only.active!;
+    isConnected = only.connected;
+    hasError = only.state === "error";
+    isRetrying = !only.connected && (only.state === "retrying" || only.state === "connecting");
+    readCount = status.passingCount;
+    battery = status.batteryPercent;
+    if (only.connected) loops = loopShows(status);
+  } else if (isDesktop && activeStatus) {
     isConnected = activeStatus.connected;
     hasError = !!activeStatus.error;
+    isRetrying = !activeStatus.connected && (activeStatus.state === "reconnecting" || activeStatus.state === "connecting");
     readCount = activeStatus.passingCount;
     battery = activeStatus.batteryPercent;
     if (activeStatus.connected) loops = loopShows(activeStatus);
@@ -88,10 +134,10 @@ export function ActiveTransponderConnectionStatus({ className = "" }: { classNam
   }
 
   return (
-    <Link href="/rfid/setup" className={`inline-flex items-center gap-3 rounded-md border px-3 py-1.5 text-xs transition-colors hover:bg-muted/50 ${isConnected ? (hasError ? "border-amber-500/30 bg-amber-500/5 text-amber-700" : "border-green-500/30 bg-green-500/5 text-green-700") : "border-red-500/30 bg-red-500/5 text-red-700"} ${className}`}>
+    <Link href="/rfid/setup" className={`inline-flex items-center gap-3 rounded-md border px-3 py-1.5 text-xs transition-colors hover:bg-muted/50 ${isConnected ? (hasError ? "border-amber-500/30 bg-amber-500/5 text-amber-700" : "border-green-500/30 bg-green-500/5 text-green-700") : isRetrying ? "border-amber-500/30 bg-amber-500/5 text-amber-700" : "border-red-500/30 bg-red-500/5 text-red-700"} ${className}`}>
       <div className="flex items-center gap-1.5 font-medium">
-        {isConnected ? <CheckCircle2 size={14} className={hasError ? "text-amber-500" : "text-green-500"} /> : <XCircle size={14} className="text-red-500" />}
-        <span>{isConnected ? "RM TrackR" : "Active Timing Reader Disconnected"}</span>
+        {isConnected ? <CheckCircle2 size={14} className={hasError ? "text-amber-500" : "text-green-500"} /> : isRetrying ? <AlertCircle size={14} className="text-amber-500" /> : <XCircle size={14} className="text-red-500" />}
+        <span>{isConnected ? (readerSummary ? `RM TrackR · ${readerSummary}` : "RM TrackR") : isRetrying ? "RM TrackR not connected, retrying" : "Active Timing Reader Disconnected"}</span>
       </div>
 
       {isConnected && (
