@@ -42,4 +42,21 @@ router.get("/sell-items", async (req, res, next) => {
   return res.json(clubSellItems(user.club_id));
 });
 
+// The club's readers (for the course map and enduro gate pickers). Online the
+// cloud answers; offline, the last pulled copy. Adding or changing readers needs the cloud.
+router.get("/readers", async (req, res, next) => {
+  if (!signedIn(req, res)) return;
+  if (await cloudReachable()) return next();
+  const user = getDb().prepare("SELECT club_id FROM users WHERE id = ?").get((req.session as any).userId) as { club_id: number | null } | undefined;
+  if (!user?.club_id) return res.json([]);
+  const rows = getDb().prepare("SELECT * FROM readers WHERE club_id = ? ORDER BY name COLLATE NOCASE").all(user.club_id) as Array<Record<string, any>>;
+  return res.json(rows.map(r => ({
+    id: r.id, clubId: r.club_id, name: r.name,
+    type: r.type === "mylaps" || r.type === "active_transponder" ? "active_transponder" : "rfid",
+    token: null, hardwareAddress: r.hardware_address ?? null, connection: r.connection ?? null,
+    activeTimingConfig: (() => { try { return r.active_timing_config ? JSON.parse(r.active_timing_config) : null; } catch { return null; } })(),
+    lastSeenAt: null, createdAt: r.created_at ?? null,
+  })));
+});
+
 export default router;

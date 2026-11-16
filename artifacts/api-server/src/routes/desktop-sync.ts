@@ -1893,11 +1893,19 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     .where(eq(liabilityWaiverSignaturesTable.clubId, clubId));
   // The club's Sell Items prices (Admin → Sell Items), so desktop check-in charges the same offline.
   const clubSellItems = await db.select().from(clubSellItemsTable).where(eq(clubSellItemsTable.clubId, clubId));
+  // The club's readers (never their tokens): the desktop matches its own reader
+  // connections to them, so enduro gates and course-map splits work offline.
+  const readers = await db.select({
+    id: readersTable.id, clubId: readersTable.clubId, name: readersTable.name, type: readersTable.type,
+    hardwareAddress: readersTable.hardwareAddress, connection: readersTable.connection,
+    activeTimingConfig: readersTable.activeTimingConfig, createdAt: readersTable.createdAt,
+  }).from(readersTable).where(eq(readersTable.clubId, clubId));
 
   if (clubEvents.length === 0) {
     return res.json({
       clubSettings,
       clubSellItems,
+      readers,
       addonPayments: [],
       teamMembers: [],
       liabilityWaiverSignatures,
@@ -2058,6 +2066,7 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     eventReaderAssignments,
     teamMembers,
     clubSellItems,
+    readers,
     addonPayments,
   });
 });

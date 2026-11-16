@@ -810,6 +810,38 @@ function assignmentReaderId(value: unknown): number | null {
   return match ? Number(match[1]) : null;
 }
 
+const hostOf = (address: unknown) =>
+  typeof address === "string" ? address.trim().toLowerCase().replace(/^[a-z]+:\/\//, "").replace(/[:/].*$/, "") : "";
+
+/**
+ * The club reader a hardware read came from. The desktop's own reader
+ * connections have their own ids, so they are matched to the club's reader list
+ * (pulled from the cloud) by name, then by network address. A numeric id is
+ * taken as the club reader's id. Null when it can't be told apart.
+ */
+function readerOfRead(body: any): number | null {
+  const direct = assignmentReaderId(body?.readerId);
+  if (direct != null) return direct;
+  const name = typeof body?.readerName === "string" ? body.readerName.trim() : "";
+  const host = hostOf(body?.readerAddress);
+  if (!name && !host) return null;
+  let readers: Array<{ id: number; name: string; hardware_address: string | null }> = [];
+  try {
+    readers = getDb().prepare("SELECT id, name, hardware_address FROM readers").all() as typeof readers;
+  } catch {
+    return null; // older database without the reader list
+  }
+  if (name) {
+    const byName = readers.filter(r => r.name.trim().toLowerCase() === name.toLowerCase());
+    if (byName.length === 1) return byName[0].id;
+  }
+  if (host) {
+    const byHost = readers.filter(r => hostOf(r.hardware_address) === host);
+    if (byHost.length === 1) return byHost[0].id;
+  }
+  return null;
+}
+
 /** Record (or replace) a rider's arrival at a time check, as the cloud's reader ingest does. */
 function recordTimeCheckArrival(eventId: number, timeCheckId: number | null, tagNumber: string, crossingTime: Date): void {
   if (!timeCheckId) return;
@@ -1203,7 +1235,7 @@ router.post("/timing/active/crossing", rejectForeignBrowserIngest, (req, res) =>
   // A reader the organizer placed as a course split, an enduro test gate or a
   // time check is handled by its role. Any other read (no readerId, or no such
   // assignment) is a single-reader read: on an enduro test it toggles start/finish.
-  const assignmentReader = assignmentReaderId(body?.readerId);
+  const assignmentReader = readerOfRead(body);
   if (assignmentReader != null) {
     if (handleSplitRead(res, { assignmentReader, rfidNumber: String(rfidNumber), crossingTime })) return;
     const handled = handleEnduroGateRead(res, {

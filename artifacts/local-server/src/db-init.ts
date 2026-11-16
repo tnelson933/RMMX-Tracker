@@ -1018,6 +1018,19 @@ export function initDb() {
       created_at TEXT
     );
 
+    -- The club's readers as registered on the website (Reader Setup), pulled
+    -- from the cloud. Gate, time-check and split assignments point at these ids.
+    CREATE TABLE IF NOT EXISTS readers (
+      id                   INTEGER PRIMARY KEY,
+      club_id              INTEGER NOT NULL,
+      name                 TEXT NOT NULL,
+      type                 TEXT NOT NULL DEFAULT 'rfid',
+      hardware_address     TEXT,
+      connection           TEXT,
+      active_timing_config TEXT,
+      created_at           TEXT
+    );
+
     -- Check-in add-ons that were paid (rentals, RM TrackR and RFID tag sales).
     -- Cash taken here gets a uid and is pushed to the cloud once; rows pulled
     -- from the cloud carry its id in cloud_id.

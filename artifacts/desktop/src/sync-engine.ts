@@ -1020,6 +1020,7 @@ export class SyncEngine {
       eventReaderAssignments?: Record<string, unknown>[];
       teamMembers?: Record<string, unknown>[];
       clubSellItems?: Record<string, unknown>[];
+      readers?: Record<string, unknown>[];
       addonPayments?: Record<string, unknown>[];
     };
 
@@ -1058,6 +1059,7 @@ export class SyncEngine {
           ["enduro_checkpoint_arrivals", data.enduroCheckpointArrivals ?? []],
           ["event_reader_assignments", data.eventReaderAssignments ?? []],
           ["club_sell_items",     data.clubSellItems       ?? []],
+          ["readers",             data.readers             ?? []],
         ];
 
         for (const [table, rows] of tableMap) {
@@ -1075,6 +1077,14 @@ export class SyncEngine {
         this.pruneEnduroRows(data);
         // Tables keyed differently here than in the cloud (an older cloud omits them).
         if (Array.isArray(data.clubSellItems)) this.pruneSellItems(data.clubSellItems);
+        if (Array.isArray(data.readers)) {
+          // Readers the club removed on the website.
+          const keep = new Set(data.readers.map((r) => Number(r["id"])));
+          const remove = this.db.prepare("DELETE FROM readers WHERE id = ?");
+          for (const { id } of this.db.prepare("SELECT id FROM readers").all() as Array<{ id: number }>) {
+            if (!keep.has(id)) remove.run(id);
+          }
+        }
         if (Array.isArray(data.teamMembers)) totalChanged += this.upsertPulledTeamMembers(data.teamMembers);
         if (Array.isArray(data.addonPayments)) totalChanged += this.upsertPulledAddonPayments(data.addonPayments);
         if (Array.isArray(data.splitCrossings)) totalChanged += this.upsertPulledSplits("split_crossings", "moto_id", data.splitCrossings);
