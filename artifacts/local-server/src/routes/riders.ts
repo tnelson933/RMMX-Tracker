@@ -1,12 +1,23 @@
 import { Router } from "express";
 import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
 import { getDb } from "../db";
+import { isoTime, parseJson } from "../lib/cloud-shape";
 import { markNewRiderDirty, markRiderFieldsDirty } from "../rider-profile-dirty";
 
 const router = Router();
 
 function serializeRider(r: any) {
   return {
+    // Profile fields the website returns, as last pulled from the cloud.
+    clubId: r.club_id ?? null,
+    skillLevel: r.skill_level ?? null,
+    raceTypes: parseJson<string[] | null>(r.race_types, null),
+    aiMaintenanceSuggestions: r.ai_maintenance_suggestions === 1,
+    bio: r.bio ?? null,
+    plateColor: r.plate_color ?? null,
+    profileVisibility: r.profile_visibility ?? null,
+    avatarUrl: r.avatar_url ?? null,
+    coverUrl: r.cover_url ?? null,
     id: r.id,
     firstName: r.first_name ?? "",
     lastName: r.last_name ?? "",
@@ -28,14 +39,14 @@ function serializeRider(r: any) {
     amaNumber: r.ama_number ?? null,
     transponderId: r.mylaps_transponder_id ?? null,
     mylapsTransponderId: r.mylaps_transponder_id ?? null,
-    createdAt: r.created_at,
+    createdAt: isoTime(r.created_at),
   };
 }
 
 // GET /riders?search=...&clubId=...
 router.get("/riders", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const { search } = req.query;
@@ -64,12 +75,12 @@ router.get("/riders", (req, res) => {
 // GET /riders/:riderId
 router.get("/riders/:riderId", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const id = Number(req.params.riderId);
   const rider = db.prepare("SELECT * FROM riders WHERE id = ?").get(id) as any;
-  if (!rider) return res.status(404).json({ error: "Not found" });
+  if (!rider) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   const recentResults = db
     .prepare(
@@ -130,7 +141,7 @@ router.get("/riders/:riderId", (req, res) => {
 // POST /riders
 router.post("/riders", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const {
@@ -141,7 +152,7 @@ router.post("/riders", (req, res) => {
   } = req.body;
 
   if (!firstName || !lastName) {
-    return res.status(400).json({ error: "firstName and lastName are required" });
+    return res.status(400).json({ error: "Enter the rider's first and last name." });
   }
   const rawTransponderId = transponderId ?? req.body.mylapsTransponderId;
   const normalizedTransponderId =
@@ -151,7 +162,7 @@ router.post("/riders", (req, res) => {
     (typeof rawTransponderId !== "string" || rawTransponderId.trim() !== "");
   if (hasNonblankTransponder && !normalizedTransponderId) {
     return res.status(400).json({
-      error: "Active transponder ID must be 1–9 hexadecimal characters",
+      error: "Enter the ID printed on the transponder (up to 9 numbers or letters A–F).",
     });
   }
 
@@ -184,7 +195,7 @@ router.post("/riders", (req, res) => {
 // PATCH /riders/:riderId
 router.patch("/riders/:riderId", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const id = Number(req.params.riderId);
@@ -227,7 +238,7 @@ router.patch("/riders/:riderId", (req, res) => {
     (typeof rawTransponderId !== "string" || rawTransponderId.trim() !== "");
   if (hasTransponderUpdate && hasNonblankTransponder && !normalizedTransponderId) {
     return res.status(400).json({
-      error: "Active transponder ID must be 1–9 hexadecimal characters",
+      error: "Enter the ID printed on the transponder (up to 9 numbers or letters A–F).",
     });
   }
 
@@ -257,7 +268,7 @@ router.patch("/riders/:riderId", (req, res) => {
   );
 
   const rider = db.prepare("SELECT * FROM riders WHERE id = ?").get(id) as any;
-  if (!rider) return res.status(404).json({ error: "Not found" });
+  if (!rider) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   markRiderFieldsDirty(db, id, fields.map((field) => field.split(" ")[0]));
   return res.json(serializeRider(rider));
 });

@@ -36,8 +36,9 @@ import {
 } from "@workspace/db";
 import { canonicalizeCrossingTimestamp } from "../lib/crossingTimestamp";
 import { resolveSyncUser, canReceivePasswordHashes, type SyncUser } from "../lib/offlineSyncAccess";
-import { clubSettingsTable, readersTable } from "@workspace/db";
+import { clubSettingsTable, readersTable, tracksTable, trackCoursePointsTable } from "@workspace/db";
 import { sendLiabilityWaiverConfirmation } from "../lib/email";
+import { checkAcknowledgement, checkBrands, checkDefaultClasses, checkPdfUrl, checkWaiverFields } from "../lib/clubSettingsInput";
 import { recomputeEnduroPositionsForEvent } from "./enduro-scoring";
 import { syncEventPublication } from "../lib/resultsVisibility";
 import { notifyFollowersOfResults } from "../lib/riderCareer";
@@ -164,6 +165,72 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
     if (eventsDeleted > 0) {
       results["events_deleted"] = eventsDeleted;
       total += eventsDeleted;
+    }
+
+    // ── tracks (Track Library rows made, edited or removed on the desktop) ────
+    // Before events, so an event pushed with a new track finds it. Safe to
+    // repeat: a track is matched by its id, else by its name in this club.
+    for (const trackId of ((deletes["tracks"] ?? []) as unknown[]).map(Number).filter(Boolean)) {
+      const [row] = await tx.select({ id: tracksTable.id }).from(tracksTable)
+        .where(and(eq(tracksTable.id, trackId), eq(tracksTable.clubId, clubId)));
+      if (!row) continue; // already removed
+      // Same as DELETE /tracks/:id: its events and practices keep their course copy.
+      await tx.update(eventsTable).set({ trackId: null, courseSource: "custom" })
+        .where(and(eq(eventsTable.trackId, trackId), eq(eventsTable.clubId, clubId)));
+      await tx.update(practiceSessionsTable).set({ trackId: null })
+        .where(and(eq(practiceSessionsTable.trackId, trackId), eq(practiceSessionsTable.clubId, clubId)));
+      await tx.delete(tracksTable).where(eq(tracksTable.id, trackId));
+      results["tracks_deleted"] = (results["tracks_deleted"] ?? 0) + 1;
+      total++;
+    }
+    let tracksUpserted = 0;
+    for (const t of (payload["tracks"] ?? []) as Array<Record<string, unknown>>) {
+      const trackId = Number(t.id);
+      const text = (v: unknown, max: number) => (typeof v === "string" ? v.trim().replace(/\s+/g, " ").slice(0, max) : "") || null;
+      const name = text(t.name, 120);
+      if (!trackId || !name) { skip("tracks", t as { id?: unknown }, "missing id or name"); continue; }
+      const fields = { name, address: text(t.address, 200), city: text(t.city, 80), state: text(t.state, 40), zip: text(t.zip, 20) };
+      const clubTracks = await tx.select({ id: tracksTable.id, name: tracksTable.name }).from(tracksTable).where(eq(tracksTable.clubId, clubId));
+      const sameName = clubTracks.find(c => c.name.toLowerCase() === name.toLowerCase());
+      const sameId = clubTracks.find(c => c.id === trackId);
+      if (sameId) {
+        if (sameName && sameName.id !== trackId) { skip("tracks", t as { id?: unknown }, "another track in the library already has this name"); continue; }
+        await tx.update(tracksTable).set(fields).where(eq(tracksTable.id, trackId));
+      } else if (sameName) {
+        // The same track was added on the website too: keep that one, with the desktop's address.
+        await tx.update(tracksTable).set(fields).where(eq(tracksTable.id, sameName.id));
+      } else if (await idIsFree(tracksTable, trackId)) {
+        await tx.insert(tracksTable).values({ id: trackId, clubId, ...fields }).onConflictDoNothing();
+        explicitIdTables.add("tracks");
+      } else {
+        await tx.insert(tracksTable).values({ clubId, ...fields });
+      }
+      tracksUpserted++;
+    }
+    if (tracksUpserted > 0) { results["tracks"] = tracksUpserted; total += tracksUpserted; }
+
+    // ── club_settings (Club Settings saved on the desktop; one row, id = club id) ─
+    for (const row of (payload["club_settings"] ?? []) as Array<Record<string, unknown>>) {
+      if (Number(row.id) !== clubId) { skip("club_settings", row as { id?: unknown }, "settings belong to another club"); continue; }
+      const json = (v: unknown) => { if (typeof v !== "string") return v ?? null; try { return JSON.parse(v); } catch { return null; } };
+      // The same checks as PUT /clubs/:clubId/settings; a value that fails one is left as it is.
+      const checked: Array<[string, { ok: true; value: unknown } | { ok: false; error: string }]> = [
+        ["riderAcknowledgement", checkAcknowledgement(row.rider_acknowledgement ?? null)],
+        ["waiverPdfUrl", checkPdfUrl(row.waiver_pdf_url ?? null, "acknowledgement form")],
+        ["liabilityWaiverText", checkAcknowledgement(row.liability_waiver_text ?? null)],
+        ["liabilityWaiverPdfUrl", checkPdfUrl(row.liability_waiver_pdf_url ?? null, "liability waiver")],
+        ["liabilityWaiverFields", checkWaiverFields(json(row.liability_waiver_fields))],
+        ["defaultClasses", checkDefaultClasses(json(row.default_classes) ?? [])],
+        ["brandContingencies", checkBrands(json(row.brand_contingencies) ?? [])],
+      ];
+      const set: Record<string, unknown> = {
+        trackName: typeof row.track_name === "string" && row.track_name.trim() ? row.track_name.trim().slice(0, 120) : null,
+      };
+      for (const [key, result] of checked) if (result.ok) set[key] = result.value;
+      await tx.insert(clubSettingsTable).values({ clubId, ...set } as any)
+        .onConflictDoUpdate({ target: clubSettingsTable.clubId, set: set as any });
+      results["club_settings"] = 1;
+      total++;
     }
 
     // ── events (full field updates made on desktop) ───────────────────────────
@@ -1822,6 +1889,8 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     name:         usersTable.name,
     role:         usersTable.role,
     clubId:       usersTable.clubId,
+    tourCompleted: usersTable.tourCompleted,
+    permissions:  usersTable.permissions,
     createdAt:    usersTable.createdAt,
   }).from(usersTable).where(eq(usersTable.clubId, clubId));
   // Staff sync tokens only get their own password hash, never the organizer's or other staff's.
@@ -1900,9 +1969,24 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     hardwareAddress: readersTable.hardwareAddress, connection: readersTable.connection,
     activeTimingConfig: readersTable.activeTimingConfig, createdAt: readersTable.createdAt,
   }).from(readersTable).where(eq(readersTable.clubId, clubId));
+  // The Track Library with each track's course map (finish first, then splits in
+  // order), as GET /tracks returns it.
+  const clubTracks = await db.select().from(tracksTable).where(eq(tracksTable.clubId, clubId));
+  const trackPoints = clubTracks.length === 0 ? [] : await db.select().from(trackCoursePointsTable)
+    .where(inArray(trackCoursePointsTable.trackId, clubTracks.map(t => t.id)));
+  const tracks = clubTracks.map(t => ({
+    ...t,
+    course: trackPoints
+      .filter(p => p.trackId === t.id)
+      .sort((a, b) => (a.role === "finish" ? -1 : 0) - (b.role === "finish" ? -1 : 0) || (a.sequence ?? 0) - (b.sequence ?? 0))
+      .map(p => ({ readerId: p.readerId, role: p.role, sequence: p.sequence, label: p.label })),
+  }));
+  // Riders the club added itself (Riders tab) who haven't entered an event yet.
+  const directRiderIds = (await db.select({ id: ridersTable.id }).from(ridersTable).where(eq(ridersTable.clubId, clubId))).map(r => r.id);
 
   if (clubEvents.length === 0) {
     return res.json({
+      tracks,
       clubSettings,
       clubSellItems,
       readers,
@@ -1974,12 +2058,24 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
   // Riders: return only riders who have a registration for a club event. This
   // remains club-scoped while supplying the complete profile used by desktop
   // registration lookup and rider population.
-  const regRiderIds = [...new Set(registrations.map((r) => r.riderId))];
+  // Plus riders the club added itself, and the profile fields GET /riders returns,
+  // so the desktop's rider list and rider page match the website's.
+  const regRiderIds = [...new Set([...registrations.map((r) => r.riderId), ...directRiderIds])];
   const ridersWithEmail =
     regRiderIds.length > 0
       ? await db
           .select({
             id:         ridersTable.id,
+            clubId: ridersTable.clubId,
+            skillLevel: ridersTable.skillLevel,
+            raceTypes: ridersTable.raceTypes,
+            aiMaintenanceSuggestions: ridersTable.aiMaintenanceSuggestions,
+            bio: ridersTable.bio,
+            plateColor: ridersTable.plateColor,
+            profileVisibility: ridersTable.profileVisibility,
+            avatarUrl: ridersTable.avatarUrl,
+            coverUrl: ridersTable.coverUrl,
+            createdAt: ridersTable.createdAt,
             firstName:  ridersTable.firstName,
             lastName:   ridersTable.lastName,
             rfidNumber: ridersTable.rfidNumber,
@@ -2068,6 +2164,9 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     clubSellItems,
     readers,
     addonPayments,
+    tracks,
+    // Whether each event's results are official (GET /events/:id "published").
+    eventPublication: await db.select().from(eventPublicationTable).where(inArray(eventPublicationTable.eventId, clubEventIds)),
   });
 });
 

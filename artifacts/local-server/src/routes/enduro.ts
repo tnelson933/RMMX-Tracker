@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type Database from "better-sqlite3";
 import { getDb, parseJson, parseJsonArr } from "../db";
+import { eventTimeZone } from "@workspace/api-zod";
 import {
   computeEnduroPenalty,
   recomputeEnduroPositionsForEvent,
@@ -27,7 +28,7 @@ const router = Router();
 function eventExists(res: any, eventId: number): boolean {
   const ev = getDb().prepare("SELECT id FROM events WHERE id = ?").get(eventId);
   if (!ev) {
-    res.status(404).json({ error: "Event not found" });
+    res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
     return false;
   }
   return true;
@@ -35,7 +36,7 @@ function eventExists(res: any, eventId: number): boolean {
 
 function authEvent(req: any, res: any, eventId: number): boolean {
   if (!(req.session as any)?.userId) {
-    res.status(401).json({ error: "Unauthorized" });
+    res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
     return false;
   }
   return eventExists(res, eventId);
@@ -128,7 +129,7 @@ function listTimeChecks(eventId: number) {
 // GET /events/:eventId/time-checks
 router.get("/events/:eventId/time-checks", (req, res) => {
   const eventId = Number(req.params.eventId);
-  if (!eventId) return res.status(400).json({ error: "Invalid eventId" });
+  if (!eventId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   if (!authEvent(req, res, eventId)) return;
   return res.json(listTimeChecks(eventId));
 });
@@ -136,12 +137,12 @@ router.get("/events/:eventId/time-checks", (req, res) => {
 // PUT /events/:eventId/time-checks — replace ALL time checks + save penalty config
 router.put("/events/:eventId/time-checks", (req, res) => {
   const eventId = Number(req.params.eventId);
-  if (!eventId) return res.status(400).json({ error: "Invalid eventId" });
+  if (!eventId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   if (!authEvent(req, res, eventId)) return;
 
   const body = req.body as { timeChecks?: unknown; penaltyConfig?: unknown };
   if (!Array.isArray(body?.timeChecks)) {
-    return res.status(400).json({ error: "timeChecks array is required" });
+    return res.status(400).json({ error: "Add at least one time check." });
   }
 
   const incoming = body.timeChecks.map((tc: any, i: number) => ({
@@ -152,6 +153,15 @@ router.put("/events/:eventId/time-checks", (req, res) => {
   const penaltyConfig = sanitizePenaltyConfig(body.penaltyConfig);
 
   const db = getDb();
+  // Class start times are wall-clock times at the track: with no timezone
+  // chosen, save the track's (as the website does) instead of leaving it to
+  // whichever computer scores the arrivals.
+  if (penaltyConfig && !penaltyConfig.timezone) {
+    const ev = db.prepare("SELECT state, track_lat, track_lng FROM events WHERE id = ?").get(eventId) as
+      | { state: string | null; track_lat: number | null; track_lng: number | null }
+      | undefined;
+    if (ev) penaltyConfig.timezone = eventTimeZone({ state: ev.state, trackLat: ev.track_lat, trackLng: ev.track_lng });
+  }
   // The replaced checks are deleted, and arrivals reference them. The cloud's
   // foreign key refuses that delete, so refuse it here too instead of
   // orphaning recorded arrivals.
@@ -185,7 +195,7 @@ router.put("/events/:eventId/time-checks", (req, res) => {
 router.get("/events/:eventId/time-checks/:checkId/arrivals", (req, res) => {
   const eventId = Number(req.params.eventId);
   const checkId = Number(req.params.checkId);
-  if (!eventId || !checkId) return res.status(400).json({ error: "Invalid params" });
+  if (!eventId || !checkId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   if (!authEvent(req, res, eventId)) return;
 
   const rows = getDb()
@@ -208,17 +218,17 @@ router.get("/events/:eventId/time-checks/:checkId/arrivals", (req, res) => {
 router.post("/events/:eventId/time-checks/:checkId/arrivals", (req, res) => {
   const eventId = Number(req.params.eventId);
   const checkId = Number(req.params.checkId);
-  if (!eventId || !checkId) return res.status(400).json({ error: "Invalid params" });
+  if (!eventId || !checkId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   if (!authEvent(req, res, eventId)) return;
 
   const { riderId, arrivalTime } = (req.body ?? {}) as { riderId?: unknown; arrivalTime?: unknown };
-  if (!riderId || !arrivalTime) return res.status(400).json({ error: "riderId and arrivalTime are required" });
+  if (!riderId || !arrivalTime) return res.status(400).json({ error: "Pick a rider and enter an arrival time." });
   const parsedArrival = new Date(arrivalTime as string);
-  if (isNaN(parsedArrival.getTime())) return res.status(400).json({ error: "Invalid arrivalTime" });
+  if (isNaN(parsedArrival.getTime())) return res.status(400).json({ error: "Enter a valid arrival time." });
 
   const db = getDb();
   const check = db.prepare("SELECT id FROM enduro_time_checks WHERE id = ? AND event_id = ?").get(checkId, eventId);
-  if (!check) return res.status(404).json({ error: "Time check not found" });
+  if (!check) return res.status(404).json({ error: "This time check couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   db.prepare(
     `INSERT INTO enduro_checkpoint_arrivals (event_id, time_check_id, rider_id, arrival_time, recorded_by)
@@ -238,13 +248,13 @@ router.delete("/events/:eventId/time-checks/:checkId/arrivals/:riderId", (req, r
   const eventId = Number(req.params.eventId);
   const checkId = Number(req.params.checkId);
   const riderId = Number(req.params.riderId);
-  if (!eventId || !checkId || !riderId) return res.status(400).json({ error: "Invalid params" });
+  if (!eventId || !checkId || !riderId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   if (!authEvent(req, res, eventId)) return;
 
   const result = getDb()
     .prepare("DELETE FROM enduro_checkpoint_arrivals WHERE event_id = ? AND time_check_id = ? AND rider_id = ?")
     .run(eventId, checkId, riderId);
-  if (result.changes === 0) return res.status(404).json({ error: "Arrival not found" });
+  if (result.changes === 0) return res.status(404).json({ error: "This arrival couldn't be found. It may have been deleted. Refresh the page and try again." });
   recomputeEnduroPositionsForEvent(eventId);
   return res.json({ ok: true });
 });
@@ -253,17 +263,17 @@ router.delete("/events/:eventId/time-checks/:checkId/arrivals/:riderId", (req, r
 // Organizers always; anyone else only once results are published (as the cloud).
 router.get("/events/:eventId/penalty-summary", (req, res) => {
   const eventId = Number(req.params.eventId);
-  if (!eventId) return res.status(400).json({ error: "Invalid eventId" });
+  if (!eventId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   const db = getDb();
   const event = db.prepare("SELECT id, enduro_penalty_config FROM events WHERE id = ?").get(eventId) as
     | { id: number; enduro_penalty_config: string | null }
     | undefined;
-  if (!event) return res.status(404).json({ error: "Event not found" });
+  if (!event) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
   if (!(req.session as any)?.userId) {
     const pub = db.prepare("SELECT published FROM event_publication WHERE event_id = ?").get(eventId) as
       | { published: number }
       | undefined;
-    if (pub?.published !== 1) return res.status(403).json({ error: "Results not published" });
+    if (pub?.published !== 1) return res.status(403).json({ error: "There are no results for this yet. Check back after the race." });
   }
 
   const config = parseJson<EnduroPenaltyConfig | null>(event.enduro_penalty_config, null);
@@ -351,7 +361,7 @@ function serializeAssignment(a: any) {
 
 router.get("/events/:eventId/reader-assignments", (req, res) => {
   const eventId = Number(req.params.eventId);
-  if (!eventId) return res.status(400).json({ error: "Invalid eventId" });
+  if (!eventId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   if (!authEvent(req, res, eventId)) return;
   const rows = getDb().prepare("SELECT * FROM event_reader_assignments WHERE event_id = ? ORDER BY id").all(eventId);
   return res.json(rows.map(serializeAssignment));
@@ -362,12 +372,12 @@ router.get("/events/:eventId/reader-assignments", (req, res) => {
 // when the change syncs.
 router.put("/events/:eventId/reader-assignments", (req, res) => {
   const eventId = Number(req.params.eventId);
-  if (!eventId) return res.status(400).json({ error: "Invalid eventId" });
+  if (!eventId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   if (!authEvent(req, res, eventId)) return;
 
   const body = req.body as { assignments?: unknown };
   if (!Array.isArray(body?.assignments)) {
-    return res.status(400).json({ error: "assignments array is required" });
+    return res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
   }
   const incoming = body.assignments.map((a: any) => ({
     readerId: Number(a?.readerId),

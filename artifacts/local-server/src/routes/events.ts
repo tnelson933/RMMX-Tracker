@@ -6,6 +6,8 @@ import { resolveRegistrationRider } from "../registration-rider";
 import { markRiderFieldsDirty } from "../rider-profile-dirty";
 import { randomUUID } from "node:crypto";
 import { includesRmTrackr, RM_TRACKR_OPTION_ID, RM_TRACKR_NAME, RM_TRACKR_PRICE } from "../lib/rm-trackr";
+import { eventsTimingTags, isoTime, parseJson, quickCheckinRequirements } from "../lib/cloud-shape";
+import { registrationJson, resolvePurchaseOptions } from "../lib/registration-json";
 
 const router = Router();
 
@@ -158,8 +160,44 @@ function applyExtraEventFields(db: ReturnType<typeof getDb>, eventId: number, bo
   db.prepare(`UPDATE events SET ${sets.join(", ")} WHERE id = ?`).run(...values, eventId);
 }
 
-function serializeEvent(e: any) {
+/**
+ * The website's event JSON. "list" and "one" are its GET replies (club name and
+ * logo, timing tags); "write" is its POST/PATCH reply (the saved row).
+ */
+function serializeEvent(e: any, mode: "list" | "one" | "write" = "write") {
+  const db = getDb();
+  const club = mode === "write" ? null
+    : db.prepare("SELECT name, logo_url FROM clubs WHERE id = ?").get(e.club_id) as { name: string; logo_url: string | null } | undefined;
+  const extra: Record<string, unknown> = {};
+  if (mode === "write") {
+    extra.quickCheckinNotifiedAt = e.quick_checkin_notified_at ?? null;
+    extra.statsEmailsSentAt = e.stats_emails_sent_at ?? null;
+    extra.finalizeReminderSentAt = e.finalize_reminder_sent_at ?? null;
+  } else {
+    extra.clubLogoUrl = club?.logo_url ?? null;
+  }
+  if (mode === "one") {
+    extra.timingTags = eventsTimingTags(db, [e.id]).get(e.id);
+    const pub = db.prepare("SELECT published FROM event_publication WHERE event_id = ?").get(e.id) as { published: number } | undefined;
+    extra.published = pub ? pub.published === 1 : null;
+    // Enduro: each class's start time from the time-check targets.
+    const classStartTimes: Record<string, string | null> = {};
+    if (e.race_style === "enduro") {
+      for (const tc of db.prepare("SELECT targets FROM enduro_time_checks WHERE event_id = ?").all(e.id) as Array<{ targets: string | null }>) {
+        for (const t of parseJson<Array<{ raceClass: string; startTimeOfDay?: string | null }>>(tc.targets, [])) {
+          if (t.startTimeOfDay != null) classStartTimes[t.raceClass] = t.startTimeOfDay;
+        }
+      }
+    }
+    extra.classStartTimes = classStartTimes;
+  }
+  const storedRequirements = (() => { try { return e.quick_checkin_requirements ? JSON.parse(e.quick_checkin_requirements) : null; } catch { return null; } })();
   return {
+    trackId: e.track_id ?? null,
+    courseSource: e.course_source ?? "track",
+    entryFeeCategoryId: e.entry_fee_category_id ?? null,
+    clubName: club?.name ?? null,
+    ...extra,
     id: e.id,
     clubId: e.club_id,
     name: e.name,
@@ -197,7 +235,7 @@ function serializeEvent(e: any) {
     classOrder: (() => { try { return e.class_order ? JSON.parse(e.class_order) : null; } catch { return null; } })(),
     contingencyBrands: (() => { try { return e.contingency_brands ? JSON.parse(e.contingency_brands) : null; } catch { return null; } })(),
     quickCheckinEnabled: e.quick_checkin_enabled === 1,
-    quickCheckinRequirements: (() => { try { return e.quick_checkin_requirements ? JSON.parse(e.quick_checkin_requirements) : null; } catch { return null; } })(),
+    quickCheckinRequirements: mode === "one" ? quickCheckinRequirements(storedRequirements) : storedRequirements,
     streetAddress: e.street_address ?? null,
     zip: e.zip ?? null,
     trackLat: e.track_lat ?? null,
@@ -209,21 +247,21 @@ function serializeEvent(e: any) {
     amaEventId: e.ama_event_id ?? null,
     raceStyle: e.race_style ?? null,
     endDate: e.end_date ?? null,
-    createdAt: e.created_at,
+    createdAt: isoTime(e.created_at),
   };
 }
 
 // GET /events?clubId=...
 router.get("/events", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const db = getDb();
 
   const { clubId } = req.query;
   let events: any[];
   if (clubId) {
     events = db
-      .prepare("SELECT * FROM events WHERE club_id = ? ORDER BY date DESC")
+      .prepare("SELECT * FROM events WHERE club_id = ? ORDER BY date ASC, id ASC")
       .all(Number(clubId)) as any[];
   } else {
     // Return events for the user's club
@@ -232,7 +270,7 @@ router.get("/events", (req, res) => {
       .get(session.userId) as any;
     events = user?.club_id
       ? (db
-          .prepare("SELECT * FROM events WHERE club_id = ? ORDER BY date DESC")
+          .prepare("SELECT * FROM events WHERE club_id = ? ORDER BY date ASC, id ASC")
           .all(user.club_id) as any[])
       : [];
   }
@@ -248,20 +286,21 @@ router.get("/events", (req, res) => {
       e.status = nextStatus;
     }
   }
-  return res.json(events.map(serializeEvent));
+  const tags = eventsTimingTags(db, events.map(e => e.id));
+  return res.json(events.map(e => ({ ...serializeEvent(e, "list"), timingTags: tags.get(e.id) })));
 });
 
 // POST /events
 router.post("/events", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const db = getDb();
 
   const user = db
     .prepare("SELECT club_id FROM users WHERE id = ?")
     .get(session.userId) as any;
   if (!user?.club_id) {
-    return res.status(403).json({ error: "No club associated with account" });
+    return res.status(403).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
   }
 
   const invalid = validateEventInput(req.body ?? {});
@@ -278,9 +317,9 @@ router.post("/events", (req, res) => {
 
   // Drafts need only a name, like the cloud: date defaults to today and state to "TBD".
   const isDraftCreate = req.body.draft === true;
-  if (!name) return res.status(400).json({ error: "name is required" });
+  if (!name) return res.status(400).json({ error: "Enter an event name." });
   if (!isDraftCreate && (!date || !state)) {
-    return res.status(400).json({ error: "date and state are required for a full save" });
+    return res.status(400).json({ error: "Enter the event date and choose a state." });
   }
 
   // Always store dates as plain YYYY-MM-DD — strip any time component that may
@@ -290,7 +329,7 @@ router.post("/events", (req, res) => {
   const cleanDate = date ? String(date).substring(0, 10) : todayStr;
   const cleanState = state ? String(state) : (isDraftCreate ? "TBD" : "");
   const cleanEndDate = endDate ? String(endDate).substring(0, 10) : null;
-  if (cleanEndDate && cleanEndDate < cleanDate) return res.status(400).json({ error: "endDate must be on or after date" });
+  if (cleanEndDate && cleanEndDate < cleanDate) return res.status(400).json({ error: "The end date must be on or after the start date." });
 
   // A picked library track must be one of this club's.
   const libraryTrack = trackId != null && Number.isInteger(Number(trackId))
@@ -368,23 +407,23 @@ router.post("/events", (req, res) => {
 // GET /events/:eventId
 router.get("/events/:eventId", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const db = getDb();
   const id = Number(req.params.eventId);
   const event = db.prepare("SELECT * FROM events WHERE id = ?").get(id) as any;
-  if (!event) return res.status(404).json({ error: "Not found" });
+  if (!event) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   const nextStatus = computeAutoStatus(event);
   if (nextStatus) {
     db.prepare("UPDATE events SET status = ? WHERE id = ?").run(nextStatus, id);
     event.status = nextStatus;
   }
-  return res.json(serializeEvent(event));
+  return res.json(serializeEvent(event, "one"));
 });
 
 // PATCH /events/:eventId
 router.patch("/events/:eventId", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const db = getDb();
   const id = Number(req.params.eventId);
   const invalid = validateEventInput(req.body ?? {});
@@ -490,30 +529,32 @@ router.patch("/events/:eventId", (req, res) => {
   );
 
   const event = db.prepare("SELECT * FROM events WHERE id = ?").get(id) as any;
-  if (!event) return res.status(404).json({ error: "Not found" });
+  if (!event) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   const nextStatus = computeAutoStatus(event);
   if (nextStatus) {
     db.prepare("UPDATE events SET status = ? WHERE id = ?").run(nextStatus, id);
     event.status = nextStatus;
   }
-  return res.json(serializeEvent(event));
+  // The website's PATCH reply sends the rental fee as stored ("15.00"), not as a number.
+  const saved = serializeEvent(event);
+  return res.json({ ...saved, transponderRentalFee: saved.transponderRentalFee != null ? saved.transponderRentalFee.toFixed(2) : null });
 });
 
 // DELETE /events/:eventId
 router.delete("/events/:eventId", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const db = getDb();
   const id = Number(req.params.eventId);
   const event = db.prepare("SELECT id FROM events WHERE id = ?").get(id);
-  if (!event) return res.status(404).json({ error: "Not found" });
+  if (!event) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   // Signed liability waivers are legal records and are never deleted, so an
   // event that has any is kept (the cloud refuses the same delete).
   const signedWaiver = db
     .prepare("SELECT 1 FROM liability_waiver_signatures WHERE event_id = ? LIMIT 1")
     .get(id);
   if (signedWaiver) {
-    return res.status(409).json({ error: "This event has signed liability waivers, so it can't be deleted." });
+    return res.status(409).json({ error: "This event has signed liability waivers, which must be kept, so it can't be deleted. Set its status to Completed instead, or move the Registration Opens date to the future to make it private." });
   }
   db.prepare("DELETE FROM enduro_checkpoint_arrivals WHERE event_id = ?").run(id);
   db.prepare("DELETE FROM enduro_time_checks WHERE event_id = ?").run(id);
@@ -533,7 +574,7 @@ router.delete("/events/:eventId", (req, res) => {
 // POST /events/:eventId/registrations
 router.post("/events/:eventId/registrations", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const db = getDb();
   const eventId = Number(req.params.eventId);
 
@@ -547,7 +588,7 @@ router.post("/events/:eventId/registrations", (req, res) => {
     riderId: explicitRiderId,
   } = req.body;
 
-  if (!raceClass) return res.status(400).json({ error: "raceClass is required" });
+  if (!raceClass) return res.status(400).json({ error: "Choose a class." });
   const rawTransponderNumber =
     transponderNumber ?? req.body.myLapsTransponderNumber;
   const normalizedTransponderNumber =
@@ -558,7 +599,18 @@ router.post("/events/:eventId/registrations", (req, res) => {
       rawTransponderNumber.trim() !== "");
   if (hasNonblankTransponder && !normalizedTransponderNumber) {
     return res.status(400).json({
-      error: "Active transponder number must be 1–9 hexadecimal characters",
+      error: "Enter the ID printed on the transponder (up to 9 numbers or letters A–F).",
+    });
+  }
+
+  // Same checks, in the same order, as the website's handler.
+  const eventData = db.prepare("SELECT * FROM events WHERE id = ?").get(eventId) as any;
+  const pickedOptions = resolvePurchaseOptions(selectedPurchaseOptions, parseJson<unknown[]>(eventData?.purchase_options, []));
+  // An event that needs an RM TrackR: the rider has one, rents one or buys one.
+  if (eventData?.require_transponder === 1
+    && !(normalizedTransponderNumber || (rentTransponder && eventData.transponder_rental_enabled === 1) || includesRmTrackr(pickedOptions))) {
+    return res.status(400).json({
+      error: "Enter the rider's active transponder number, or select a rental or an RM TrackR purchase.",
     });
   }
 
@@ -586,8 +638,24 @@ router.post("/events/:eventId/registrations", (req, res) => {
     else return res.status(400).json({ error: "This is a group race. Enter the team name and every team member." });
   }
 
-  const resolvedStatus = status ?? "confirmed";
-  // An explicit payment method means the organizer collected payment on-site (cash / waived / other)
+  if (eventData?.require_club_id === 1 && !clubIdNumber) {
+    return res.status(400).json({ error: "Club ID # is required for this event" });
+  }
+  // One bib per rider when the event says so (the same rider keeps theirs across classes).
+  if (eventData?.no_duplicate_bibs === 1 && bibNumber) {
+    const bibTaken = db.prepare(
+      "SELECT id FROM registrations WHERE event_id = ? AND bib_number = ? AND status != 'void' AND rider_id != ? LIMIT 1",
+    ).get(eventId, String(bibNumber), riderId);
+    if (bibTaken) return res.status(409).json({ error: `Bib #${bibNumber} is already taken for this event` });
+  }
+
+  // The website's rule: an entry at an event with a fee waits for payment
+  // ("pending", unpaid) and is paid afterwards; a free one is confirmed.
+  // The desktop's own form collects payment in the same step and says so by
+  // sending a payment method or a status: then the entry is saved as sent.
+  const needsPayment = !!(eventData?.payment_enabled === 1 && eventData?.entry_fee != null && eventData.entry_fee !== "");
+  const paidInline = paymentMethod !== undefined || status !== undefined;
+  const resolvedStatus = paidInline ? (status ?? "confirmed") : needsPayment ? "pending" : "confirmed";
   const resolvedPaymentStatus = paymentMethod ? "paid" : "unpaid";
 
   const result = db.prepare(
@@ -600,13 +668,14 @@ router.post("/events/:eventId/registrations", (req, res) => {
     bibNumber ?? null, amaNumber ?? null, clubIdNumber ?? null,
     bikeBrand ?? null, bikeModel ?? null, bikeYear ?? null, sponsors ?? null,
     normalizedTransponderNumber,
-    rentTransponder ? 1 : 0,
-    JSON.stringify(selectedPurchaseOptions || []),
+    // A rental is recorded only when the event offers rentals.
+    rentTransponder && eventData?.transponder_rental_enabled === 1 ? 1 : 0,
+    JSON.stringify(pickedOptions),
     paymentMethod ?? null,
     amountPaid ?? null,
     resolvedPaymentStatus,
     resolvedStatus,
-    includesRmTrackr(selectedPurchaseOptions) ? 1 : 0,
+    includesRmTrackr(pickedOptions) ? 1 : 0,
   );
 
   const reg = db.prepare("SELECT * FROM registrations WHERE id = ?").get(Number(result.lastInsertRowid)) as any;
@@ -625,7 +694,7 @@ router.post("/events/:eventId/registrations", (req, res) => {
     markRiderFieldsDirty(db, riderId, ["mylapsTransponderId"]);
   }
   const rider = db.prepare("SELECT first_name, last_name FROM riders WHERE id = ?").get(riderId) as any;
-  const riderName = rider ? `${rider.first_name ?? ""} ${rider.last_name ?? ""}`.trim() : "";
+  const riderName = rider ? `${rider.first_name} ${rider.last_name}` : "";
 
   // Create a checkin record for confirmed registrations so the rider appears in the check-in list
   // and the write-queue trigger fires to sync the checkin to cloud
@@ -641,22 +710,13 @@ router.post("/events/:eventId/registrations", (req, res) => {
     }
   }
 
+  const saved = db.prepare("SELECT * FROM registrations WHERE id = ?").get(reg.id) as any;
   return res.status(201).json({
-    id: reg.id,
-    eventId: reg.event_id,
-    riderId: reg.rider_id,
+    ...registrationJson(saved),
     riderName,
-    raceClass: reg.race_class,
-    status: reg.status,
-    paymentStatus: reg.payment_status ?? "unpaid",
-    paymentMethod: reg.payment_method ?? null,
-    amountPaid: reg.amount_paid ?? null,
-    bibNumber: reg.bib_number ?? null,
-    amaNumber: reg.ama_number ?? null,
-    bikeBrand: reg.bike_brand ?? null,
-    bikeModel: reg.bike_model ?? null,
-    bikeYear: reg.bike_year ?? null,
-    createdAt: reg.created_at,
+    requiresPayment: needsPayment,
+    // Nothing is paid yet on the website's flow; the desktop's inline payment returns what was taken.
+    amountPaid: saved.payment_status === "paid" && saved.amount_paid != null ? Number(saved.amount_paid) : null,
   });
 });
 
@@ -675,14 +735,24 @@ function raceday_summary_handler(req: any, res: any) {
   const eventId = Number(req.params.eventId);
 
   const event = db.prepare("SELECT id, name FROM events WHERE id = ?").get(eventId) as any;
-  if (!event) return res.status(404).json({ error: "Not found" });
+  if (!event) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   const totalRegistered = (db.prepare(
     "SELECT COUNT(*) as cnt FROM registrations WHERE event_id = ? AND status != 'void'"
   ).get(eventId) as any).cnt;
 
+  // Entries whose rider is checked in, so a rider in two classes counts once per
+  // class entry (the same count as the website).
   const checkedIn = (db.prepare(
-    "SELECT COUNT(*) as cnt FROM checkins WHERE event_id = ? AND checked_in = 1"
+    `SELECT COUNT(*) as cnt FROM registrations r
+     JOIN checkins c ON c.rider_id = r.rider_id AND c.event_id = r.event_id
+     WHERE r.event_id = ? AND r.status != 'void' AND c.checked_in = 1`
+  ).get(eventId) as any).cnt;
+  const uniqueRegistrants = (db.prepare(
+    "SELECT COUNT(DISTINCT rider_id) as cnt FROM registrations WHERE event_id = ? AND status != 'void'"
+  ).get(eventId) as any).cnt;
+  const uniqueCheckedIn = (db.prepare(
+    "SELECT COUNT(DISTINCT rider_id) as cnt FROM checkins WHERE event_id = ? AND checked_in = 1"
   ).get(eventId) as any).cnt;
 
   const rfidLinked = (db.prepare(
@@ -699,18 +769,18 @@ function raceday_summary_handler(req: any, res: any) {
 
   const classCounts = db.prepare(
     `SELECT r.race_class,
-            COUNT(*) as registered,
-            SUM(CASE WHEN c.checked_in = 1 THEN 1 ELSE 0 END) as checked_in
+            COUNT(DISTINCT r.id) as registered,
+            COUNT(DISTINCT CASE WHEN c.checked_in = 1 AND r.status != 'void' THEN r.id || ':' || c.id END) as checked_in
      FROM registrations r
      LEFT JOIN checkins c ON c.event_id = r.event_id AND c.rider_id = r.rider_id
-     WHERE r.event_id = ? AND r.status != 'void'
+     WHERE r.event_id = ?
      GROUP BY r.race_class
      ORDER BY r.race_class`
   ).all(eventId) as { race_class: string; registered: number; checked_in: number }[];
 
   const paymentRows = db.prepare(
-    `SELECT payment_method, payment_status, amount_paid
-     FROM registrations WHERE event_id = ? AND status != 'void'`
+    `SELECT COALESCE(payment_method, 'card') AS payment_method, payment_status, amount_paid
+     FROM registrations WHERE event_id = ?`
   ).all(eventId) as any[];
 
   let cardTotal = 0, cardCount = 0, cashTotal = 0, cashCount = 0;
@@ -731,6 +801,8 @@ function raceday_summary_handler(req: any, res: any) {
     totalRegistered,
     checkedIn,
     notCheckedIn: totalRegistered - checkedIn,
+    uniqueRegistrants,
+    uniqueCheckedIn,
     rfidLinked,
     motosScheduled,
     motosCompleted,
@@ -752,7 +824,7 @@ function raceday_summary_handler(req: any, res: any) {
 // GET /clubs/:clubId/unpublished-completed-events
 router.get("/clubs/:clubId/unpublished-completed-events", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const clubId = Number(req.params.clubId);
@@ -771,16 +843,19 @@ router.get("/clubs/:clubId/unpublished-completed-events", (req, res) => {
 
   const ids = completedEvents.map((e: any) => e.id);
   const ph = ids.map(() => "?").join(",");
-  const published = db
+  // Events with finished races whose results aren't finalized (official) yet,
+  // the same rule as the website.
+  const pending = db
     .prepare(
-      `SELECT event_id FROM event_publication
-       WHERE event_id IN (${ph}) AND published = 1`,
+      `SELECT DISTINCT event_id FROM motos
+       WHERE event_id IN (${ph}) AND status = 'completed' AND type != 'practice'
+         AND results_finalized_at IS NULL`,
     )
     .all(...ids) as any[];
 
-  const publishedSet = new Set(published.map((p: any) => p.event_id));
+  const pendingSet = new Set(pending.map((p: any) => p.event_id));
   const unpublished = completedEvents.filter(
-    (e: any) => !publishedSet.has(e.id),
+    (e: any) => pendingSet.has(e.id),
   );
 
   return res.json(

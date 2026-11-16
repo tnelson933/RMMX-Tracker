@@ -10,7 +10,7 @@ const router = Router();
 
 router.get("/events/:eventId/checkins", (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const eventId = Number(req.params.eventId);
   const db = getDb();
@@ -125,11 +125,11 @@ router.get("/events/:eventId/checkins", (req, res) => {
 
 router.post("/events/:eventId/checkins", (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const eventId = Number(req.params.eventId);
   const { riderId, rfidNumber, bibNumber, checkedIn } = req.body;
-  if (!riderId) return res.status(400).json({ error: "riderId required" });
+  if (!riderId) return res.status(400).json({ error: "Pick a rider first." });
   // `checkedIn: false` un-checks the rider (e.g. dragging a pool rider to the
   // trash). Any other value, including omitted, checks the rider in.
   const uncheck = checkedIn === false;

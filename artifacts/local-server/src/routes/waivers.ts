@@ -2,6 +2,7 @@ import { Router } from "express";
 import { createHash } from "crypto";
 import type Database from "better-sqlite3";
 import { getDb, parseJson } from "../db";
+import { isoTime } from "../lib/cloud-shape";
 
 /**
  * Liability waivers at check-in, offline.
@@ -31,16 +32,16 @@ router.post("/public/events/:eventId/liability-waiver/sign", (req, res) => {
   const { signerName, signerEmail, consentToEsign, waiverSnapshot, fieldLayout, signerType, minorRiderName } =
     (req.body ?? {}) as Record<string, any>;
 
-  if (typeof signerName !== "string" || !signerName.trim()) return res.status(400).json({ error: "signerName is required" });
-  if (typeof signerEmail !== "string" || !signerEmail.trim()) return res.status(400).json({ error: "signerEmail is required" });
-  if (!consentToEsign) return res.status(400).json({ error: "consentToEsign must be true" });
+  if (typeof signerName !== "string" || !signerName.trim()) return res.status(400).json({ error: "Type your full name to sign." });
+  if (typeof signerEmail !== "string" || !signerEmail.trim()) return res.status(400).json({ error: "Enter your email address to sign." });
+  if (!consentToEsign) return res.status(400).json({ error: "Check the box to agree to sign electronically." });
   if (typeof waiverSnapshot !== "string" || !waiverSnapshot.trim()) return res.status(400).json({ error: "waiverSnapshot is required" });
 
   const db = getDb();
   const event = db
     .prepare("SELECT id, club_id, require_liability_waiver FROM events WHERE id = ?")
     .get(eventId) as { id: number; club_id: number; require_liability_waiver: number } | undefined;
-  if (!event) return res.status(404).json({ error: "Event not found" });
+  if (!event) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
   if (event.require_liability_waiver !== 1) {
     return res.status(400).json({ error: "This event does not require a liability waiver" });
   }
@@ -83,18 +84,18 @@ router.post("/public/events/:eventId/liability-waiver/sign", (req, res) => {
 function organizerForClub(req: any, res: any, clubId: number): boolean {
   const userId = (req.session as any)?.userId;
   if (!userId) {
-    res.status(401).json({ error: "Not authenticated" });
+    res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
     return false;
   }
   const user = getDb()
     .prepare("SELECT role, club_id FROM users WHERE id = ?")
     .get(userId) as { role: string; club_id: number } | undefined;
   if (!user) {
-    res.status(401).json({ error: "Not authenticated" });
+    res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
     return false;
   }
   if (user.role !== "super_admin" && (user.role !== "club_organizer" || user.club_id !== clubId)) {
-    res.status(403).json({ error: "Forbidden" });
+    res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
     return false;
   }
   return true;
@@ -108,18 +109,30 @@ router.get("/clubs/:clubId/riders/:riderId/liability-waiver-signatures", (req, r
   if (!organizerForClub(req, res, clubId)) return;
 
   const db = getDb();
-  const rider = db.prepare("SELECT email FROM riders WHERE id = ?").get(riderId) as { email: string | null } | undefined;
-  if (!rider?.email) return res.json([]);
+  const rider = db.prepare("SELECT email, first_name, last_name FROM riders WHERE id = ?").get(riderId) as
+    | { email: string | null; first_name: string | null; last_name: string | null }
+    | undefined;
+  if (!rider) return res.json([]);
+  const fullName = `${rider.first_name ?? ""} ${rider.last_name ?? ""}`.trim().toLowerCase().replace(/\s+/g, " ");
+  const email = (rider.email ?? "").toLowerCase();
 
-  const rows = db
+  // The rider's waivers, by the same rule as the website: signed on one of
+  // their entries, or (no entry on the record) signed with their email, or by
+  // a guardian naming them.
+  const regIds = new Set((db.prepare("SELECT id FROM registrations WHERE rider_id = ?").all(riderId) as Array<{ id: number }>).map(r => r.id));
+  const rows = (db
     .prepare(
       `SELECT s.*, e.name AS event_name, e.date AS event_date
        FROM liability_waiver_signatures s
        JOIN events e ON e.id = s.event_id
-       WHERE s.club_id = ? AND lower(s.signer_email) = lower(?)
+       WHERE s.club_id = ?
        ORDER BY s.signed_at DESC`,
     )
-    .all(clubId, rider.email) as any[];
+    .all(clubId) as any[]).filter((s) => {
+      if (s.registration_id != null) return regIds.has(s.registration_id);
+      if ((s.signer_type ?? "self") !== "guardian") return email !== "" && String(s.signer_email ?? "").toLowerCase() === email;
+      return String(s.minor_rider_name ?? "").trim().toLowerCase().replace(/\s+/g, " ") === fullName;
+    });
 
   return res.json(rows.map((s) => ({
     id: s.id,
@@ -130,10 +143,43 @@ router.get("/clubs/:clubId/riders/:riderId/liability-waiver-signatures", (req, r
     signerEmail: s.signer_email,
     signedAt: s.signed_at,
     waiverSnapshot: s.waiver_snapshot,
+    // The signed PDF's address, or null when the waiver was typed text (in waiverSnapshot).
+    pdfUrl: waiverPdfOf(String(s.waiver_snapshot ?? "")),
     fieldLayout: parseJson(s.field_layout, null),
     signerType: s.signer_type ?? "self",
     minorRiderName: s.minor_rider_name ?? null,
     waiverContentHash: s.waiver_content_hash,
+    signerIp: s.signer_ip ?? null,
+    signerUserAgent: s.signer_user_agent ?? null,
+  })));
+});
+
+/** api-server lib/waiverSettings.ts waiverPdfOf. */
+function waiverPdfOf(snapshot: string): string | null {
+  const s = snapshot.trim();
+  if (s.startsWith("[PDF waiver] ")) return s.slice("[PDF waiver] ".length).trim();
+  if (/^(https?:\/\/|\/api\/storage\/)\S+$/.test(s)) return s;
+  return null;
+}
+
+// GET /api/clubs/:clubId/events/:eventId/liability-waiver/signatures
+// Organizer: everyone who signed this event's liability waiver, newest first.
+router.get("/clubs/:clubId/events/:eventId/liability-waiver/signatures", (req, res) => {
+  const clubId = Number(req.params.clubId);
+  if (!organizerForClub(req, res, clubId)) return;
+  const rows = getDb()
+    .prepare("SELECT * FROM liability_waiver_signatures WHERE club_id = ? AND event_id = ? ORDER BY signed_at DESC")
+    .all(clubId, Number(req.params.eventId)) as any[];
+  return res.json(rows.map((s) => ({
+    id: s.id,
+    registrationId: s.registration_id ?? null,
+    signerName: s.signer_name,
+    signerEmail: s.signer_email,
+    signerIp: s.signer_ip ?? null,
+    consentToEsign: s.consent_to_esign === 1,
+    waiverContentHash: s.waiver_content_hash,
+    signedAt: s.signed_at,
+    createdAt: isoTime(s.created_at),
   })));
 });
 
@@ -141,7 +187,7 @@ router.get("/clubs/:clubId/riders/:riderId/liability-waiver-signatures", (req, r
 // Organizer: rider acknowledgment history (checkbox waiver at registration).
 router.get("/clubs/:clubId/riders/:riderId/waiver-acknowledgments", (req, res) => {
   const userId = (req.session as any)?.userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const clubId = Number(req.params.clubId);
   const riderId = Number(req.params.riderId);
 
@@ -150,7 +196,7 @@ router.get("/clubs/:clubId/riders/:riderId/waiver-acknowledgments", (req, res) =
     | { role: string; club_id: number }
     | undefined;
   if (user && user.role !== "super_admin" && user.club_id !== clubId) {
-    return res.status(403).json({ error: "Forbidden" });
+    return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   }
 
   const rows = db

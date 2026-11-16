@@ -60,6 +60,55 @@ function calcPoints(opts: {
   }
 }
 
+/**
+ * Points for a finished moto from its finishing order, with the event's points
+ * table and the club's auto-DNF rule (the cloud's scoreMotoPoints). Run when a
+ * race finishes on live timing or is finalized, so results and standings have
+ * points without opening Enter Results. Enduro tests are scored by the enduro
+ * overall, not here.
+ */
+export function scoreMotoPoints(motoId: number): void {
+  try {
+    const db = getDb();
+    const moto = db.prepare("SELECT id, event_id, type FROM motos WHERE id = ?").get(motoId) as any;
+    if (!moto || moto.type === "practice" || moto.type === "enduro_test") return;
+    const rows = db.prepare("SELECT id, position, points, dnf, dns, lap_times FROM race_results WHERE moto_id = ?").all(motoId) as any[];
+    if (rows.length === 0) return;
+    const event = db.prepare("SELECT scoring_table_id, club_id FROM events WHERE id = ?").get(moto.event_id) as any;
+    const table = event?.scoring_table_id ? db.prepare("SELECT * FROM points_tables WHERE id = ?").get(event.scoring_table_id) as any : null;
+    const club = event?.club_id ? db.prepare("SELECT auto_dnf_enabled, auto_dnf_threshold FROM clubs WHERE id = ?").get(event.club_id) as any : null;
+    const settings = {
+      scoringMethod: table ? String(table.scoring_method) : "fallback",
+      pointsScale: table ? (() => { try { return JSON.parse(table.points_scale || "[]") as number[]; } catch { return [] as number[]; } })() : [] as number[],
+      scoringFormula: table?.scoring_formula ?? null,
+      mainEventOnly: table?.main_event_only === 1,
+      autoDnfEnabled: club?.auto_dnf_enabled === 1,
+      autoDnfThreshold: club?.auto_dnf_threshold ?? 75,
+    };
+    const lapsOf = (r: any) => { try { const laps = JSON.parse(r.lap_times || "[]"); return Array.isArray(laps) ? laps.length : 0; } catch { return 0; } };
+    const totalStarters = rows.filter(r => r.dns !== 1).length;
+    const leader = rows.find(r => r.position === 1 && r.dnf !== 1 && r.dns !== 1);
+    const leaderLapsCompleted = settings.autoDnfEnabled && leader ? lapsOf(leader) : undefined;
+    const save = db.prepare("UPDATE race_results SET points = ? WHERE id = ?");
+    for (const r of rows) {
+      const points = calcPoints({
+        position: r.position,
+        dnf: r.dnf === 1,
+        dns: r.dns === 1,
+        totalStarters,
+        classSize: rows.length,
+        ...settings,
+        motoType: moto.type ?? "heat",
+        lapsCompleted: lapsOf(r),
+        leaderLapsCompleted,
+      });
+      if (points !== r.points) save.run(points, r.id);
+    }
+  } catch (err) {
+    console.warn(`[results] could not score moto ${motoId}:`, err instanceof Error ? err.message : err);
+  }
+}
+
 // GET /events/:eventId/results  (organizer view — no auth check needed; returns all)
 router.get("/events/:eventId/results", (req, res) => {
   const db = getDb();
@@ -68,14 +117,31 @@ router.get("/events/:eventId/results", (req, res) => {
   const results = db
     .prepare(
       `SELECT rr.*, r.first_name, r.last_name, r.bib_number AS rider_bib,
-              m.name AS moto_name, m.type AS moto_type, m.results_finalized_at
+              m.name AS moto_name, m.type AS moto_type, m.results_finalized_at,
+              m.lap_count AS moto_lap_count, m.time_limit_ms AS moto_time_limit_ms
        FROM race_results rr
        LEFT JOIN riders r ON rr.rider_id = r.id
        LEFT JOIN motos m ON rr.moto_id = m.id
        WHERE rr.event_id = ?
-       ORDER BY rr.moto_id ASC, rr.position ASC`,
+       ORDER BY rr.position ASC, rr.id ASC`,
     )
     .all(eventId) as any[];
+  // AMA number and bike from the rider's entry (the one in the result's class
+  // first), and the team name for a group race: same as the website.
+  const byClass = new Map<string, { amaNumber: string | null; bikeBrand: string | null }>();
+  const byRider = new Map<number, { amaNumber: string | null; bikeBrand: string | null }>();
+  const teamNames = new Map<number, string>();
+  for (const reg of db.prepare(
+    "SELECT rider_id, race_class, ama_number, bike_brand, team_name FROM registrations WHERE event_id = ? AND status != 'void' ORDER BY id",
+  ).all(eventId) as any[]) {
+    const details = { amaNumber: reg.ama_number ?? null, bikeBrand: reg.bike_brand ?? null };
+    const key = `${reg.rider_id}|${reg.race_class}`;
+    if (!byClass.has(key)) byClass.set(key, details);
+    if (!byRider.has(reg.rider_id)) byRider.set(reg.rider_id, details);
+    if (reg.team_name && !teamNames.has(reg.rider_id)) teamNames.set(reg.rider_id, reg.team_name);
+  }
+  const regDetails = (riderId: number, raceClass: string | null) =>
+    byClass.get(`${riderId}|${raceClass}`) ?? byRider.get(riderId) ?? { amaNumber: null, bikeBrand: null };
   // Olympic tables rank the overall lowest first; the pages need to know.
   const table = db.prepare(
     "SELECT pt.scoring_method FROM events e LEFT JOIN points_tables pt ON pt.id = e.scoring_table_id WHERE e.id = ?",
@@ -87,17 +153,23 @@ router.get("/events/:eventId/results", (req, res) => {
       id: r.id,
       eventId: r.event_id,
       motoId: r.moto_id,
-      motoName: r.moto_name ?? null,
-      motoType: r.moto_type ?? null,
+      motoName: r.moto_name || "",
+      motoType: r.moto_type ?? "heat",
       riderId: r.rider_id,
-      riderName: r.first_name
-        ? `${r.first_name} ${r.last_name ?? ""}`.trim()
-        : null,
+      riderName: teamNames.get(r.rider_id) ?? `${r.first_name ?? null} ${r.last_name ?? null}`,
       raceClass: r.race_class,
       position: r.position,
-      bibNumber: r.bib_number ?? r.rider_bib ?? null,
+      bibNumber: r.bib_number ?? null,
       totalTime: r.total_time ?? null,
-      lapTimes: (() => { try { return JSON.parse(r.lap_times || "[]"); } catch { return []; } })(),
+      // A lap-count race shows at most that many laps.
+      lapTimes: (() => {
+        let laps: unknown[] = [];
+        try { const parsed = JSON.parse(r.lap_times || "[]"); if (Array.isArray(parsed)) laps = parsed; } catch { /* none */ }
+        const cap = r.moto_time_limit_ms ? null : r.moto_lap_count;
+        return cap != null && cap > 0 ? laps.slice(0, cap) : laps;
+      })(),
+      amaNumber: regDetails(r.rider_id, r.race_class).amaNumber,
+      bikeBrand: regDetails(r.rider_id, r.race_class).bikeBrand,
       points: r.points ?? null,
       dnf: r.dnf === 1,
       dns: r.dns === 1,
@@ -110,20 +182,20 @@ router.get("/events/:eventId/results", (req, res) => {
 // POST /events/:eventId/results — save/upsert results for a moto
 router.post("/events/:eventId/results", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const eventId = Number(req.params.eventId);
   const { motoId, results: raw } = req.body;
 
   if (!motoId || !Array.isArray(raw)) {
-    return res.status(400).json({ error: "motoId and results array are required" });
+    return res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
   }
 
   const moto = db
     .prepare("SELECT id, type FROM motos WHERE id = ?")
     .get(Number(motoId)) as any;
-  if (!moto) return res.status(404).json({ error: "Moto not found" });
+  if (!moto) return res.status(404).json({ error: "This moto couldn't be found. Motos may have been regenerated. Refresh the Motos page." });
 
   // Look up scoring table + club auto-DNF for this event
   const event = db
@@ -271,14 +343,14 @@ router.post("/events/:eventId/results", (req, res) => {
 // PATCH /events/:eventId/results/:resultId/laps — update lap times for a single result
 router.patch("/events/:eventId/results/:resultId/laps", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const resultId = Number(req.params.resultId);
   const { lapTimes, totalTime } = req.body;
 
   if (!Array.isArray(lapTimes)) {
-    return res.status(400).json({ error: "lapTimes array is required" });
+    return res.status(400).json({ error: "Some lap times aren't valid. Check the times and try again." });
   }
 
   db.prepare(
@@ -288,7 +360,7 @@ router.patch("/events/:eventId/results/:resultId/laps", (req, res) => {
   const row = db
     .prepare("SELECT * FROM race_results WHERE id = ?")
     .get(resultId) as any;
-  if (!row) return res.status(404).json({ error: "Not found" });
+  if (!row) return res.status(404).json({ error: "This result couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   return res.json({
     id: row.id,
@@ -300,33 +372,47 @@ router.patch("/events/:eventId/results/:resultId/laps", (req, res) => {
 // GET /events/:eventId/ama-export — CSV download for AMA reporting
 router.get("/events/:eventId/ama-export", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const eventId = Number(req.params.eventId);
 
   const event = db.prepare("SELECT * FROM events WHERE id = ?").get(eventId) as any;
-  if (!event) return res.status(404).json({ error: "Event not found" });
+  if (!event) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
 
   const results = db
     .prepare(
       `SELECT
-         rr.rider_id, rr.moto_id, rr.position, rr.bib_number,
+         rr.rider_id, rr.moto_id, rr.position, rr.bib_number, rr.race_class AS result_class,
          m.race_class, m.moto_number,
-         ri.first_name, ri.last_name, ri.city, ri.home_state, ri.ama_number AS rider_ama,
-         reg.ama_number AS reg_ama
+         ri.first_name, ri.last_name, ri.city, ri.home_state
        FROM race_results rr
        INNER JOIN motos m ON rr.moto_id = m.id
        INNER JOIN riders ri ON rr.rider_id = ri.id
-       LEFT JOIN registrations reg ON reg.rider_id = rr.rider_id AND reg.event_id = ?
        WHERE m.event_id = ?
-       ORDER BY m.id ASC, rr.position ASC`,
+       ORDER BY rr.id ASC`,
     )
-    .all(eventId, eventId) as any[];
+    .all(eventId) as any[];
+  // One line per result, with the AMA number from the rider's entry (the one in
+  // the result's class first), as the website's export does. Joining entries
+  // here repeated a rider who entered two classes.
+  const amaByClass = new Map<string, string | null>();
+  const amaByRider = new Map<number, string | null>();
+  for (const reg of db.prepare(
+    "SELECT rider_id, race_class, ama_number FROM registrations WHERE event_id = ? AND status != 'void' ORDER BY id",
+  ).all(eventId) as any[]) {
+    const key = `${reg.rider_id}|${reg.race_class}`;
+    if (!amaByClass.has(key)) amaByClass.set(key, reg.ama_number ?? null);
+    if (!amaByRider.has(reg.rider_id)) amaByRider.set(reg.rider_id, reg.ama_number ?? null);
+  }
+  const amaNumber = (riderId: number, raceClass: string | null) => {
+    const key = `${riderId}|${raceClass}`;
+    return (amaByClass.has(key) ? amaByClass.get(key) : amaByRider.get(riderId)) ?? "";
+  };
 
   const amaEventId = event.ama_event_id ?? "";
   const eventDate = event.date ? String(event.date).substring(0, 10) : "";
-  const trackName = event.track_name ?? event.name ?? "";
+  const trackName = event.track_name ?? event.name;
 
   const escCsv = (v: unknown): string => {
     const s = String(v ?? "");
@@ -349,7 +435,7 @@ router.get("/events/:eventId/ama-export", (req, res) => {
       escCsv(trackName),
       escCsv(r.race_class),
       escCsv(r.moto_number),
-      escCsv(r.reg_ama ?? r.rider_ama ?? ""),
+      escCsv(amaNumber(r.rider_id, r.result_class ?? r.race_class)),
       escCsv(r.bib_number ?? ""),
       escCsv(r.first_name ?? ""),
       escCsv(r.last_name ?? ""),
@@ -384,7 +470,7 @@ router.get("/events/:eventId/publication", (req, res) => {
 // POST /events/:eventId/results/publish — toggle results publication
 router.post("/events/:eventId/results/publish", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const eventId = Number(req.params.eventId);

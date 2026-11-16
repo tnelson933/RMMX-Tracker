@@ -2,6 +2,8 @@ import { Router } from "express";
 import { practiceInsertNumber } from "@workspace/api-zod";
 import { getDb, parseJsonArr } from "../db";
 import { sseBroadcast, buildLeaderboard } from "./timing";
+import { isoTime } from "../lib/cloud-shape";
+import { scoreMotoPoints } from "./results";
 
 const router = Router();
 
@@ -14,22 +16,22 @@ export function normalizeMotoTiming(lapCount: unknown, timeLimitMs: unknown, plu
   const normalizedLapCount = lapCount == null ? null : Number(lapCount);
   const normalizedTimeLimitMs = timeLimitMs == null ? null : Number(timeLimitMs);
   if (normalizedLapCount !== null && (!Number.isInteger(normalizedLapCount) || normalizedLapCount <= 0)) {
-    return { error: "lapCount must be a positive integer" };
+    return { error: "Enter the number of laps (1 or more)." };
   }
   if (normalizedTimeLimitMs !== null && (!Number.isInteger(normalizedTimeLimitMs) || normalizedTimeLimitMs <= 0)) {
-    return { error: "timeLimitMs must be a positive integer" };
+    return { error: "Enter a time limit greater than 0." };
   }
   if (normalizedLapCount !== null && normalizedTimeLimitMs !== null) {
-    return { error: "lapCount and timeLimitMs are mutually exclusive" };
+    return { error: "Choose a lap count or a time limit, not both." };
   }
   if (plusLaps != null && normalizedTimeLimitMs === null) {
-    return { error: "plusLaps is only valid when timeLimitMs is set" };
+    return { error: "Extra laps only apply to timed races. Set a time limit first, or remove the extra laps." };
   }
   const normalizedPlusLaps = normalizedTimeLimitMs !== null
     ? (plusLaps == null ? 1 : Number(plusLaps))
     : null;
   if (normalizedPlusLaps !== null && (!Number.isInteger(normalizedPlusLaps) || normalizedPlusLaps < 0)) {
-    return { error: "plusLaps must be a nonnegative integer for a timed race" };
+    return { error: "Enter extra laps as a whole number (0 or more)." };
   }
   return { lapCount: normalizedLapCount, timeLimitMs: normalizedTimeLimitMs, plusLaps: normalizedPlusLaps };
 }
@@ -42,7 +44,8 @@ function serializeMoto(m: any, groupMembersMap?: Map<number, number[]>) {
     name: m.name ?? "",
     type: m.type ?? "moto",
     raceClass: m.race_class,
-    raceClasses: parseJsonArr(m.race_classes),
+    // Only a multi-class practice lists classes; every other moto has none (null).
+    raceClasses: parseJsonArr(m.race_classes).length > 0 ? parseJsonArr(m.race_classes) : null,
     motoNumber: m.moto_number,
     scheduledTime: m.scheduled_time ?? null,
     lineup: parseJsonArr(m.lineup),
@@ -61,7 +64,19 @@ function serializeMoto(m: any, groupMembersMap?: Map<number, number[]>) {
     countdownSeconds: m.countdown_seconds ?? null,
     resultsFinalizedAt: m.results_finalized_at ?? null,
     enduroHasRfidStart: m.enduro_has_rfid_start === 1,
-    createdAt: m.created_at,
+    practiceMode: m.practice_mode ?? "lap_count",
+    staggeredWithMotoId: m.staggered_with_moto_id ?? null,
+    // Shared announcer state belongs to the cloud (its sequence only ever goes
+    // up there). The desktop never writes it: these are the values last pulled,
+    // or what the website returns for a moto that has never announced.
+    announcerStartedAt: m.announcer_started_at ?? null,
+    announcerLastLap: m.announcer_last_lap ?? 0,
+    announcerTimeExpiredAt: m.announcer_time_expired_at ?? null,
+    announcerExpiryLeaderLap: m.announcer_expiry_leader_lap ?? null,
+    announcerLastExtraLap: m.announcer_last_extra_lap ?? 0,
+    announcerSequence: m.announcer_sequence ?? 0,
+    announcerFinishedAt: m.announcer_finished_at ?? null,
+    createdAt: isoTime(m.created_at),
   };
 }
 
@@ -94,19 +109,21 @@ export function syncEventPublication(eventId: number) {
 for (const action of ["finalize", "unfinalize"] as const) {
   router.post(`/motos/:motoId/${action}`, (req, res) => {
     const session = req.session as any;
-    if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
     const db = getDb();
     const motoId = Number(req.params.motoId);
-    const moto = db.prepare("SELECT id, event_id, status FROM motos WHERE id = ?").get(motoId) as any;
-    if (!moto) return res.status(404).json({ error: "Moto not found" });
+    const moto = db.prepare("SELECT id, event_id, status, results_finalized_at FROM motos WHERE id = ?").get(motoId) as any;
+    if (!moto) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
     if (action === "finalize" && moto.status !== "completed") {
-      return res.status(409).json({ error: "Finish the race before finalizing its results" });
+      return res.status(409).json({ error: "Finish the race before finalizing its results." });
     }
+    // Finalizing again keeps the time it first became official.
     db.prepare("UPDATE motos SET results_finalized_at = ? WHERE id = ?")
-      .run(action === "finalize" ? new Date().toISOString() : null, motoId);
+      .run(action === "finalize" ? (moto.results_finalized_at ?? new Date().toISOString()) : null, motoId);
+    if (action === "finalize") scoreMotoPoints(motoId);
     syncEventPublication(moto.event_id);
-    const updated = db.prepare("SELECT * FROM motos WHERE id = ?").get(motoId);
-    return res.json({ ok: true, moto: serializeMoto(updated) });
+    const updated = db.prepare("SELECT * FROM motos WHERE id = ?").get(motoId) as any;
+    return res.json({ ok: true, motoId, resultsFinalizedAt: updated.results_finalized_at ?? null, moto: serializeMoto(updated) });
   });
 }
 
@@ -115,11 +132,11 @@ for (const action of ["finalize", "unfinalize"] as const) {
 // its clock has run out and would finish it again. Matches the cloud API.
 router.post("/motos/:motoId/reopen", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const db = getDb();
   const motoId = Number(req.params.motoId);
   const moto = db.prepare("SELECT * FROM motos WHERE id = ?").get(motoId) as any;
-  if (!moto) return res.status(404).json({ error: "Moto not found" });
+  if (!moto) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   if (moto.status !== "completed") return res.status(409).json({ error: "Only a finished moto can be reopened." });
   if (moto.time_limit_ms != null && moto.type !== "enduro_test") {
     return res.status(409).json({ error: "A timed race can't be reopened: its clock has run out and would finish it again. Fix its results in Review & finalize instead." });
@@ -171,7 +188,7 @@ function makeRoomForPractices(db: ReturnType<typeof getDb>, eventId: number, cou
 // POST /events/:eventId/motos
 router.post("/events/:eventId/motos", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const db = getDb();
   const eventId = Number(req.params.eventId);
   const { name, type, raceClass, raceClasses, motoNumber, scheduledTime, lineup, lapCount, timeLimitMs, plusLaps, countdownSeconds, enduroHasRfidStart } =
@@ -179,7 +196,7 @@ router.post("/events/:eventId/motos", (req, res) => {
   if (!name || !type || !raceClass || motoNumber === undefined) {
     return res
       .status(400)
-      .json({ error: "name, type, raceClass, motoNumber required" });
+      .json({ error: "Enter a moto name, type, class and moto number." });
   }
   const timing = normalizeMotoTiming(lapCount, timeLimitMs, plusLaps);
   if ("error" in timing) return res.status(400).json({ error: timing.error });
@@ -195,7 +212,7 @@ router.post("/events/:eventId/motos", (req, res) => {
       name,
       type,
       raceClass,
-      JSON.stringify(raceClasses ?? []),
+      Array.isArray(raceClasses) && raceClasses.length > 0 ? JSON.stringify(raceClasses) : null,
       runNumber,
       scheduledTime ?? null,
       JSON.stringify(lineup ?? []),
@@ -214,7 +231,7 @@ router.post("/events/:eventId/motos", (req, res) => {
 // PATCH /motos/:motoId — update status, lineup, lapCount, scheduledTime, motoNumber, name
 router.patch("/motos/:motoId", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const db = getDb();
   const id = Number(req.params.motoId);
 
@@ -223,18 +240,18 @@ router.patch("/motos/:motoId", (req, res) => {
   const existingFormat = db
     .prepare("SELECT lap_count, time_limit_ms, plus_laps, started_at, status, time_expired_at FROM motos WHERE id = ?")
     .get(id) as any;
-  if (!existingFormat) return res.status(404).json({ error: "Not found" });
+  if (!existingFormat) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   const requestedLapCount = req.body.lapCount === undefined ? undefined : (req.body.lapCount === null ? null : Number(req.body.lapCount));
   const requestedTimeLimitMs = req.body.timeLimitMs === undefined ? undefined : (req.body.timeLimitMs === null ? null : Number(req.body.timeLimitMs));
   if (requestedLapCount !== undefined && requestedLapCount !== null && (!Number.isInteger(requestedLapCount) || requestedLapCount <= 0)) {
-    return res.status(400).json({ error: "lapCount must be a positive integer" });
+    return res.status(400).json({ error: "Enter the number of laps (1 or more)." });
   }
   if (requestedTimeLimitMs !== undefined && requestedTimeLimitMs !== null && (!Number.isInteger(requestedTimeLimitMs) || requestedTimeLimitMs <= 0)) {
-    return res.status(400).json({ error: "timeLimitMs must be a positive integer" });
+    return res.status(400).json({ error: "Enter a time limit greater than 0." });
   }
   if (requestedLapCount != null && requestedTimeLimitMs != null) {
-    return res.status(400).json({ error: "lapCount and timeLimitMs are mutually exclusive" });
+    return res.status(400).json({ error: "Choose a lap count or a time limit, not both." });
   }
   let resultingLapCount = requestedLapCount === undefined ? existingFormat.lap_count : requestedLapCount;
   let resultingTimeLimitMs = requestedTimeLimitMs === undefined ? existingFormat.time_limit_ms : requestedTimeLimitMs;
@@ -245,10 +262,10 @@ router.patch("/motos/:motoId", (req, res) => {
     ? (requestedPlusLaps === undefined ? (requestedTimeLimitMs != null ? 1 : existingFormat.plus_laps ?? 1) : requestedPlusLaps ?? 1)
     : null;
   if (resultingPlusLaps !== null && (!Number.isInteger(resultingPlusLaps) || resultingPlusLaps < 0)) {
-    return res.status(400).json({ error: "plusLaps must be a nonnegative integer for a timed race" });
+    return res.status(400).json({ error: "Enter extra laps as a whole number (0 or more)." });
   }
   if (requestedPlusLaps != null && resultingTimeLimitMs === null) {
-    return res.status(400).json({ error: "plusLaps is only valid when timeLimitMs is set" });
+    return res.status(400).json({ error: "Extra laps only apply to timed races. Set a time limit first, or remove the extra laps." });
   }
   if (req.body.lapCount !== undefined || req.body.timeLimitMs !== undefined || req.body.plusLaps !== undefined) {
     fields.push("lap_count = ?", "time_limit_ms = ?", "plus_laps = ?");
@@ -257,6 +274,9 @@ router.patch("/motos/:motoId", (req, res) => {
 
   const completedOnTimeExpiry = false;
   if (req.body.status !== undefined) {
+    if (!["scheduled", "in_progress", "completed", "cancelled"].includes(req.body.status)) {
+      return res.status(400).json({ error: "That moto status isn't valid. Refresh the Motos page and try again." });
+    }
     fields.push("status = ?");
     values.push(req.body.status);
     if (req.body.status === "in_progress" && !existingFormat.started_at) {
@@ -320,7 +340,10 @@ router.patch("/motos/:motoId", (req, res) => {
   );
 
   const moto = db.prepare("SELECT * FROM motos WHERE id = ?").get(id) as any;
-  if (!moto) return res.status(404).json({ error: "Not found" });
+  if (!moto) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
+
+  // A race that just finished gets its points from the finishing order, as on the website.
+  if (req.body.status === "completed" && existingFormat.status !== "completed") scoreMotoPoints(id);
 
   if (req.body.status !== undefined || completedOnTimeExpiry) {
     const snapshot = buildLeaderboard(id);
@@ -333,12 +356,12 @@ router.patch("/motos/:motoId", (req, res) => {
 // DELETE /motos/:motoId
 router.delete("/motos/:motoId", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const db = getDb();
   const id = Number(req.params.motoId);
 
   const moto = db.prepare("SELECT id, status FROM motos WHERE id = ?").get(id) as any;
-  if (!moto) return res.status(404).json({ error: "Not found" });
+  if (!moto) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   db.prepare("DELETE FROM split_crossings WHERE moto_id = ?").run(id);
   db.prepare("DELETE FROM lap_crossings WHERE moto_id = ?").run(id);
@@ -352,7 +375,7 @@ router.delete("/motos/:motoId", (req, res) => {
 // DELETE /events/:eventId/motos — bulk-delete non-completed motos
 router.delete("/events/:eventId/motos", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const db = getDb();
   const eventId = Number(req.params.eventId);
 
@@ -382,12 +405,12 @@ router.delete("/events/:eventId/motos", (req, res) => {
 // POST /motos/:motoId/restart — wipe crossings and reset status to scheduled
 router.post("/motos/:motoId/restart", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const db = getDb();
   const id = Number(req.params.motoId);
 
   const moto = db.prepare("SELECT * FROM motos WHERE id = ?").get(id) as any;
-  if (!moto) return res.status(404).json({ error: "Not found" });
+  if (!moto) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   db.prepare("DELETE FROM split_crossings WHERE moto_id = ?").run(id);
   db.prepare("DELETE FROM lap_crossings WHERE moto_id = ?").run(id);
@@ -412,14 +435,14 @@ router.post("/motos/:motoId/restart", (req, res) => {
 // POST /motos/:motoId/pause — freeze the clock without ending the moto
 router.post("/motos/:motoId/pause", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const db = getDb();
   const id = Number(req.params.motoId);
 
   const moto = db.prepare("SELECT * FROM motos WHERE id = ?").get(id) as any;
-  if (!moto) return res.status(404).json({ error: "Not found" });
-  if (moto.status !== "in_progress") return res.status(400).json({ error: "Moto is not in progress" });
-  if (moto.paused_at) return res.status(400).json({ error: "Moto is already paused" });
+  if (!moto) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
+  if (moto.status !== "in_progress") return res.status(400).json({ error: "This moto isn't running. Start it on the Motos page first." });
+  if (moto.paused_at) return res.status(400).json({ error: "This moto is already paused." });
 
   db.prepare("UPDATE motos SET paused_at = ? WHERE id = ?").run(new Date().toISOString(), id);
   const updated = db.prepare("SELECT * FROM motos WHERE id = ?").get(id) as any;
@@ -431,14 +454,14 @@ router.post("/motos/:motoId/pause", (req, res) => {
 // POST /motos/:motoId/resume — unfreeze the clock from where it was paused
 router.post("/motos/:motoId/resume", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const db = getDb();
   const id = Number(req.params.motoId);
 
   const moto = db.prepare("SELECT * FROM motos WHERE id = ?").get(id) as any;
-  if (!moto) return res.status(404).json({ error: "Not found" });
-  if (moto.status !== "in_progress") return res.status(400).json({ error: "Moto is not in progress" });
-  if (!moto.paused_at) return res.status(400).json({ error: "Moto is not paused" });
+  if (!moto) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
+  if (moto.status !== "in_progress") return res.status(400).json({ error: "This moto isn't running. Start it on the Motos page first." });
+  if (!moto.paused_at) return res.status(400).json({ error: "This moto isn't paused." });
 
   const pausedAtMs = new Date(moto.paused_at).getTime();
   const additionalMs = Number.isNaN(pausedAtMs) ? 0 : Math.max(0, Date.now() - pausedAtMs);
@@ -453,16 +476,16 @@ router.post("/motos/:motoId/resume", (req, res) => {
 // POST /events/:eventId/stagger — link N motos as a staggered start group
 router.post("/events/:eventId/stagger", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const db = getDb();
   const { orderedMotoIds } = req.body;
   if (!Array.isArray(orderedMotoIds) || orderedMotoIds.length < 2) {
-    return res.status(400).json({ error: "orderedMotoIds must be an array of at least 2 moto IDs" });
+    return res.status(400).json({ error: "Pick at least 2 motos to reorder." });
   }
   const ids = orderedMotoIds.map(Number);
   const unique = new Set(ids);
   if (unique.size !== ids.length) {
-    return res.status(400).json({ error: "orderedMotoIds must not contain duplicates" });
+    return res.status(400).json({ error: "The same moto is listed twice. Refresh the page and try again." });
   }
 
   // Clear existing group memberships for any groups that overlap with these IDs
@@ -492,13 +515,13 @@ router.post("/events/:eventId/stagger", (req, res) => {
 // DELETE /motos/:motoId/stagger — remove one moto from its stagger group; re-normalizes remaining order
 router.delete("/motos/:motoId/stagger", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const db = getDb();
   const id = Number(req.params.motoId);
   const moto = db
     .prepare("SELECT staggered_group_id FROM motos WHERE id = ?")
     .get(id) as any;
-  if (!moto) return res.status(404).json({ error: "Not found" });
+  if (!moto) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   if (!moto.staggered_group_id) return res.json({ ok: true });
 
   // Find remaining group members sorted by current order
@@ -534,17 +557,17 @@ router.delete("/motos/:motoId/stagger", (req, res) => {
 // POST /events/:eventId/motos/reorder — bulk reassign motoNumber values
 router.post("/events/:eventId/motos/reorder", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const db = getDb();
   const eventId = Number(req.params.eventId);
   const { motoIds } = req.body as { motoIds: number[] };
 
   if (!Array.isArray(motoIds) || motoIds.length === 0) {
-    return res.status(400).json({ error: "motoIds array is required" });
+    return res.status(400).json({ error: "Pick at least one moto." });
   }
   const unique = new Set(motoIds);
   if (unique.size !== motoIds.length) {
-    return res.status(400).json({ error: "motoIds must not contain duplicates" });
+    return res.status(400).json({ error: "The same moto is listed twice. Refresh the page and try again." });
   }
 
   const existing = db
@@ -558,7 +581,7 @@ router.post("/events/:eventId/motos/reorder", (req, res) => {
   if (invalid.length > 0) {
     return res
       .status(400)
-      .json({ error: `Moto IDs not found in event: ${invalid.join(", ")}` });
+      .json({ error: "Some of these motos are no longer in this event. Refresh the Motos page and try again." });
   }
 
   const updateStmt = db.prepare(
@@ -663,7 +686,7 @@ function getEventFormat(eventId: number): { isSupercross: boolean } {
 // POST /events/:eventId/generate-lineups
 router.post("/events/:eventId/generate-lineups", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const db = getDb();
   const eventId = Number(req.params.eventId);
 
@@ -1255,7 +1278,7 @@ router.post("/events/:eventId/generate-lineups", (req, res) => {
 // POST /events/:eventId/motos/:motoId/generate-lineup — regenerate lineup for single moto
 router.post("/events/:eventId/motos/:motoId/generate-lineup", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const db = getDb();
   const eventId = Number(req.params.eventId);
   const motoId = Number(req.params.motoId);
@@ -1264,11 +1287,11 @@ router.post("/events/:eventId/motos/:motoId/generate-lineup", (req, res) => {
   const moto = db
     .prepare("SELECT * FROM motos WHERE id = ? AND event_id = ?")
     .get(motoId, eventId) as any;
-  if (!moto) return res.status(404).json({ error: "Moto not found" });
+  if (!moto) return res.status(404).json({ error: "This moto couldn't be found. Motos may have been regenerated. Refresh the Motos page." });
   if (moto.status === "completed")
-    return res.status(409).json({ error: "Moto is completed — lineup is locked" });
+    return res.status(409).json({ error: "This moto is finished, so its lineup can't change." });
   if (!moto.race_class)
-    return res.status(400).json({ error: "Moto has no race class" });
+    return res.status(400).json({ error: "This moto has no class set. Edit the moto and choose a class." });
 
   const raceClass = moto.race_class as string;
   const seedingMethod: "random" | "practice_fastest_lap" | "previous_round" | "registration_order" =
@@ -1388,7 +1411,7 @@ router.post("/events/:eventId/motos/:motoId/generate-lineup", (req, res) => {
 // POST /events/:eventId/generate-practice-sessions
 router.post("/events/:eventId/generate-practice-sessions", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const eventId = Number(req.params.eventId);
   const {
@@ -1401,11 +1424,11 @@ router.post("/events/:eventId/generate-practice-sessions", (req, res) => {
     : raceClass ? [raceClass] : [];
 
   if (targetClasses.length === 0 || !maxRidersPerSession) {
-    return res.status(400).json({ error: "raceClasses (or raceClass) and maxRidersPerSession required" });
+    return res.status(400).json({ error: "Choose a class and enter the most riders per session." });
   }
 
   const max = Number(maxRidersPerSession);
-  if (isNaN(max) || max < 1) return res.status(400).json({ error: "maxRidersPerSession must be a positive integer" });
+  if (isNaN(max) || max < 1) return res.status(400).json({ error: "Enter the most riders per session (1 or more)." });
 
   const isAllClasses = targetClasses.includes("All Classes");
 
@@ -1430,7 +1453,7 @@ router.post("/events/:eventId/generate-practice-sessions", (req, res) => {
   }
 
   if (checkinRows.length === 0) {
-    return res.status(400).json({ error: "No checked-in riders found for the selected class(es)" });
+    return res.status(400).json({ error: "No riders are checked in for these classes yet. Check riders in first, then generate motos." });
   }
 
   const sessionCount = Math.ceil(checkinRows.length / max);
@@ -1492,17 +1515,17 @@ router.post("/events/:eventId/generate-practice-sessions", (req, res) => {
 // Main Event lineup (manual trigger). Mirrors the cloud handler.
 router.post("/events/:eventId/advance-to-main", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const db = getDb();
   const eventId = Number(req.params.eventId);
   const { raceClass, topPerHeat = 5 } = req.body ?? {};
-  if (!raceClass) return res.status(400).json({ error: "raceClass is required" });
+  if (!raceClass) return res.status(400).json({ error: "Choose a class." });
   const top = Number(topPerHeat);
 
   const heatMotos = db
     .prepare("SELECT * FROM motos WHERE event_id = ? AND race_class = ? AND type = 'heat'")
     .all(eventId, String(raceClass)) as any[];
-  if (heatMotos.length === 0) return res.status(404).json({ error: "No heat motos found for this class" });
+  if (heatMotos.length === 0) return res.status(404).json({ error: "This class has no heat motos yet. Generate motos on the Motos page first." });
 
   const mainMoto = db
     .prepare("SELECT * FROM motos WHERE event_id = ? AND race_class = ? AND type = 'main' LIMIT 1")

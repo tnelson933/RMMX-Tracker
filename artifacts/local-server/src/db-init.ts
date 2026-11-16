@@ -805,6 +805,39 @@ export function initDb() {
     // event_reader_assignments — course map (split order and names)
     ["event_reader_assignments", "sequence INTEGER"],
     ["event_reader_assignments", "label    TEXT"],
+    // Columns the website's API returns, pulled from the cloud so the same
+    // screens show the same values offline. Nullable with no default.
+    ["clubs", "stripe_direct_charges       INTEGER"],
+    ["clubs", "stripe_pending_account_id   TEXT"],
+    ["clubs", "stripe_terminal_location_id TEXT"],
+    ["clubs", "active                      INTEGER"],
+    ["clubs", "timing_ingest_auth          TEXT"],
+    ["riders", "club_id                    INTEGER"],
+    ["riders", "skill_level                TEXT"],
+    ["riders", "race_types                 TEXT"],
+    ["riders", "ai_maintenance_suggestions INTEGER"],
+    ["riders", "bio                        TEXT"],
+    ["riders", "plate_color                TEXT"],
+    ["riders", "profile_visibility         TEXT"],
+    ["riders", "avatar_url                 TEXT"],
+    ["riders", "cover_url                  TEXT"],
+    ["motos", "staggered_with_moto_id      INTEGER"],
+    // Shared announcer state lives in the cloud; the desktop only stores what it pulled.
+    ["motos", "announcer_started_at        TEXT"],
+    ["motos", "announcer_last_lap          INTEGER"],
+    ["motos", "announcer_time_expired_at   TEXT"],
+    ["motos", "announcer_expiry_leader_lap INTEGER"],
+    ["motos", "announcer_last_extra_lap    INTEGER"],
+    ["motos", "announcer_sequence          INTEGER"],
+    ["motos", "announcer_finished_at       TEXT"],
+    ["events", "quick_checkin_notified_at  TEXT"],
+    ["events", "stats_emails_sent_at       TEXT"],
+    ["events", "finalize_reminder_sent_at  TEXT"],
+    // Outcome of the last rental return reminder (sent by the cloud).
+    ["registrations", "rental_reminder_status TEXT"],
+    ["registrations", "rental_reminder_at     TEXT"],
+    // Track Library: the track's course map (JSON list of { readerId, role, sequence, label }).
+    ["tracks", "course TEXT"],
   ];
 
   for (const [table, colDef] of migrations) {
@@ -1074,6 +1107,44 @@ export function initDb() {
     END;
   `);
 
+  // A column of a table created just above that the website's API returns.
+  try { db.prepare("ALTER TABLE club_settings ADD COLUMN brand_contingencies TEXT").run(); } catch { /* already there */ }
+
+  // Track Library rows made or changed on the desktop go to the cloud.
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS _wq_tracks_insert
+    AFTER INSERT ON tracks
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('tracks', NEW.id, 'upsert');
+    END;
+    CREATE TRIGGER IF NOT EXISTS _wq_tracks_update
+    AFTER UPDATE ON tracks
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('tracks', NEW.id, 'upsert');
+    END;
+    -- Club settings saved on the desktop (waiver texts, default classes, brands).
+    CREATE TRIGGER IF NOT EXISTS _wq_club_settings_insert
+    AFTER INSERT ON club_settings
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('club_settings', NEW.id, 'upsert');
+    END;
+    CREATE TRIGGER IF NOT EXISTS _wq_club_settings_update
+    AFTER UPDATE ON club_settings
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('club_settings', NEW.id, 'upsert');
+    END;
+    CREATE TRIGGER IF NOT EXISTS _wq_tracks_delete
+    AFTER DELETE ON tracks
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('tracks', OLD.id, 'delete');
+    END;
+  `);
+
   // Track names were historically stored locally but omitted from desktop sync.
   // Requeue each locally named practice session once so the cloud copy — and
   // therefore Rider App history — receives its venue_name.
@@ -1104,12 +1175,36 @@ export function initDb() {
     VALUES ('requeue-practice-session-track-names');
   `);
 
+  // Tracks added on this desktop before the Track Library synced were numbered
+  // from 1, like the cloud's. Move them (once) into the desktop's id range so a
+  // pulled cloud track can never land on one, and queue them for the cloud so
+  // the first pull doesn't treat them as "removed on the website". Their
+  // events and practices follow; that re-pointing isn't a change to push.
+  {
+    const done = db.prepare("SELECT 1 FROM _local_data_migrations WHERE name = 'renumber-local-tracks'").get();
+    if (!done) {
+      db.transaction(() => {
+        db.prepare("INSERT OR IGNORE INTO _cloud_pull_guard VALUES(1)").run();
+        try {
+          db.prepare("UPDATE events SET track_id = track_id + 10000000 WHERE track_id IN (SELECT id FROM tracks WHERE id < 10000000)").run();
+          db.prepare("UPDATE practice_sessions SET track_id = track_id + 10000000 WHERE track_id IN (SELECT id FROM tracks WHERE id < 10000000)").run();
+          db.prepare("UPDATE tracks SET id = id + 10000000 WHERE id < 10000000").run();
+        } finally {
+          db.prepare("DELETE FROM _cloud_pull_guard").run();
+        }
+        db.prepare("INSERT INTO _write_queue (table_name, record_id, operation) SELECT 'tracks', id, 'upsert' FROM tracks").run();
+        db.prepare("INSERT OR IGNORE INTO _local_data_migrations (name) VALUES ('renumber-local-tracks')").run();
+      })();
+    }
+  }
+
   // Seed autoincrement sequences so desktop-created rows start at a high ID range
   // and never collide with cloud-assigned sequential IDs (1, 2, 3...).
   // An already-elevated sequence is never lowered. (practice_sessions has no
   // AUTOINCREMENT, so its row is inert; kept for older databases.)
   raiseAutoincrementFloor(db, "events", 9999999);
   raiseAutoincrementFloor(db, "practice_sessions", 9999999);
+  raiseAutoincrementFloor(db, "tracks", 9999999);
 }
 
 /**

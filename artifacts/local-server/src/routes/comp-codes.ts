@@ -61,14 +61,14 @@ function parseMaxUses(raw: unknown): number | undefined {
 // GET /events/:eventId/comp-codes
 router.get("/events/:eventId/comp-codes", (req, res) => {
   const userId = (req.session as any)?.userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const eventId = Number(req.params.eventId);
   const clubId = getClubId(req);
-  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  if (!clubId) return res.status(403).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
   const ev = eventClub(eventId);
-  if (!ev) return res.status(404).json({ error: "Event not found" });
-  if (ev.club_id != null && ev.club_id !== clubId) return res.status(403).json({ error: "Forbidden" });
+  if (!ev) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
+  if (ev.club_id != null && ev.club_id !== clubId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   const db = getDb();
 
   const rows = db
@@ -108,7 +108,7 @@ router.get("/events/:eventId/comp-codes", (req, res) => {
 // POST /events/:eventId/comp-codes
 router.post("/events/:eventId/comp-codes", (req, res) => {
   const userId = (req.session as any)?.userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const eventId = Number(req.params.eventId);
   const { amount, count, discountType = "fixed", maxUses, expiresAt, code: customCode } = req.body;
@@ -117,14 +117,14 @@ router.post("/events/:eventId/comp-codes", (req, res) => {
     return res.status(400).json({ error: "discountType must be fixed or percentage" });
   }
   if (!amount || !Number.isFinite(Number(amount)) || Number(amount) <= 0) {
-    return res.status(400).json({ error: "amount required and must be > 0" });
+    return res.status(400).json({ error: "Enter an amount greater than $0." });
   }
   if (discountType === "percentage" && Number(amount) > 100) {
-    return res.status(400).json({ error: "Percentage discount cannot exceed 100%" });
+    return res.status(400).json({ error: "A percentage discount can't be more than 100%." });
   }
 
   const clubId = getClubId(req);
-  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  if (!clubId) return res.status(403).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
 
   const maxUsesNum = parseMaxUses(maxUses);
   if (maxUsesNum === undefined) {
@@ -138,8 +138,8 @@ router.post("/events/:eventId/comp-codes", (req, res) => {
   const db = getDb();
 
   const ev = eventClub(eventId);
-  if (!ev) return res.status(404).json({ error: "Event not found" });
-  if (ev.club_id != null && ev.club_id !== clubId) return res.status(403).json({ error: "Forbidden" });
+  if (!ev) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
+  if (ev.club_id != null && ev.club_id !== clubId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
 
   const insert = db.prepare(
     `INSERT INTO comp_codes
@@ -149,13 +149,13 @@ router.post("/events/:eventId/comp-codes", (req, res) => {
 
   if (customCode) {
     const codeStr = String(customCode).trim().toUpperCase();
-    if (!codeStr) return res.status(400).json({ error: "Code string cannot be empty" });
+    if (!codeStr) return res.status(400).json({ error: "Enter a code." });
     try {
       insert.run(eventId, clubId, codeStr, discountType, String(amount), maxUsesNum, expiresAtVal);
       return res.status(201).json({ codes: [codeStr], amount: Number(amount), discountType });
     } catch (err: any) {
       if (err?.message?.includes("UNIQUE")) {
-        return res.status(409).json({ error: "A code with that string already exists" });
+        return res.status(409).json({ error: "That code is already in use. Pick a different code." });
       }
       throw err;
     }
@@ -183,14 +183,14 @@ router.post("/events/:eventId/comp-codes", (req, res) => {
 router.post("/public/events/:eventId/validate-comp-code", (req, res) => {
   const eventId = Number(req.params.eventId);
   const { code } = req.body;
-  if (!code) return res.status(400).json({ error: "code required" });
+  if (!code) return res.status(400).json({ error: "Enter a code." });
 
   // Same lookup, rules and response shape as the cloud: the event's own code first,
   // then a club-wide code of this event's club; failures are 4xx with `error`.
   const db = getDb();
   const codeStr = String(code).trim().toUpperCase();
   const ev = eventClub(eventId);
-  if (!ev) return res.status(404).json({ valid: false, error: "Invalid discount code" });
+  if (!ev) return res.status(404).json({ valid: false, error: "That discount code isn't valid. Check the spelling and try again." });
   let row = db
     .prepare("SELECT * FROM comp_codes WHERE code = ? AND event_id = ? LIMIT 1")
     .get(codeStr, eventId) as any;
@@ -200,7 +200,7 @@ router.post("/public/events/:eventId/validate-comp-code", (req, res) => {
       .get(codeStr, ev.club_id) as any;
   }
 
-  if (!row) return res.status(404).json({ valid: false, error: "Invalid discount code" });
+  if (!row) return res.status(404).json({ valid: false, error: "That discount code isn't valid. Check the spelling and try again." });
   if (!row.is_active) {
     return res.status(409).json({ valid: false, error: "This discount code is no longer active" });
   }
@@ -228,17 +228,17 @@ router.post("/public/events/:eventId/validate-comp-code", (req, res) => {
 // discount code, or null. Same shape as the cloud: one object, not a list.
 router.get("/clubs/:clubId/riders/:riderId/discount-code", (req, res) => {
   const userId = (req.session as any)?.userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const clubId = Number(req.params.clubId);
-  if (clubId !== getClubId(req)) return res.status(403).json({ error: "Forbidden" });
+  if (clubId !== getClubId(req)) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   const riderId = Number(req.params.riderId);
   const db = getDb();
 
   const rider = db
     .prepare("SELECT first_name, last_name FROM riders WHERE id = ?")
     .get(riderId) as { first_name: string; last_name: string } | undefined;
-  if (!rider) return res.status(404).json({ error: "Rider not found" });
+  if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   const row = db
     .prepare(
@@ -264,12 +264,12 @@ router.get("/clubs/:clubId/riders/:riderId/discount-code", (req, res) => {
 // POST /clubs/:clubId/riders/:riderId/discount-code — assign a comp code to a specific rider
 router.post("/clubs/:clubId/riders/:riderId/discount-code", (req, res) => {
   const userId = (req.session as any)?.userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const clubId = getClubId(req);
-  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  if (!clubId) return res.status(403).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
 
-  if (Number(req.params.clubId) !== clubId) return res.status(403).json({ error: "Forbidden" });
+  if (Number(req.params.clubId) !== clubId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
 
   const riderId = Number(req.params.riderId);
   const { amount, discountType = "fixed", expiresAt, code: customCode } = req.body;
@@ -278,12 +278,12 @@ router.post("/clubs/:clubId/riders/:riderId/discount-code", (req, res) => {
     return res.status(400).json({ error: "discountType must be fixed or percentage" });
   }
   if (!amount || !Number.isFinite(Number(amount)) || Number(amount) <= 0) {
-    return res.status(400).json({ error: "amount required and must be > 0" });
+    return res.status(400).json({ error: "Enter an amount greater than $0." });
   }
   if (discountType === "percentage" && Number(amount) > 100) {
     return res.status(400).json({ error: "Percentage discount cannot exceed 100%" });
   }
-  if (!riderUsableByClub(riderId, clubId)) return res.status(404).json({ error: "Rider not found" });
+  if (!riderUsableByClub(riderId, clubId)) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   const db = getDb();
   const code = customCode ? String(customCode).trim().toUpperCase() : generateCode();
@@ -325,12 +325,12 @@ router.post("/clubs/:clubId/riders/:riderId/discount-code", (req, res) => {
 // DELETE /clubs/:clubId/riders/:riderId/discount-code — deactivate rider-specific comp codes
 router.delete("/clubs/:clubId/riders/:riderId/discount-code", (req, res) => {
   const userId = (req.session as any)?.userId;
-  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const clubId = getClubId(req);
-  if (!clubId) return res.status(401).json({ error: "Unauthorized" });
+  if (!clubId) return res.status(403).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
 
-  if (Number(req.params.clubId) !== clubId) return res.status(403).json({ error: "Forbidden" });
+  if (Number(req.params.clubId) !== clubId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
 
   const riderId = Number(req.params.riderId);
   const db = getDb();

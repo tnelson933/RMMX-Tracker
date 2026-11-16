@@ -6,7 +6,7 @@ const router = Router();
 
 router.get("/stripe/connect/status", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const user = db

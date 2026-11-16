@@ -13,7 +13,7 @@ const router = Router();
 
 const signedIn = (req: any, res: any): boolean => {
   if ((req.session as any)?.userId) return true;
-  res.status(401).json({ error: "Unauthorized" });
+  res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   return false;
 };
 

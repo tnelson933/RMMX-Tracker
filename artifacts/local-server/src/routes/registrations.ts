@@ -3,6 +3,7 @@ import { normalizeActiveTransponderIdentifier, parseCashTendered } from "@worksp
 import { getDb, parseBool, parseJsonArr } from "../db";
 import { resolveRegistrationRider } from "../registration-rider";
 import { markRiderFieldsDirty } from "../rider-profile-dirty";
+import { registrationJson } from "../lib/registration-json";
 
 const router = Router();
 
@@ -36,7 +37,7 @@ function deserializeReg(r: Record<string, unknown>) {
 
 router.get("/events/:eventId/registrations", (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const eventId = Number(req.params.eventId);
   const db = getDb();
@@ -80,7 +81,7 @@ router.get("/events/:eventId/registrations", (req, res) => {
 
 router.post("/events/:eventId/registrations", (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const eventId = Number(req.params.eventId);
   const {
@@ -94,7 +95,7 @@ router.post("/events/:eventId/registrations", (req, res) => {
   } = req.body;
 
   if (!raceClass) {
-    return res.status(400).json({ error: "raceClass required" });
+    return res.status(400).json({ error: "Choose a class." });
   }
   const rawTransponderNumber =
     transponderNumber ?? req.body.myLapsTransponderNumber;
@@ -106,7 +107,7 @@ router.post("/events/:eventId/registrations", (req, res) => {
       rawTransponderNumber.trim() !== "");
   if (hasNonblankTransponder && !normalizedTransponderNumber) {
     return res.status(400).json({
-      error: "Active transponder number must be 1–9 hexadecimal characters",
+      error: "Enter the ID printed on the transponder (up to 9 numbers or letters A–F).",
     });
   }
 
@@ -182,7 +183,7 @@ router.post("/events/:eventId/registrations", (req, res) => {
 
 router.patch("/registrations/:registrationId", (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const id = Number(req.params.registrationId);
   const {
@@ -204,9 +205,21 @@ router.patch("/registrations/:registrationId", (req, res) => {
       rawTransponderNumber.trim() !== "");
   if (hasTransponderUpdate && hasNonblankTransponder && !normalizedTransponderNumber) {
     return res.status(400).json({
-      error: "Active transponder number must be 1–9 hexadecimal characters",
+      error: "Enter the ID printed on the transponder (up to 9 numbers or letters A–F).",
     });
   }
+
+  // Same input checks and wording as the website.
+  const oneOf = (field: string, allowed: string[]) =>
+    req.body[field] === undefined || allowed.includes(String(req.body[field])) ? null : `${field} must be one of: ${allowed.join(", ")}`;
+  const moneyProblem = (() => {
+    if (amountPaid === undefined || amountPaid === null || amountPaid === "") return null;
+    const n = Number(amountPaid);
+    if (!Number.isFinite(n) || n < 0) return "amountPaid must be a dollar amount of 0 or more";
+    return n > 100_000 ? "amountPaid is too large" : null;
+  })();
+  const invalid = oneOf("status", ["pending", "confirmed", "void"]) ?? oneOf("paymentStatus", ["unpaid", "paid", "refunded"]) ?? moneyProblem;
+  if (invalid) return res.status(400).json({ error: invalid });
 
   const updates: string[] = [];
   const params: unknown[] = [];
@@ -223,7 +236,7 @@ router.patch("/registrations/:registrationId", (req, res) => {
   }
   if (raceClass !== undefined) { updates.push("race_class = ?"); params.push(raceClass); }
   if (bibNumber !== undefined) { updates.push("bib_number = ?"); params.push(bibNumber || null); }
-  if (amountPaid !== undefined) { updates.push("amount_paid = ?"); params.push(amountPaid !== null ? String(amountPaid) : null); }
+  if (amountPaid !== undefined) { updates.push("amount_paid = ?"); params.push(amountPaid === null || amountPaid === "" ? null : String(amountPaid)); }
   if (paymentMethod !== undefined) { updates.push("payment_method = ?"); params.push(paymentMethod); }
   // Cash at the gate: log what the rider handed over and the change given (same rule as the cloud).
   if (paymentMethod === "cash" && req.body.cashTendered !== undefined) {
@@ -248,13 +261,41 @@ router.patch("/registrations/:registrationId", (req, res) => {
 
   params.push(id);
   const db = getDb();
+  // The rider and class before the change, to carry it over to check-in and results.
+  const before = db.prepare("SELECT rider_id, event_id, race_class FROM registrations WHERE id = ?").get(id) as
+    | { rider_id: number; event_id: number; race_class: string }
+    | undefined;
+  if (!before) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   db.prepare(`UPDATE registrations SET ${updates.join(", ")} WHERE id = ?`).run(...(params as any[]));
 
   const updated = db
     .prepare("SELECT * FROM registrations WHERE id = ?")
     .get(id) as Record<string, unknown> | undefined;
 
-  if (!updated) return res.status(404).json({ error: "Not found" });
+  if (!updated) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
+
+  // Entry moved to another rider: their check-in row for the event moves too
+  // (unless the new rider already has one for that class).
+  if (riderId !== undefined && before.rider_id !== Number(riderId)) {
+    const toMove = db.prepare("SELECT id, race_class FROM checkins WHERE event_id = ? AND rider_id = ? LIMIT 1")
+      .get(before.event_id, before.rider_id) as { id: number; race_class: string } | undefined;
+    const targetHas = toMove
+      ? db.prepare("SELECT id FROM checkins WHERE event_id = ? AND rider_id = ? AND race_class = ? LIMIT 1").get(before.event_id, Number(riderId), toMove.race_class)
+      : undefined;
+    if (toMove && !targetHas) db.prepare("UPDATE checkins SET rider_id = ? WHERE id = ?").run(Number(riderId), toMove.id);
+  }
+  // Class changed: the rider's check-in row and any results follow, as on the website.
+  if (raceClass !== undefined && before.race_class && raceClass !== before.race_class) {
+    const cascadeRiderId = Number(updated.rider_id);
+    const alreadyInNewClass = db.prepare("SELECT id FROM checkins WHERE event_id = ? AND rider_id = ? AND race_class = ? LIMIT 1")
+      .get(before.event_id, cascadeRiderId, raceClass);
+    if (!alreadyInNewClass) {
+      db.prepare("UPDATE checkins SET race_class = ? WHERE event_id = ? AND rider_id = ? AND race_class = ?")
+        .run(raceClass, before.event_id, cascadeRiderId, before.race_class);
+    }
+    db.prepare("UPDATE race_results SET race_class = ? WHERE event_id = ? AND rider_id = ? AND race_class = ?")
+      .run(raceClass, before.event_id, cascadeRiderId, before.race_class);
+  }
   if (normalizedTransponderNumber) {
     db.prepare(
       "UPDATE riders SET mylaps_transponder_id = ? WHERE id = ?",
@@ -275,13 +316,19 @@ router.patch("/registrations/:registrationId", (req, res) => {
     }
   }
 
-  return res.json(deserializeReg(updated));
+  const rider = db.prepare("SELECT first_name, last_name FROM riders WHERE id = ?").get(updated.rider_id as number) as any;
+  return res.json({
+    ...registrationJson(updated),
+    transponderNumber: updated.mylaps_transponder_number ?? null,
+    riderName: rider ? `${rider.first_name} ${rider.last_name}` : "",
+    amountPaid: updated.amount_paid ? Number(updated.amount_paid) : null,
+  });
 });
 
 // ── Public: look up a rider by email (walk-up registration pre-fill) ─────────
 router.get("/public/riders/lookup", (req, res) => {
   const email = ((req.query.email as string) || "").trim().toLowerCase();
-  if (!email) return res.status(400).json({ error: "email required" });
+  if (!email) return res.status(400).json({ error: "Enter an email address." });
 
   const db = getDb();
   const riders = db
@@ -345,7 +392,7 @@ router.get("/public/riders/lookup", (req, res) => {
 router.get("/public/events/:eventId/check-bib", (req, res) => {
   const eventId = Number(req.params.eventId);
   const bib = ((req.query.bib as string) || "").trim();
-  if (!bib) return res.status(400).json({ error: "bib required" });
+  if (!bib) return res.status(400).json({ error: "Enter a bib number." });
   const excludeRiderId = req.query.excludeRiderId ? Number(req.query.excludeRiderId) : null;
 
   const db = getDb();

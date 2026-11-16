@@ -42,27 +42,21 @@ export function resolveRegistrationRider(
   body: Record<string, unknown>,
 ): RiderResolution {
   const email = normalized(body.email);
-  if (
-    (body.firstName !== undefined && !normalized(body.firstName)) ||
-    (body.lastName !== undefined && !normalized(body.lastName))
-  ) {
-    return { status: 400, error: "firstName and lastName cannot be blank" };
-  }
   const explicitId = body.riderId;
   let rider: Record<string, unknown> | undefined;
 
   if (explicitId !== undefined && explicitId !== null && explicitId !== "") {
     const riderId = Number(explicitId);
     if (!Number.isInteger(riderId) || riderId <= 0) {
-      return { status: 400, error: "riderId must be a positive integer" };
+      return { status: 400, error: "This link looks broken. Go back and open it again from the list." };
     }
     if (!email) {
-      return { status: 400, error: "email is required when riderId is supplied" };
+      return { status: 400, error: "Enter the rider's email address." };
     }
     rider = db.prepare("SELECT * FROM riders WHERE id = ?").get(riderId) as
       | Record<string, unknown>
       | undefined;
-    if (!rider) return { status: 404, error: "Rider profile not found" };
+    if (!rider) return { status: 404, error: "This rider profile couldn't be found. It may have been deleted. Refresh the page and try again." };
     if (normalized(rider.email) !== email) {
       return {
         status: 409,
@@ -70,7 +64,7 @@ export function resolveRegistrationRider(
       };
     }
   } else {
-    if (!email) return { status: 400, error: "email is required" };
+    if (!email) return { status: 400, error: "Pick a rider, or enter a new rider's first name, last name and email." };
     const emailMatches = db
       .prepare("SELECT * FROM riders WHERE lower(trim(email)) = ? ORDER BY id ASC")
       .all(email) as Record<string, unknown>[];
@@ -92,7 +86,7 @@ export function resolveRegistrationRider(
     if (!firstName || !lastName) {
       return {
         status: 400,
-        error: "firstName and lastName are required",
+        error: "Enter the rider's first and last name.",
       };
     }
     const columns: string[] = [];
@@ -120,9 +114,12 @@ export function resolveRegistrationRider(
     const updates: string[] = [];
     const values: unknown[] = [];
     for (const [apiField, column] of profileFields) {
-      if (body[apiField] !== undefined) {
+      // As on the website: a blank field keeps the rider's saved value, and so
+      // does one still partly hidden ("***-***-0100") from the public lookup.
+      const value = body[apiField];
+      if (typeof value === "string" && value.trim() && !value.includes("*")) {
         updates.push(`${column} = ?`);
-        values.push(profileValue(body[apiField]));
+        values.push(value.trim());
       }
     }
     if (updates.length) {

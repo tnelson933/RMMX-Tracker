@@ -32,7 +32,7 @@ function getUserClubId(session: any): number | null {
 // GET /points-tables
 router.get("/points-tables", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const clubId = getUserClubId(session);
@@ -64,7 +64,7 @@ function tableInputError(body: any): string | null {
     try {
       evaluateFormula(String(body.scoringFormula), { position: 1, riders: 10 });
     } catch (err) {
-      return `Invalid scoring formula: ${(err as Error).message}`;
+      return `Invalid scoring formula: ${(err as Error).message}. Use position, riders, numbers, + - * / % **, comparisons, ?:, and Math functions.`;
     }
   }
   return null;
@@ -73,11 +73,11 @@ function tableInputError(body: any): string | null {
 // POST /points-tables
 router.post("/points-tables", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const clubId = getUserClubId(session);
-  if (!clubId) return res.status(403).json({ error: "No club associated with account" });
+  if (!clubId) return res.status(403).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
 
   const {
     name, description, scoringMethod, mainEventOnly,
@@ -85,7 +85,7 @@ router.post("/points-tables", (req, res) => {
   } = req.body;
 
   if (!name || !scoringMethod || !Array.isArray(pointsScale)) {
-    return res.status(400).json({ error: "name, scoringMethod, and pointsScale are required" });
+    return res.status(400).json({ error: "Enter a name, choose a scoring method, and fill in the points." });
   }
   const invalid = tableInputError(req.body);
   if (invalid) return res.status(400).json({ error: invalid });
@@ -115,13 +115,13 @@ router.post("/points-tables", (req, res) => {
 // PATCH /points-tables/:tableId
 router.patch("/points-tables/:tableId", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const id = Number(req.params.tableId);
   const existing = db.prepare("SELECT is_system_default FROM points_tables WHERE id = ?").get(id) as any;
-  if (!existing) return res.status(404).json({ error: "Not found" });
-  if (existing.is_system_default === 1) return res.status(403).json({ error: "System default tables cannot be edited" });
+  if (!existing) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
+  if (existing.is_system_default === 1) return res.status(403).json({ error: "Built-in scoring tables can't be edited. Make a copy, then edit the copy." });
   const invalid = tableInputError(req.body);
   if (invalid) return res.status(400).json({ error: invalid });
 
@@ -143,20 +143,20 @@ router.patch("/points-tables/:tableId", (req, res) => {
   db.prepare(`UPDATE points_tables SET ${fields.join(", ")} WHERE id = ?`).run(...(values as any[]));
 
   const row = db.prepare("SELECT * FROM points_tables WHERE id = ?").get(id) as any;
-  if (!row) return res.status(404).json({ error: "Not found" });
+  if (!row) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   return res.json(serializeTable(row));
 });
 
 // DELETE /points-tables/:tableId
 router.delete("/points-tables/:tableId", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const id = Number(req.params.tableId);
   const row = db.prepare("SELECT is_system_default FROM points_tables WHERE id = ?").get(id) as any;
-  if (!row) return res.status(404).json({ error: "Not found" });
-  if (row.is_system_default === 1) return res.status(409).json({ error: "Cannot delete system default table" });
+  if (!row) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
+  if (row.is_system_default === 1) return res.status(403).json({ error: "Built-in scoring tables can't be deleted." });
 
   const seriesUse = db
     .prepare("SELECT id FROM series WHERE scoring_table_id = ? LIMIT 1")
@@ -166,7 +166,7 @@ router.delete("/points-tables/:tableId", (req, res) => {
     .get(id) as any;
   if (seriesUse || eventUse) {
     return res.status(409).json({
-      error: "Cannot delete: scoring table is referenced by one or more series or events",
+      error: "This scoring table is still in use and can't be deleted.",
     });
   }
 

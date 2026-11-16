@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { compareOverall, isLowerBetter, olympicPenalty, overallPositions } from "../lib/overallOrder";
 import { getDb } from "../db";
+import { computeSeriesStandings } from "../lib/series-standings";
 
 const router = Router();
 
@@ -53,7 +54,7 @@ function classOfficial(motos: any[], raceClass: string): boolean {
 
 router.get("/series", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const clubId = getUserClubId(session);
@@ -68,15 +69,15 @@ router.get("/series", (req, res) => {
 // POST /series
 router.post("/series", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const clubId = getUserClubId(session);
-  if (!clubId) return res.status(403).json({ error: "No club associated with account" });
+  if (!clubId) return res.status(403).json({ error: "Your account isn't linked to a club yet. Ask your club's owner to add you on the Team page." });
 
   const { name, season, classes, pointsSystem, scoringTableId, eventIds } = req.body;
   if (!name || !season) {
-    return res.status(400).json({ error: "name and season are required" });
+    return res.status(400).json({ error: "Enter a series name and season." });
   }
 
   const result = db
@@ -102,7 +103,7 @@ router.post("/series", (req, res) => {
 // PATCH /series/:seriesId
 router.patch("/series/:seriesId", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const id = Number(req.params.seriesId);
@@ -126,152 +127,44 @@ router.patch("/series/:seriesId", (req, res) => {
   db.prepare(`UPDATE series SET ${fields.join(", ")} WHERE id = ?`).run(...(values as any[]));
 
   const row = db.prepare("SELECT * FROM series WHERE id = ?").get(id) as any;
-  if (!row) return res.status(404).json({ error: "Not found" });
+  if (!row) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   return res.json(serializeSeries(row));
 });
 
 // DELETE /series/:seriesId
 router.delete("/series/:seriesId", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const id = Number(req.params.seriesId);
   const result = db.prepare("DELETE FROM series WHERE id = ?").run(id);
-  if (result.changes === 0) return res.status(404).json({ error: "Not found" });
+  if (result.changes === 0) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   return res.status(204).send();
 });
 
 // GET /series/:seriesId/leaderboard — computed standings (matches OpenAPI spec)
 router.get("/series/:seriesId/leaderboard", (req, res) => {
-  const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
-
   const db = getDb();
   const id = Number(req.params.seriesId);
 
   const series = db.prepare("SELECT * FROM series WHERE id = ?").get(id) as any;
-  if (!series) return res.status(404).json({ error: "Not found" });
-  const lowerIsBetter = seriesLowerIsBetter(series);
-
-  const eventIds: number[] = uniqueIds((() => { try { return JSON.parse(series.event_ids || "[]"); } catch { return []; } })());
-  if (eventIds.length === 0) return res.json([]);
-
-  const ph = eventIds.map(() => "?").join(",");
-
-  const events = db.prepare(`SELECT id, name FROM events WHERE id IN (${ph})`).all(...eventIds) as any[];
-  const eventNameMap: Record<number, string> = {};
-  events.forEach((e: any) => { eventNameMap[e.id] = e.name; });
-
-  const motos = db.prepare(`SELECT * FROM motos WHERE event_id IN (${ph}) AND status = 'completed' AND type != 'practice'`).all(...eventIds) as any[];
-  if (motos.length === 0) return res.json([]);
-
-  const motoIds = motos.map((m: any) => m.id);
-  const motoPh = motoIds.map(() => "?").join(",");
-
-  const results = db.prepare(`
-    SELECT rr.moto_id, rr.rider_id, r.first_name, r.last_name,
-           rr.race_class, rr.position, rr.points, rr.dnf, rr.dns
-    FROM race_results rr
-    LEFT JOIN riders r ON rr.rider_id = r.id
-    WHERE rr.moto_id IN (${motoPh})
-  `).all(...motoIds) as any[];
-
-  const classByEvent: Record<string, Record<number, { moto: any; results: any[] }[]>> = {};
-
-  for (const moto of motos) {
-    const cls = moto.race_class ?? "";
-    if (!classByEvent[cls]) classByEvent[cls] = {};
-    if (!classByEvent[cls][moto.event_id]) classByEvent[cls][moto.event_id] = [];
-    const motoResults = results.filter((r: any) => r.moto_id === moto.id);
-    classByEvent[cls][moto.event_id].push({ moto, results: motoResults });
-  }
-
-  const standings: any[] = [];
-
-  for (const [raceClass, eventMap] of Object.entries(classByEvent)) {
-    const riderNames: Record<number, string> = {};
-    for (const motoEntries of Object.values(eventMap)) {
-      for (const { results: rs } of motoEntries) {
-        for (const r of rs) {
-          riderNames[r.rider_id] = `${r.first_name ?? ""} ${r.last_name ?? ""}`.trim();
-        }
-      }
-    }
-
-    const classRows: any[] = [];
-    for (const riderId of Object.keys(riderNames).map(Number)) {
-      let totalScore = 0;
-      let eventsEntered = 0;
-      let finishedAny = false;
-      let lastMotoFinish: number | null = null;
-      const eventBreakdowns: any[] = [];
-
-      for (const eventId of eventIds) {
-        const motoEntries = eventMap[eventId];
-        if (!motoEntries?.length) continue;
-
-        const sortedMotos = [...motoEntries].sort((a, b) => (a.moto.moto_number ?? 0) - (b.moto.moto_number ?? 0));
-        let eventScore = 0;
-        const motoPositions: number[] = [];
-        let attended = false;
-
-        for (const { results: motoResults } of sortedMotos) {
-          const result = motoResults.find((r: any) => r.rider_id === riderId);
-          lastMotoFinish = result && !result.dnf && !result.dns ? (result.position ?? null) : null;
-          if (lastMotoFinish != null) finishedAny = true;
-          if (result) {
-            attended = true;
-            const pts = lowerIsBetter && (result.dnf || result.dns)
-              ? olympicPenalty(result.dns ? "dns" : "dnf", motoResults.length)
-              : (result.dnf || result.dns) ? 0 : (result.points ?? 0);
-            eventScore += pts;
-            motoPositions.push(pts);
-          } else if (lowerIsBetter) {
-            // Olympic: a missed moto scores as a DNS.
-            const pts = olympicPenalty("dns", motoResults.length);
-            eventScore += pts;
-            motoPositions.push(pts);
-          } else {
-            motoPositions.push(0);
-          }
-        }
-
-        if (attended) eventsEntered++;
-        totalScore += eventScore;
-        eventBreakdowns.push({
-          eventId,
-          eventName: eventNameMap[eventId] ?? `Event ${eventId}`,
-          eventScore,
-          attended,
-          motos: motoPositions,
-        });
-      }
-
-      classRows.push({ position: 0, riderId, riderName: riderNames[riderId], raceClass, totalScore, eventsEntered, official: classOfficial(motos, raceClass), events: eventBreakdowns, lowerIsBetter, _order: { total: totalScore, finishedAny, lastMotoFinish } } as any);
-    }
-
-    // Highest total first, or Olympic (lowest first, finishers ahead, ties to the last moto).
-    classRows.sort((a, b) => compareOverall(a._order, b._order, lowerIsBetter));
-    const positions = overallPositions(classRows.map((r: any) => r._order), lowerIsBetter);
-    classRows.forEach((row, idx) => { row.position = positions[idx]; delete row._order; });
-
-    standings.push(...classRows);
-  }
-
-  return res.json(standings);
+  if (!series) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
+  // Same standings as the website: finished races count, each class flagged
+  // official once all its races are finalized.
+  return res.json(computeSeriesStandings(series).standings);
 });
 
 // POST /series/:seriesId/recalculate — compute & upsert series_points from race_results
 router.post("/series/:seriesId/recalculate", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const id = Number(req.params.seriesId);
 
   const series = db.prepare("SELECT * FROM series WHERE id = ?").get(id) as any;
-  if (!series) return res.status(404).json({ error: "Not found" });
+  if (!series) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   const lowerIsBetter = seriesLowerIsBetter(series);
 
   const eventIds: number[] = uniqueIds((() => { try { return JSON.parse(series.event_ids || "[]"); } catch { return []; } })());
@@ -333,7 +226,7 @@ router.post("/series/:seriesId/recalculate", (req, res) => {
 // GET /series/:seriesId/points — legacy alias kept for backward compat
 router.get("/series/:seriesId/points", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const id = Number(req.params.seriesId);
@@ -373,7 +266,7 @@ router.get("/public/series/:seriesId", (req, res) => {
   const id = Number(req.params.seriesId);
 
   const series = db.prepare("SELECT * FROM series WHERE id = ?").get(id) as any;
-  if (!series) return res.status(404).json({ error: "Not found" });
+  if (!series) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   const lowerIsBetter = seriesLowerIsBetter(series);
 
   const eventIds: number[] = uniqueIds((() => { try { return JSON.parse(series.event_ids || "[]"); } catch { return []; } })());
@@ -405,112 +298,18 @@ router.get("/public/series/:seriesId/standings", (req, res) => {
   const id = Number(req.params.seriesId);
 
   const series = db.prepare("SELECT * FROM series WHERE id = ?").get(id) as any;
-  if (!series) return res.status(404).json({ error: "Not found" });
-  const lowerIsBetter = seriesLowerIsBetter(series);
+  if (!series) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
 
-  const eventIds: number[] = uniqueIds((() => { try { return JSON.parse(series.event_ids || "[]"); } catch { return []; } })());
-  if (eventIds.length === 0) return res.json([]);
+  const { standings: rows, eventIds } = computeSeriesStandings(series);
+  const standings = rows.map(row => ({ ...row, amaNumber: null as string | null, bikeBrand: null as string | null }));
 
-  const ph = eventIds.map(() => "?").join(",");
-
-  const events = db.prepare(`SELECT id, name FROM events WHERE id IN (${ph})`).all(...eventIds) as any[];
-  const eventNameMap: Record<number, string> = {};
-  events.forEach((e: any) => { eventNameMap[e.id] = e.name; });
-
-  const motos = db.prepare(`SELECT * FROM motos WHERE event_id IN (${ph}) AND status = 'completed' AND type != 'practice'`).all(...eventIds) as any[];
-  if (motos.length === 0) return res.json([]);
-
-  const motoIds = motos.map((m: any) => m.id);
-  const motoPh = motoIds.map(() => "?").join(",");
-
-  const results = db.prepare(`
-    SELECT rr.moto_id, rr.rider_id, r.first_name, r.last_name,
-           rr.race_class, rr.position, rr.points, rr.dnf, rr.dns
-    FROM race_results rr
-    LEFT JOIN riders r ON rr.rider_id = r.id
-    WHERE rr.moto_id IN (${motoPh})
-  `).all(...motoIds) as any[];
-
-  const classByEvent: Record<string, Record<number, { moto: any; results: any[] }[]>> = {};
-  for (const moto of motos) {
-    const cls = moto.race_class ?? "";
-    if (!classByEvent[cls]) classByEvent[cls] = {};
-    if (!classByEvent[cls][moto.event_id]) classByEvent[cls][moto.event_id] = [];
-    classByEvent[cls][moto.event_id].push({ moto, results: results.filter((r: any) => r.moto_id === moto.id) });
-  }
-
-  const standings: any[] = [];
-
-  for (const [raceClass, eventMap] of Object.entries(classByEvent)) {
-    const riderNames: Record<number, string> = {};
-    for (const motoEntries of Object.values(eventMap)) {
-      for (const { results: rs } of motoEntries) {
-        for (const r of rs) {
-          riderNames[r.rider_id] = `${r.first_name ?? ""} ${r.last_name ?? ""}`.trim();
-        }
-      }
-    }
-
-    const classRows: any[] = [];
-    for (const riderId of Object.keys(riderNames).map(Number)) {
-      let totalScore = 0;
-      let eventsEntered = 0;
-      let finishedAny = false;
-      let lastMotoFinish: number | null = null;
-      const eventBreakdowns: any[] = [];
-
-      for (const eventId of eventIds) {
-        const motoEntries = eventMap[eventId];
-        if (!motoEntries?.length) continue;
-        const sortedMotos = [...motoEntries].sort((a, b) => (a.moto.moto_number ?? 0) - (b.moto.moto_number ?? 0));
-        let eventScore = 0;
-        const motoPositions: number[] = [];
-        let attended = false;
-
-        for (const { results: motoResults } of sortedMotos) {
-          const result = motoResults.find((r: any) => r.rider_id === riderId);
-          lastMotoFinish = result && !result.dnf && !result.dns ? (result.position ?? null) : null;
-          if (lastMotoFinish != null) finishedAny = true;
-          if (result) {
-            attended = true;
-            const pts = lowerIsBetter && (result.dnf || result.dns)
-              ? olympicPenalty(result.dns ? "dns" : "dnf", motoResults.length)
-              : (result.dnf || result.dns) ? 0 : (result.points ?? 0);
-            eventScore += pts;
-            motoPositions.push(pts);
-          } else if (lowerIsBetter) {
-            // Olympic: a missed moto scores as a DNS.
-            const pts = olympicPenalty("dns", motoResults.length);
-            eventScore += pts;
-            motoPositions.push(pts);
-          } else {
-            motoPositions.push(0);
-          }
-        }
-
-        if (attended) eventsEntered++;
-        totalScore += eventScore;
-        eventBreakdowns.push({ eventId, eventName: eventNameMap[eventId] ?? `Event ${eventId}`, eventScore, attended, motos: motoPositions });
-      }
-
-      classRows.push({ position: 0, riderId, riderName: riderNames[riderId], raceClass, totalScore, eventsEntered, official: classOfficial(motos, raceClass), amaNumber: null, bikeBrand: null, events: eventBreakdowns, lowerIsBetter, _order: { total: totalScore, finishedAny, lastMotoFinish } } as any);
-    }
-
-    // Highest total first, or Olympic (lowest first, finishers ahead, ties to the last moto).
-    classRows.sort((a, b) => compareOverall(a._order, b._order, lowerIsBetter));
-    const positions = overallPositions(classRows.map((r: any) => r._order), lowerIsBetter);
-    classRows.forEach((row, idx) => { row.position = positions[idx]; delete row._order; });
-    standings.push(...classRows);
-  }
-
-  // Enrich with amaNumber and bikeBrand from registrations
+  // AMA number and bike from the riders' entries in the series' events.
   const allRiderIds = [...new Set(standings.map((s: any) => s.riderId))];
-  if (allRiderIds.length > 0) {
-    const ridPh = allRiderIds.map(() => "?").join(",");
+  if (allRiderIds.length > 0 && eventIds.length > 0) {
     const regs = db.prepare(
-      `SELECT rider_id, ama_number, bike_brand FROM registrations WHERE rider_id IN (${ridPh}) AND event_id IN (${ph})`
+      `SELECT rider_id, ama_number, bike_brand FROM registrations
+       WHERE rider_id IN (${allRiderIds.map(() => "?").join(",")}) AND event_id IN (${eventIds.map(() => "?").join(",")}) ORDER BY id`
     ).all(...allRiderIds, ...eventIds) as any[];
-
     const riderInfo: Record<number, { amaNumber: string | null; bikeBrand: string | null }> = {};
     for (const reg of regs) {
       if (!riderInfo[reg.rider_id]) riderInfo[reg.rider_id] = { amaNumber: null, bikeBrand: null };

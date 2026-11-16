@@ -7,7 +7,8 @@ const router = Router();
 function formatUser(u: Record<string, unknown>) {
   const firstName = String(u.first_name ?? "").trim();
   const lastName = String(u.last_name ?? "").trim();
-  const fullName = [firstName, lastName].filter(Boolean).join(" ") || String(u.email ?? "");
+  // The cloud stores one name; first/last are only set by an offline profile edit.
+  const fullName = [firstName, lastName].filter(Boolean).join(" ") || String(u.name ?? "").trim() || String(u.email ?? "");
   return {
     id: u.id,
     email: u.email,
@@ -25,7 +26,7 @@ function formatUser(u: Record<string, unknown>) {
 router.post("/auth/login", async (req, res) => {
   const { email, password, rememberMe } = req.body;
   if (!email || !password) {
-    return res.status(400).json({ error: "Email and password required" });
+    return res.status(400).json({ error: "Enter both your email address and your password." });
   }
 
   const db = getDb();
@@ -39,13 +40,13 @@ router.post("/auth/login", async (req, res) => {
 
   if (!user.password_hash) {
     return res.status(401).json({
-      error: "Account not activated yet. Check your email for a setup link.",
+      error: "This account hasn't been set up yet. Open the setup link in your invitation email, or use \"First time signing in? Set up your account\" below to get a new link.",
     });
   }
 
   const valid = await bcrypt.compare(String(password), String(user.password_hash));
   if (!valid) {
-    return res.status(401).json({ error: "Invalid credentials" });
+    return res.status(401).json({ error: "That password doesn't match this account. Check that Caps Lock is off, or use \"Forgot your password?\" below to reset it." });
   }
 
   (req.session as any).userId = user.id;
@@ -67,7 +68,7 @@ router.post("/auth/logout", (req, res) => {
 router.get("/auth/me", (req, res) => {
   const userId = (req.session as any).userId;
   if (!userId) {
-    return res.status(401).json({ error: "Not authenticated" });
+    return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   }
 
   const db = getDb();
@@ -76,15 +77,16 @@ router.get("/auth/me", (req, res) => {
     .get(userId) as Record<string, unknown> | undefined;
 
   if (!user) {
-    return res.status(401).json({ error: "Not authenticated" });
+    return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   }
 
-  return res.json(formatUser(user));
+  // mirror: set by the website while a platform admin views as this organizer; never offline.
+  return res.json({ ...formatUser(user), mirror: null });
 });
 
 router.patch("/auth/me", async (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const { name, email, password } = req.body;
@@ -121,24 +123,24 @@ router.patch("/auth/me", async (req, res) => {
 
 router.post("/auth/complete-tour", (req, res) => {
   const userId = (req.session as any).userId;
-  if (!userId) return res.status(401).json({ error: "Not authenticated" });
+  if (!userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   getDb().prepare("UPDATE users SET tour_completed = 1 WHERE id = ?").run(userId);
   return res.json({ ok: true });
 });
 
 router.post("/auth/request-setup", (req, res) => {
   const { email } = req.body;
-  if (!email) return res.status(400).json({ error: "Email required" });
+  if (!email) return res.status(400).json({ error: "Enter an email address." });
   return res.json({ ok: true });
 });
 
 router.post("/auth/complete-setup", async (req, res) => {
   const { token, password } = req.body;
   if (!token || !password) {
-    return res.status(400).json({ error: "Token and password are required" });
+    return res.status(400).json({ error: "This reset link is incomplete. Open the link from your email again." });
   }
   if (String(password).length < 8) {
-    return res.status(400).json({ error: "Password must be at least 8 characters" });
+    return res.status(400).json({ error: "Use a password with at least 8 characters." });
   }
 
   const db = getDb();

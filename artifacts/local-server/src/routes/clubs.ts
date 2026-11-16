@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { getDb } from "../db";
+import { isoTime, parseJson } from "../lib/cloud-shape";
 
 const router = Router();
 
@@ -13,9 +14,34 @@ function serializeClub(c: any) {
     logoUrl: c.logo_url ?? null,
     website: c.website ?? null,
     description: c.description ?? null,
+    // Payment account state as last pulled from the cloud (Stripe itself is online only).
+    stripeAccountId: c.stripe_account_id ?? null,
+    stripeOnboardingComplete: c.stripe_onboarding_complete === 1,
+    stripeDirectCharges: c.stripe_direct_charges === 1,
+    stripePendingAccountId: c.stripe_pending_account_id ?? null,
+    stripeTerminalLocationId: c.stripe_terminal_location_id ?? null,
     autoDnfEnabled: c.auto_dnf_enabled === 1,
     autoDnfThreshold: c.auto_dnf_threshold ?? 75,
-    createdAt: c.created_at,
+    active: c.active == null ? true : c.active === 1,
+    timingIngestAuth: c.timing_ingest_auth ?? "off",
+    createdAt: isoTime(c.created_at),
+  };
+}
+
+/** The website's club settings JSON, from the copy pulled from the cloud. */
+function clubSettingsJson(clubId: number) {
+  const db = getDb();
+  const row = db.prepare("SELECT * FROM club_settings WHERE id = ?").get(clubId) as any;
+  return {
+    clubId,
+    riderAcknowledgement: row?.rider_acknowledgement ?? null,
+    waiverPdfUrl: row?.waiver_pdf_url ?? null,
+    liabilityWaiverText: row?.liability_waiver_text ?? null,
+    liabilityWaiverPdfUrl: row?.liability_waiver_pdf_url ?? null,
+    liabilityWaiverFields: parseJson<unknown>(row?.liability_waiver_fields, null),
+    defaultClasses: parseJson<unknown[]>(row?.default_classes, []) ?? [],
+    brandContingencies: parseJson<unknown[]>(row?.brand_contingencies, []) ?? [],
+    trackName: row?.track_name ?? null,
   };
 }
 
@@ -30,19 +56,19 @@ function getUserClubId(session: any): number | null {
 // GET /clubs/:clubId
 router.get("/clubs/:clubId", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const id = Number(req.params.clubId);
   const club = db.prepare("SELECT * FROM clubs WHERE id = ?").get(id) as any;
-  if (!club) return res.status(404).json({ error: "Not found" });
+  if (!club) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   return res.json(serializeClub(club));
 });
 
 // GET /clubs  (returns the user's club)
 router.get("/clubs", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const clubId = getUserClubId(session);
@@ -50,13 +76,20 @@ router.get("/clubs", (req, res) => {
 
   const club = db.prepare("SELECT * FROM clubs WHERE id = ?").get(clubId) as any;
   if (!club) return res.json([]);
-  return res.json([serializeClub(club)]);
+  // The club's organizer account, as the website lists it.
+  const org = db
+    .prepare("SELECT id, name, email, password_hash FROM users WHERE role = 'club_organizer' AND club_id = ? ORDER BY id LIMIT 1")
+    .get(clubId) as any;
+  return res.json([{
+    ...serializeClub(club),
+    organizer: org ? { id: org.id, name: org.name ?? "", email: org.email, hasPassword: !!org.password_hash } : null,
+  }]);
 });
 
 // PATCH /clubs/:clubId
 router.patch("/clubs/:clubId", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const id = Number(req.params.clubId);
@@ -100,76 +133,54 @@ router.patch("/clubs/:clubId", (req, res) => {
   );
 
   const club = db.prepare("SELECT * FROM clubs WHERE id = ?").get(id) as any;
-  if (!club) return res.status(404).json({ error: "Not found" });
+  if (!club) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   return res.json(serializeClub(club));
 });
 
 // GET /clubs/:clubId/settings
 router.get("/clubs/:clubId/settings", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const id = Number(req.params.clubId);
-  const club = db
-    .prepare("SELECT id, rider_acknowledgement, default_classes, track_name FROM clubs WHERE id = ?")
-    .get(id) as any;
-  if (!club) return res.status(404).json({ error: "Not found" });
-
-  let defaultClasses: unknown[] = [];
-  try { defaultClasses = JSON.parse(club.default_classes ?? "[]"); } catch { /* ignore */ }
-
-  return res.json({
-    clubId: club.id,
-    riderAcknowledgement: club.rider_acknowledgement ?? null,
-    defaultClasses,
-    trackName: club.track_name ?? null,
-  });
+  const club = db.prepare("SELECT id FROM clubs WHERE id = ?").get(id) as any;
+  if (!club) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
+  return res.json(clubSettingsJson(id));
 });
 
 // PUT /clubs/:clubId/settings
 router.put("/clubs/:clubId/settings", (req, res) => {
   const session = req.session as any;
-  if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const db = getDb();
   const id = Number(req.params.clubId);
 
-  const fields: string[] = [];
-  const values: unknown[] = [];
+  const club = db.prepare("SELECT id FROM clubs WHERE id = ?").get(id) as any;
+  if (!club) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
 
-  if (req.body.riderAcknowledgement !== undefined) {
-    fields.push("rider_acknowledgement = ?");
-    values.push(req.body.riderAcknowledgement ?? null);
+  // Saved in club_settings (the table check-in and registration read, and the
+  // one the sync sends to the website), one column per field sent.
+  const text = (v: unknown) => (typeof v === "string" && v.trim() ? v : null);
+  const columns: Record<string, unknown> = {};
+  const b = req.body ?? {};
+  if (b.riderAcknowledgement !== undefined) columns.rider_acknowledgement = text(b.riderAcknowledgement);
+  if (b.waiverPdfUrl !== undefined) columns.waiver_pdf_url = text(b.waiverPdfUrl);
+  if (b.liabilityWaiverText !== undefined) columns.liability_waiver_text = text(b.liabilityWaiverText);
+  if (b.liabilityWaiverPdfUrl !== undefined) columns.liability_waiver_pdf_url = text(b.liabilityWaiverPdfUrl);
+  if (b.liabilityWaiverFields !== undefined) columns.liability_waiver_fields = b.liabilityWaiverFields == null ? null : JSON.stringify(b.liabilityWaiverFields);
+  if (b.defaultClasses !== undefined) columns.default_classes = JSON.stringify(Array.isArray(b.defaultClasses) ? b.defaultClasses : []);
+  if (b.brandContingencies !== undefined) columns.brand_contingencies = JSON.stringify(Array.isArray(b.brandContingencies) ? b.brandContingencies : []);
+  if (b.trackName !== undefined) columns.track_name = typeof b.trackName === "string" && b.trackName.trim() ? b.trackName.trim().slice(0, 120) : null;
+
+  db.prepare("INSERT OR IGNORE INTO club_settings (id, club_id) VALUES (?, ?)").run(id, id);
+  const names = Object.keys(columns);
+  if (names.length > 0) {
+    db.prepare(`UPDATE club_settings SET ${names.map(n => `${n} = ?`).join(", ")} WHERE id = ?`)
+      .run(...(Object.values(columns) as any[]), id);
   }
-  if (req.body.defaultClasses !== undefined) {
-    fields.push("default_classes = ?");
-    values.push(JSON.stringify(Array.isArray(req.body.defaultClasses) ? req.body.defaultClasses : []));
-  }
-  if (req.body.trackName !== undefined) {
-    fields.push("track_name = ?");
-    values.push(req.body.trackName ?? null);
-  }
-
-  if (fields.length > 0) {
-    values.push(id);
-    db.prepare(`UPDATE clubs SET ${fields.join(", ")} WHERE id = ?`).run(...(values as any[]));
-  }
-
-  const club = db
-    .prepare("SELECT id, rider_acknowledgement, default_classes, track_name FROM clubs WHERE id = ?")
-    .get(id) as any;
-  if (!club) return res.status(404).json({ error: "Not found" });
-
-  let defaultClasses: unknown[] = [];
-  try { defaultClasses = JSON.parse(club.default_classes ?? "[]"); } catch { /* ignore */ }
-
-  return res.json({
-    clubId: club.id,
-    riderAcknowledgement: club.rider_acknowledgement ?? null,
-    defaultClasses,
-    trackName: club.track_name ?? null,
-  });
+  return res.json(clubSettingsJson(id));
 });
 
 export default router;
