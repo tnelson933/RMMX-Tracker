@@ -13,6 +13,7 @@ import path from "path";
 import fs from "fs";
 import http from "http";
 import crypto from "crypto";
+import dns from "dns";
 import { ChildProcess, spawn } from "child_process";
 import { SyncEngine } from "./sync-engine";
 import {
@@ -32,26 +33,11 @@ import {
   connectPort,
   disconnectPort,
 } from "./serial";
-import {
-  connectActiveTransponder,
-  configureActiveTransponder,
-  disconnectActiveTransponder,
-  getActiveTransponderStatus,
-  normalizeActiveTransponderAddress,
-  reportActiveTransponderError,
-  startActiveTransponderTest,
-  stopActiveTransponderTest,
-  setActiveTransponderReading,
-  syncActiveTransponderClock,
-  type ActiveTransponderConfiguration,
-} from "./active-transponder";
+import type { ActiveTransponderConfiguration } from "./active-transponder";
 import { getNetworkInfo, scanLocalNetwork, probeDevice } from "./network-discovery";
-import {
-  connectRfidNetworkReader,
-  disconnectRfidNetworkReader,
-  getRfidNetworkStatus,
-  type RfidHardware,
-} from "./rfid-network";
+import type { RfidHardware } from "./rfid-network";
+import { ReaderManager, type ReaderInput, type ReaderStatus, type SavedReader } from "./reader-manager";
+import { postCrossingToLocalServer } from "./crossing-post";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -141,96 +127,85 @@ function getDbPath(): string {
   return path.join(app.getPath("userData"), "race_data.db");
 }
 
-function getActiveTransponderSettingsPath(): string {
-  return path.join(app.getPath("userData"), "active-transponder.json");
+// ── Timing readers ────────────────────────────────────────────────────────────
+
+let readerManager: ReaderManager | null = null;
+
+/**
+ * Every timing reader this computer connects to (several RM TrackRs and RFID
+ * readers at once). Readers that were connected when the app last closed
+ * reconnect at launch and keep retrying in the background.
+ */
+function readers(): ReaderManager {
+  readerManager ??= new ReaderManager({
+    settingsDir: app.getPath("userData"),
+    localServerPort: LOCAL_PORT,
+    httpAgent: LOCAL_TIMING_HTTP_AGENT,
+    onStatus: sendReaderStatus,
+    onCrossingResponse: flushSyncSoon,
+    rediscover: findMovedReader,
+    log: (message) => console.log(`[readers] ${message}`),
+  });
+  return readerManager;
 }
 
-interface ActiveTransponderSettings {
-  address?: string;
-  configuration?: ActiveTransponderConfiguration;
-  /** The reader was connected when the app last closed: reconnect at launch. */
-  autoConnect?: boolean;
-}
-
-function loadActiveTransponderSettings(): ActiveTransponderSettings {
-  try {
-    const saved = JSON.parse(fs.readFileSync(getActiveTransponderSettingsPath(), "utf8")) as ActiveTransponderSettings;
-    return saved && typeof saved === "object" ? saved : {};
-  } catch {
-    return {};
+function sendReaderStatus(status: ReaderStatus): void {
+  const contents = mainWindow?.webContents;
+  if (!contents || contents.isDestroyed()) return;
+  contents.send("readers:status", status);
+  // Single-reader pages (and older bundled ones) follow the first reader of each kind.
+  if (status.active && readerManager?.firstOfKind("rm_trackr")?.id === status.id) {
+    contents.send("active-transponder:status", status.active);
+  } else if (status.rfid && readerManager?.firstOfKind("rfid")?.id === status.id) {
+    contents.send("rfid-network:status", status.rfid);
   }
 }
 
-function loadActiveTransponderAddress(): string {
-  return typeof loadActiveTransponderSettings().address === "string" ? loadActiveTransponderSettings().address! : "";
+/** After the list changed (added, removed, renamed, connected, disconnected). */
+function sendReaderList(): void {
+  const contents = mainWindow?.webContents;
+  if (!contents || contents.isDestroyed()) return;
+  contents.send("readers:changed", readers().list());
+  contents.send("active-transponder:status", readers().activeStatus(readers().firstOfKind("rm_trackr")?.id));
+  contents.send("rfid-network:status", readers().rfidStatus(readers().firstOfKind("rfid")?.id));
+}
+
+function flushSyncSoon(): void {
+  if (syncEngine) {
+    setTimeout(() => void syncEngine?.flush(), 800);
+  }
+}
+
+/** Resolve a host name (e.g. impinj-xx-xx-xx.local) to its IP; null if it can't be found quickly. */
+function resolveReaderHost(address: string): Promise<string | null> {
+  const bare = address.trim().replace(/^\[([^\]]+)\](?::\d+)?$/, "$1").replace(/:\d+$/, "");
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(bare)) return Promise.resolve(bare);
+  return Promise.race([
+    dns.promises.lookup(bare, { family: 4 }).then(r => r.address).catch(() => null),
+    new Promise<null>(resolve => setTimeout(() => resolve(null), 3000)),
+  ]);
 }
 
 /**
- * Connects to the RM TrackR (the given address, or the saved one) and sends
- * its reads to the local timing server. Remembers the reader so the next
- * launch reconnects by itself, the way RM Connect does.
+ * A reader that keeps failing may have been given a new address (router
+ * restarted). Scan this computer's network; when exactly one reader of the
+ * same kind answers at an address no other saved reader uses, that is it.
  */
-async function connectRmTrackr(ip?: string): Promise<void> {
-  const savedSettings = loadActiveTransponderSettings();
-  const requestedAddress = ip?.trim() || loadActiveTransponderAddress();
-  // Validate before attempting the network connection, and retain the
-  // normalized endpoint only after a successful direct connection.
-  const normalized = normalizeActiveTransponderAddress(requestedAddress);
-  if (savedSettings.configuration) configureActiveTransponder(savedSettings.configuration);
-  await connectActiveTransponder(
-    requestedAddress,
-    (epc, crossingTime, metadata) => {
-      postCrossingToLocalServer(
-        { tag: epc, fieldName: "transponder", crossingTime, ...metadata },
-        (error) => error && reportActiveTransponderError(error),
-      );
-    },
-    (status) => {
-      mainWindow?.webContents.send("active-transponder:status", status);
-    },
-  );
-  saveActiveTransponderSettings({ ...savedSettings, address: normalized.address, autoConnect: true });
-  mainWindow?.webContents.send("active-transponder:status", getActiveTransponderStatus());
-}
-
-/**
- * At launch: reconnect the RM TrackR that was connected when the app last
- * closed. If it isn't reachable (not plugged in, different network), stay
- * disconnected without an error; the organizer connects on Reader Setup.
- */
-async function reconnectSavedRmTrackr(): Promise<void> {
-  const saved = loadActiveTransponderSettings();
-  if (!saved.autoConnect || !saved.address) return;
-  try {
-    await connectRmTrackr(saved.address);
-    console.log(`[main] RM TrackR reconnected at ${saved.address}`);
-  } catch (err) {
-    console.log(`[main] Saved RM TrackR not reachable at launch: ${err instanceof Error ? err.message : String(err)}`);
-    disconnectActiveTransponder();
-    mainWindow?.webContents.send("active-transponder:status", getActiveTransponderStatus());
+async function findMovedReader(reader: SavedReader, others: SavedReader[]): Promise<string | null> {
+  const claimed = new Set<string>();
+  for (const other of others) {
+    const ip = await resolveReaderHost(other.address);
+    if (ip) claimed.add(ip);
   }
+  const { devices } = await scanLocalNetwork(readers().connectedAddresses());
+  const wantedKind = reader.kind === "rm_trackr" ? "active_transponder" : "rfid";
+  const candidates = devices.filter(d => d.kind === wantedKind && !claimed.has(d.address));
+  return candidates.length === 1 ? candidates[0].address : null;
 }
 
-function saveActiveTransponderSettings(settings: ActiveTransponderSettings): void {
-  fs.writeFileSync(getActiveTransponderSettingsPath(), JSON.stringify(settings), { mode: 0o600 });
-}
-
-interface RfidNetworkSettings {
-  address?: string;
-  hardware?: RfidHardware;
-}
-
-function getRfidNetworkSettingsPath(): string {
-  return path.join(app.getPath("userData"), "rfid-network.json");
-}
-
-function loadRfidNetworkSettings(): RfidNetworkSettings {
-  try {
-    const saved = JSON.parse(fs.readFileSync(getRfidNetworkSettingsPath(), "utf8")) as RfidNetworkSettings;
-    return saved && typeof saved === "object" ? saved : {};
-  } catch {
-    return {};
-  }
+function idArg(id: unknown): string {
+  if (typeof id !== "string" || !id) throw new Error("Choose a reader first.");
+  return id;
 }
 
 // ── Local server management ───────────────────────────────────────────────────
@@ -427,7 +402,7 @@ function startReaderStatePolling(): void {
             const state = JSON.parse(body) as { reading?: unknown };
             if (typeof state.reading === "boolean" && state.reading !== lastReaderState) {
               lastReaderState = state.reading;
-              setActiveTransponderReading(state.reading);
+              readers().setReading(state.reading);
             }
           } catch {
             // Ignore a malformed poll response and try again on the next tick.
@@ -704,7 +679,11 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("serial:connect", async (_event, portPath: string, baudRate?: number) => {
     await connectPort(portPath, baudRate, (rfidNumber) => {
-      postCrossingToLocalServer({ tag: rfidNumber });
+      postCrossingToLocalServer(
+        { port: LOCAL_PORT, agent: LOCAL_TIMING_HTTP_AGENT },
+        { tag: rfidNumber, readerId: `serial:${portPath}`, readerName: "Serial reader" },
+        { onResponse: flushSyncSoon },
+      );
       mainWindow?.webContents.send("serial:status", getSerialStatus());
     });
     mainWindow?.webContents.send("serial:status", getSerialStatus());
@@ -717,64 +696,119 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle("serial:getStatus", () => getSerialStatus());
 
+  // ── Timing readers: several at once, each with its own id and name ──────────
+  ipcMain.handle("readers:list", () => readers().list());
+  ipcMain.handle("readers:add", (_event, input: ReaderInput) => {
+    const added = readers().add({
+      name: typeof input?.name === "string" ? input.name : undefined,
+      kind: input?.kind,
+      address: String(input?.address ?? ""),
+      hardware: input?.hardware,
+    });
+    sendReaderList();
+    return added;
+  });
+  ipcMain.handle("readers:update", (_event, id: string, changes: { name?: string; address?: string; hardware?: RfidHardware }) => {
+    const updated = readers().update(idArg(id), {
+      name: typeof changes?.name === "string" ? changes.name : undefined,
+      address: typeof changes?.address === "string" ? changes.address : undefined,
+      hardware: changes?.hardware,
+    });
+    sendReaderList();
+    return updated;
+  });
+  ipcMain.handle("readers:remove", (_event, id: string) => {
+    readers().remove(idArg(id));
+    sendReaderList();
+  });
+  ipcMain.handle("readers:connect", async (_event, id: string) => {
+    try {
+      await readers().connect(idArg(id));
+    } finally {
+      sendReaderList();
+    }
+  });
+  ipcMain.handle("readers:disconnect", (_event, id: string) => {
+    readers().disconnect(idArg(id));
+    sendReaderList();
+  });
+  ipcMain.handle("readers:startTest", (_event, id: string) => readers().startTest(idArg(id)));
+  ipcMain.handle("readers:stopTest", (_event, id: string) => readers().stopTest(idArg(id)));
+  ipcMain.handle("readers:configure", (_event, id: string, configuration: ActiveTransponderConfiguration) => {
+    readers().configure(idArg(id), configuration);
+    sendReaderList();
+  });
+  ipcMain.handle("readers:syncClock", (_event, id: string) => readers().syncClock(idArg(id)));
+
+  // ── Single-reader channels: the first reader of each kind ───────────────────
+  // Kept so single-reader pages and older bundled pages keep working.
+  const firstRmTrackrId = (): string => {
+    const reader = readers().firstOfKind("rm_trackr");
+    if (!reader) throw new Error("Connect to the RM TrackR first.");
+    return reader.id;
+  };
+
   ipcMain.handle("active-transponder:connect", async (_event, ip?: string) => {
-    await connectRmTrackr(ip);
+    const address = typeof ip === "string" ? ip.trim() : "";
+    let id = readers().firstOfKind("rm_trackr")?.id;
+    if (!id) {
+      id = readers().add({ kind: "rm_trackr", address }).id;
+    } else if (address) {
+      readers().update(id, { address });
+    }
+    try {
+      await readers().connect(id);
+    } finally {
+      sendReaderList();
+    }
   });
 
   ipcMain.handle("active-transponder:disconnect", () => {
-    disconnectActiveTransponder();
+    const reader = readers().firstOfKind("rm_trackr");
     // Turned off on purpose: don't reconnect by itself at the next launch.
-    saveActiveTransponderSettings({ ...loadActiveTransponderSettings(), autoConnect: false });
-    mainWindow?.webContents.send("active-transponder:status", getActiveTransponderStatus());
+    if (reader) readers().disconnect(reader.id);
+    sendReaderList();
   });
 
-  ipcMain.handle("active-transponder:getStatus", () => getActiveTransponderStatus());
-  ipcMain.handle("active-transponder:startTest", () => {
-    startActiveTransponderTest();
-    mainWindow?.webContents.send("active-transponder:status", getActiveTransponderStatus());
-  });
-  ipcMain.handle("active-transponder:stopTest", () => {
-    stopActiveTransponderTest();
-    mainWindow?.webContents.send("active-transponder:status", getActiveTransponderStatus());
-  });
+  ipcMain.handle("active-transponder:getStatus", () => readers().activeStatus(readers().firstOfKind("rm_trackr")?.id));
+  ipcMain.handle("active-transponder:startTest", () => readers().startTest(firstRmTrackrId()));
+  ipcMain.handle("active-transponder:stopTest", () => readers().stopTest(firstRmTrackrId()));
   ipcMain.handle("active-transponder:configure", (_event, configuration: ActiveTransponderConfiguration) => {
-    configureActiveTransponder(configuration);
-    const savedSettings = loadActiveTransponderSettings();
-    saveActiveTransponderSettings({ ...savedSettings, configuration });
-    mainWindow?.webContents.send("active-transponder:status", getActiveTransponderStatus());
+    readers().configure(firstRmTrackrId(), configuration);
   });
-  ipcMain.handle("active-transponder:syncClock", () => {
-    syncActiveTransponderClock();
-    mainWindow?.webContents.send("active-transponder:status", getActiveTransponderStatus());
-  });
+  ipcMain.handle("active-transponder:syncClock", () => readers().syncClock(firstRmTrackrId()));
 
   // Local-network (no internet) hardware setup
   ipcMain.handle("network:getInfo", () => getNetworkInfo());
   ipcMain.handle("network:scan", () => {
     // Never probe readers this app already holds a session with.
-    const skip = [getActiveTransponderStatus().deviceIp, getRfidNetworkStatus().host].filter(
-      (address): address is string => !!address,
-    );
-    return scanLocalNetwork(skip);
+    return scanLocalNetwork(readers().connectedAddresses());
   });
   ipcMain.handle("network:probe", (_event, host: string) => probeDevice(String(host ?? "")));
 
-  ipcMain.handle("rfid-network:getSettings", () => loadRfidNetworkSettings());
-  ipcMain.handle("rfid-network:getStatus", () => getRfidNetworkStatus());
+  ipcMain.handle("rfid-network:getSettings", () => {
+    const reader = readers().firstOfKind("rfid");
+    return reader ? { address: reader.address, hardware: reader.hardware ?? "impinj" } : {};
+  });
+  ipcMain.handle("rfid-network:getStatus", () => readers().rfidStatus(readers().firstOfKind("rfid")?.id));
   ipcMain.handle("rfid-network:connect", async (_event, address: string, hardware: RfidHardware) => {
     if (!["impinj", "zebra", "generic"].includes(hardware)) throw new Error("Unknown RFID reader type.");
-    await connectRfidNetworkReader(
-      String(address ?? ""),
-      hardware,
-      (epc) => postCrossingToLocalServer({ tag: epc }),
-      (status) => mainWindow?.webContents.send("rfid-network:status", status),
-    );
-    fs.writeFileSync(getRfidNetworkSettingsPath(), JSON.stringify({ address: String(address).trim(), hardware }), { mode: 0o600 });
-    mainWindow?.webContents.send("rfid-network:status", getRfidNetworkStatus());
+    let id = readers().firstOfKind("rfid")?.id;
+    if (!id) {
+      id = readers().add({ kind: "rfid", address: String(address ?? ""), hardware }).id;
+    } else {
+      readers().update(id, { address: String(address ?? ""), hardware });
+    }
+    try {
+      await readers().connect(id);
+    } finally {
+      sendReaderList();
+    }
   });
   ipcMain.handle("rfid-network:disconnect", () => {
-    disconnectRfidNetworkReader();
-    mainWindow?.webContents.send("rfid-network:status", getRfidNetworkStatus());
+    const reader = readers().firstOfKind("rfid");
+    if (reader) readers().disconnect(reader.id);
+    sendReaderList();
   });
 
   ipcMain.handle("auth:getCredentials", () => getPublicCredentials());
@@ -1001,86 +1035,6 @@ function registerIpcHandlers(): void {
   });
 }
 
-// ── Forward tag reads to local server ─────────────────────────────────────────
-
-export function buildLocalCrossingPayload(opts: {
-  tag: string;
-  fieldName?: "rfidNumber" | "transponder";
-  crossingTime?: Date;
-  receivedAtUtc?: string;
-  deviceTimezone?: string | null;
-  source?: string;
-  timeSource?: string;
-}): Record<string, string> {
-  const { tag, fieldName = "rfidNumber", crossingTime, receivedAtUtc, deviceTimezone, source, timeSource } = opts;
-  const payload: Record<string, string> = {
-    [fieldName]: tag,
-    crossingTime: (crossingTime ?? new Date()).toISOString(),
-  };
-  if (receivedAtUtc) payload.receivedAtUtc = receivedAtUtc;
-  if (receivedAtUtc) payload.readerReceivedAt = receivedAtUtc;
-  if (deviceTimezone) payload.deviceTimezone = deviceTimezone;
-  if (source) payload.source = source;
-  if (timeSource) payload.timeSource = timeSource;
-  return payload;
-}
-
-function postCrossingToLocalServer(opts: {
-  tag: string;
-  fieldName?: "rfidNumber" | "transponder";
-  crossingTime?: Date;
-  receivedAtUtc?: string;
-  deviceTimezone?: string | null;
-  source?: string;
-  timeSource?: string;
-}, onFailure?: (message: string) => void): void {
-  const body = JSON.stringify(buildLocalCrossingPayload(opts));
-  const req = http.request(
-    {
-      host: "127.0.0.1",
-      port: LOCAL_PORT,
-      path: "/api/timing/active/crossing",
-      method: "POST",
-      agent: LOCAL_TIMING_HTTP_AGENT,
-      headers: {
-        "Content-Type": "application/json",
-        "Content-Length": Buffer.byteLength(body),
-      },
-    },
-    (res) => {
-      if (res.statusCode && res.statusCode >= 400) {
-        console.error(`[rfid] crossing rejected: HTTP ${res.statusCode}`);
-        let rejection = "";
-        res.setEncoding("utf8");
-        res.on("data", (chunk: string) => { rejection += chunk; });
-        res.on("end", () => {
-          // 404/409: the reader works and the read arrived, it just doesn't count
-          // (nothing running, the rider's moto is over, a resent read from before
-          // the start, an unknown tag). That is not a connection problem, so it
-          // must not turn the reader status red.
-          if (res.statusCode === 404 || res.statusCode === 409) return;
-          onFailure?.(`RM TrackR read a real crossing, but the local timing server rejected it (HTTP ${res.statusCode}${rejection ? `: ${rejection}` : ""}).`);
-        });
-      } else {
-        res.resume();
-      }
-
-      if (syncEngine) {
-        setTimeout(() => void syncEngine?.flush(), 800);
-      }
-    },
-  );
-  req.on("socket", (socket) => socket.setNoDelay(true));
-
-  req.on("error", (err) => {
-    console.error(`[rfid] failed to post crossing: ${err.message}`);
-    onFailure?.(`RM TrackR read a real crossing, but it could not reach the local timing server: ${err.message}`);
-  });
-
-  req.write(body);
-  req.end();
-}
-
 // ── Auto-updater ──────────────────────────────────────────────────────────────
 
 function setupAutoUpdater(): void {
@@ -1145,7 +1099,7 @@ app.whenReady().then(async () => {
   createWindow();
   startSyncEngine();
   startReaderStatePolling();
-  void reconnectSavedRmTrackr();
+  readers().connectSavedReaders();
   setupAutoUpdater();
 
   app.on("activate", () => {
@@ -1169,8 +1123,7 @@ function cleanupAndQuit(): void {
   stopReaderStatePolling();
   stopSyncEngine();
   disconnectPort();
-  disconnectActiveTransponder();
-  disconnectRfidNetworkReader();
+  readerManager?.dispose();
   void stopLocalServer().finally(() => {
     app.quit();
   });

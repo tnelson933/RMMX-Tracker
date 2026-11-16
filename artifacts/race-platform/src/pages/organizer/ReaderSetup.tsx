@@ -205,6 +205,21 @@ function ActiveTransponderGuidedSetup({
   const [loop2Enabled, setLoop2Enabled] = useState(true);
   const [applyingConfig, setApplyingConfig] = useState(false);
   const [syncingClock, setSyncingClock] = useState(false);
+  const [configMessage, setConfigMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [configLoaded, setConfigLoaded] = useState(false);
+
+  // Start the controls from what the reader is set to now.
+  useEffect(() => {
+    const current = activeStatus as any;
+    if (!isDesktop || configLoaded || !current || typeof current.activeChannel !== "number") return;
+    setActiveChannel(current.activeChannel);
+    if (typeof current.activePower === "number") setActivePower(current.activePower);
+    if (Array.isArray(current.loopEnabled)) {
+      setLoop1Enabled(current.loopEnabled[0] !== false);
+      setLoop2Enabled(current.loopEnabled[1] !== false);
+    }
+    setConfigLoaded(true);
+  }, [isDesktop, activeStatus, configLoaded]);
 
   // When status comes in with config properties (ready, configApplied, loopsReady), read them if possible.
   // The backend might not parse them into activeStatus yet, so we will use activeStatus direct if present.
@@ -225,6 +240,7 @@ function ActiveTransponderGuidedSetup({
   const applyConfig = async () => {
     if (!isDesktop || !isConnected) return;
     setApplyingConfig(true);
+    setConfigMessage(null);
     try {
       const api = (window as any).electronAPI?.activeTransponder;
       if (api?.configure) {
@@ -233,26 +249,34 @@ function ActiveTransponderGuidedSetup({
           activePower,
           loopEnabled: [loop1Enabled, loop2Enabled],
         });
+        setConfigMessage({ ok: true, text: "Settings sent to the reader and saved." });
       }
-    } catch {}
+    } catch (error) {
+      setConfigMessage({ ok: false, text: error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : "Could not apply the settings." });
+    }
     setApplyingConfig(false);
   };
 
   const syncClock = async () => {
     if (!isDesktop || !isConnected) return;
     setSyncingClock(true);
+    setConfigMessage(null);
     try {
       const api = (window as any).electronAPI?.activeTransponder;
       if (api?.syncClock) {
         await api.syncClock();
+        setConfigMessage({ ok: true, text: "The reader's clock now matches this computer." });
       }
-    } catch {}
+    } catch (error) {
+      setConfigMessage({ ok: false, text: error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : "Could not sync the clock." });
+    }
     setSyncingClock(false);
   };
 
 
   let isConnected = false;
   let hasError = false;
+  let isRetrying = false;
   let readCount = 0;
   let heartbeat: string | null = null;
   let loops: { l1: LoopShow; l2: LoopShow } | null = null;
@@ -264,6 +288,9 @@ function ActiveTransponderGuidedSetup({
     isConnected = activeStatus.connected;
     hasError = !!activeStatus.error;
     if (activeStatus.error && !errorMsg) errorMsg = activeStatus.error;
+    isRetrying = !activeStatus.connected && (activeStatus as any).state === "reconnecting";
+    // Still trying by itself: the first failed attempt isn't an error to act on.
+    if (isRetrying) { hasError = false; errorMsg = null; }
     readCount = activeStatus.passingCount;
     heartbeat = activeStatus.lastHeartbeatAt;
     battery = activeStatus.batteryPercent;
@@ -312,7 +339,7 @@ function ActiveTransponderGuidedSetup({
                   disabled={connecting || isConnected || !isDesktop}
                 />
                 {isDesktop && (
-                  isConnected ? (
+                  isConnected || isRetrying ? (
                     <Button variant="outline" onClick={disconnect}>Disconnect</Button>
                   ) : (
                     <Button onClick={connect} disabled={connecting || !address.trim()}>
@@ -345,7 +372,7 @@ function ActiveTransponderGuidedSetup({
               <div className={`rounded-xl border-2 p-4 transition-all ${
                 isConnected && !hasError ? "border-green-500/40 bg-green-500/5" :
                 hasError ? "border-red-500/40 bg-red-500/5" :
-                connecting ? "border-amber-500/40 bg-amber-500/5" :
+                connecting || isRetrying ? "border-amber-500/40 bg-amber-500/5" :
                 "border-border bg-muted/20"
               }`}>
                 <div className="flex items-start justify-between gap-4">
@@ -353,17 +380,18 @@ function ActiveTransponderGuidedSetup({
                     <div className="flex items-center gap-2">
                       {isConnected && !hasError ? <CheckCircle2 size={16} className="text-green-600" /> :
                        hasError ? <XCircle size={16} className="text-red-600" /> :
-                       connecting ? <Loader2 size={16} className="text-amber-600 animate-spin" /> :
+                       connecting || isRetrying ? <Loader2 size={16} className="text-amber-600 animate-spin" /> :
                        <Circle size={16} className="text-muted-foreground" />}
 
                       <p className={`font-semibold text-sm ${
                         isConnected && !hasError ? "text-green-700 dark:text-green-400" :
                         hasError ? "text-red-700 dark:text-red-400" :
-                        connecting ? "text-amber-700 dark:text-amber-400" :
+                        connecting || isRetrying ? "text-amber-700 dark:text-amber-400" :
                         "text-muted-foreground"
                       }`}>
                         {isConnected && !hasError ? "Connected & Active" :
                          hasError ? "Connection Error" :
+                         isRetrying ? "Not connected, retrying" :
                          connecting ? "Connecting..." :
                          "Disconnected"}
                       </p>
@@ -422,13 +450,60 @@ function ActiveTransponderGuidedSetup({
           <div className="flex gap-4">
             <StepBadge n={3} />
             <div className="space-y-2 min-w-0 flex-1">
-              <p className="font-semibold text-sm">{isDesktop ? "Device settings are applied for you" : "Device settings come from Reader Setup"}</p>
+              <p className="font-semibold text-sm">{isDesktop ? "Device settings" : "Device settings come from Reader Setup"}</p>
               <p className="text-xs text-muted-foreground">
                 {isDesktop
-                  ? "This app sets the RM TrackR's clock and applies its settings every time it connects: channel 0, full power, both loops on."
+                  ? "This app sets the RM TrackR's clock and applies these settings every time it connects. With more than one RM TrackR, each has its own settings in the reader list above; these are for the first one."
                   : "Active channel, power, enabled loops, and clock sync are saved in the website above. RM Connect applies them automatically whenever it connects to this reader."}
               </p>
-              {isConnected && (
+              {isDesktop && (
+                <div className="space-y-3 pt-1">
+                  <div className="flex flex-wrap items-end gap-4">
+                    <label className="space-y-1">
+                      <span className="block text-xs text-muted-foreground">Channel</span>
+                      <select
+                        value={activeChannel}
+                        onChange={e => setActiveChannel(Number(e.target.value))}
+                        className="h-9 w-24 rounded-md border bg-background px-2 text-sm"
+                      >
+                        {[0, 1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}</option>)}
+                      </select>
+                    </label>
+                    <label className="space-y-1">
+                      <span className="block text-xs text-muted-foreground">Power (0 to 100)</span>
+                      <Input
+                        type="number" min={0} max={100} step={1}
+                        value={activePower}
+                        onChange={e => setActivePower(Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0))))}
+                        className="h-9 w-24 bg-background"
+                      />
+                    </label>
+                    <div className="space-y-1">
+                      <span className="block text-xs text-muted-foreground">Loops in use</span>
+                      <div className="flex items-center gap-4 h-9 text-sm">
+                        <label className="flex items-center gap-1.5"><input type="checkbox" checked={loop1Enabled} onChange={e => setLoop1Enabled(e.target.checked)} /> Loop 1</label>
+                        <label className="flex items-center gap-1.5"><input type="checkbox" checked={loop2Enabled} onChange={e => setLoop2Enabled(e.target.checked)} /> Loop 2</label>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" onClick={applyConfig} disabled={!isConnected || applyingConfig || (!loop1Enabled && !loop2Enabled)}>
+                      {applyingConfig ? <Loader2 size={14} className="animate-spin mr-2" /> : null}
+                      Apply settings
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={syncClock} disabled={!isConnected || !machineId || syncingClock}>
+                      {syncingClock ? <Loader2 size={14} className="animate-spin mr-2" /> : null}
+                      Sync clock
+                    </Button>
+                  </div>
+                  {!isConnected && <p className="text-xs text-muted-foreground">Connect the RM TrackR to change its settings.</p>}
+                  {!loop1Enabled && !loop2Enabled && <p className="text-xs text-amber-700 dark:text-amber-400">Keep at least one loop in use.</p>}
+                  {configMessage && (
+                    <p className={`text-xs font-medium ${configMessage.ok ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>{configMessage.text}</p>
+                  )}
+                </div>
+              )}
+              {!isDesktop && isConnected && (
                 <p className="text-xs font-medium text-green-700 dark:text-green-400">
                   Connection is live — website settings can be sent to the reader now.
                 </p>
@@ -959,7 +1034,9 @@ export default function ReaderSetup() {
       <div>
         <h1 className="text-3xl font-heading font-bold uppercase tracking-tight">Reader Setup</h1>
         <p className="text-muted-foreground mt-1">
-          RM Connect finds your RFID readers and RM TrackR readers at the track, adds them here, and keeps them connected.
+          {isDesktop
+            ? "Connect your RFID readers and RM TrackR readers straight to this computer. Find each one on the network, give it a name, and it stays connected."
+            : "RM Connect finds your RFID readers and RM TrackR readers at the track, adds them here, and keeps them connected."}
         </p>
       </div>
 

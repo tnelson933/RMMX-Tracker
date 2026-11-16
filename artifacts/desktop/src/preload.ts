@@ -12,6 +12,9 @@ import type {
   RfidNetworkStatus,
   RfidNetworkSettings,
   RfidHardware,
+  ReaderStatus,
+  ReaderInput,
+  ReaderChanges,
 } from "./ipc-types";
 
 const electronAPI = {
@@ -61,6 +64,32 @@ const electronAPI = {
       const handler = (_: unknown, status: ActiveTransponderStatus) => cb(status);
       ipcRenderer.on("active-transponder:status", handler);
       return () => ipcRenderer.off("active-transponder:status", handler);
+    },
+  },
+
+  // Several timing readers at once, each with its own id and name.
+  readers: {
+    list: (): Promise<ReaderStatus[]> => ipcRenderer.invoke("readers:list"),
+    add: (input: ReaderInput): Promise<ReaderStatus> => ipcRenderer.invoke("readers:add", input),
+    update: (id: string, changes: ReaderChanges): Promise<ReaderStatus> =>
+      ipcRenderer.invoke("readers:update", id, changes),
+    remove: (id: string): Promise<void> => ipcRenderer.invoke("readers:remove", id),
+    connect: (id: string): Promise<void> => ipcRenderer.invoke("readers:connect", id),
+    disconnect: (id: string): Promise<void> => ipcRenderer.invoke("readers:disconnect", id),
+    startTest: (id: string): Promise<void> => ipcRenderer.invoke("readers:startTest", id),
+    stopTest: (id: string): Promise<void> => ipcRenderer.invoke("readers:stopTest", id),
+    configure: (id: string, configuration: ActiveTransponderConfiguration): Promise<void> =>
+      ipcRenderer.invoke("readers:configure", id, configuration),
+    syncClock: (id: string): Promise<void> => ipcRenderer.invoke("readers:syncClock", id),
+    onStatus: (cb: (status: ReaderStatus) => void): (() => void) => {
+      const handler = (_: unknown, status: ReaderStatus) => cb(status);
+      ipcRenderer.on("readers:status", handler);
+      return () => ipcRenderer.off("readers:status", handler);
+    },
+    onChanged: (cb: (readers: ReaderStatus[]) => void): (() => void) => {
+      const handler = (_: unknown, readers: ReaderStatus[]) => cb(readers);
+      ipcRenderer.on("readers:changed", handler);
+      return () => ipcRenderer.off("readers:changed", handler);
     },
   },
 

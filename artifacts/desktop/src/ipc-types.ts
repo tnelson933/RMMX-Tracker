@@ -66,6 +66,10 @@ export interface ActiveTransponderStatus {
   reader1Working: string | null;
   reader2Working: string | null;
   eventId: string | null;
+  /** Why the last attempt failed, while the app keeps retrying (error stays null then). */
+  retryReason?: string | null;
+  /** False once the RM TrackR stopped sending heartbeats. */
+  heartbeatFresh?: boolean;
 }
 
 export interface ActiveTransponderConfiguration {
@@ -96,6 +100,16 @@ export type IpcChannels = {
   "active-transponder:stopTest": () => void;
   "active-transponder:configure": (configuration: ActiveTransponderConfiguration) => void;
   "active-transponder:syncClock": () => void;
+  "readers:list": () => ReaderStatus[];
+  "readers:add": (input: ReaderInput) => ReaderStatus;
+  "readers:update": (id: string, changes: ReaderChanges) => ReaderStatus;
+  "readers:remove": (id: string) => void;
+  "readers:connect": (id: string) => void;
+  "readers:disconnect": (id: string) => void;
+  "readers:startTest": (id: string) => void;
+  "readers:stopTest": (id: string) => void;
+  "readers:configure": (id: string, configuration: ActiveTransponderConfiguration) => void;
+  "readers:syncClock": (id: string) => void;
   "auth:getCredentials": () => CloudCredentials | null;
   "auth:setCredentials": (email: string, password: string, cloudUrl: string, clubId: string) => void;
   "auth:clearCredentials": () => void;
@@ -119,6 +133,18 @@ export interface NetworkProbeResult {
 }
 
 export interface RfidNetworkSettings {
+  address?: string;
+  hardware?: "impinj" | "zebra" | "generic";
+}
+
+// Several timing readers at once. Events sent to the window:
+//   "readers:status"  (ReaderStatus)    one reader's status changed
+//   "readers:changed" (ReaderStatus[])  the list changed (added, removed, renamed, connected, disconnected)
+export type { ReaderStatus, ReaderInput, ReaderKind, ReaderState, SavedReader } from "./reader-manager";
+import type { ReaderStatus, ReaderInput } from "./reader-manager";
+
+export interface ReaderChanges {
+  name?: string;
   address?: string;
   hardware?: "impinj" | "zebra" | "generic";
 }
