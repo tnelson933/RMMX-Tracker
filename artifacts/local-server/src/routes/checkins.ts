@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { getDb, parseBool } from "../db";
 import { paidAddonsAtEvent } from "../lib/addons";
+import { isValidActiveTransponderIdentifier } from "@workspace/api-zod";
 import { markRiderFieldsDirty } from "../rider-profile-dirty";
 import { fulfillRmTrackr } from "../lib/rm-trackr";
 import { signedWaiverEmails } from "./waivers";
@@ -66,11 +67,25 @@ router.get("/events/:eventId/checkins", (req, res) => {
   const signedEmails = signedWaiverEmails(db, eventId);
   const addonsPaidFor = paidAddonsAtEvent(eventId);
 
+  // RFID stickers assigned for this event. An event can use RM TrackR loops and
+  // RFID readers together, so a rider may have a transponder and a sticker.
+  // Stickers only: a rental transponder link has an expiry.
+  const stickerByRider = new Map<number, string>();
+  for (const a of db.prepare("SELECT rider_id, rfid_number FROM rfid_assignments WHERE event_id = ? AND expires_at IS NULL ORDER BY id ASC").all(eventId) as Array<{ rider_id: number; rfid_number: string }>) {
+    stickerByRider.set(a.rider_id, a.rfid_number);
+  }
+
   return res.json(
     regs.map((r) => {
       const c = checkinByRider.get(r.riderId as number);
       const riderEmail = typeof r.email === "string" ? r.email.toLowerCase() : null;
       const timingNumber = (c?.rfid_number as string | null | undefined) ?? (r.transponderNumber as string | null) ?? null;
+      // Same split as the cloud: a value that isn't a valid RM TrackR ID is an RFID sticker.
+      const regValue = typeof r.transponderNumber === "string" ? r.transponderNumber.trim() || null : null;
+      const regIsTransponder = regValue != null && isValidActiveTransponderIdentifier(regValue);
+      const transponderOnly = regIsTransponder ? regValue : null;
+      const sticker = stickerByRider.get(r.riderId as number) ?? null;
+      const rfidTag = (sticker && sticker.trim().toLowerCase() !== transponderOnly?.toLowerCase() ? sticker : null) ?? (regIsTransponder ? null : regValue);
       return {
         id: c?.id ?? null,
         eventId,
@@ -82,7 +97,9 @@ router.get("/events/:eventId/checkins", (req, res) => {
         bibNumber: r.registrationBib ?? (c?.bib_number ?? null),
         email: r.email ?? null,
         phone: r.phone ?? null,
-        transponderNumber: r.transponderNumber ?? null,
+        // Each kind of tag on its own (rfidNumber below is whichever was set last).
+        transponderNumber: transponderOnly,
+        rfidTag,
         myLapsTransponderNumber: r.transponderNumber ?? null,
         transponderRental: parseBool(r.transponderRental as number),
         rfidStickerPurchased: parseBool(r.rfidStickerPurchased as number),

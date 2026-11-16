@@ -46,12 +46,17 @@ router.get("/events/:eventId/registrations", (req, res) => {
       `SELECT
         r.*,
         ri.first_name, ri.last_name, ri.email AS rider_email, ri.phone,
-        ra.rfid_number AS assigned_rfid_number
+        ri.date_of_birth, ri.emergency_contact, ri.emergency_phone,
+        -- One RFID sticker per rider (the most recent): a rider with several
+        -- assignment rows must not repeat the entry. A rental link (with an
+        -- expiry) isn't a sticker. Same rule as the cloud.
+        (SELECT ra.rfid_number FROM rfid_assignments ra
+          WHERE ra.rider_id = r.rider_id AND ra.event_id = r.event_id AND ra.expires_at IS NULL
+          ORDER BY ra.id DESC LIMIT 1) AS assigned_rfid_number
        FROM registrations r
        LEFT JOIN riders ri ON r.rider_id = ri.id
-       LEFT JOIN rfid_assignments ra ON ra.rider_id = r.rider_id AND ra.event_id = r.event_id
        WHERE r.event_id = ?
-       ORDER BY ri.last_name`,
+       ORDER BY r.created_at, r.id`,
     )
     .all(eventId) as Record<string, unknown>[];
 
@@ -59,11 +64,16 @@ router.get("/events/:eventId/registrations", (req, res) => {
     rows.map((r) => ({
       ...deserializeReg(r),
       rfidNumber: r.assigned_rfid_number ?? null,
-      riderName: `${r.first_name ?? ""} ${r.last_name ?? ""}`.trim(),
-      firstName: r.first_name,
-      lastName: r.last_name,
-      email: r.rider_email,
-      phone: r.phone,
+      // A name set on the entry itself wins over the rider profile's (like the cloud).
+      riderName: `${r.display_first_name ?? r.first_name ?? ""} ${r.display_last_name ?? r.last_name ?? ""}`,
+      firstName: r.display_first_name ?? r.first_name ?? "",
+      lastName: r.display_last_name ?? r.last_name ?? "",
+      email: r.rider_email ?? "",
+      phone: r.phone ?? "",
+      dateOfBirth: r.date_of_birth ?? "",
+      emergencyContact: r.emergency_contact ?? "",
+      emergencyPhone: r.emergency_phone ?? "",
+      waiverAcknowledgedAt: r.waiver_acknowledged_at ?? null,
     })),
   );
 });

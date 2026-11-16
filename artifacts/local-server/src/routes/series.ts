@@ -4,12 +4,19 @@ import { getDb } from "../db";
 
 const router = Router();
 
+/** The season as the website returns it: a whole number ("2026.0" pulled from the cloud is 2026). */
+function seasonOf(s: any): number | string {
+  const raw = s.season ?? s.year ?? "";
+  const n = Number(raw);
+  return raw !== "" && Number.isFinite(n) ? n : String(raw);
+}
+
 function serializeSeries(s: any) {
   return {
     id: s.id,
     clubId: s.club_id,
     name: s.name,
-    season: s.season ?? String(s.year ?? ""),
+    season: seasonOf(s),
     classes: (() => { try { return JSON.parse(s.classes || "[]"); } catch { return []; } })(),
     eventIds: (() => { try { return JSON.parse(s.event_ids || "[]"); } catch { return []; } })(),
     scoringTableId: s.scoring_table_id ?? null,
@@ -383,7 +390,7 @@ router.get("/public/series/:seriesId", (req, res) => {
   return res.json({
     id: series.id,
     name: series.name,
-    season: series.season ?? String(series.year ?? ""),
+    season: seasonOf(series),
     classes: (() => { try { return JSON.parse(series.classes || "[]"); } catch { return []; } })(),
     eventIds,
     events: sortedEvents,
