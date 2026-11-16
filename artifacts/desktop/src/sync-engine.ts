@@ -437,6 +437,24 @@ export class SyncEngine {
             : row;
         });
       }
+      if (table === "addon_payments" || table === "team_members") {
+        // The cloud finds the entry by its id, or by the event and its rider
+        // when the desktop's registration id differs from the cloud's.
+        const regRider = this.db.prepare("SELECT rider_id FROM registrations WHERE id = ?");
+        const cloudIdFor = this.db.prepare(
+          "SELECT cloud_rider_id FROM _rider_cloud_map WHERE local_rider_id = ?",
+        );
+        const riderKey = table === "addon_payments" ? "rider_id" : "captain_rider_id";
+        tableRows = tableRows
+          // Payments pulled from the cloud are already there.
+          .filter((row) => table !== "addon_payments" || row.cloud_id == null)
+          .map((row) => {
+            const reg = regRider.get(Number(row.registration_id)) as { rider_id: number | null } | undefined;
+            if (reg?.rider_id == null) return row;
+            const mapped = cloudIdFor.get(Number(reg.rider_id)) as { cloud_rider_id: number | null } | undefined;
+            return { ...row, [riderKey]: mapped?.cloud_rider_id ?? reg.rider_id };
+          });
+      }
       payload[table] = tableRows;
     }
 
@@ -654,6 +672,8 @@ export class SyncEngine {
     ["practice_sessions", "event_id"],
     ["liability_waiver_signatures", "event_id"],
     ["enduro_checkpoint_arrivals",  "event_id"],
+    ["team_members",      "event_id"],
+    ["addon_payments",    "event_id"],
   ];
 
   /**
@@ -776,6 +796,7 @@ export class SyncEngine {
     lap_crossings: "insert",
     practice_crossings: "insert",
     liability_waiver_signatures: "insert",
+    addon_payments: "insert",
   };
 
   /**
@@ -989,6 +1010,9 @@ export class SyncEngine {
       enduroTimeChecks?: Record<string, unknown>[];
       enduroCheckpointArrivals?: Record<string, unknown>[];
       eventReaderAssignments?: Record<string, unknown>[];
+      teamMembers?: Record<string, unknown>[];
+      clubSellItems?: Record<string, unknown>[];
+      addonPayments?: Record<string, unknown>[];
     };
 
     const now = new Date().toISOString();
@@ -1025,6 +1049,7 @@ export class SyncEngine {
           ["enduro_time_checks",  data.enduroTimeChecks    ?? []],
           ["enduro_checkpoint_arrivals", data.enduroCheckpointArrivals ?? []],
           ["event_reader_assignments", data.eventReaderAssignments ?? []],
+          ["club_sell_items",     data.clubSellItems       ?? []],
         ];
 
         for (const [table, rows] of tableMap) {
@@ -1040,6 +1065,10 @@ export class SyncEngine {
             .run(table, now);
         }
         this.pruneEnduroRows(data);
+        // Tables keyed differently here than in the cloud (an older cloud omits them).
+        if (Array.isArray(data.clubSellItems)) this.pruneSellItems(data.clubSellItems);
+        if (Array.isArray(data.teamMembers)) totalChanged += this.upsertPulledTeamMembers(data.teamMembers);
+        if (Array.isArray(data.addonPayments)) totalChanged += this.upsertPulledAddonPayments(data.addonPayments);
       } finally {
         // Always clear the guard, even if an upsert threw.
         this.db.prepare("DELETE FROM _cloud_pull_guard").run();
@@ -1182,6 +1211,115 @@ export class SyncEngine {
    *   "table has no column" errors when cloud schema is ahead of local schema).
    * - Throws on genuine SQL errors so the caller can mark sync state as error.
    */
+  /** Sell items the club removed in the cloud. */
+  private pruneSellItems(rows: Record<string, unknown>[]): void {
+    const keep = new Set(rows.map((r) => Number(r["id"])));
+    const local = this.db.prepare("SELECT id FROM club_sell_items").all() as Array<{ id: number }>;
+    const remove = this.db.prepare("DELETE FROM club_sell_items WHERE id = ?");
+    for (const { id } of local) if (!keep.has(id)) remove.run(id);
+  }
+
+  private pendingIds(table: string): Set<number> {
+    return new Set(
+      (this.db
+        .prepare("SELECT record_id FROM _write_queue WHERE table_name = ? AND synced_at IS NULL AND attempt_count < ?")
+        .all(table, MAX_ATTEMPTS) as Array<{ record_id: number }>).map((r) => r.record_id),
+    );
+  }
+
+  /**
+   * Group race rosters. A member is identified by (registration, position), not
+   * by id: the desktop numbers its own rows. A member edited here and not yet
+   * pushed keeps the desktop's version.
+   */
+  private upsertPulledTeamMembers(rows: Record<string, unknown>[]): number {
+    const pending = this.pendingIds("team_members");
+    const find = this.db.prepare("SELECT id FROM team_members WHERE registration_id = ? AND position = ?");
+    const upsert = this.db.prepare(
+      `INSERT INTO team_members (event_id, registration_id, position, rider_id, first_name, last_name, email,
+                                 rfid_number, trackr_number, trackr_choice, rfid_purchased)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(registration_id, position) DO UPDATE SET
+         event_id = excluded.event_id, rider_id = excluded.rider_id,
+         first_name = excluded.first_name, last_name = excluded.last_name, email = excluded.email,
+         rfid_number = excluded.rfid_number, trackr_number = excluded.trackr_number,
+         trackr_choice = excluded.trackr_choice, rfid_purchased = excluded.rfid_purchased,
+         updated_at = datetime('now')
+       WHERE COALESCE(team_members.rider_id, 0) != COALESCE(excluded.rider_id, 0)
+          OR team_members.first_name != excluded.first_name OR team_members.last_name != excluded.last_name
+          OR COALESCE(team_members.email, '') != COALESCE(excluded.email, '')
+          OR COALESCE(team_members.rfid_number, '') != COALESCE(excluded.rfid_number, '')
+          OR COALESCE(team_members.trackr_number, '') != COALESCE(excluded.trackr_number, '')
+          OR COALESCE(team_members.trackr_choice, '') != COALESCE(excluded.trackr_choice, '')
+          OR team_members.rfid_purchased != excluded.rfid_purchased`,
+    );
+    const text = (v: unknown) => (v == null || v === "" ? null : String(v));
+    let changed = 0;
+    for (const r of rows) {
+      const registrationId = Number(r["registrationId"]);
+      const position = Number(r["position"]);
+      if (!registrationId || !position || !r["firstName"] || !r["lastName"]) continue;
+      const local = find.get(registrationId, position) as { id: number } | undefined;
+      if (local && pending.has(local.id)) { this.pullSkippedPending++; continue; }
+      changed += upsert.run(
+        Number(r["eventId"]), registrationId, position, r["riderId"] == null ? null : Number(r["riderId"]),
+        String(r["firstName"]), String(r["lastName"]), text(r["email"]),
+        text(r["rfidNumber"]), text(r["trackrNumber"]), text(r["trackrChoice"]), r["rfidPurchased"] ? 1 : 0,
+      ).changes;
+    }
+    return changed;
+  }
+
+  /**
+   * Paid check-in add-ons. A payment taken on this desktop comes back from the
+   * cloud with its desktop ref ("<club id>:<uid>") and is matched to the local
+   * row instead of being added twice.
+   */
+  private upsertPulledAddonPayments(rows: Record<string, unknown>[]): number {
+    const byUid = this.db.prepare("SELECT id, cloud_id FROM addon_payments WHERE uid = ?");
+    const link = this.db.prepare("UPDATE addon_payments SET cloud_id = ? WHERE id = ?");
+    const upsert = this.db.prepare(
+      `INSERT INTO addon_payments (uid, cloud_id, event_id, registration_id, item, amount, quantity, method, status,
+                                   cash_tendered, cash_change, created_at, paid_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(cloud_id) DO UPDATE SET
+         event_id = excluded.event_id, registration_id = excluded.registration_id, item = excluded.item,
+         amount = excluded.amount, quantity = excluded.quantity, method = excluded.method, status = excluded.status,
+         cash_tendered = excluded.cash_tendered, cash_change = excluded.cash_change, paid_at = excluded.paid_at
+       WHERE addon_payments.registration_id != excluded.registration_id OR addon_payments.item != excluded.item
+          OR addon_payments.amount != excluded.amount OR addon_payments.quantity != excluded.quantity
+          OR addon_payments.method != excluded.method OR addon_payments.status != excluded.status`,
+    );
+    const num = (v: unknown) => (v == null || v === "" ? null : Number(v));
+    const prefix = `${this.clubId}:`;
+    const seen = new Set<number>();
+    let changed = 0;
+    for (const r of rows) {
+      const cloudId = Number(r["id"]);
+      if (!cloudId) continue;
+      seen.add(cloudId);
+      const ref = typeof r["desktopRef"] === "string" ? (r["desktopRef"] as string) : "";
+      const uid = ref.startsWith(prefix) ? ref.slice(prefix.length) : `cloud:${cloudId}`;
+      const mine = byUid.get(uid) as { id: number; cloud_id: number | null } | undefined;
+      if (mine) {
+        if (mine.cloud_id !== cloudId) changed += link.run(cloudId, mine.id).changes;
+        continue;
+      }
+      changed += upsert.run(
+        uid, cloudId, Number(r["eventId"]), Number(r["registrationId"]), String(r["item"]),
+        Number(r["amount"]) || 0, Math.max(1, Number(r["quantity"]) || 1), String(r["method"]), String(r["status"]),
+        num(r["cashTendered"]), num(r["cashChange"]),
+        r["createdAt"] == null ? new Date().toISOString() : String(r["createdAt"]),
+        r["paidAt"] == null ? null : String(r["paidAt"]),
+      ).changes;
+    }
+    // Payments the cloud no longer has (removed there): drop the mirrored copy.
+    const mirrored = this.db.prepare("SELECT id, cloud_id FROM addon_payments WHERE cloud_id IS NOT NULL").all() as Array<{ id: number; cloud_id: number }>;
+    const remove = this.db.prepare("DELETE FROM addon_payments WHERE id = ?");
+    for (const m of mirrored) if (!seen.has(m.cloud_id)) changed += remove.run(m.id).changes;
+    return changed;
+  }
+
   private upsertPulled(
     table: string,
     rows: Record<string, unknown>[],

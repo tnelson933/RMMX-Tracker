@@ -45,6 +45,26 @@ const FORWARD_RESPONSE_HEADERS = [
 
 const CONNECT_TIMEOUT_MS = 20_000;
 
+let reachability: { at: number; ok: boolean } | null = null;
+
+/**
+ * Whether the cloud answers right now (cached for 15 seconds). For routes that
+ * prefer the cloud's live answer but have an offline copy to fall back on.
+ */
+export async function cloudReachable(): Promise<boolean> {
+  if (!hasCloudCredentials()) return false;
+  if (reachability && Date.now() - reachability.at < 15_000) return reachability.ok;
+  let ok = false;
+  try {
+    await fetch(`${cloudBaseUrl()}/api/healthz`, { method: "GET", signal: AbortSignal.timeout(2500) });
+    ok = true; // any HTTP answer means the cloud is there
+  } catch {
+    ok = false;
+  }
+  reachability = { at: Date.now(), ok };
+  return ok;
+}
+
 function isLocallySignedIn(req: Request): boolean {
   return !!(req.session as { userId?: unknown } | undefined)?.userId;
 }

@@ -30,6 +30,8 @@ import {
   enduroTimeChecksTable,
   enduroCheckpointArrivalsTable,
   liabilityWaiverSignaturesTable,
+  addonPaymentsTable,
+  clubSellItemsTable,
 } from "@workspace/db";
 import { canonicalizeCrossingTimestamp } from "../lib/crossingTimestamp";
 import { resolveSyncUser, canReceivePasswordHashes, type SyncUser } from "../lib/offlineSyncAccess";
@@ -1025,6 +1027,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       rm_trackr_transponder?: unknown;
       transponder_returned?: unknown;
       refund_verified_at?: unknown;
+      team_name?: unknown;
     }>;
 
     // Race-day fields set on the desktop (check-in add-ons, rentals, refunds).
@@ -1049,6 +1052,8 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       if (r.mylaps_transponder_number != null && String(r.mylaps_transponder_number).trim()) {
         set.myLapsTransponderNumber = String(r.mylaps_transponder_number);
       }
+      // Group race teams registered on the desktop.
+      if (r.team_name != null && String(r.team_name).trim()) set.teamName = String(r.team_name).trim().slice(0, 80);
       return set;
     };
 
@@ -1128,6 +1133,90 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
     }
     results["registrations"] = regsUpserted;
     total += regsUpserted;
+
+    // ── addon_payments (cash add-ons taken at desktop check-in; insert-only) ───
+    // The registration flags above say the rider has the item; this is the
+    // payment itself, so check-in shows it paid and the event report totals it.
+    const ADDON_ITEMS = new Set(["transponder_rental", "rm_trackr", "rfid_sticker"]);
+    /** The cloud registration a desktop row belongs to: pushed now, its own id, or the rider's entry. */
+    const cloudRegistrationId = async (pushedId: unknown, eventId: number, riderId: unknown): Promise<number | null> => {
+      const id = Number(pushedId);
+      if (id > 0) {
+        const mapped = regIdMap.get(id);
+        if (mapped) return mapped;
+        const [own] = await tx.select({ id: registrationsTable.id }).from(registrationsTable)
+          .where(and(eq(registrationsTable.id, id), eq(registrationsTable.eventId, eventId)));
+        if (own) return own.id;
+      }
+      const rider = Number(riderId);
+      if (!(rider > 0)) return null;
+      const [byRider] = await tx.select({ id: registrationsTable.id }).from(registrationsTable)
+        .where(and(eq(registrationsTable.eventId, eventId), eq(registrationsTable.riderId, rider)))
+        .orderBy(registrationsTable.id).limit(1);
+      return byRider?.id ?? null;
+    };
+    const addonRows = (payload["addon_payments"] ?? []) as Array<Record<string, unknown>>;
+    let addonsInserted = 0;
+    for (const a of addonRows) {
+      const eventId = mapEventId(a.event_id);
+      const uid = a.uid != null ? String(a.uid).trim() : "";
+      const item = String(a.item ?? "");
+      const amount = Number(a.amount);
+      if (!eventId || !uid || !ADDON_ITEMS.has(item) || !Number.isFinite(amount) || amount < 0) { skip("addon_payments", a as { id?: unknown }, "missing payment fields"); continue; }
+      // Card payments are taken by the cloud itself; the desktop only ever takes cash.
+      if (a.method !== "cash" || a.status !== "paid") { skip("addon_payments", a as { id?: unknown }, "only paid cash add-ons are accepted from the desktop"); continue; }
+      if (!await isClubEvent(eventId)) { skip("addon_payments", a as { id?: unknown }, "event not found for this club"); continue; }
+      const registrationId = await cloudRegistrationId(a.registration_id, eventId, a.rider_id);
+      if (!registrationId) { skip("addon_payments", a as { id?: unknown }, "registration not found in this event"); continue; }
+      const money = (v: unknown) => (v != null && v !== "" && Number.isFinite(Number(v)) ? Number(v).toFixed(2) : null);
+      await tx.insert(addonPaymentsTable).values({
+        eventId, registrationId, item, method: "cash", status: "paid",
+        amount: amount.toFixed(2),
+        quantity: Math.max(1, Math.trunc(Number(a.quantity)) || 1),
+        cashTendered: money(a.cash_tendered), cashChange: money(a.cash_change),
+        paidAt: toDate(a.paid_at) ?? toDate(a.created_at) ?? new Date(),
+        desktopRef: `${clubId}:${uid}`.slice(0, 120),
+      }).onConflictDoNothing();
+      addonsInserted++;
+    }
+    results["addon_payments"] = addonsInserted;
+    total += addonsInserted;
+
+    // ── team_members (group race rosters and tags entered at desktop check-in) ─
+    const teamRows = (payload["team_members"] ?? []) as Array<Record<string, unknown>>;
+    let teamsUpserted = 0;
+    for (const m of teamRows) {
+      const eventId = mapEventId(m.event_id);
+      const position = Math.trunc(Number(m.position));
+      const firstName = m.first_name != null ? String(m.first_name).trim() : "";
+      const lastName = m.last_name != null ? String(m.last_name).trim() : "";
+      if (!eventId || !(position >= 1) || !firstName || !lastName) { skip("team_members", m as { id?: unknown }, "missing team member fields"); continue; }
+      if (!await isClubEvent(eventId)) { skip("team_members", m as { id?: unknown }, "event not found for this club"); continue; }
+      const registrationId = await cloudRegistrationId(m.registration_id, eventId, m.captain_rider_id);
+      if (!registrationId) { skip("team_members", m as { id?: unknown }, "team registration not found in this event"); continue; }
+      const tag = (v: unknown) => (v != null && String(v).trim() ? String(v).trim().slice(0, 64) : null);
+      const [existing] = await tx.select({ id: teamMembersTable.id }).from(teamMembersTable)
+        .where(and(eq(teamMembersTable.registrationId, registrationId), eq(teamMembersTable.position, position)));
+      if (existing) {
+        // The desktop's row is a deliberate edit at check-in (rows it only pulled are never pushed).
+        await tx.update(teamMembersTable).set({
+          firstName, lastName,
+          rfidNumber: tag(m.rfid_number), trackrNumber: tag(m.trackr_number),
+          updatedAt: new Date(),
+        }).where(eq(teamMembersTable.id, existing.id));
+      } else {
+        await tx.insert(teamMembersTable).values({
+          eventId, registrationId, position, firstName, lastName,
+          email: m.email != null && String(m.email).trim() ? String(m.email).trim().toLowerCase() : null,
+          rfidNumber: tag(m.rfid_number), trackrNumber: tag(m.trackr_number),
+          trackrChoice: m.trackr_choice != null ? String(m.trackr_choice) : null,
+          rfidPurchased: isTrue(m.rfid_purchased),
+        }).onConflictDoNothing();
+      }
+      teamsUpserted++;
+    }
+    results["team_members"] = teamsUpserted;
+    total += teamsUpserted;
 
     // ── rfid_assignments (transponder assignment at event) ────────────────────
     const rfidAssigns = (payload["rfid_assignments"] ?? []) as Array<{
@@ -1695,10 +1784,15 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     .select()
     .from(liabilityWaiverSignaturesTable)
     .where(eq(liabilityWaiverSignaturesTable.clubId, clubId));
+  // The club's Sell Items prices (Admin → Sell Items), so desktop check-in charges the same offline.
+  const clubSellItems = await db.select().from(clubSellItemsTable).where(eq(clubSellItemsTable.clubId, clubId));
 
   if (clubEvents.length === 0) {
     return res.json({
       clubSettings,
+      clubSellItems,
+      addonPayments: [],
+      teamMembers: [],
       liabilityWaiverSignatures,
       enduroTimeChecks: [],
       enduroCheckpointArrivals: [],
@@ -1754,6 +1848,9 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     // Group race rosters: every team member's tags, so the desktop times teams offline.
     db.select().from(teamMembersTable).where(inArray(teamMembersTable.eventId, clubEventIds)),
   ]);
+  // Paid check-in add-ons, so the desktop shows them paid and totals them in the event report.
+  const addonPayments = await db.select().from(addonPaymentsTable)
+    .where(and(inArray(addonPaymentsTable.eventId, clubEventIds), eq(addonPaymentsTable.status, "paid")));
 
   // Riders: return only riders who have a registration for a club event. This
   // remains club-scoped while supplying the complete profile used by desktop
@@ -1847,6 +1944,8 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     enduroCheckpointArrivals,
     eventReaderAssignments,
     teamMembers,
+    clubSellItems,
+    addonPayments,
   });
 });
 

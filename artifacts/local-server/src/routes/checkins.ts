@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { getDb, paidAddons, parseBool } from "../db";
+import { getDb, parseBool } from "../db";
+import { paidAddonsAtEvent } from "../lib/addons";
 import { markRiderFieldsDirty } from "../rider-profile-dirty";
 import { fulfillRmTrackr } from "../lib/rm-trackr";
 import { signedWaiverEmails } from "./waivers";
@@ -63,6 +64,7 @@ router.get("/events/:eventId/checkins", (req, res) => {
   // Signed waivers (pulled from the cloud or signed here at check-in), matched
   // by rider email the same way the cloud does.
   const signedEmails = signedWaiverEmails(db, eventId);
+  const addonsPaidFor = paidAddonsAtEvent(eventId);
 
   return res.json(
     regs.map((r) => {
@@ -90,7 +92,7 @@ router.get("/events/:eventId/checkins", (req, res) => {
         paymentStatus: r.paymentStatus ?? null,
         // Same fields as the cloud, so check-in knows what still has to be collected.
         transponderReturned: parseBool(r.transponderReturned as number),
-        addonsPaid: paidAddons(r.addonsPaid),
+        addonsPaid: addonsPaidFor(Number(r.registrationId), Number(r.riderId), r.addonsPaid),
         teamName: r.teamName ?? null,
         teamRiders: Number(r.teamRiders) || 0,
         teamRidersWithNumbers: Number(r.teamRidersWithNumbers) || 0,

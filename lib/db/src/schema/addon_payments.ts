@@ -1,4 +1,5 @@
-import { pgTable, serial, integer, text, numeric, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, numeric, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { eventsTable } from "./events";
 import { registrationsTable } from "./registrations";
 
@@ -26,10 +27,13 @@ export const addonPaymentsTable = pgTable("addon_payments", {
   cashChange: numeric("cash_change", { precision: 10, scale: 2 }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   paidAt: timestamp("paid_at", { withTimezone: true }),
+  /** Taken on the offline desktop app: its own id for the payment, so a retried sync never doubles it. */
+  desktopRef: text("desktop_ref"),
 }, (t) => [
   index("addon_payments_event_idx").on(t.eventId),
   index("addon_payments_registration_idx").on(t.registrationId),
   index("addon_payments_session_idx").on(t.stripeSessionId),
+  uniqueIndex("addon_payments_desktop_ref_idx").on(t.desktopRef).where(sql`${t.desktopRef} IS NOT NULL`),
 ]);
 
 export type AddonPayment = typeof addonPaymentsTable.$inferSelect;

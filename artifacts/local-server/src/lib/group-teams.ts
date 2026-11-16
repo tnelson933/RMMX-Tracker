@@ -47,12 +47,21 @@ export function teamRegistrationId(eventId: number, riderId: number): number | n
 }
 
 export function listTeamMembers(registrationId: number) {
-  return getDb().prepare(`SELECT id, position, first_name AS firstName, last_name AS lastName, email,
-      rfid_number AS rfidNumber, trackr_number AS trackrNumber,
-      trackr_choice AS trackrChoice, rfid_purchased = 1 AS rfidPurchased
-    FROM team_members WHERE registration_id = ? ORDER BY position`).all(registrationId) as Array<{
+  const rows = getDb().prepare(`SELECT tm.id, tm.position, tm.first_name AS firstName, tm.last_name AS lastName, tm.email,
+      tm.rfid_number AS rfidNumber, tm.trackr_number AS trackrNumber,
+      tm.trackr_choice AS trackrChoice, tm.rfid_purchased AS rfidPurchased,
+      ri.id AS profileId, ri.rfid_number AS profileRfid, ri.mylaps_transponder_id AS profileTrackr
+    FROM team_members tm LEFT JOIN riders ri ON ri.id = tm.rider_id
+    WHERE tm.registration_id = ? ORDER BY tm.position`).all(registrationId) as Array<{
       id: number; position: number; firstName: string; lastName: string; email: string | null; rfidNumber: string | null; trackrNumber: string | null;
+      trackrChoice: string | null; rfidPurchased: number; profileId: number | null; profileRfid: string | null; profileTrackr: string | null;
     }>;
+  return rows.map(({ profileId, profileRfid, profileTrackr, rfidPurchased, ...m }) => ({
+    ...m,
+    rfidPurchased: rfidPurchased === 1,
+    // Numbers already on the member's rider profile, to fill in what the team hasn't entered (like the cloud).
+    onFile: profileId != null ? { rfidNumber: profileRfid ?? null, trackrNumber: profileTrackr ?? null } : null,
+  }));
 }
 
 /** The team (captain's rider id) a tag belongs to at this event. */

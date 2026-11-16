@@ -942,6 +942,63 @@ export function initDb() {
     raiseAutoincrementFloor(db, table, 9999999);
   }
 
+  db.exec(`
+    -- The club's Sell Items (Admin > Sell Items), pulled from the cloud so
+    -- check-in charges the club's prices offline. Read-only here.
+    CREATE TABLE IF NOT EXISTS club_sell_items (
+      id         INTEGER PRIMARY KEY,
+      club_id    INTEGER NOT NULL,
+      kind       TEXT NOT NULL,
+      name       TEXT NOT NULL,
+      price      TEXT,
+      hidden     INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT
+    );
+
+    -- Check-in add-ons that were paid (rentals, RM TrackR and RFID tag sales).
+    -- Cash taken here gets a uid and is pushed to the cloud once; rows pulled
+    -- from the cloud carry its id in cloud_id.
+    CREATE TABLE IF NOT EXISTS addon_payments (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      uid             TEXT NOT NULL UNIQUE,
+      cloud_id        INTEGER UNIQUE,
+      event_id        INTEGER NOT NULL,
+      registration_id INTEGER NOT NULL,
+      item            TEXT NOT NULL,
+      amount          REAL NOT NULL,
+      quantity        INTEGER NOT NULL DEFAULT 1,
+      method          TEXT NOT NULL,
+      status          TEXT NOT NULL,
+      cash_tendered   REAL,
+      cash_change     REAL,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+      paid_at         TEXT
+    );
+    CREATE INDEX IF NOT EXISTS addon_payments_event_idx ON addon_payments (event_id);
+
+    CREATE TRIGGER IF NOT EXISTS _wq_addon_payments_insert
+    AFTER INSERT ON addon_payments
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('addon_payments', NEW.id, 'insert');
+    END;
+
+    -- Group race rosters and tags entered at desktop check-in go to the cloud.
+    CREATE TRIGGER IF NOT EXISTS _wq_team_members_insert
+    AFTER INSERT ON team_members
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('team_members', NEW.id, 'upsert');
+    END;
+    CREATE TRIGGER IF NOT EXISTS _wq_team_members_update
+    AFTER UPDATE ON team_members
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('team_members', NEW.id, 'upsert');
+    END;
+  `);
+
   // Track names were historically stored locally but omitted from desktop sync.
   // Requeue each locally named practice session once so the cloud copy — and
   // therefore Rider App history — receives its venue_name.

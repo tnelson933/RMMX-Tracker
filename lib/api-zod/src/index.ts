@@ -3,3 +3,4 @@ export * from './generated/types';
 export * from "./activeTransponder";
 export * from "./eventTimeZone";
 export * from "./practiceOrder";
+export * from "./addonSales";

@@ -1,8 +1,10 @@
 import { listTeamMembers, saveTeamTags, teamRegistrationId } from "../lib/group-teams";
 import { Router } from "express";
-import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
+import { normalizeActiveTransponderIdentifier, parseCashTendered } from "@workspace/api-zod";
+import type { AddonItem } from "@workspace/api-zod";
+import { eventSellPrices, paidAddonsAtEvent, recordCashAddon } from "../lib/addons";
 import { getDb, paidAddons, parseBool, parseJson, parseJsonArr } from "../db";
-import { RM_TRACKR_NAME, RM_TRACKR_PRICE, fulfillRmTrackr, markRmTrackrPurchased } from "../lib/rm-trackr";
+import { RM_TRACKR_NAME, fulfillRmTrackr, markRmTrackrPurchased } from "../lib/rm-trackr";
 
 /**
  * Race-day registration endpoints that must work offline. Each mirrors the
@@ -44,8 +46,6 @@ function loadEventRegistration(eventId: number, regId: number, res: any): RegRow
   return reg;
 }
 
-type AddonItem = "transponder_rental" | "rfid_sticker" | "rm_trackr";
-
 /** Card and card-reader payments need Stripe: the cloud takes them (lib/cloud-proxy.ts). */
 const goesToCloud = (paymentMethod: unknown) => paymentMethod === "card" || paymentMethod === "reader";
 
@@ -54,8 +54,9 @@ const goesToCloud = (paymentMethod: unknown) => paymentMethod === "card" || paym
  * paid when the entry was paid online or it was collected in cash here.
  */
 function addonPaid(regId: number, item: AddonItem): boolean {
-  const row = getDb().prepare("SELECT payment_status, addons_paid FROM registrations WHERE id = ?").get(regId) as { payment_status: string | null; addons_paid: string | null } | undefined;
-  return row?.payment_status === "paid" || paidAddons(row?.addons_paid).includes(item);
+  const row = getDb().prepare("SELECT event_id, rider_id, payment_status, addons_paid FROM registrations WHERE id = ?").get(regId) as { event_id: number; rider_id: number; payment_status: string | null; addons_paid: string | null } | undefined;
+  if (!row) return false;
+  return row.payment_status === "paid" || paidAddonsAtEvent(row.event_id)(regId, row.rider_id, row.addons_paid).includes(item);
 }
 
 /** Records a cash add-on on every entry the rider has in the event (the check-in tile shows the first). */
@@ -66,15 +67,6 @@ function markAddonPaid(eventId: number, riderId: number, item: AddonItem): void 
     const list = paidAddons(r.addons_paid);
     if (!list.includes(item)) db.prepare("UPDATE registrations SET addons_paid = ? WHERE id = ?").run(JSON.stringify([...list, item]), r.id);
   }
-}
-
-/** Cash handed over and the change due, like the cloud's parseCashTendered. */
-function cashChange(raw: unknown, due: number): { tendered: number | null; change: number | null } | { error: string } {
-  if (raw === undefined || raw === null || raw === "") return { tendered: null, change: null };
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n < 0) return { error: "Enter the cash amount the rider handed you." };
-  if (Math.round(n * 100) < Math.round(due * 100)) return { error: `That is less than the $${due.toFixed(2)} due.` };
-  return { tendered: n, change: Math.round((n - due) * 100) / 100 };
 }
 
 /** How many tags a sale is for: group race teams buy up to one per rider; others buy one. */
@@ -142,11 +134,12 @@ router.post("/events/:eventId/registrations/:regId/add-transponder-rental", (req
   const rentalFee = Math.round(Number(event.transponder_rental_fee) * qty.qty * 100) / 100;
 
   if (paymentMethod === "cash") {
-    const cash = cashChange(req.body?.cashTendered, rentalFee);
-    if ("error" in cash) return res.status(400).json({ error: cash.error });
+    const tender = parseCashTendered(req.body?.cashTendered, rentalFee);
+    if (tender && "error" in tender) return res.status(400).json({ error: tender.error });
     db.prepare("UPDATE registrations SET transponder_rental = 1 WHERE id = ?").run(reg.id);
     markAddonPaid(eventId, reg.rider_id, "transponder_rental");
-    return res.json({ success: true, rentalFee, quantity: qty.qty, cashTendered: cash.tendered, cashChange: cash.change });
+    recordCashAddon(eventId, reg.id, "transponder_rental", rentalFee, tender, qty.qty);
+    return res.json({ success: true, rentalFee, quantity: qty.qty, cashTendered: tender?.tendered ?? null, cashChange: tender?.change ?? null });
   }
   return res.status(400).json({ error: "paymentMethod must be 'cash' or 'card'" });
 });
@@ -159,23 +152,26 @@ router.post("/events/:eventId/registrations/:regId/add-rfid-sticker", (req, res,
   const reg = loadEventRegistration(eventId, Number(req.params.regId), res);
   if (!reg) return;
   const db = getDb();
-  const event = db.prepare("SELECT rfid_sticker_fee, group_race, riders_per_group FROM events WHERE id = ?")
-    .get(eventId) as { rfid_sticker_fee: string | null; group_race: number; riders_per_group: number | null } | undefined;
+  const event = db.prepare("SELECT group_race, riders_per_group FROM events WHERE id = ?")
+    .get(eventId) as { group_race: number; riders_per_group: number | null } | undefined;
   const qty = addonQuantity(req.body?.quantity, event);
   if ("error" in qty) return res.status(400).json({ error: qty.error });
-  if (event?.group_race !== 1 && reg.rfid_sticker_purchased === 1 && addonPaid(reg.id, "rfid_sticker")) return res.status(400).json({ error: "Rider already has an RFID sticker" });
-  if (!event?.rfid_sticker_fee || !Number(event.rfid_sticker_fee)) {
-    return res.status(400).json({ error: "RFID sticker is not enabled for this event" });
+  if (event?.group_race !== 1 && reg.rfid_sticker_purchased === 1 && addonPaid(reg.id, "rfid_sticker")) return res.status(400).json({ error: "This rider's RFID tag is already paid." });
+  // The event's sticker fee, or the club's RFID Tag price (Admin → Sell Items).
+  const unitFee = event ? eventSellPrices(eventId)?.rfidTag ?? null : null;
+  if (unitFee == null) {
+    return res.status(400).json({ error: "RFID tags have no price yet. Set one in Admin → Sell Items, or turn on RFID stickers in the event's settings." });
   }
-  const stickerFee = Math.round(Number(event.rfid_sticker_fee) * qty.qty * 100) / 100;
+  const stickerFee = Math.round(unitFee * qty.qty * 100) / 100;
 
   if (paymentMethod === "cash") {
-    const cash = cashChange(req.body?.cashTendered, stickerFee);
-    if ("error" in cash) return res.status(400).json({ error: cash.error });
+    const tender = parseCashTendered(req.body?.cashTendered, stickerFee);
+    if (tender && "error" in tender) return res.status(400).json({ error: tender.error });
     db.prepare("UPDATE registrations SET rfid_sticker_purchased = 1 WHERE event_id = ? AND rider_id = ?")
       .run(eventId, reg.rider_id);
     markAddonPaid(eventId, reg.rider_id, "rfid_sticker");
-    return res.json({ success: true, stickerFee, quantity: qty.qty, cashTendered: cash.tendered, cashChange: cash.change });
+    recordCashAddon(eventId, reg.id, "rfid_sticker", stickerFee, tender, qty.qty);
+    return res.json({ success: true, stickerFee, quantity: qty.qty, cashTendered: tender?.tendered ?? null, cashChange: tender?.change ?? null });
   }
   return res.status(400).json({ error: "paymentMethod must be 'cash' or 'card'" });
 });
@@ -193,15 +189,19 @@ router.post("/events/:eventId/registrations/:regId/add-rm-trackr", (req, res, ne
   if (!event) return res.status(404).json({ error: "Event not found" });
   const qty = addonQuantity(req.body?.quantity, event);
   if ("error" in qty) return res.status(400).json({ error: qty.error });
-  if (event.group_race !== 1 && reg.rm_trackr_purchased === 1 && addonPaid(reg.id, "rm_trackr")) return res.status(400).json({ error: `Rider already purchased an ${RM_TRACKR_NAME}` });
+  if (event.group_race !== 1 && reg.rm_trackr_purchased === 1 && addonPaid(reg.id, "rm_trackr")) return res.status(400).json({ error: `This rider's ${RM_TRACKR_NAME} is already paid.` });
+  // The event's RM TrackR price, or the club's (Admin → Sell Items).
+  const unitPrice = eventSellPrices(eventId)?.rmTrackr ?? null;
+  if (unitPrice == null) return res.status(400).json({ error: `Your club has hidden the ${RM_TRACKR_NAME} in Admin → Sell Items. Show it there to sell it.` });
 
   if (paymentMethod === "cash") {
-    const price = Math.round(RM_TRACKR_PRICE * qty.qty * 100) / 100;
-    const cash = cashChange(req.body?.cashTendered, price);
-    if ("error" in cash) return res.status(400).json({ error: cash.error });
+    const price = Math.round(unitPrice * qty.qty * 100) / 100;
+    const tender = parseCashTendered(req.body?.cashTendered, price);
+    if (tender && "error" in tender) return res.status(400).json({ error: tender.error });
     markRmTrackrPurchased(db, eventId, reg.rider_id);
     markAddonPaid(eventId, reg.rider_id, "rm_trackr");
-    return res.json({ success: true, price, quantity: qty.qty, cashTendered: cash.tendered, cashChange: cash.change });
+    recordCashAddon(eventId, reg.id, "rm_trackr", price, tender, qty.qty);
+    return res.json({ success: true, price, quantity: qty.qty, cashTendered: tender?.tendered ?? null, cashChange: tender?.change ?? null });
   }
   return res.status(400).json({ error: "paymentMethod must be 'cash' or 'card'" });
 });

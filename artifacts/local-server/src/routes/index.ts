@@ -27,6 +27,7 @@ import tracksRouter from "./tracks";
 import raceDayRouter from "./race-day";
 import enduroRouter from "./enduro";
 import waiversRouter from "./waivers";
+import sellItemsRouter from "./sell-items";
 import { cloudPassThrough } from "../lib/cloud-proxy";
 
 const router = Router();
@@ -59,6 +60,7 @@ router.use(tracksRouter);
 router.use(raceDayRouter);
 router.use(enduroRouter);
 router.use(waiversRouter);
+router.use(sellItemsRouter);
 
 // Everything above works offline. Any other /api request is forwarded to the
 // cloud as the signed-in organizer (503 with a readable error when offline).

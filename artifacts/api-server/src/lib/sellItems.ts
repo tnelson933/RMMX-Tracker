@@ -1,13 +1,18 @@
 import { db, clubSellItemsTable, RM_TRACKR_NAME, RM_TRACKR_OPTION_ID, RM_TRACKR_PRICE } from "@workspace/db";
 import type { PurchaseOption } from "@workspace/db";
 import { and, asc, eq } from "drizzle-orm";
+import { checkinSellPrices, eventTrackrPrice } from "@workspace/api-zod";
+import type { SellItemKind } from "@workspace/api-zod";
+
+// Shared with the desktop's offline server, so both price check-in the same way.
+export { checkinSellPrices, eventTrackrPrice };
+export type { SellItemKind };
 
 /**
  * A club's sell items (Admin → Sell Items). The RM TrackR Transponder and RFID
  * Tag always exist (created on first use); clubs set their prices and can add
  * their own items (camping, pit passes…).
  */
-export type SellItemKind = "rm_trackr" | "rfid_tag" | "custom";
 
 export const BUILT_IN_SELL_ITEMS: Array<{ kind: Exclude<SellItemKind, "custom">; name: string; price: number | null; sortOrder: number }> = [
   { kind: "rm_trackr", name: RM_TRACKR_NAME, price: RM_TRACKR_PRICE, sortOrder: 0 },
@@ -62,30 +67,4 @@ export async function clubBuiltInPrice(clubId: number, kind: Exclude<SellItemKin
     .where(and(eq(clubSellItemsTable.clubId, clubId), eq(clubSellItemsTable.kind, kind)));
   if (row?.price != null) return Number(row.price);
   return kind === "rm_trackr" ? RM_TRACKR_PRICE : null;
-}
-
-/** The RM TrackR price an event already offers, or null when it doesn't offer one. */
-export function eventTrackrPrice(options: PurchaseOption[] | null | undefined): number | null {
-  const o = Array.isArray(options) ? options.find(x => String(x.id) === RM_TRACKR_OPTION_ID) : undefined;
-  return o && Number.isFinite(Number(o.amount)) ? Number(o.amount) : null;
-}
-
-/**
- * What check-in can sell at an event, and for how much. The event's own price
- * wins (an RM TrackR purchase option, or its RFID sticker fee); otherwise the
- * club's Sell Items price, unless the club hid the item. Null: not for sale.
- */
-export function checkinSellPrices(
-  event: { purchaseOptions: PurchaseOption[] | null; rfidStickerFee: string | number | null },
-  clubItems: Array<{ kind: SellItemKind; price: number | null; hidden: boolean }>,
-): { rmTrackr: number | null; rfidTag: number | null } {
-  const club = (kind: SellItemKind) => {
-    const item = clubItems.find(i => i.kind === kind);
-    return item && !item.hidden ? item.price : null;
-  };
-  const eventSticker = event.rfidStickerFee != null && Number(event.rfidStickerFee) > 0 ? Number(event.rfidStickerFee) : null;
-  return {
-    rmTrackr: eventTrackrPrice(event.purchaseOptions) ?? club("rm_trackr"),
-    rfidTag: eventSticker ?? club("rfid_tag"),
-  };
 }
