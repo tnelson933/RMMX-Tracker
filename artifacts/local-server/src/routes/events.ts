@@ -298,6 +298,13 @@ router.post("/events", (req, res) => {
 
   const newEventId = Number(result.lastInsertRowid);
 
+  // Group race (teams take turns): the same two fields the edit form saves.
+  if (req.body.groupRace === true) {
+    const perGroup = Number(req.body.ridersPerGroup);
+    db.prepare("UPDATE events SET group_race = 1, riders_per_group = ? WHERE id = ?")
+      .run(Number.isInteger(perGroup) && perGroup >= 2 ? perGroup : 2, newEventId);
+  }
+
   const entryFeesCat = db
     .prepare(
       "SELECT id FROM discount_categories WHERE club_id = ? AND lower(name) = 'entry fees' LIMIT 1",

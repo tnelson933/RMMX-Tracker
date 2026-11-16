@@ -26,6 +26,8 @@ function deserializeReg(r: Record<string, unknown>) {
     selectedPurchaseOptions: parseJsonArr(r.selected_purchase_options as string),
     displayFirstName: r.display_first_name,
     displayLastName: r.display_last_name,
+    // Group race: the captain's entry carries the team name (the form skips re-entering the team).
+    teamName: r.team_name ?? null,
     createdAt: r.created_at,
   };
 }

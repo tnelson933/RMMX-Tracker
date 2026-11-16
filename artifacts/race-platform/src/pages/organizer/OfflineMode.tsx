@@ -22,7 +22,7 @@ function detectPlatform(): "windows" | "mac" | "other" {
 
 const STEPS = [
   { icon: RefreshCw, title: "Sync before you leave", body: "Sign in to the desktop app while you have internet. It copies your events, riders and registrations to the laptop." },
-  { icon: Radio, title: "Connect your reader at the track", body: "In Reader Setup, choose \"No, connect without internet\". The app finds your RFID reader or RM TrackR on the local network." },
+  { icon: Radio, title: "Connect your reader at the track", body: "Open Reader Setup and follow the steps. The app finds your RFID reader or RM TrackR on the local network and connects to it directly." },
   { icon: CloudUpload, title: "Results upload automatically", body: "Run check-in, timing and results offline. Everything syncs to the cloud once the laptop is back online." },
 ];
 
@@ -80,7 +80,7 @@ export default function OfflineMode() {
               <CheckCircle2 size={18} className="text-green-500" /> You're in the desktop app. Offline mode is built in.
             </p>
             <p className="text-sm text-muted-foreground">
-              Nothing else to install. To time without internet, open Reader Setup and choose "No, connect without internet".
+              Nothing else to install. To connect your reader, open Reader Setup and follow the steps. It works with or without internet.
             </p>
             <Button asChild className="gap-2">
               <Link href="/rfid/setup"><Radio size={16} /> Open Reader Setup</Link>

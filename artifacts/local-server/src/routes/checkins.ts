@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getDb, parseBool } from "../db";
+import { getDb, paidAddons, parseBool } from "../db";
 import { markRiderFieldsDirty } from "../rider-profile-dirty";
 import { fulfillRmTrackr } from "../lib/rm-trackr";
 import { signedWaiverEmails } from "./waivers";
@@ -27,6 +27,8 @@ router.get("/events/:eventId/checkins", (req, res) => {
         r.rm_trackr_fulfilled_at AS rmTrackrFulfilledAt,
         r.rm_trackr_transponder AS rmTrackrTransponder,
         r.payment_status AS paymentStatus,
+        r.transponder_returned AS transponderReturned,
+        r.addons_paid AS addonsPaid,
         r.team_name AS teamName,
         (SELECT COUNT(*) FROM team_members tm JOIN registrations tr ON tr.id = tm.registration_id
           WHERE tr.event_id = r.event_id AND tr.rider_id = r.rider_id) AS teamRiders,
@@ -86,6 +88,9 @@ router.get("/events/:eventId/checkins", (req, res) => {
         rmTrackrFulfilledAt: r.rmTrackrFulfilledAt ?? null,
         rmTrackrTransponder: r.rmTrackrTransponder ?? null,
         paymentStatus: r.paymentStatus ?? null,
+        // Same fields as the cloud, so check-in knows what still has to be collected.
+        transponderReturned: parseBool(r.transponderReturned as number),
+        addonsPaid: paidAddons(r.addonsPaid),
         teamName: r.teamName ?? null,
         teamRiders: Number(r.teamRiders) || 0,
         teamRidersWithNumbers: Number(r.teamRidersWithNumbers) || 0,

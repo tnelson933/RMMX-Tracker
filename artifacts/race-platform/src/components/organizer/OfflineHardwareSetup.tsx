@@ -49,8 +49,6 @@ interface DesktopApi {
   };
 }
 
-const MODE_KEY = "rm-hardware-connection-mode";
-
 function desktopApi(): DesktopApi | null {
   const api = (window as unknown as { electronAPI?: Partial<DesktopApi> }).electronAPI;
   // Older desktop builds have no network API; the page then keeps its normal flow.
@@ -61,68 +59,38 @@ export function hasOfflineHardwareSupport(): boolean {
   return desktopApi() !== null;
 }
 
-function readMode(): "internet" | "offline" | null {
-  try {
-    const saved = localStorage.getItem(MODE_KEY);
-    return saved === "internet" || saved === "offline" ? saved : null;
-  } catch { return null; }
-}
-
-/** "With internet" vs "No internet" choice; renders the local-network setup when offline is chosen. */
+/**
+ * Desktop app: the reader always connects straight to this computer, with or
+ * without internet (RM Connect is only for timing through the website). With
+ * internet, results also go live; without it, they upload when it's back.
+ */
 export function ConnectionModeChooser({ tech }: { tech: Tech }) {
   const api = desktopApi();
-  const [mode, setMode] = useState<"internet" | "offline" | null>(readMode);
   const [internet, setInternet] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (!api) return;
-    api.network.getInfo().then(info => {
-      setInternet(info.internet);
-      // First visit: suggest the mode that matches what this computer has right now.
-      setMode(current => current ?? (info.internet ? "internet" : "offline"));
-    }).catch(() => {});
+    api.network.getInfo().then(info => setInternet(info.internet)).catch(() => {});
   }, []);
 
   if (!api) return null;
 
-  const choose = (next: "internet" | "offline") => {
-    setMode(next);
-    try { localStorage.setItem(MODE_KEY, next); } catch { /* per-viewer convenience only */ }
-  };
-
   return (
     <section className="rounded-xl border-2 border-primary/25 bg-card p-5 space-y-4">
       <div>
-        <p className="font-heading font-bold uppercase tracking-wider text-sm">2. Will the track have internet?</p>
+        <p className="font-heading font-bold uppercase tracking-wider text-sm">2. Connect the reader to this computer</p>
+        <p className="text-sm text-muted-foreground mt-1 flex items-start gap-2">
+          {internet === null ? <span>Checking this computer's connection…</span>
+            : internet
+              ? <><Globe size={16} className="mt-0.5 shrink-0 text-green-600" /><span>This computer is online: results go live as riders cross.</span></>
+              : <><WifiOff size={16} className="mt-0.5 shrink-0" /><span>This computer has no internet right now. Timing works the same, and results upload when you're back online.</span></>}
+        </p>
         <p className="text-sm text-muted-foreground mt-1">
-          {internet === null ? "Checking this computer's connection…"
-            : internet ? "This computer is online right now." : "This computer has no internet right now."}
-          {" "}The reader only needs to share a local network with this computer either way.
+          The reader only needs to share a local network (a router) with this computer. Nothing else to install.
         </p>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <ModeButton active={mode === "internet"} onClick={() => choose("internet")} icon={<Globe size={22} />}
-          title="Yes, connect with internet" detail="Use the standard setup below. Results go live as riders cross." />
-        <ModeButton active={mode === "offline"} onClick={() => choose("offline")} icon={<WifiOff size={22} />}
-          title="No, connect without internet" detail="Reader and computer on a local network. Results upload when you're back online." />
-      </div>
-      {mode === "offline" && <OfflineHardwareSetup tech={tech} api={api} />}
+      <OfflineHardwareSetup tech={tech} api={api} />
     </section>
-  );
-}
-
-function ModeButton({ active, onClick, icon, title, detail }: {
-  active: boolean; onClick: () => void; icon: React.ReactNode; title: string; detail: string;
-}) {
-  return (
-    <button onClick={onClick}
-      className={`flex items-center gap-3 rounded-xl border-2 p-4 text-left transition-all ${active ? "border-primary bg-primary/5 shadow-sm" : "border-border hover:border-primary/40"}`}>
-      <span className={active ? "text-primary" : "text-muted-foreground"}>{icon}</span>
-      <div>
-        <p className="font-semibold">{title}</p>
-        <p className="text-xs text-muted-foreground mt-0.5">{detail}</p>
-      </div>
-    </button>
   );
 }
 

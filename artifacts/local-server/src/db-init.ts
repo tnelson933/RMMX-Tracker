@@ -763,6 +763,8 @@ export function initDb() {
     // registrations — check-in add-ons, waiver acknowledgment and rider cancellations
     ["registrations", "rfid_sticker_purchased INTEGER NOT NULL DEFAULT 0"],
     ["registrations", "rm_trackr_purchased    INTEGER NOT NULL DEFAULT 0"],
+    // Add-ons paid in cash at desktop check-in: a JSON list of "transponder_rental" | "rfid_sticker" | "rm_trackr".
+    ["registrations", "addons_paid            TEXT"],
     ["registrations", "rm_trackr_fulfilled_at TEXT"],
     ["registrations", "rm_trackr_transponder  TEXT"],
     ["registrations", "transponder_returned   INTEGER NOT NULL DEFAULT 0"],

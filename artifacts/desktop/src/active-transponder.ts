@@ -65,7 +65,8 @@ export interface ActiveTransponderConfiguration {
 
 export interface ActiveTransponderPassingMetadata {
   /** UTC receipt captured at the TCP socket data event, before any HTTP queueing. */
-  receivedAtUtc: string;
+  /** When this computer received a live read. Left out for reads resent after a dropout. */
+  receivedAtUtc?: string;
   /** Host IANA zone used while parsing the F2000's local wall-clock timestamp. */
   deviceTimezone: string;
   /**
@@ -482,8 +483,10 @@ function processEpc(parameters: string, onPassing: ActiveTransponderPassingCallb
     // Resent from the dropout: keep the moment it was read (this computer's
     // time), never the moment it arrived.
     if (lastReplay) lastReplay.reads++;
+    // No receipt time on a resent read (same as RM Connect): the timing server
+    // would take a read from more than 5 minutes ago for clock skew and
+    // re-stamp it with the arrival time.
     onPassing?.(epc, new Date(deviceTime.getTime() - activeReplay.offsetMs), {
-      receivedAtUtc: receivedAt.toISOString(),
       deviceTimezone: getHostIanaTimezone(),
       source: "f2000_rewind",
       timeSource: "f2000_device",

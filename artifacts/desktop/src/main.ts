@@ -148,6 +148,8 @@ function getActiveTransponderSettingsPath(): string {
 interface ActiveTransponderSettings {
   address?: string;
   configuration?: ActiveTransponderConfiguration;
+  /** The reader was connected when the app last closed: reconnect at launch. */
+  autoConnect?: boolean;
 }
 
 function loadActiveTransponderSettings(): ActiveTransponderSettings {
@@ -161,6 +163,52 @@ function loadActiveTransponderSettings(): ActiveTransponderSettings {
 
 function loadActiveTransponderAddress(): string {
   return typeof loadActiveTransponderSettings().address === "string" ? loadActiveTransponderSettings().address! : "";
+}
+
+/**
+ * Connects to the RM TrackR (the given address, or the saved one) and sends
+ * its reads to the local timing server. Remembers the reader so the next
+ * launch reconnects by itself, the way RM Connect does.
+ */
+async function connectRmTrackr(ip?: string): Promise<void> {
+  const savedSettings = loadActiveTransponderSettings();
+  const requestedAddress = ip?.trim() || loadActiveTransponderAddress();
+  // Validate before attempting the network connection, and retain the
+  // normalized endpoint only after a successful direct connection.
+  const normalized = normalizeActiveTransponderAddress(requestedAddress);
+  if (savedSettings.configuration) configureActiveTransponder(savedSettings.configuration);
+  await connectActiveTransponder(
+    requestedAddress,
+    (epc, crossingTime, metadata) => {
+      postCrossingToLocalServer(
+        { tag: epc, fieldName: "transponder", crossingTime, ...metadata },
+        (error) => error && reportActiveTransponderError(error),
+      );
+    },
+    (status) => {
+      mainWindow?.webContents.send("active-transponder:status", status);
+    },
+  );
+  saveActiveTransponderSettings({ ...savedSettings, address: normalized.address, autoConnect: true });
+  mainWindow?.webContents.send("active-transponder:status", getActiveTransponderStatus());
+}
+
+/**
+ * At launch: reconnect the RM TrackR that was connected when the app last
+ * closed. If it isn't reachable (not plugged in, different network), stay
+ * disconnected without an error; the organizer connects on Reader Setup.
+ */
+async function reconnectSavedRmTrackr(): Promise<void> {
+  const saved = loadActiveTransponderSettings();
+  if (!saved.autoConnect || !saved.address) return;
+  try {
+    await connectRmTrackr(saved.address);
+    console.log(`[main] RM TrackR reconnected at ${saved.address}`);
+  } catch (err) {
+    console.log(`[main] Saved RM TrackR not reachable at launch: ${err instanceof Error ? err.message : String(err)}`);
+    disconnectActiveTransponder();
+    mainWindow?.webContents.send("active-transponder:status", getActiveTransponderStatus());
+  }
 }
 
 function saveActiveTransponderSettings(settings: ActiveTransponderSettings): void {
@@ -670,30 +718,13 @@ function registerIpcHandlers(): void {
   ipcMain.handle("serial:getStatus", () => getSerialStatus());
 
   ipcMain.handle("active-transponder:connect", async (_event, ip?: string) => {
-    const savedSettings = loadActiveTransponderSettings();
-    const requestedAddress = ip?.trim() || loadActiveTransponderAddress();
-    // Validate before attempting the network connection, and retain the
-    // normalized endpoint only after a successful direct connection.
-    const normalized = normalizeActiveTransponderAddress(requestedAddress);
-    if (savedSettings.configuration) configureActiveTransponder(savedSettings.configuration);
-    await connectActiveTransponder(
-      requestedAddress,
-      (epc, crossingTime, metadata) => {
-        postCrossingToLocalServer(
-          { tag: epc, fieldName: "transponder", crossingTime, ...metadata },
-          (error) => error && reportActiveTransponderError(error),
-        );
-      },
-      (status) => {
-        mainWindow?.webContents.send("active-transponder:status", status);
-      },
-    );
-    saveActiveTransponderSettings({ ...savedSettings, address: normalized.address });
-    mainWindow?.webContents.send("active-transponder:status", getActiveTransponderStatus());
+    await connectRmTrackr(ip);
   });
 
   ipcMain.handle("active-transponder:disconnect", () => {
     disconnectActiveTransponder();
+    // Turned off on purpose: don't reconnect by itself at the next launch.
+    saveActiveTransponderSettings({ ...loadActiveTransponderSettings(), autoConnect: false });
     mainWindow?.webContents.send("active-transponder:status", getActiveTransponderStatus());
   });
 
@@ -1023,12 +1054,12 @@ function postCrossingToLocalServer(opts: {
         res.setEncoding("utf8");
         res.on("data", (chunk: string) => { rejection += chunk; });
         res.on("end", () => {
-          const noActiveMoto = res.statusCode === 404 || res.statusCode === 409;
-          onFailure?.(
-            noActiveMoto
-              ? "RM TrackR read a real crossing, but no active moto or practice is running. Start a moto/practice and try again."
-              : `RM TrackR read a real crossing, but the local timing server rejected it (HTTP ${res.statusCode}${rejection ? `: ${rejection}` : ""}).`,
-          );
+          // 404/409: the reader works and the read arrived, it just doesn't count
+          // (nothing running, the rider's moto is over, a resent read from before
+          // the start, an unknown tag). That is not a connection problem, so it
+          // must not turn the reader status red.
+          if (res.statusCode === 404 || res.statusCode === 409) return;
+          onFailure?.(`RM TrackR read a real crossing, but the local timing server rejected it (HTTP ${res.statusCode}${rejection ? `: ${rejection}` : ""}).`);
         });
       } else {
         res.resume();
@@ -1114,6 +1145,7 @@ app.whenReady().then(async () => {
   createWindow();
   startSyncEngine();
   startReaderStatePolling();
+  void reconnectSavedRmTrackr();
   setupAutoUpdater();
 
   app.on("activate", () => {

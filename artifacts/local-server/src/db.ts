@@ -17,6 +17,11 @@ export function parseBool(v: number | null | undefined): boolean {
   return v === 1;
 }
 
+/** A registration's `addons_paid` column: the add-ons collected in cash at desktop check-in. */
+export function paidAddons(v: unknown): string[] {
+  return typeof v === "string" ? parseJsonArr<string>(v).filter((x) => typeof x === "string") : [];
+}
+
 export function parseJsonArr<T = unknown>(v: string | null | undefined): T[] {
   if (!v) return [];
   try {

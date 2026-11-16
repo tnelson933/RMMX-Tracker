@@ -422,9 +422,11 @@ function ActiveTransponderGuidedSetup({
           <div className="flex gap-4">
             <StepBadge n={3} />
             <div className="space-y-2 min-w-0 flex-1">
-              <p className="font-semibold text-sm">Device settings come from Reader Setup</p>
+              <p className="font-semibold text-sm">{isDesktop ? "Device settings are applied for you" : "Device settings come from Reader Setup"}</p>
               <p className="text-xs text-muted-foreground">
-                Active channel, power, enabled loops, and clock sync are saved in the website above. RM Connect applies them automatically whenever it connects to this reader.
+                {isDesktop
+                  ? "This app sets the RM TrackR's clock and applies its settings every time it connects: channel 0, full power, both loops on."
+                  : "Active channel, power, enabled loops, and clock sync are saved in the website above. RM Connect applies them automatically whenever it connects to this reader."}
               </p>
               {isConnected && (
                 <p className="text-xs font-medium text-green-700 dark:text-green-400">
@@ -1016,8 +1018,8 @@ export default function ReaderSetup() {
         </details>
       )}
 
-      {/* ── RM Connect: the one place readers are set up ── */}
-      <section className="rounded-xl border-2 border-primary/25 bg-card p-5 space-y-4">
+      {/* ── RM Connect: how readers reach the website. The desktop app connects to readers itself, so it isn't shown there. ── */}
+      {!isDesktop && (<section className="rounded-xl border-2 border-primary/25 bg-card p-5 space-y-4">
         <div className="flex items-center gap-2">
           <MonitorDown size={18} className="text-primary" />
           <h2 className="font-heading font-bold uppercase tracking-tight text-lg">Set up with RM Connect</h2>
@@ -1071,7 +1073,7 @@ export default function ReaderSetup() {
             </div>
           </div>
         </details>
-      </section>
+      </section>)}
 
       {/* ── Readers ── */}
       <div className="space-y-3">
