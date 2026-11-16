@@ -330,7 +330,7 @@ export class ReaderManager {
     postCrossingToLocalServer(
       { port: this.options.localServerPort, agent: this.options.httpAgent },
       // The name is read now, so a renamed reader reports its new name.
-      { ...crossing, readerId: reader.id, readerName: reader.name },
+      { ...crossing, readerId: reader.id, readerName: reader.name, readerAddress: reader.address },
       { onFailure, onResponse: this.options.onCrossingResponse },
     );
   }

@@ -14,10 +14,12 @@ export interface LocalCrossing {
   /** Stable id of the reader that made the read (enduro gates, split and sector readers). */
   readerId?: string;
   readerName?: string;
+  /** The reader's network address, to match it to the club's reader list when names differ. */
+  readerAddress?: string;
 }
 
 export function buildLocalCrossingPayload(opts: LocalCrossing): Record<string, string> {
-  const { tag, fieldName = "rfidNumber", crossingTime, receivedAtUtc, deviceTimezone, source, timeSource, readerId, readerName } = opts;
+  const { tag, fieldName = "rfidNumber", crossingTime, receivedAtUtc, deviceTimezone, source, timeSource, readerId, readerName, readerAddress } = opts;
   const payload: Record<string, string> = {
     [fieldName]: tag,
     crossingTime: (crossingTime ?? new Date()).toISOString(),
@@ -29,6 +31,7 @@ export function buildLocalCrossingPayload(opts: LocalCrossing): Record<string, s
   if (timeSource) payload.timeSource = timeSource;
   if (readerId) payload.readerId = readerId;
   if (readerName) payload.readerName = readerName;
+  if (readerAddress) payload.readerAddress = readerAddress;
   return payload;
 }
 
