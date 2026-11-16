@@ -1,9 +1,9 @@
-export const PDF_JS_WORKER_URL =
-  "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.worker.min.mjs";
+// pdf.js ships with the app (no CDN), so PDFs render on the website, in the
+// rider app's /pdf-view page and in the desktop app with no internet.
+import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
-const PDF_JS_MODULE_URL =
-  "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.mjs";
+export const PDF_JS_WORKER_URL: string = workerUrl;
 
 export async function loadPdfJs(): Promise<any> {
-  return import(/* @vite-ignore */ PDF_JS_MODULE_URL);
+  return import("pdfjs-dist");
 }

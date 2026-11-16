@@ -51,8 +51,8 @@
     "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "catalog:",
     "@workspace/api-client-react": "workspace:*",
-    "@workspace/rider-insights": "workspace:*",
     "@workspace/api-zod": "workspace:*",
+    "@workspace/rider-insights": "workspace:*",
     "class-variance-authority": "catalog:",
     "clsx": "catalog:",
     "cmdk": "^1.1.1",
@@ -92,6 +92,7 @@
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "onnxruntime-web": "1.21.0",
+    "pdfjs-dist": "5.4.296",
     "qrcode.react": "^4.2.0",
     "three": "^0.184.0",
     "xlsx": "^0.18.5"
