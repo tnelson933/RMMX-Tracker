@@ -718,6 +718,9 @@ export function initDb() {
     ["motos", "staggered_group_id     INTEGER"],
     // Set when the organizer finalizes the race: results become official.
     ["motos", "results_finalized_at   TEXT"],
+    // Enduro test option the website stores (a dedicated start gate). Nullable:
+    // "not set" stays distinguishable from false.
+    ["motos", "enduro_has_rfid_start  INTEGER"],
     // Library track + where the course map comes from (pulled from the cloud).
     ["events", "track_id                   INTEGER"],
     ["events", "course_source              TEXT NOT NULL DEFAULT 'track'"],
@@ -908,6 +911,8 @@ export function initDb() {
       role          TEXT NOT NULL,
       moto_id       INTEGER,
       time_check_id INTEGER,
+      sequence      INTEGER,
+      label         TEXT,
       created_at    TEXT NOT NULL DEFAULT (datetime('now'))
     );
 

@@ -60,6 +60,7 @@ function serializeMoto(m: any, groupMembersMap?: Map<number, number[]>) {
     staggeredGroupMembers: groupId != null && groupMembersMap ? (groupMembersMap.get(groupId) ?? null) : null,
     countdownSeconds: m.countdown_seconds ?? null,
     resultsFinalizedAt: m.results_finalized_at ?? null,
+    enduroHasRfidStart: m.enduro_has_rfid_start === 1,
     createdAt: m.created_at,
   };
 }
@@ -173,7 +174,7 @@ router.post("/events/:eventId/motos", (req, res) => {
   if (!session?.userId) return res.status(401).json({ error: "Unauthorized" });
   const db = getDb();
   const eventId = Number(req.params.eventId);
-  const { name, type, raceClass, raceClasses, motoNumber, scheduledTime, lineup, lapCount, timeLimitMs, plusLaps, countdownSeconds } =
+  const { name, type, raceClass, raceClasses, motoNumber, scheduledTime, lineup, lapCount, timeLimitMs, plusLaps, countdownSeconds, enduroHasRfidStart } =
     req.body;
   if (!name || !type || !raceClass || motoNumber === undefined) {
     return res
@@ -186,8 +187,8 @@ router.post("/events/:eventId/motos", (req, res) => {
   const runNumber = type === "practice" ? makeRoomForPractices(db, eventId, 1) : Number(motoNumber);
   const result = db
     .prepare(
-      `INSERT INTO motos (event_id, name, type, race_class, race_classes, moto_number, scheduled_time, lineup, lap_count, time_limit_ms, plus_laps, countdown_seconds, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', datetime('now'))`,
+      `INSERT INTO motos (event_id, name, type, race_class, race_classes, moto_number, scheduled_time, lineup, lap_count, time_limit_ms, plus_laps, countdown_seconds, enduro_has_rfid_start, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', datetime('now'))`,
     )
     .run(
       eventId,
@@ -202,6 +203,7 @@ router.post("/events/:eventId/motos", (req, res) => {
       timing.timeLimitMs,
       timing.plusLaps,
       countdownSeconds ? Number(countdownSeconds) : null,
+      enduroHasRfidStart === true ? 1 : 0,
     );
   const moto = db
     .prepare("SELECT * FROM motos WHERE id = ?")

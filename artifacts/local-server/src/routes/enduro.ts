@@ -1,6 +1,12 @@
 import { Router } from "express";
 import type Database from "better-sqlite3";
 import { getDb, parseJson, parseJsonArr } from "../db";
+import {
+  computeEnduroPenalty,
+  recomputeEnduroPositionsForEvent,
+  type EnduroPenaltyConfig,
+  type TimeCheckTarget,
+} from "../lib/enduroScoring";
 
 /**
  * Enduro time checks, checkpoint arrivals, penalty summary and event reader
@@ -12,21 +18,11 @@ import { getDb, parseJson, parseJsonArr } from "../db";
  * replaces them), so a save queues one per-event snapshot ("event_enduro_setup",
  * record_id = event id) that the desktop sync engine pushes to the cloud.
  *
- * Not mirrored: the cloud recomputes penalty-adjusted enduro positions after
- * each change. The local server has no enduro scoring; the cloud recomputes
- * when the change syncs.
+ * Like the cloud, enduro test positions are re-ranked after each change to
+ * time checks or arrivals (lib/enduroScoring.ts), so time-check DQs show at once.
  */
 
 const router = Router();
-
-type TimeCheckTarget = { raceClass: string; durationMs: number; startTimeOfDay?: string | null };
-type EnduroPenaltyConfig = {
-  earlySecPerMin: number;
-  lateSecPerMin: number;
-  earlyDqMinutes: number | null;
-  lateDqMinutes: number | null;
-  timezone: string | null;
-};
 
 function eventExists(res: any, eventId: number): boolean {
   const ev = getDb().prepare("SELECT id FROM events WHERE id = ?").get(eventId);
@@ -180,6 +176,7 @@ router.put("/events/:eventId/time-checks", (req, res) => {
       .run(penaltyConfig ? JSON.stringify(penaltyConfig) : null, eventId);
     queueEnduroSetup(db, eventId);
   })();
+  recomputeEnduroPositionsForEvent(eventId);
 
   return res.json(incoming.length === 0 ? [] : listTimeChecks(eventId));
 });
@@ -228,6 +225,7 @@ router.post("/events/:eventId/time-checks/:checkId/arrivals", (req, res) => {
      VALUES (?, ?, ?, ?, 'manual')
      ON CONFLICT (time_check_id, rider_id) DO UPDATE SET arrival_time = excluded.arrival_time, recorded_by = 'manual'`,
   ).run(eventId, checkId, Number(riderId), parsedArrival.toISOString());
+  recomputeEnduroPositionsForEvent(eventId);
 
   const arrival = db
     .prepare("SELECT * FROM enduro_checkpoint_arrivals WHERE time_check_id = ? AND rider_id = ?")
@@ -247,58 +245,9 @@ router.delete("/events/:eventId/time-checks/:checkId/arrivals/:riderId", (req, r
     .prepare("DELETE FROM enduro_checkpoint_arrivals WHERE event_id = ? AND time_check_id = ? AND rider_id = ?")
     .run(eventId, checkId, riderId);
   if (result.changes === 0) return res.status(404).json({ error: "Arrival not found" });
+  recomputeEnduroPositionsForEvent(eventId);
   return res.json({ ok: true });
 });
-
-// ── Penalty computation (mirrors cloud routes/enduro-scoring.ts) ─────────────
-
-function parseTimeMinutes(s: string | null | undefined): number | null {
-  if (!s) return null;
-  const m = s.match(/^(\d{1,2}):(\d{2})$/);
-  if (!m) return null;
-  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
-}
-
-function extractTimeOfDayMins(d: Date, tz: string | null | undefined): number {
-  if (tz) {
-    try {
-      const parts = new Intl.DateTimeFormat("en-US", {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hour12: false,
-        timeZone: tz,
-      }).formatToParts(d);
-      const get = (type: string) => parseInt(parts.find((p) => p.type === type)?.value ?? "0", 10);
-      const h = get("hour") % 24;
-      return h * 60 + get("minute") + get("second") / 60;
-    } catch {
-      // Fall through to local time if the timezone string is invalid.
-    }
-  }
-  return d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
-}
-
-function computeEnduroPenalty(
-  arrivalTime: Date,
-  target: TimeCheckTarget,
-  config: EnduroPenaltyConfig,
-): { penaltySeconds: number; disqualified: boolean; diffMinutes: number } {
-  const startMins = parseTimeMinutes(target.startTimeOfDay);
-  if (startMins == null) return { penaltySeconds: 0, disqualified: false, diffMinutes: 0 };
-  const expectedMins = startMins + target.durationMs / 60_000;
-  const actualMins = extractTimeOfDayMins(arrivalTime, config.timezone);
-  const diffMinutes = actualMins - expectedMins;
-  if (diffMinutes > 0) {
-    if (config.lateDqMinutes != null && diffMinutes > config.lateDqMinutes) return { penaltySeconds: 0, disqualified: true, diffMinutes };
-    return { penaltySeconds: Math.floor(diffMinutes) * config.lateSecPerMin, disqualified: false, diffMinutes };
-  } else if (diffMinutes < 0) {
-    const minsEarly = -diffMinutes;
-    if (config.earlyDqMinutes != null && minsEarly > config.earlyDqMinutes) return { penaltySeconds: 0, disqualified: true, diffMinutes };
-    return { penaltySeconds: Math.floor(minsEarly) * config.earlySecPerMin, disqualified: false, diffMinutes };
-  }
-  return { penaltySeconds: 0, disqualified: false, diffMinutes: 0 };
-}
 
 // GET /events/:eventId/penalty-summary — per-rider penalty totals.
 // Organizers always; anyone else only once results are published (as the cloud).
