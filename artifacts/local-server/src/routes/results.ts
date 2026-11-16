@@ -2,6 +2,8 @@ import { Router } from "express";
 import { getDb } from "../db";
 import { formulaPoints } from "../lib/safeFormula";
 import { AMA_POINTS, isLowerBetter, olympicPenalty } from "../lib/overallOrder";
+import { buildContingencyReport } from "@workspace/api-zod";
+import { computeEventOverall } from "../lib/eventOverall";
 
 const router = Router();
 
@@ -363,6 +365,78 @@ router.get("/events/:eventId/ama-export", (req, res) => {
   res.setHeader("Content-Type", "text/csv");
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   return res.send(lines.join("\n"));
+});
+
+// GET /public/events/:eventId/overall-standings: per-class overall standings.
+// Mirrors the cloud route (api-server routes/dashboard.ts): no sign-in needed,
+// finished races only, Olympic tables rank lowest first.
+router.get("/public/events/:eventId/overall-standings", (req, res) => {
+  const eventId = Number(req.params.eventId);
+  if (isNaN(eventId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
+  return res.json(computeEventOverall(eventId));
+});
+
+// GET /events/:eventId/contingency-report: each brand the event offers
+// contingency with, and the finishers who ran it (bike brand or a listed
+// sponsor), from the class overall. Mirrors the cloud route (api-server
+// routes/results.ts), including its messages.
+router.get("/events/:eventId/contingency-report", (req, res) => {
+  const session = req.session as any;
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
+  const db = getDb();
+  const eventId = Number(req.params.eventId);
+  const event = db.prepare("SELECT id, club_id, name, date, contingency_brands FROM events WHERE id = ?").get(eventId) as
+    | { id: number; club_id: number; name: string; date: string; contingency_brands: string | null }
+    | undefined;
+  if (!event) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
+  const user = db.prepare("SELECT club_id, role FROM users WHERE id = ?").get(session.userId) as { club_id: number | null; role: string | null } | undefined;
+  if (event.club_id !== user?.club_id && user?.role !== "super_admin") {
+    return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
+  }
+
+  const overall = computeEventOverall(eventId);
+  // Official once every finished race counted here has been finalized.
+  const counted = db.prepare(
+    "SELECT results_finalized_at FROM motos WHERE event_id = ? AND status = 'completed' AND type != 'practice'",
+  ).all(eventId) as Array<{ results_finalized_at: string | null }>;
+  const official = overall.format === "enduro"
+    ? !!overall.official
+    : counted.length > 0 && counted.every(m => m.results_finalized_at != null);
+
+  const regs = db.prepare(
+    `SELECT reg.rider_id, reg.race_class, reg.ama_number, reg.bike_brand, reg.bike_model, reg.bike_year,
+            reg.sponsors, reg.team_name, ri.first_name, ri.last_name
+       FROM registrations reg
+       INNER JOIN riders ri ON ri.id = reg.rider_id
+      WHERE reg.event_id = ? AND reg.status != 'void'
+      ORDER BY reg.id`,
+  ).all(eventId) as any[];
+  // Group races show the team (the captain's entry carries its name).
+  const teamNames = new Map<number, string>();
+  for (const r of regs) if (r.team_name && !teamNames.has(r.rider_id)) teamNames.set(r.rider_id, r.team_name);
+  // The entry in the result's class, else the rider's first entry.
+  const details = (riderId: number, raceClass: string) => {
+    const r = regs.find(x => x.rider_id === riderId && x.race_class === raceClass) ?? regs.find(x => x.rider_id === riderId);
+    const team = teamNames.get(riderId);
+    return r ? {
+      firstName: team ?? r.first_name ?? "", lastName: team ? "" : r.last_name ?? "", amaNumber: r.ama_number ?? null,
+      bikeBrand: r.bike_brand, bikeModel: r.bike_model ?? null, bikeYear: r.bike_year ?? null, sponsors: r.sponsors,
+    } : null;
+  };
+
+  let brands: string[] = [];
+  try {
+    const parsed = event.contingency_brands ? JSON.parse(event.contingency_brands) : null;
+    if (Array.isArray(parsed)) brands = parsed;
+  } catch { /* not a list: no brands */ }
+
+  return res.json({
+    eventId,
+    eventName: event.name,
+    eventDate: String(event.date).slice(0, 10),
+    official,
+    brands: buildContingencyReport(brands, overall.classes, details),
+  });
 });
 
 // GET /events/:eventId/publication

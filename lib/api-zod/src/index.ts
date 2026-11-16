@@ -4,3 +4,6 @@ export * from "./activeTransponder";
 export * from "./eventTimeZone";
 export * from "./practiceOrder";
 export * from "./addonSales";
+export * from "./enduroOverall";
+export * from "./contingencyReport";
+export * from "./eventOverall";
