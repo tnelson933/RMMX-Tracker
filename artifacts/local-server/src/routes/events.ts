@@ -126,6 +126,38 @@ function normalizeEventPurchaseOptions(options: unknown): Array<{ id: string; na
   return out;
 }
 
+/**
+ * Create-only extras: fields the wizard sends that the INSERT above doesn't
+ * list (the edit form saves the same ones through PATCH).
+ */
+function applyExtraEventFields(db: ReturnType<typeof getDb>, eventId: number, body: Record<string, unknown>): void {
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  const text = (key: string, col: string) => {
+    const v = body[key];
+    if (typeof v === "string" && v.trim()) { sets.push(`${col} = ?`); values.push(v.trim()); }
+  };
+  const json = (key: string, col: string) => {
+    const v = body[key];
+    if (v && typeof v === "object") { sets.push(`${col} = ?`); values.push(JSON.stringify(v)); }
+  };
+  const num = (key: string, col: string) => {
+    const v = body[key];
+    if (v != null && v !== "" && Number.isFinite(Number(v))) { sets.push(`${col} = ?`); values.push(Number(v)); }
+  };
+  text("streetAddress", "street_address");
+  text("zip", "zip");
+  num("trackLat", "track_lat");
+  num("trackLng", "track_lng");
+  json("raceClassSeriesMap", "race_class_series_map");
+  json("classOrder", "class_order");
+  json("contingencyBrands", "contingency_brands");
+  json("quickCheckinRequirements", "quick_checkin_requirements");
+  if (typeof body.quickCheckinEnabled === "boolean") { sets.push("quick_checkin_enabled = ?"); values.push(body.quickCheckinEnabled ? 1 : 0); }
+  if (sets.length === 0) return;
+  db.prepare(`UPDATE events SET ${sets.join(", ")} WHERE id = ?`).run(...values, eventId);
+}
+
 function serializeEvent(e: any) {
   return {
     id: e.id,
@@ -161,6 +193,15 @@ function serializeEvent(e: any) {
     requireTransponder: e.require_transponder === 1,
     groupRace: e.group_race === 1,
     ridersPerGroup: e.riders_per_group ?? null,
+    raceClassSeriesMap: (() => { try { return JSON.parse(e.race_class_series_map || "{}"); } catch { return {}; } })(),
+    classOrder: (() => { try { return e.class_order ? JSON.parse(e.class_order) : null; } catch { return null; } })(),
+    contingencyBrands: (() => { try { return e.contingency_brands ? JSON.parse(e.contingency_brands) : null; } catch { return null; } })(),
+    quickCheckinEnabled: e.quick_checkin_enabled === 1,
+    quickCheckinRequirements: (() => { try { return e.quick_checkin_requirements ? JSON.parse(e.quick_checkin_requirements) : null; } catch { return null; } })(),
+    streetAddress: e.street_address ?? null,
+    zip: e.zip ?? null,
+    trackLat: e.track_lat ?? null,
+    trackLng: e.track_lng ?? null,
     raceClassDetails: (() => { try { return JSON.parse(e.race_class_details || "{}"); } catch { return {}; } })(),
     enduroPenaltyConfig: (() => { try { return e.enduro_penalty_config ? JSON.parse(e.enduro_penalty_config) : null; } catch { return null; } })(),
     scoringTableId: e.scoring_table_id ?? null,
@@ -298,6 +339,9 @@ router.post("/events", (req, res) => {
 
   const newEventId = Number(result.lastInsertRowid);
 
+  // The rest of what the Create Event wizard sends (same fields the edit form saves).
+  applyExtraEventFields(db, newEventId, req.body ?? {});
+
   // Group race (teams take turns): the same two fields the edit form saves.
   if (req.body.groupRace === true) {
     const perGroup = Number(req.body.ridersPerGroup);
@@ -373,12 +417,28 @@ router.patch("/events/:eventId", (req, res) => {
     endDate: "end_date",
     groupRace: "group_race",
     ridersPerGroup: "riders_per_group",
+    rfidStickerFee: "rfid_sticker_fee",
+    earlyBirdFee: "early_bird_fee",
+    earlyBirdEndsAt: "early_bird_ends_at",
+    requireWaiver: "require_waiver",
+    requireLiabilityWaiver: "require_liability_waiver",
+    requireTransponder: "require_transponder",
+    quickCheckinEnabled: "quick_checkin_enabled",
+    streetAddress: "street_address",
+    zip: "zip",
+    trackLat: "track_lat",
+    trackLng: "track_lng",
   };
 
   const jsonFields: Record<string, string> = {
     raceClasses: "race_classes",
     raceClassLimits: "race_class_limits",
     purchaseOptions: "purchase_options",
+    raceClassDetails: "race_class_details",
+    raceClassSeriesMap: "race_class_series_map",
+    classOrder: "class_order",
+    contingencyBrands: "contingency_brands",
+    quickCheckinRequirements: "quick_checkin_requirements",
   };
 
   const boolFields: Record<string, string> = {
@@ -388,13 +448,17 @@ router.patch("/events/:eventId", (req, res) => {
     noDuplicateBibs: "no_duplicate_bibs",
     requireClubId: "require_club_id",
     groupRace: "group_race",
+    requireWaiver: "require_waiver",
+    requireLiabilityWaiver: "require_liability_waiver",
+    requireTransponder: "require_transponder",
+    quickCheckinEnabled: "quick_checkin_enabled",
   };
 
   const fields: string[] = [];
   const values: unknown[] = [];
 
   // Date-only fields must be stored as YYYY-MM-DD — strip any time component.
-  const dateOnlyFields = new Set(["date", "endDate"]);
+  const dateOnlyFields = new Set(["date", "endDate", "earlyBirdEndsAt"]);
 
   for (const [jsKey, dbCol] of Object.entries(fieldMap)) {
     if (req.body[jsKey] !== undefined) {

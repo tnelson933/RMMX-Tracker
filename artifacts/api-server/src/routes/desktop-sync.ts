@@ -190,6 +190,47 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
         return { raceClasses, raceClassLimits, purchaseOptions };
       };
 
+      /**
+       * Event fields the desktop learned to save later. Each is applied only when
+       * the desktop's row carries a value, so an older desktop (or a column it has
+       * not pulled yet) never blanks what the cloud has.
+       */
+      const extraEventFields = (): Record<string, unknown> => {
+        const out: Record<string, unknown> = {};
+        const json = (v: unknown): unknown => {
+          if (typeof v !== "string") return v;
+          try { return JSON.parse(v); } catch { return undefined; }
+        };
+        const money = (v: unknown) => (v === "" ? null : Number(v) || null);
+        if (e.end_date !== undefined) out.endDate = e.end_date ? String(e.end_date).substring(0, 10) : null;
+        if (e.race_style != null) out.raceStyle = String(e.race_style);
+        if (e.rfid_sticker_fee !== undefined) out.rfidStickerFee = e.rfid_sticker_fee == null ? null : money(e.rfid_sticker_fee);
+        if (e.early_bird_fee !== undefined) out.earlyBirdFee = e.early_bird_fee == null ? null : money(e.early_bird_fee);
+        if (e.early_bird_ends_at !== undefined) out.earlyBirdEndsAt = e.early_bird_ends_at ? String(e.early_bird_ends_at).substring(0, 10) : null;
+        for (const [col, key] of [
+          ["require_waiver", "requireWaiver"], ["require_liability_waiver", "requireLiabilityWaiver"],
+          ["require_transponder", "requireTransponder"], ["group_race", "groupRace"],
+          ["quick_checkin_enabled", "quickCheckinEnabled"],
+        ] as const) {
+          if (e[col] != null) out[key] = !!Number(e[col]) || e[col] === true;
+        }
+        if (e.riders_per_group != null) out.ridersPerGroup = Number(e.riders_per_group) || null;
+        for (const [col, key] of [
+          ["race_class_details", "raceClassDetails"], ["race_class_series_map", "raceClassSeriesMap"],
+          ["class_order", "classOrder"], ["contingency_brands", "contingencyBrands"],
+          ["quick_checkin_requirements", "quickCheckinRequirements"],
+        ] as const) {
+          if (e[col] == null) continue;
+          const parsed = json(e[col]);
+          if (parsed !== undefined && parsed !== null && typeof parsed === "object") out[key] = parsed;
+        }
+        if (e.street_address != null) out.streetAddress = String(e.street_address);
+        if (e.zip != null) out.zip = String(e.zip);
+        if (e.track_lat != null && Number.isFinite(Number(e.track_lat))) out.trackLat = Number(e.track_lat);
+        if (e.track_lng != null && Number.isFinite(Number(e.track_lng))) out.trackLng = Number(e.track_lng);
+        return out;
+      };
+
       const buildEventValues = (withId: number | null) => {
         const { raceClasses, raceClassLimits, purchaseOptions } = parseEventFields();
         const row: Record<string, unknown> = {
@@ -220,6 +261,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
           registrationClose:        e.registration_close != null ? String(e.registration_close) : null,
           imageUrl:                 e.image_url   != null ? String(e.image_url)   : null,
           amaEventId:               e.ama_event_id != null ? String(e.ama_event_id) : null,
+          ...extraEventFields(),
         };
         return { row, ...parseEventFields() };
       };
@@ -263,6 +305,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
               registrationClose:        row.registrationClose        as string | null,
               imageUrl:                 row.imageUrl                 as string | null,
               amaEventId:               row.amaEventId               as string | null,
+              ...extraEventFields(),
             } as any,
             setWhere: eq(eventsTable.clubId, clubId),
           });
@@ -338,6 +381,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       if (e.race_style !== undefined) {
         updateSet.raceStyle = e.race_style === null ? null : String(e.race_style);
       }
+      Object.assign(updateSet, extraEventFields());
 
       if (Object.keys(updateSet).length === 0) continue;
 

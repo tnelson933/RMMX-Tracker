@@ -757,6 +757,17 @@ export function initDb() {
     // events — group races (teams whose members' tags all count for the team)
     ["events", "group_race               INTEGER NOT NULL DEFAULT 0"],
     ["events", "riders_per_group         INTEGER"],
+    // Event fields the website has: nullable with no default, so "not pulled
+    // from the cloud yet" is never pushed back as a value.
+    ["events", "race_class_series_map      TEXT"],
+    ["events", "class_order                TEXT"],
+    ["events", "contingency_brands         TEXT"],
+    ["events", "quick_checkin_enabled      INTEGER"],
+    ["events", "quick_checkin_requirements TEXT"],
+    ["events", "street_address             TEXT"],
+    ["events", "zip                        TEXT"],
+    ["events", "track_lat                  REAL"],
+    ["events", "track_lng                  REAL"],
     ["registrations", "team_name          TEXT"],
     ["team_members",  "trackr_choice      TEXT"],
     ["team_members",  "rfid_purchased     INTEGER NOT NULL DEFAULT 0"],
