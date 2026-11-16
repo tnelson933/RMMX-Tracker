@@ -5,6 +5,15 @@ import type { Response } from "express";
 import { getDb, parseJsonArr, parseJson } from "../db";
 import { rejectForeignBrowserIngest } from "../lib/request-origin";
 import { LIVE_WINDOW_MS, resolvePracticeRider } from "./practice";
+import {
+  ENDURO_ALL_CLASSES,
+  ENDURO_MAX_RUN_MS,
+  EnduroCrossingRejected,
+  pairEnduroRuns,
+  recomputeEnduroPositionsForEvent,
+  rerankEnduroTest,
+  resolveEnduroRiderClass,
+} from "../lib/enduroScoring";
 
 const router = Router();
 const MAX_CROSSING_FUTURE_MS = 5 * 60 * 1000;
@@ -168,7 +177,9 @@ export function buildLeaderboard(motoId: number) {
 
   // Self-heal stable timezone-labelled reader clocks using logical
   // lap/insertion order. Delayed uploads are intentionally not repaired.
-  if (moto.started_at) {
+  // Enduro tests pair start/finish reads by insertion order instead, so this
+  // lap-based repair doesn't apply to them.
+  if (moto.started_at && moto.type !== "enduro_test") {
     const crossings = db.prepare(`
       SELECT * FROM lap_crossings
       WHERE moto_id = ? AND rider_id IS NOT NULL
@@ -396,6 +407,48 @@ function rescoreRider(moto: any, riderId: number | null, tagNumber: string, cros
 }
 
 /**
+ * Rebuild one rider's runs on an enduro test from their remaining crossings
+ * (start/finish pairs in insertion order): run number and elapsed time on each
+ * crossing, and their race result (lap_times = completed runs, total_time =
+ * their sum, race_class = the rider's class at the event). Removes the result
+ * when no crossing is left. Same as the cloud's rescoreEnduroRider; run inside
+ * a transaction and re-rank the test afterwards.
+ */
+function rescoreEnduroRider(moto: any, riderId: number): void {
+  const db = getDb();
+  const crossings = (db
+    .prepare("SELECT * FROM lap_crossings WHERE moto_id = ? AND rider_id = ? ORDER BY id")
+    .all(moto.id, riderId) as any[])
+    .map(c => ({ id: c.id as number, crossingTime: c.crossing_time as string, lapNumber: c.lap_number, lapTimeMs: c.lap_time_ms }));
+  const { runs, numbered } = pairEnduroRuns(crossings);
+  const setLap = db.prepare("UPDATE lap_crossings SET lap_number = ?, lap_time_ms = ? WHERE id = ?");
+  for (const n of numbered) {
+    if (n.crossing.lapNumber !== n.runNumber || n.crossing.lapTimeMs !== n.elapsedMs) {
+      setLap.run(n.runNumber, n.elapsedMs, n.crossing.id);
+    }
+  }
+  const existing = db.prepare("SELECT * FROM race_results WHERE moto_id = ? AND rider_id = ? LIMIT 1").get(moto.id, riderId) as any;
+  if (crossings.length === 0) {
+    if (existing) db.prepare("DELETE FROM race_results WHERE id = ?").run(existing.id);
+    return;
+  }
+  const passTimes = runs.map(r => r.elapsedMs);
+  const totalTime = passTimes.length ? formatLapTime(passTimes.reduce((sum, t) => sum + t, 0)) : null;
+  const raceClass = resolveEnduroRiderClass(moto.event_id, riderId, existing?.race_class || moto.race_class || ENDURO_ALL_CLASSES);
+  if (existing) {
+    db.prepare("UPDATE race_results SET lap_times = ?, total_time = ?, race_class = ? WHERE id = ?")
+      .run(JSON.stringify(passTimes), totalTime, raceClass, existing.id);
+  } else {
+    const checkins = db.prepare("SELECT race_class, bib_number FROM checkins WHERE event_id = ? AND rider_id = ? ORDER BY id").all(moto.event_id, riderId) as any[];
+    const checkin = checkins.find(c => c.race_class === raceClass) ?? checkins[0];
+    db.prepare(`
+      INSERT INTO race_results (event_id, moto_id, rider_id, race_class, position, bib_number, lap_times, total_time, dnf, dns)
+      VALUES (?, ?, ?, ?, 999, ?, ?, ?, 0, 0)
+    `).run(moto.event_id, moto.id, riderId, raceClass, checkin?.bib_number ?? null, JSON.stringify(passTimes), totalTime);
+  }
+}
+
+/**
  * A timed race closes once every rider still racing has taken the checkered
  * flag, or a grace period after the leader's finish. Returns true if closed.
  */
@@ -478,6 +531,8 @@ function processCrossing(opts: {
   antennaId?: number;
   bypassDebounce?: boolean;
   overrideRiderId?: number | null;
+  /** Enduro gate role of a dedicated reader; checked with the rider's crossings. */
+  enduroRole?: "start" | "finish";
   onAccepted?: (result: {
     crossing: { id: number };
     lapNumber: number;
@@ -485,7 +540,7 @@ function processCrossing(opts: {
   }) => void;
 }) {
   const db = getDb();
-  const { rfidNumber, readerId, antennaId, bypassDebounce, overrideRiderId, onAccepted } = opts;
+  const { rfidNumber, readerId, antennaId, bypassDebounce, overrideRiderId, enduroRole, onAccepted } = opts;
   const crossingTime = canonicalizeCrossingTimestamp(opts.crossingTime, new Date(), "processCrossing");
   const tagNumber = rfidNumber.trim();
   // Manual entries name their moto; reads from the track go to the rider's moto.
@@ -493,15 +548,95 @@ function processCrossing(opts: {
 
   type CrossingResult =
     | { debounced: true; crossing: null; lapNumber: null; lapTimeMs: null }
-    | { debounced: false; crossing: { id: number }; lapNumber: number; lapTimeMs: number };
+    | { debounced: false; crossing: { id: number }; lapNumber: number; lapTimeMs: number; enduroAction?: "started" | "finished"; elapsedMs?: number };
+
+  // Enduro tests have no Start button: riders start individually. The first
+  // crossing aimed at a scheduled test activates it and anchors its start time.
+  // As on the cloud, the test stays active even if this crossing is then
+  // rejected, so this is not part of the crossing's transaction.
+  db.prepare(
+    "UPDATE motos SET status = 'in_progress', started_at = COALESCE(started_at, ?) WHERE id = ? AND status = 'scheduled' AND type = 'enduro_test'",
+  ).run(crossingTime.toISOString(), motoId);
 
   const accepted = db.transaction((): CrossingResult => {
     const moto = db.prepare("SELECT * FROM motos WHERE id = ?").get(motoId) as any;
     if (!moto) throw new Error("Moto not found");
-    if (moto.status !== "in_progress") throw new Error("Moto is not in progress");
+    if (moto.status !== "in_progress") {
+      if (moto.type === "enduro_test") throw new EnduroCrossingRejected(`${moto.name} is finished — reopen it to record more runs`);
+      throw new Error("Moto is not in progress");
+    }
     if (!moto.started_at) throw new Error("Moto has no start time");
 
     const riderId: number | null = overrideRiderId !== undefined ? overrideRiderId : resolveRider(tagNumber, moto.event_id);
+
+    // ── ENDURO: per-rider start/stop toggle (same rules as the cloud) ─────────
+    // Each run is two crossings: the rider's START, then their FINISH (elapsed =
+    // finish − start). State is tracked by rider, not tag, so a run started by a
+    // read can be finished by a manual bib entry or the other way round.
+    if (moto.type === "enduro_test") {
+      if (!riderId) {
+        throw new EnduroCrossingRejected("This tag isn't assigned to a rider. Assign it on Check-In, or enter the rider's bib number by hand.");
+      }
+      // Insertion order (id), not crossing time, is the toggle sequence.
+      const riderCrossings = db
+        .prepare("SELECT * FROM lap_crossings WHERE moto_id = ? AND rider_id = ? ORDER BY id")
+        .all(motoId, riderId) as any[];
+
+      // Debounce double reads at the line (manual entries bypass this).
+      if (!bypassDebounce && riderCrossings.length > 0) {
+        const last = riderCrossings[riderCrossings.length - 1];
+        if (crossingTime.getTime() - effectiveTime(last).getTime() < DEBOUNCE_MS) {
+          return { debounced: true, crossing: null, lapNumber: null, lapTimeMs: null };
+        }
+      }
+
+      // lap_count is how many times each rider runs this test (2 crossings a run).
+      const lapsPerTest = Math.max(1, moto.lap_count ?? 1);
+      if (riderCrossings.length >= lapsPerTest * 2) {
+        throw new EnduroCrossingRejected(`Rider already completed all ${lapsPerTest} run${lapsPerTest > 1 ? "s" : ""} of this test`);
+      }
+
+      // Even prior count: this crossing STARTS the next run; odd: it FINISHES it.
+      const isFinish = riderCrossings.length % 2 === 1;
+      if (enduroRole === "start" && isFinish) {
+        throw new EnduroCrossingRejected("Rider already has an open start — waiting for finish crossing");
+      }
+      if (enduroRole === "finish" && !isFinish) {
+        throw new EnduroCrossingRejected("No open start for this rider on this test");
+      }
+      const lapNumber = Math.floor(riderCrossings.length / 2) + 1;
+      const openStart = isFinish ? riderCrossings[riderCrossings.length - 1] : null;
+      const elapsedMs = openStart
+        ? Math.max(0, crossingTime.getTime() - new Date(openStart.crossing_time).getTime())
+        : 0;
+      // A hardware read finishing a run open longer than the maximum is almost
+      // certainly a missed finish: don't record it. The start stays open so the
+      // organizer can void it or finish it by manual bib entry (no maximum).
+      if (openStart && !bypassDebounce && elapsedMs > ENDURO_MAX_RUN_MS) {
+        console.warn(JSON.stringify({ event: "enduro_finish_rejected_over_max", motoId, riderId, startCrossingId: openStart.id, elapsedMs, readerId: readerId ?? null }));
+        throw new EnduroCrossingRejected(
+          `Run open for ${Math.round(elapsedMs / 60_000)} min (max ${ENDURO_MAX_RUN_MS / 60_000}) — not recorded as a finish. Void the start in Race Day Management or finish it by bib entry.`,
+        );
+      }
+
+      const ins = db.prepare(`
+        INSERT INTO lap_crossings
+          (event_id, moto_id, rider_id, rfid_number, crossing_time, lap_number, lap_time_ms, reader_id, antenna_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(moto.event_id, motoId, riderId, tagNumber, crossingTime.toISOString(), lapNumber, elapsedMs, readerId ?? null, antennaId ?? null);
+      // Rebuild the rider's runs and result (in their own class), then re-rank
+      // the test within each class by total time of completed runs.
+      rescoreEnduroRider(moto, riderId);
+      rerankEnduroTest(motoId);
+      return {
+        debounced: false,
+        crossing: { id: Number(ins.lastInsertRowid) },
+        lapNumber,
+        lapTimeMs: elapsedMs,
+        enduroAction: isFinish ? "finished" : "started",
+        elapsedMs,
+      };
+    }
 
     // A tag read before it was assigned to anyone belongs to this rider now.
     if (riderId) {
@@ -572,6 +707,228 @@ function getActivePracticeSession(): any {
   );
 }
 
+/** The next enduro test nobody has started, on an event that's racing today. */
+function nextScheduledEnduroTest(): any {
+  return (
+    getDb()
+      .prepare(
+        `SELECT m.* FROM motos m JOIN events e ON e.id = m.event_id
+         WHERE e.status = 'race_day' AND m.status = 'scheduled' AND m.type = 'enduro_test'
+         ORDER BY m.moto_number ASC, m.id ASC LIMIT 1`,
+      )
+      .get() ?? null
+  );
+}
+
+/**
+ * The moto a read with no gate assignment goes to (the cloud's
+ * getActiveMotoForClub): the live moto; else nothing while a practice runs;
+ * else the next scheduled enduro test, which processCrossing activates.
+ */
+function getFacilityMoto(): any {
+  const live = getActiveMotoForAnyEvent();
+  if (live) return live;
+  if (getActivePracticeSession()) return null;
+  return nextScheduledEnduroTest();
+}
+
+function raceDayEventIds(): number[] {
+  return (getDb().prepare("SELECT id FROM events WHERE status = 'race_day'").all() as Array<{ id: number }>).map(e => e.id);
+}
+
+/**
+ * True exactly when the hardware ingest would take a read: a live moto, a live
+ * practice, an enduro test waiting for its first start read, or (for readers
+ * that send their id) a time check or test gate on today's only event.
+ */
+function readsAccepted(): boolean {
+  if (getFacilityMoto() || getActivePracticeSession()) return true;
+  const events = raceDayEventIds();
+  if (events.length !== 1) return false;
+  return !!getDb()
+    .prepare(
+      `SELECT 1 FROM event_reader_assignments a
+       LEFT JOIN motos m ON m.id = a.moto_id
+       WHERE a.event_id = ?
+         AND ((a.role = 'time_check' AND a.time_check_id IS NOT NULL)
+           OR (a.role IN ('start', 'finish') AND m.type = 'enduro_test' AND m.status IN ('scheduled', 'in_progress')))
+       LIMIT 1`,
+    )
+    .get(events[0]);
+}
+
+/**
+ * The cloud reader id a read came from. Reader assignments are keyed by the
+ * cloud's numeric reader id (the offline database has no readers table, so
+ * tokens and names can't be looked up); "12" and "reader:12" both name reader 12.
+ */
+function assignmentReaderId(value: unknown): number | null {
+  if (typeof value === "number") return Number.isInteger(value) && value > 0 ? value : null;
+  if (typeof value !== "string") return null;
+  const match = value.trim().match(/^(?:reader:)?(\d+)$/i);
+  return match ? Number(match[1]) : null;
+}
+
+/** Record (or replace) a rider's arrival at a time check, as the cloud's reader ingest does. */
+function recordTimeCheckArrival(eventId: number, timeCheckId: number | null, tagNumber: string, crossingTime: Date): void {
+  if (!timeCheckId) return;
+  const riderId = resolveRider(tagNumber, eventId);
+  if (!riderId) return;
+  try {
+    getDb().prepare(
+      `INSERT INTO enduro_checkpoint_arrivals (event_id, time_check_id, rider_id, arrival_time, recorded_by)
+       VALUES (?, ?, ?, ?, 'rfid')
+       ON CONFLICT (time_check_id, rider_id) DO UPDATE SET arrival_time = excluded.arrival_time, recorded_by = 'rfid'`,
+    ).run(eventId, timeCheckId, riderId, crossingTime.toISOString());
+    // Re-rank so penalties/DQ show immediately.
+    recomputeEnduroPositionsForEvent(eventId);
+  } catch (err) {
+    console.warn("[enduro] time check arrival not recorded:", err instanceof Error ? err.message : err);
+  }
+}
+
+/**
+ * A read from a reader the organizer placed as an enduro test gate or time
+ * check (the cloud's /timing/readers/:token/crossing, steps 3 to 8). Returns
+ * false when the reader has no such assignment for the event in play, so the
+ * caller handles the read as a single-reader (facility) read.
+ */
+function handleEnduroGateRead(res: Response, opts: {
+  assignmentReader: number;
+  rfidNumber: string;
+  crossingTime: Date;
+  antennaId: number | null;
+  readerReceivedAt?: string;
+  ingestStartedAt: string;
+}): boolean {
+  const db = getDb();
+  const { assignmentReader, rfidNumber, crossingTime, antennaId, readerReceivedAt, ingestStartedAt } = opts;
+
+  // Which event: the live moto's; else, with no practice running, today's only event.
+  const live = getActiveMotoForAnyEvent();
+  let eventId: number;
+  if (live) {
+    eventId = live.event_id;
+  } else {
+    if (getActivePracticeSession()) return false;
+    const events = raceDayEventIds();
+    if (events.length !== 1) return false;
+    eventId = events[0];
+  }
+
+  const assignments = db
+    .prepare("SELECT * FROM event_reader_assignments WHERE event_id = ? AND reader_id = ? ORDER BY id")
+    .all(eventId, assignmentReader) as any[];
+  const isCourse = (a: any) => a.moto_id == null && (a.role === "finish" || a.role === "split");
+  if (assignments.length === 0 || assignments.every(isCourse)) return false;
+
+  // Course map (event-wide finish/split reader): it only acts as a gate while an
+  // enduro test (or a test it gates) is running; otherwise laps score as usual.
+  const course = assignments.find(isCourse);
+  if (course) {
+    const activeMoto = getActiveMotoForEvent(eventId);
+    if (!activeMoto) return false;
+    const hasTestGate = assignments.some(a => a.moto_id === activeMoto.id);
+    if (activeMoto.type !== "enduro_test" && !hasTestGate) return false;
+    if (course.role === "split" && !hasTestGate) {
+      res.status(409).json({ ok: false, message: "Split readers record sector times on motocross and supercross motos only" });
+      return true;
+    }
+  }
+
+  const readerLabel = `reader:${assignmentReader}`;
+  const crossingCount = (motoId: number, riderId: number) =>
+    (db.prepare("SELECT COUNT(*) AS n FROM lap_crossings WHERE moto_id = ? AND rider_id = ?").get(motoId, riderId) as { n: number }).n;
+
+  const scoreGate = (motoId: number, enduroRole?: "start" | "finish") => {
+    try {
+      const result = processCrossing({
+        rfidNumber,
+        motoId,
+        crossingTime,
+        readerId: readerLabel,
+        antennaId: antennaId ?? undefined,
+        enduroRole,
+        onAccepted: accepted => broadcastCrossingAccepted(motoId, accepted, crossingTime, readerLabel, readerReceivedAt, ingestStartedAt),
+      });
+      if (result.debounced) return res.json({ ok: true, debounced: true, motoId, message: "Duplicate read ignored" });
+      const snapshot = buildLeaderboard(motoId);
+      if (snapshot) sseBroadcast(motoId, snapshot);
+      return res.json({
+        ok: true,
+        message: `Rider ${result.enduroAction ?? "recorded"} on moto ${motoId}`,
+        motoId,
+        crossingId: result.crossing.id,
+        lapNumber: result.lapNumber,
+        lapTime: formatLapTime(result.lapTimeMs),
+        lapTimeMs: result.lapTimeMs,
+        enduroAction: result.enduroAction ?? null,
+      });
+    } catch (err: any) {
+      // Expected rejections are 200 ok:false (nothing to retry); anything else is a 500.
+      if (err instanceof EnduroCrossingRejected) return res.json({ ok: false, message: err.message });
+      return res.status(500).json({ ok: false, message: err?.message ?? "Processing error" });
+    }
+  };
+
+  // Time check: record the arrival and stop.
+  const timeCheck = assignments.find(a => a.role === "time_check");
+  if (timeCheck && assignments.length === 1) {
+    recordTimeCheckArrival(eventId, timeCheck.time_check_id ?? null, rfidNumber, crossingTime);
+    res.json({ ok: true, message: `Time check arrival recorded (check id ${timeCheck.time_check_id ?? null})` });
+    return true;
+  }
+
+  // Same gate: one reader is both start and finish of a test; the rider's
+  // crossing count picks the role (even → start, odd → finish).
+  const startMotos = new Set(assignments.filter(a => a.role === "start" && a.moto_id).map(a => a.moto_id as number));
+  const sameGateMotoId = assignments.find(a => a.role === "finish" && a.moto_id && startMotos.has(a.moto_id))?.moto_id ?? null;
+  if (sameGateMotoId) {
+    if (!resolveRider(rfidNumber, eventId)) {
+      res.json({ ok: false, message: `Tag ${rfidNumber} not assigned to any rider in this event` });
+      return true;
+    }
+    scoreGate(sameGateMotoId);
+    return true;
+  }
+
+  // One role: the assignment for this antenna, else the reader-wide one.
+  const assignment =
+    assignments.find(a => a.antenna_id != null && a.antenna_id === antennaId) ??
+    assignments.find(a => a.antenna_id == null) ??
+    null;
+  if (!assignment) {
+    res.status(422).json({ ok: false, message: "Reader has no matching checkpoint assignment" });
+    return true;
+  }
+  if (assignment.role === "time_check") {
+    recordTimeCheckArrival(eventId, assignment.time_check_id ?? null, rfidNumber, crossingTime);
+    res.json({ ok: true, message: `Time check arrival recorded (check id ${assignment.time_check_id ?? null})` });
+    return true;
+  }
+  if (!assignment.moto_id) {
+    res.status(422).json({ ok: false, message: "Assignment has no motoId for start/finish" });
+    return true;
+  }
+
+  const riderId = resolveRider(rfidNumber, eventId);
+  if (!riderId) {
+    res.json({ ok: false, message: `Tag ${rfidNumber} not assigned to any rider in this event` });
+    return true;
+  }
+  const isEven = crossingCount(assignment.moto_id, riderId) % 2 === 0;
+  if (assignment.role === "start" && !isEven) {
+    res.json({ ok: false, message: "Rider already has an open start — waiting for finish crossing" });
+    return true;
+  }
+  if (assignment.role === "finish" && isEven) {
+    res.json({ ok: false, message: "No open start for this rider on this test" });
+    return true;
+  }
+  scoreGate(assignment.moto_id, assignment.role === "start" || assignment.role === "finish" ? assignment.role : undefined);
+  return true;
+}
+
 function processPracticeCrossing(opts: {
   rfidNumber: string;
   session: any;
@@ -626,15 +983,10 @@ function processPracticeCrossing(opts: {
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 // GET /timing/reader-state — local desktop hardware lifecycle state
+// "reading" uses the ingest's own rule, so the loops are open exactly when
+// /timing/active/crossing would take a read.
 router.get("/timing/reader-state", (_req, res) => {
-  const db = getDb();
-  const activeMoto = db
-    .prepare("SELECT 1 FROM motos WHERE status = 'in_progress' LIMIT 1")
-    .get();
-  const activePractice = db
-    .prepare("SELECT 1 FROM practice_sessions WHERE status = 'active' LIMIT 1")
-    .get();
-  return res.json({ reading: !!activeMoto || !!activePractice });
+  return res.json({ reading: readsAccepted() });
 });
 
 // POST /timing/crossing — direct motoId crossing (hardware or simulation)
@@ -677,7 +1029,7 @@ router.post("/timing/active/crossing", rejectForeignBrowserIngest, (req, res) =>
       .filter((e: any) => e?.type === "tagInventoryEvent" && e?.tagInventoryEvent?.epcHex)
       .map((e: any) => e.tagInventoryEvent as { epcHex: string; antennaPort?: number; firstSeenTime?: string });
     if (tagEvents.length === 0) return res.json({ ok: true, processed: 0, note: "No tagInventoryEvent entries" });
-    const moto = getActiveMotoForAnyEvent();
+    const moto = getFacilityMoto();
     const practiceImpinj = !moto ? getActivePracticeSession() : null;
     if (!moto && !practiceImpinj) return res.status(409).json({ error: "No moto or practice session in progress", hint: "Start a moto or practice session first." });
     const results: unknown[] = [];
@@ -705,7 +1057,7 @@ router.post("/timing/active/crossing", rejectForeignBrowserIngest, (req, res) =>
   // Zebra FX7500 format
   const zebraTags: any[] = Array.isArray(body?.data?.tags) ? body.data.tags : Array.isArray(body?.tags) ? body.tags : [];
   if (zebraTags.length > 0) {
-    const moto = getActiveMotoForAnyEvent();
+    const moto = getFacilityMoto();
     const practiceZebra = !moto ? getActivePracticeSession() : null;
     if (!moto && !practiceZebra) return res.status(409).json({ error: "No moto or practice session in progress", hint: "Start a moto or practice session first." });
     const results: unknown[] = [];
@@ -739,7 +1091,23 @@ router.post("/timing/active/crossing", rejectForeignBrowserIngest, (req, res) =>
   const rawTime = body?.crossingTime ?? body?.passingTime ?? body?.timestamp ?? body?.passTime;
   const crossingTime = canonicalizeDirectActiveTimestamp(rawTime, body, "active_generic_ingest");
 
-  const moto = getActiveMotoForAnyEvent();
+  // A reader the organizer placed as an enduro test gate or time check is
+  // handled by its role. Any other read (no readerId, or no such assignment)
+  // is a single-reader read: on an enduro test it toggles start/finish.
+  const assignmentReader = assignmentReaderId(body?.readerId);
+  if (assignmentReader != null) {
+    const handled = handleEnduroGateRead(res, {
+      assignmentReader,
+      rfidNumber: String(rfidNumber),
+      crossingTime,
+      antennaId: body?.antennaId != null && Number.isFinite(Number(body.antennaId)) ? Number(body.antennaId) : null,
+      readerReceivedAt: body?.readerReceivedAt,
+      ingestStartedAt,
+    });
+    if (handled) return;
+  }
+
+  const moto = getFacilityMoto();
   const practiceGeneric = !moto ? getActivePracticeSession() : null;
   if (!moto && !practiceGeneric) return res.status(409).json({ error: "No moto or practice session in progress", hint: "Start a moto or practice session first." });
   const readerId: string = body?.loopId ?? body?.readerId ?? body?.readername ?? "rfid";
@@ -874,9 +1242,12 @@ router.post("/timing/manual-crossing", (req, res) => {
     });
     const snapshot = buildLeaderboard(Number(motoId));
     if (snapshot) sseBroadcast(Number(motoId), snapshot);
-    return res.json({ ok: true, crossingId: result.crossing?.id ?? null, lapNumber: result.lapNumber, lapTime: result.lapTimeMs != null ? formatLapTime(result.lapTimeMs) : null, lapTimeMs: result.lapTimeMs });
+    const enduro = !result.debounced && result.enduroAction
+      ? { enduroAction: result.enduroAction, elapsedMs: result.elapsedMs ?? null, elapsed: result.elapsedMs != null ? formatLapTime(result.elapsedMs) : null }
+      : {};
+    return res.json({ ok: true, crossingId: result.crossing?.id ?? null, lapNumber: result.lapNumber, lapTime: result.lapTimeMs != null ? formatLapTime(result.lapTimeMs) : null, lapTimeMs: result.lapTimeMs, ...enduro });
   } catch (err: any) {
-    return res.status(500).json({ error: err.message });
+    return res.status(err instanceof EnduroCrossingRejected ? 409 : 500).json({ error: err.message });
   }
 });
 
@@ -980,9 +1351,15 @@ router.delete("/timing/crossings/:crossingId", (req, res) => {
   if (!moto) return res.status(404).json({ error: "Moto not found" });
 
   // Rebuild the rider's laps from everything left (every tag and manual entry).
+  // Enduro: rebuild the rider's runs as start/finish pairs, then re-rank the test.
   db.transaction(() => {
     db.prepare("DELETE FROM lap_crossings WHERE id = ?").run(crossingId);
-    rescoreRider(moto, riderId ?? null, rfidNumber);
+    if (moto.type === "enduro_test") {
+      if (riderId) rescoreEnduroRider(moto, riderId);
+      rerankEnduroTest(motoId);
+    } else {
+      rescoreRider(moto, riderId ?? null, rfidNumber);
+    }
   })();
 
   const snapshot = buildLeaderboard(motoId);
