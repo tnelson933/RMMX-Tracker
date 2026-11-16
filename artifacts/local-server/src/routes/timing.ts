@@ -1527,6 +1527,39 @@ router.get("/motos/:motoId/open-runs", (req, res) => {
   return res.json(open);
 });
 
+// POST /motos/:motoId/riders/:riderId/close-run — void a rider's open start on
+// an enduro test (missed finish read), so their next read starts a fresh run.
+// Same rules and replies as the cloud.
+router.post("/motos/:motoId/riders/:riderId/close-run", (req, res) => {
+  if (!(req.session as any)?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
+  const motoId = Number(req.params.motoId);
+  const riderId = Number(req.params.riderId);
+  if (!Number.isInteger(motoId) || motoId <= 0 || !Number.isInteger(riderId) || riderId <= 0) {
+    return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
+  }
+  const db = getDb();
+  const moto = db.prepare("SELECT * FROM motos WHERE id = ?").get(motoId) as any;
+  if (!moto) return res.status(404).json({ error: "This moto couldn't be found. Motos may have been regenerated. Refresh the Motos page." });
+  if (moto.type !== "enduro_test") return res.status(400).json({ error: "Only enduro tests have open runs" });
+
+  const voided = db.transaction(() => {
+    const crossings = (db.prepare("SELECT id, crossing_time FROM lap_crossings WHERE moto_id = ? AND rider_id = ? ORDER BY id ASC").all(motoId, riderId) as Array<{ id: number; crossing_time: string }>)
+      .map(c => ({ id: c.id, crossingTime: c.crossing_time }));
+    const { open } = pairEnduroRuns(crossings);
+    if (!open) return null;
+    db.prepare("DELETE FROM lap_crossings WHERE id = ?").run(open.id);
+    rescoreEnduroRider(moto, riderId);
+    rerankEnduroTest(motoId);
+    return open;
+  })();
+  if (!voided) return res.status(409).json({ error: "This rider has no open run on this test" });
+  console.warn(`[enduro] open start voided by organizer: moto ${motoId}, rider ${riderId}, crossing ${voided.id}`);
+
+  const snapshot = buildLeaderboard(motoId);
+  if (snapshot) sseBroadcast(motoId, { ...snapshot, correction: true });
+  return res.json({ ok: true, voidedCrossingId: voided.id, startedAt: new Date(voided.crossingTime).toISOString() });
+});
+
 // GET /timing/crossings/:motoId — all raw crossings (debug / replay / delete UI)
 router.get("/timing/crossings/:motoId", (req, res) => {
   const db = getDb();

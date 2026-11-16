@@ -2060,7 +2060,12 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
   // registration lookup and rider population.
   // Plus riders the club added itself, and the profile fields GET /riders returns,
   // so the desktop's rider list and rider page match the website's.
-  const regRiderIds = [...new Set([...registrations.map((r) => r.riderId), ...directRiderIds])];
+  // Also riders who were checked in or have a result at a club event without an
+  // entry, so results and standings never show "Rider #7" offline.
+  const regRiderIds = [...new Set([
+    ...registrations.map((r) => r.riderId), ...directRiderIds,
+    ...checkins.map((c) => c.riderId), ...raceResults.map((r) => r.riderId),
+  ].filter((id): id is number => id != null))];
   const ridersWithEmail =
     regRiderIds.length > 0
       ? await db
