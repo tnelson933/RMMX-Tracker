@@ -487,6 +487,13 @@ router.delete("/events/:eventId", async (req, res) => {
       error: "This event has signed liability waivers, which must be kept, so it can't be deleted. Set its status to Completed instead, or move the Registration Opens date to the future to make it private.",
     });
   }
+  // An event keeps its results: once any race has finished it can't be deleted.
+  const [finishedRace] = await db.select({ id: motosTable.id }).from(motosTable)
+    .where(and(eq(motosTable.eventId, id), eq(motosTable.status, "completed")))
+    .limit(1);
+  if (finishedRace) {
+    return res.status(409).json({ error: "This event has a finished race, so it can't be deleted: its results are kept. To hide it from riders, move the Registration Opens date to the future." });
+  }
   await db.transaction(async (tx) => {
     // Delete deepest dependents first to satisfy FK constraints
     await tx.delete(eventReaderAssignmentsTable).where(eq(eventReaderAssignmentsTable.eventId, id));

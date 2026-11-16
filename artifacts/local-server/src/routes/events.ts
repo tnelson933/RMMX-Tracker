@@ -556,6 +556,10 @@ router.delete("/events/:eventId", (req, res) => {
   if (signedWaiver) {
     return res.status(409).json({ error: "This event has signed liability waivers, which must be kept, so it can't be deleted. Set its status to Completed instead, or move the Registration Opens date to the future to make it private." });
   }
+  // An event keeps its results: once any race has finished it can't be deleted (same as the cloud).
+  if (db.prepare("SELECT 1 FROM motos WHERE event_id = ? AND status = 'completed' LIMIT 1").get(id)) {
+    return res.status(409).json({ error: "This event has a finished race, so it can't be deleted: its results are kept. To hide it from riders, move the Registration Opens date to the future." });
+  }
   db.prepare("DELETE FROM enduro_checkpoint_arrivals WHERE event_id = ?").run(id);
   db.prepare("DELETE FROM enduro_time_checks WHERE event_id = ?").run(id);
   db.prepare("DELETE FROM event_reader_assignments WHERE event_id = ?").run(id);

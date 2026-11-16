@@ -146,6 +146,10 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       const [signedWaiver] = await tx.select({ id: liabilityWaiverSignaturesTable.id })
         .from(liabilityWaiverSignaturesTable).where(eq(liabilityWaiverSignaturesTable.eventId, eventId)).limit(1);
       if (signedWaiver) { skip("events_deleted", { id: eventId }, "event has signed liability waivers"); continue; }
+      // An event with a finished race keeps its results (same rule as the website's delete).
+      const [finishedRace] = await tx.select({ id: motosTable.id }).from(motosTable)
+        .where(and(eq(motosTable.eventId, eventId), eq(motosTable.status, "completed"))).limit(1);
+      if (finishedRace) { skip("events_deleted", { id: eventId }, "event has a finished race"); continue; }
       await tx.delete(eventReaderAssignmentsTable).where(eq(eventReaderAssignmentsTable.eventId, eventId));
       await tx.delete(enduroCheckpointArrivalsTable).where(eq(enduroCheckpointArrivalsTable.eventId, eventId));
       await tx.delete(enduroTimeChecksTable).where(eq(enduroTimeChecksTable.eventId, eventId));
