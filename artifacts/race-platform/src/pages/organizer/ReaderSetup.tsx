@@ -1157,7 +1157,11 @@ export default function ReaderSetup() {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <h2 className="font-heading font-bold uppercase tracking-tight text-lg">Your readers</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Live status from RM Connect. Rename a reader after where it sits on the course.</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {isDesktop
+                ? "Your club's reader list. Start and finish gates, time checks and split points are assigned to these. A reader connected to this computer is matched to one by its name, or by its network address, so give it the same name here and above."
+                : "Live status from RM Connect. Rename a reader after where it sits on the course."}
+            </p>
           </div>
           <div className="flex items-center gap-2">
             {(readers as any[]).length > 0 && (
@@ -1185,7 +1189,9 @@ export default function ReaderSetup() {
 
         {(readers as any[]).length === 0 ? (
           <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-            No readers yet. Click <strong>Find readers</strong> in RM Connect and they appear here.
+            {isDesktop
+              ? <>No readers in your club&apos;s list yet. You only need one for enduro gates, time checks or split points: add it under <strong>Advanced</strong> below (needs internet), with the same name as the reader on this computer.</>
+              : <>No readers yet. Click <strong>Find readers</strong> in RM Connect and they appear here.</>}
           </div>
         ) : (
           <div className="rounded-xl border overflow-hidden divide-y">
@@ -1401,7 +1407,7 @@ export default function ReaderSetup() {
           <Settings size={18} className="text-muted-foreground shrink-0" />
           <div className="min-w-0">
             <p className="font-heading font-bold uppercase tracking-wider text-sm">Advanced</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Add a reader by hand, RFID signal settings, and readers that send reads without RM Connect.</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{isDesktop ? "Add a reader to your club's list by hand, and RFID signal settings." : "Add a reader by hand, RFID signal settings, and readers that send reads without RM Connect."}</p>
           </div>
         </summary>
         <div className="border-t p-5 space-y-8">
