@@ -35,7 +35,11 @@ router.post("/auth/login", async (req, res) => {
     .get(String(email).trim()) as Record<string, unknown> | undefined;
 
   if (!user) {
-    return res.status(401).json({ error: "Invalid credentials" });
+    // Same wording as the website's sign-in.
+    const normalizedEmail = String(email).toLowerCase().trim();
+    return res.status(401).json({
+      error: `There's no organizer account for ${normalizedEmail}. Check the spelling. Organizer accounts are created by invitation, so ask your club admin to invite you; riders should use Rider Login.`,
+    });
   }
 
   if (!user.password_hash) {
@@ -90,6 +94,9 @@ router.patch("/auth/me", async (req, res) => {
 
   const db = getDb();
   const { name, email, password } = req.body;
+  if (name !== undefined && (typeof name !== "string" || !name.trim())) {
+    return res.status(400).json({ error: "Enter a name." });
+  }
 
   const fields: string[] = [];
   const values: unknown[] = [];

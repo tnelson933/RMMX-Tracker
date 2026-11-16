@@ -92,7 +92,7 @@ export function HandScanners() {
     if (!window.confirm(`Remove "${s.name}"? It stops sending reads and comes off the Course Map.`)) return;
     const res = await fetch(`/api/readers/${s.id}`, { method: "DELETE", credentials: "include" });
     if (res.ok) { if (connecting?.id === s.id) setConnecting(null); load(); }
-    else toast({ title: "Couldn't remove the scanner", variant: "destructive" });
+    else toast({ title: "Couldn't remove the scanner", description: (await res.json().catch(() => ({}))).error, variant: "destructive" });
   };
 
   const liveCount = scanners.filter(s => s.lastSeenAt && now - new Date(s.lastSeenAt).getTime() < LIVE_MS).length;

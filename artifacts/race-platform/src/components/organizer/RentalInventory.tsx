@@ -32,7 +32,7 @@ export function useRentalUnits(enabled = true) {
     enabled,
     queryFn: async () => {
       const res = await fetch("/api/rental-transponders", { credentials: "include" });
-      if (!res.ok) throw new Error(responseErrorMessage(res.status));
+      if (!res.ok) throw new Error(responseErrorMessage(res.status, await res.json().catch(() => null)));
       return res.json();
     },
   });

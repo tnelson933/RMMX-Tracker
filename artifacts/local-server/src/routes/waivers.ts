@@ -29,13 +29,12 @@ export function signedWaiverEmails(db: Database.Database, eventId: number): Set<
 // Public — no auth required, like the cloud. Creates a tamper-evident record.
 router.post("/public/events/:eventId/liability-waiver/sign", (req, res) => {
   const eventId = Number(req.params.eventId);
-  const { signerName, signerEmail, consentToEsign, waiverSnapshot, fieldLayout, signerType, minorRiderName } =
+  const { signerName, signerEmail, consentToEsign, signerType, minorRiderName, registrationId } =
     (req.body ?? {}) as Record<string, any>;
 
   if (typeof signerName !== "string" || !signerName.trim()) return res.status(400).json({ error: "Type your full name to sign." });
   if (typeof signerEmail !== "string" || !signerEmail.trim()) return res.status(400).json({ error: "Enter your email address to sign." });
   if (!consentToEsign) return res.status(400).json({ error: "Check the box to agree to sign electronically." });
-  if (typeof waiverSnapshot !== "string" || !waiverSnapshot.trim()) return res.status(400).json({ error: "waiverSnapshot is required" });
 
   const db = getDb();
   const event = db
@@ -44,6 +43,26 @@ router.post("/public/events/:eventId/liability-waiver/sign", (req, res) => {
   if (!event) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
   if (event.require_liability_waiver !== 1) {
     return res.status(400).json({ error: "This event does not require a liability waiver" });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(signerEmail.trim())) return res.status(400).json({ error: "Enter a valid email address to sign." });
+
+  // What the rider signs is built here from the club's settings, never taken from
+  // the request (the check-in page doesn't send it), exactly like the cloud:
+  // the typed text, or else the uploaded PDF with the club's field layout.
+  const settings = db
+    .prepare("SELECT liability_waiver_text, liability_waiver_pdf_url, liability_waiver_fields FROM club_settings WHERE club_id = ?")
+    .get(event.club_id) as { liability_waiver_text: string | null; liability_waiver_pdf_url: string | null; liability_waiver_fields: string | null } | undefined;
+  const pdfUrl = settings?.liability_waiver_pdf_url?.trim() || null;
+  const usesText = !!settings?.liability_waiver_text?.trim();
+  const waiverSnapshot = usesText ? settings!.liability_waiver_text! : pdfUrl ? `[PDF waiver] ${pdfUrl}` : null;
+  if (!waiverSnapshot) return res.status(409).json({ error: "This event's liability waiver isn't set up yet. Contact the organizer." });
+  const fieldLayout = !usesText ? parseJson(settings?.liability_waiver_fields ?? null, null) : null;
+
+  // Only the signed-in organizer (check-in) may attach the signature to an entry.
+  let linkRegistrationId: number | null = null;
+  if (registrationId != null && (req.session as any)?.userId) {
+    const reg = db.prepare("SELECT id FROM registrations WHERE id = ? AND event_id = ?").get(Number(registrationId), eventId) as { id: number } | undefined;
+    linkRegistrationId = reg?.id ?? null;
   }
 
   const contentHash = createHash("sha256").update(waiverSnapshot, "utf8").digest("hex");
@@ -54,12 +73,13 @@ router.post("/public/events/:eventId/liability-waiver/sign", (req, res) => {
 
   const result = db.prepare(
     `INSERT INTO liability_waiver_signatures
-       (club_id, event_id, signer_name, signer_email, signer_ip, signer_user_agent, consent_to_esign,
+       (club_id, event_id, registration_id, signer_name, signer_email, signer_ip, signer_user_agent, consent_to_esign,
         waiver_content_hash, waiver_snapshot, field_layout, signer_type, minor_rider_name, signed_at)
-     VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`,
   ).run(
     event.club_id,
     eventId,
+    linkRegistrationId,
     signerName.trim(),
     signerEmail.trim().toLowerCase(),
     signerIp,

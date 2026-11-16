@@ -80,7 +80,7 @@ export function ConnectLaptop() {
     if (!window.confirm(`Disconnect "${laptop.name}"? Its readers stop sending reads until the laptop is connected again with a new code.`)) return;
     const res = await fetch(`/api/readers/laptops/${laptop.id}`, { method: "DELETE", credentials: "include" });
     if (res.ok) loadLaptops();
-    else toast({ title: "Couldn't disconnect the laptop", variant: "destructive" });
+    else toast({ title: "Couldn't disconnect the laptop", description: (await res.json().catch(() => ({}))).error, variant: "destructive" });
   };
 
   return (

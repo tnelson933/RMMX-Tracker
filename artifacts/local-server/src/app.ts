@@ -63,4 +63,23 @@ if (staticDir) {
   });
 }
 
+// Last-resort error handler, with the website's wording. Without it Express
+// answers a failed request (a file over the upload limit, a body that isn't
+// valid JSON, an error thrown in a route) with an HTML page full of file paths,
+// which the pages can't read: they would show "upload failed" or nothing at all.
+app.use((err: any, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (res.headersSent) return next(err);
+  const status = typeof err?.status === "number" && err.status >= 400 && err.status < 500 ? err.status : 500;
+  if (status >= 500) console.error("[local-server] unhandled error:", err);
+  res.status(status).json({
+    error: status === 500
+      ? "Something went wrong on our end. Please try again in a minute. If it keeps happening, ask the AI Assistant for help."
+      : status === 413
+        ? "That's too much to send at once. Use a smaller file or fewer items, then try again."
+        : typeof err?.type === "string"
+          ? "Some of the information sent wasn't valid. Check what you entered and try again."
+          : err?.message ?? "That didn't work. Please try again.",
+  });
+});
+
 export default app;

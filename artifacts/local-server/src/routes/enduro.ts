@@ -418,4 +418,31 @@ router.put("/events/:eventId/reader-assignments", (req, res) => {
   return res.json(rows.map(serializeAssignment));
 });
 
+// POST /events/:eventId/course/reset — follow the track's course again (copies
+// the track's finish + splits now, from the last synced Track Library copy).
+// Enduro gates and time checks are left alone, as on the cloud.
+router.post("/events/:eventId/course/reset", (req, res) => {
+  const eventId = Number(req.params.eventId);
+  if (!eventId) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
+  if (!authEvent(req, res, eventId)) return;
+  const db = getDb();
+  const ev = db.prepare("SELECT track_id FROM events WHERE id = ?").get(eventId) as { track_id: number | null } | undefined;
+  if (!ev?.track_id) return res.status(400).json({ error: "This event isn't linked to a Track Library track" });
+  const track = db.prepare("SELECT course FROM tracks WHERE id = ?").get(ev.track_id) as { course: string | null } | undefined;
+  let points: Array<Record<string, any>> = [];
+  try { const parsed = track?.course ? JSON.parse(track.course) : []; if (Array.isArray(parsed)) points = parsed; } catch { points = []; }
+  points = points.filter((p) => (p?.role === "finish" || p?.role === "split") && Number.isInteger(Number(p?.readerId)) && Number(p.readerId) > 0);
+  db.transaction(() => {
+    db.prepare("UPDATE events SET course_source = 'track' WHERE id = ?").run(eventId);
+    db.prepare("DELETE FROM event_reader_assignments WHERE event_id = ? AND moto_id IS NULL AND role IN ('finish', 'split')").run(eventId);
+    const insert = db.prepare("INSERT INTO event_reader_assignments (event_id, reader_id, role, sequence, label) VALUES (?, ?, ?, ?, ?)");
+    for (const p of points) {
+      insert.run(eventId, Number(p.readerId), p.role, p.role === "split" && Number.isInteger(p.sequence) ? p.sequence : null, typeof p.label === "string" && p.label.trim() ? p.label.trim().slice(0, 60) : null);
+    }
+    queueEnduroSetup(db, eventId);
+  })();
+  const rows = db.prepare("SELECT * FROM event_reader_assignments WHERE event_id = ? ORDER BY id").all(eventId);
+  return res.json(rows.map(serializeAssignment));
+});
+
 export default router;
