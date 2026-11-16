@@ -22,8 +22,8 @@ type Log = { info: (o: object, m: string) => void; warn: (o: object, m: string) 
  * Returns "/uploads/<file>", served by GET /api/storage/uploads/:filename.
  * The caller decides the content type and extension (never the client).
  */
-export async function saveUpload(body: Buffer, contentType: string, ext: string, log: Log, objectStorage = new ObjectStorageService()): Promise<string> {
-  const filename = `${randomUUID()}${ext}`;
+export async function saveUpload(body: Buffer, contentType: string, ext: string, log: Log, objectStorage = new ObjectStorageService(), requestedName?: string): Promise<string> {
+  const filename = requestedName ?? `${randomUUID()}${ext}`;
   await fs.writeFile(path.join(UPLOADS_DIR, filename), body);
   log.info({ size: body.length, contentType, filename }, "File written to local disk");
   if (cloudStorageEnabled) {

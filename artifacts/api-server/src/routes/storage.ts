@@ -62,9 +62,25 @@ router.post(
       return;
     }
 
+    // The desktop app saves a file under its own random name while offline and
+    // sends it here later under that same name, so links it already stored keep
+    // working. Only a random-UUID name with this file's extension is accepted,
+    // and a name that's taken is never overwritten.
+    const wanted = req.headers["x-upload-name"];
+    let requestedName: string | undefined;
+    if (typeof wanted === "string" && wanted) {
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z0-9]+$/.test(wanted) || path.extname(wanted) !== ext) {
+        res.status(400).json({ error: "That file name isn't valid. Choose the file again and upload it." });
+        return;
+      }
+      const taken = await fs.access(path.join(UPLOADS_DIR, wanted)).then(() => true, () => false);
+      if (taken) { res.json({ objectPath: `/uploads/${wanted}` }); return; }
+      requestedName = wanted;
+    }
+
     try {
       // Disk first (immediately serveable), then best-effort object storage.
-      const objectPath = await saveUpload(req.body, contentType, ext, req.log, objectStorageService);
+      const objectPath = await saveUpload(req.body, contentType, ext, req.log, objectStorageService, requestedName);
       res.json({ objectPath });
     } catch (error) {
       req.log.error({ err: error }, "Error saving uploaded file");
