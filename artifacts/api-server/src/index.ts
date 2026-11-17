@@ -12,6 +12,7 @@ import { startPaymentSweeper } from "./lib/paymentSweeper";
 import { sendEnrollmentConfirmations } from "./lib/smsAlerts";
 import { startFinalizeReminders } from "./lib/finalizeReminder";
 import { startRaceGasRetries } from "./lib/raceGasCredits";
+import { startPracticeClaimSweep } from "./routes/practice";
 
 const rawPort = process.env["PORT"];
 
@@ -38,6 +39,8 @@ httpServer.listen(port, (err?: Error) => {
   }
 
   logger.info({ port }, "Server listening");
+  // Practice laps from transponders assigned after they were read go to the rider.
+  startPracticeClaimSweep();
   // Support-alert numbers added since the last start get their enrollment confirmation text.
   sendEnrollmentConfirmations().catch(err => logger.error({ err }, "sms enrollment confirmations failed"));
   normalizeEventStates().catch(err => logger.error({ err }, "normalizeEventStates failed"));

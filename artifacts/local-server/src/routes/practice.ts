@@ -248,7 +248,7 @@ function processCrossing(
   session: PracticeSessionRow,
   rfidNumber: string,
   crossingTime: Date,
-): { id: number } | { skipped: "debounce" | "unknown_tag" } {
+): { id: number } | { skipped: "debounce" } {
   const lastCrossing = db
     .prepare(
       "SELECT * FROM practice_crossings WHERE session_id = ? AND rfid_number = ? ORDER BY crossing_time DESC LIMIT 1",
@@ -260,10 +260,10 @@ function processCrossing(
     if (elapsed < session.debounce_ms) return { skipped: "debounce" };
   }
 
-  // Unknown tags are ambient reads: dropped, as in the cloud.
+  // A transponder nobody is assigned to yet still records its laps (rider
+  // empty); claimUnassignedPracticeReads gives them to the rider once assigned.
   const rider = resolvePracticeRider(db, session.club_id, rfidNumber);
-  if (!rider) return { skipped: "unknown_tag" };
-  const { riderId, riderName, bibNumber } = rider;
+  const riderId = rider?.riderId ?? null, riderName = rider?.riderName ?? null, bibNumber = rider?.bibNumber ?? null;
 
   const lapNumber = (lastCrossing?.lap_number ?? 0) + 1;
   const lapTimeMs = lastCrossing
@@ -287,7 +287,39 @@ function processCrossing(
       lapTimeMs,
     );
 
+  claimUnassignedPracticeReads(db, session.id);
   return { id: Number(ins.lastInsertRowid) };
+}
+
+/** How far back a newly assigned transponder claims its unassigned practice laps. */
+export const PRACTICE_CLAIM_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Gives practice laps recorded with no rider to the rider their transponder is
+ * assigned to now (same rule as the website). Only sessions started within the
+ * last 24 h, so a rental or reused transponder never hands old laps to its new
+ * holder. Runs on every practice read and once a minute, which covers every way
+ * a transponder gets assigned. Returns how many laps were claimed.
+ */
+export function claimUnassignedPracticeReads(db: ReturnType<typeof getDb>, sessionId?: number): number {
+  const since = new Date(Date.now() - PRACTICE_CLAIM_WINDOW_MS).toISOString();
+  const rows = db.prepare(
+    `SELECT DISTINCT pc.session_id, ps.club_id, pc.rfid_number
+     FROM practice_crossings pc JOIN practice_sessions ps ON ps.id = pc.session_id
+     WHERE pc.rider_id IS NULL AND COALESCE(ps.started_at, ps.created_at) >= ?
+       ${sessionId != null ? "AND pc.session_id = ?" : ""}`,
+  ).all(...(sessionId != null ? [since, sessionId] : [since])) as Array<{ session_id: number; club_id: number; rfid_number: string }>;
+  const update = db.prepare(
+    `UPDATE practice_crossings SET rider_id = ?, rider_name = ?, bib_number = ?
+     WHERE session_id = ? AND rfid_number = ? COLLATE NOCASE AND rider_id IS NULL`,
+  );
+  let claimed = 0;
+  for (const row of rows) {
+    const rider = resolvePracticeRider(db, row.club_id, row.rfid_number);
+    if (!rider) continue;
+    claimed += update.run(rider.riderId, rider.riderName, rider.bibNumber, row.session_id, row.rfid_number).changes;
+  }
+  return claimed;
 }
 
 // POST /practice/active/crossing — from an RFID bridge or timing decoder, no session ID needed

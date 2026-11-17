@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Radio, Plus, Trash2, Loader2, AlertTriangle, Archive, Search } from "lucide-react";
+import { Radio, Plus, Trash2, Loader2, AlertTriangle, Archive, Search, Undo2 } from "lucide-react";
 import { responseErrorMessage } from "@/lib/friendlyErrors";
 import { RemindAllPanel, RenterDialog, ReminderMark, type ReminderStatus } from "./RentalReminders";
 
@@ -99,6 +99,35 @@ export function RentalInventory() {
       await refresh();
     } catch (err: any) {
       toast({ title: "Couldn't update the unit", description: String(err?.message ?? err), variant: "destructive" });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  /**
+   * Marks an out unit returned without opening its event. Same call as the
+   * event's Transponder Rentals page, so the registration, the rider's timing
+   * link and this list all update everywhere.
+   */
+  async function markReturned(unit: RentalUnit) {
+    const cur = unit.current;
+    if (!cur) return;
+    setBusyId(unit.id);
+    try {
+      const res = await fetch(`/api/events/${cur.eventId}/registrations/${cur.registrationId}/transponder-returned`, {
+        method: "PATCH", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ returned: true }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(responseErrorMessage(res.status, body));
+      toast({ title: "Marked returned", description: `${unit.label ?? unit.transponderNumber.toUpperCase()} from ${cur.riderName} is available again.` });
+      await Promise.all([
+        refresh(),
+        queryClient.invalidateQueries({ queryKey: ["transponder-rentals", String(cur.eventId)] }),
+        queryClient.invalidateQueries({ queryKey: ["transponder-rentals", cur.eventId] }),
+      ]);
+    } catch (err: any) {
+      toast({ title: "Couldn't mark it returned", description: String(err?.message ?? err), variant: "destructive" });
     } finally {
       setBusyId(null);
     }
@@ -216,6 +245,12 @@ export function RentalInventory() {
               <span className="flex-1" />
               {busyId === u.id ? <Loader2 size={14} className="animate-spin text-muted-foreground" /> : (
                 <div className="flex items-center gap-1">
+                  {u.status === "out" && u.current && (
+                    <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => markReturned(u)}
+                      title={`${u.current.riderName} gave it back: available again`}>
+                      <Undo2 size={12} /> Mark returned
+                    </Button>
+                  )}
                   {!u.retired && (
                     <Button size="sm" variant="ghost" className="h-7 gap-1 text-xs" onClick={() => update(u, { missing: !u.missing })}
                       title={u.missing ? "Found it: available again" : "Report the unit lost"}>

@@ -3,6 +3,8 @@ import app from "./app";
 import { startAutoSync, AUTO_SYNC_ENABLED, CLOUD_URL, CLUB_ID, EMAIL } from "./auto-sync";
 import { startRaceClock } from "./routes/timing";
 import { sweepExpiredRentals } from "./routes/race-day";
+import { claimUnassignedPracticeReads } from "./routes/practice";
+import { getDb } from "./db";
 
 const rawPort = process.env.PORT;
 const port = rawPort ? Number(rawPort) : 8080;
@@ -52,4 +54,7 @@ server.listen(port, "127.0.0.1", () => {
   const sweepRentals = () => { try { sweepExpiredRentals(); } catch { /* not fatal */ } };
   sweepRentals();
   setInterval(sweepRentals, 15 * 60_000).unref?.();
+  // Practice laps from transponders assigned after they were read go to the rider.
+  const claimPractice = () => { try { claimUnassignedPracticeReads(getDb()); } catch { /* not fatal */ } };
+  setInterval(claimPractice, 60_000).unref?.();
 });

@@ -185,34 +185,20 @@ function broadcast(sessionId: number, payload: BoardPayload) {
   }
 }
 
-// ── Shared crossing processor ─────────────────────────────────────────────────
-export async function processPracticeCrossing(
-  session: typeof practiceSessionsTable.$inferSelect,
-  rfidNumber: string,
-  crossingTime: Date,
-) {
-  crossingTime = canonicalizeCrossingTimestamp(crossingTime, new Date(), {
-    source: "processPracticeCrossing",
-    practiceSessionId: session.id,
-  });
-  const sessionId = session.id;
-  const tagNumber = rfidNumber.trim();
+// ── Practice reads from transponders not yet assigned ───────────────────────
 
-  const [lastCrossing] = await db.select().from(practiceCrossingsTable)
-    .where(and(
-      eq(practiceCrossingsTable.sessionId, sessionId),
-      eq(practiceCrossingsTable.rfidNumber, tagNumber),
-    ))
-    .orderBy(desc(practiceCrossingsTable.crossingTime))
-    .limit(1);
+/** How far back a newly assigned transponder claims its unassigned practice laps. */
+export const PRACTICE_CLAIM_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-  if (lastCrossing) {
-    const elapsed = crossingTime.getTime() - new Date(lastCrossing.crossingTime).getTime();
-    if (elapsed < session.debounceMs) {
-      return { skipped: true, reason: "debounce" as const };
-    }
-  }
-
+/**
+ * The rider a tag belongs to for this club's practice: an event assignment,
+ * then a club registration's transponder, then the rider profile.
+ */
+export async function resolvePracticeTagRider(
+  clubId: number,
+  tagNumber: string,
+): Promise<{ riderId: number | null; riderName: string | null; bibNumber: string | null }> {
+  const session = { clubId };
   // Rider lookup: rfidAssignments for events belonging to this club
   let riderId: number | null = null;
   let riderName: string | null = null;
@@ -289,10 +275,97 @@ export async function processPracticeCrossing(
     }
   }
 
-  // Drop unrecognized tags — don't record ambient/unknown RFID reads
-  if (!riderId) {
-    return { skipped: true, reason: "unknown_tag" as const };
+  return { riderId, riderName, bibNumber };
+}
+
+/**
+ * Gives practice laps recorded with no rider to the rider their transponder is
+ * assigned to now. Only laps from sessions started within the claim window
+ * (24 h), so a rental or reused transponder never hands old laps to its new
+ * holder. Runs on every practice read and once a minute, so every way of
+ * assigning a transponder (check-in, registration, rider profile, desktop sync)
+ * is covered. Returns the sessions that changed.
+ */
+export async function claimUnassignedPracticeReads(opts: { sessionId?: number } = {}): Promise<number[]> {
+  const since = new Date(Date.now() - PRACTICE_CLAIM_WINDOW_MS);
+  const unassigned = await db
+    .selectDistinct({
+      sessionId: practiceCrossingsTable.sessionId,
+      clubId: practiceSessionsTable.clubId,
+      rfidNumber: practiceCrossingsTable.rfidNumber,
+    })
+    .from(practiceCrossingsTable)
+    .innerJoin(practiceSessionsTable, eq(practiceCrossingsTable.sessionId, practiceSessionsTable.id))
+    .where(and(
+      isNull(practiceCrossingsTable.riderId),
+      gt(practiceSessionsTable.createdAt, since),
+      ...(opts.sessionId ? [eq(practiceCrossingsTable.sessionId, opts.sessionId)] : []),
+    ));
+  const changed = new Set<number>();
+  const resolved = new Map<string, Awaited<ReturnType<typeof resolvePracticeTagRider>>>();
+  for (const row of unassigned) {
+    const key = `${row.clubId}:${row.rfidNumber.toLowerCase()}`;
+    let rider = resolved.get(key);
+    if (!rider) { rider = await resolvePracticeTagRider(row.clubId, row.rfidNumber); resolved.set(key, rider); }
+    if (!rider.riderId) continue;
+    const updated = await db.update(practiceCrossingsTable)
+      .set({ riderId: rider.riderId, riderName: rider.riderName, bibNumber: rider.bibNumber })
+      .where(and(
+        eq(practiceCrossingsTable.sessionId, row.sessionId),
+        eq(practiceCrossingsTable.rfidNumber, row.rfidNumber),
+        isNull(practiceCrossingsTable.riderId),
+      ))
+      .returning({ id: practiceCrossingsTable.id });
+    if (updated.length) changed.add(row.sessionId);
   }
+  return [...changed];
+}
+
+let claimTimer: ReturnType<typeof setInterval> | null = null;
+/** Starts the once-a-minute claim (called once at startup). */
+export function startPracticeClaimSweep(): void {
+  if (claimTimer) return;
+  claimTimer = setInterval(() => {
+    claimUnassignedPracticeReads()
+      .then(sessions => Promise.all(sessions.map(id => broadcastPracticeBoard(id))))
+      .catch(err => console.error("[practice] claiming unassigned reads failed:", err));
+  }, 60_000);
+  claimTimer.unref?.();
+}
+
+// ── Shared crossing processor ─────────────────────────────────────────────────
+export async function processPracticeCrossing(
+  session: typeof practiceSessionsTable.$inferSelect,
+  rfidNumber: string,
+  crossingTime: Date,
+) {
+  crossingTime = canonicalizeCrossingTimestamp(crossingTime, new Date(), {
+    source: "processPracticeCrossing",
+    practiceSessionId: session.id,
+  });
+  const sessionId = session.id;
+  const tagNumber = rfidNumber.trim();
+
+  const [lastCrossing] = await db.select().from(practiceCrossingsTable)
+    .where(and(
+      eq(practiceCrossingsTable.sessionId, sessionId),
+      eq(practiceCrossingsTable.rfidNumber, tagNumber),
+    ))
+    .orderBy(desc(practiceCrossingsTable.crossingTime))
+    .limit(1);
+
+  if (lastCrossing) {
+    const elapsed = crossingTime.getTime() - new Date(lastCrossing.crossingTime).getTime();
+    if (elapsed < session.debounceMs) {
+      return { skipped: true, reason: "debounce" as const };
+    }
+  }
+
+  const { riderId, riderName, bibNumber } = await resolvePracticeTagRider(session.clubId, tagNumber);
+
+  // A transponder nobody is assigned to yet still records its laps (rider
+  // empty). When it's assigned later, claimUnassignedPracticeReads gives these
+  // laps to that rider.
 
   const lapNumber = (lastCrossing?.lapNumber ?? 0) + 1;
   const lapTimeMs = lastCrossing
@@ -309,6 +382,10 @@ export async function processPracticeCrossing(
     lapNumber,
     lapTimeMs,
   }).returning();
+
+  // A transponder assigned since its earlier laps were read takes them now.
+  await claimUnassignedPracticeReads({ sessionId }).catch(err =>
+    console.error("[practice] claiming unassigned reads failed:", err));
 
   const allCrossings = await db.select().from(practiceCrossingsTable)
     .where(eq(practiceCrossingsTable.sessionId, sessionId))

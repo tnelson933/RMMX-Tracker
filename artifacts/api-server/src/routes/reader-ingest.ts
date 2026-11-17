@@ -372,10 +372,7 @@ router.post("/timing/readers/:token/crossing", express.text({ type: "text/*" }),
       if (practice) {
         const result = await processPracticeCrossing(practice, String(body.rfidNumber), crossingTime);
         if ("skipped" in result) {
-          const message = result.reason === "unknown_tag"
-            ? `Tag ${body.rfidNumber} is not assigned to a rider`
-            : "Practice crossing ignored by the debounce window";
-          return res.json({ ok: false, message });
+          return res.json({ ok: false, message: "Practice crossing ignored by the debounce window" });
         }
         return res.json({ ok: true, message: "Practice crossing recorded" });
       }

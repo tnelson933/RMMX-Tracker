@@ -17,6 +17,8 @@
   - Series linking, Points Scoring Tables + AI, Auto DNF, Push Notifications, Practice, Race Day Display, Live Broadcast
   - Payments: the club's own Stripe account (connect, Switch account, what Stripe still needs, disconnect), in-page card form, card readers, money flow and fees
   - Transponder rentals: renter contact panel, return reminders (one or all) with sent/not-sent marks; check-in Collect for pay-at-gate add-ons; Report rentals & sales
+  - Admin → Rentals: an Out unit has a Mark returned button, so organizers don't need to open the event; it updates the event's rentals, the rider's timing link and the unit's status everywhere
+  - Practice keeps laps from transponders nobody is assigned to yet (shown by transponder number). Once the transponder is assigned to a rider, its unassigned laps from the last 24 hours go to that rider automatically (within about a minute)
   - Results emails: race day stats to opted-in riders when results are official; finalize reminder to organizers 12 hours after an event
   - Reader Setup and RM Connect (Find readers, several readers per laptop, Test, Identify, RM TrackR settings, troubleshooting)
   - Offline Mode page + desktop app, connecting hardware without internet

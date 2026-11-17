@@ -7,7 +7,7 @@ import { getDb, parseJsonArr, parseJson } from "../db";
 import { rejectForeignBrowserIngest } from "../lib/request-origin";
 import { scoreMotoPoints } from "./results";
 import { buildRaceAnalytics, normalizeLapMs, parseTimeToMs, raceTimeRemainingMs } from "../lib/leaderboard-shape";
-import { LIVE_WINDOW_MS, broadcastPracticeBoard, resolvePracticeRider } from "./practice";
+import { LIVE_WINDOW_MS, broadcastPracticeBoard, claimUnassignedPracticeReads, resolvePracticeRider } from "./practice";
 import {
   computeMotoSectors,
   isSplitReader,
@@ -1137,10 +1137,10 @@ function processPracticeCrossing(opts: {
     if (elapsed < (session.debounce_ms ?? 10000)) return { debounced: true };
   }
 
-  // Same matching as the practice routes; unknown (ambient) tags are dropped.
+  // Same matching as the practice routes. A transponder nobody is assigned to
+  // yet still records its laps; they go to the rider once it's assigned.
   const rider = resolvePracticeRider(db, session.club_id, tagNumber);
-  if (!rider) return null;
-  const { riderId, riderName, bibNumber } = rider;
+  const riderId = rider?.riderId ?? null, riderName = rider?.riderName ?? null, bibNumber = rider?.bibNumber ?? null;
 
   const lapNumber = (lastCrossing?.lap_number ?? 0) + 1;
   const lapTimeMs = lastCrossing
@@ -1164,6 +1164,7 @@ function processPracticeCrossing(opts: {
       lapTimeMs,
     );
 
+  claimUnassignedPracticeReads(db, session.id);
   return { id: Number(ins.lastInsertRowid), lapNumber, lapTimeMs };
 }
 
