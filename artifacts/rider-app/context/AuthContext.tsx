@@ -2,7 +2,7 @@ import { API_BASE_URL } from "@/lib/apiBase";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Linking, Platform } from "react-native";
+import { Alert, AppState, Linking, Platform } from "react-native";
 import { NETWORK_ERROR_MESSAGE, postJson, serverErrorMessage } from "@/lib/friendlyErrors";
 
 const TOKEN_KEY = "rider_mobile_token";
@@ -13,6 +13,11 @@ const BIOMETRIC_EMAIL_SKEY = "rider_bio_email";
 const BIOMETRIC_PASS_SKEY = "rider_bio_pass";
 const PUSH_TOKEN_KEY = "rider_expo_push_token";
 const PUSH_DENIED_PROMPTED_KEY = "rider_push_denied_prompted";
+/** Who the saved token belongs to ({ id, email }), so a launch with no signal stays signed in. */
+const ACCOUNT_CACHE_KEY = "rider_account_cache";
+
+/** "loading" until the first profile list arrives; "failed" when it couldn't be fetched. */
+export type ProfilesStatus = "loading" | "loaded" | "failed";
 
 const BASE_URL = API_BASE_URL;
 
@@ -81,6 +86,8 @@ async function secureDelete(key: string): Promise<void> {
 interface AuthContextType {
   account: RiderAccount | null;
   profiles: RiderProfile[];
+  /** Tells "this account has no riders" apart from "the list hasn't loaded" or "couldn't load". */
+  profilesStatus: ProfilesStatus;
   activeProfiles: RiderProfile[];
   selectedProfileIds: number[];
   setSelectedProfileIds: (ids: number[]) => Promise<void>;
@@ -200,6 +207,7 @@ async function tryRegisterPushToken(mobileToken: string): Promise<void> {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [account, setAccount] = useState<RiderAccount | null>(null);
   const [profiles, setProfiles] = useState<RiderProfile[]>([]);
+  const [profilesStatus, setProfilesStatus] = useState<ProfilesStatus>("loading");
   const [selectedProfileIds, setSelectedProfileIdsState] = useState<number[]>([]);
   const [bikeInfoMap, setBikeInfoMapState] = useState<Record<number, Partial<BikeInfo>>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -246,9 +254,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function loadProfiles(token: string): Promise<void> {
     try {
       const res = await authedFetch("/api/rider/profiles", token);
-      if (!res.ok) return;
+      // Signed out or replaced since this request started: its answer isn't ours.
+      if (tokenRef.current !== token) return;
+      if (!res.ok) { setProfilesStatus(prev => (prev === "loaded" ? prev : "failed")); return; }
       const loaded: RiderProfile[] = await res.json();
+      if (tokenRef.current !== token) return;
       setProfiles(loaded);
+      setProfilesStatus("loaded");
 
       setBikeInfoMapState(prev => {
         const merged = { ...prev };
@@ -275,20 +287,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await AsyncStorage.setItem(SELECTED_IDS_KEY, JSON.stringify(defaultIds));
       }
     } catch {
-      // ignore
+      // No connection: keep any list already shown, otherwise say it couldn't load.
+      if (tokenRef.current === token) setProfilesStatus(prev => (prev === "loaded" ? prev : "failed"));
     }
   }
 
-  async function validateAndLoad(token: string): Promise<RiderAccount | null> {
+  /**
+   * Check the saved token. It is invalid only when the server says so (401/403);
+   * no signal or a server error is "unreachable", which must not sign the rider out.
+   */
+  async function validateAndLoad(token: string): Promise<{ account: RiderAccount | null; unreachable: boolean }> {
     try {
       const res = await authedFetch("/api/rider/auth/mobile-me", token);
-      if (!res.ok) return null;
+      if (res.status === 401 || res.status === 403) return { account: null, unreachable: false };
+      if (!res.ok) return { account: null, unreachable: true };
       const data = await res.json();
-      return { id: data.id, email: data.email, mobileToken: token };
+      return { account: { id: data.id, email: data.email, mobileToken: token }, unreachable: false };
     } catch {
-      return null;
+      return { account: null, unreachable: true };
     }
   }
+
+  const rememberAccount = (acc: RiderAccount) =>
+    AsyncStorage.setItem(ACCOUNT_CACHE_KEY, JSON.stringify({ id: acc.id, email: acc.email })).catch(() => {});
 
   useEffect(() => {
     async function init() {
@@ -308,13 +329,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         void secureDelete(BIOMETRIC_PASS_SKEY);
       }
       if (token) {
-        const acc = await validateAndLoad(token);
+        const { account: acc, unreachable } = await validateAndLoad(token);
         if (acc) {
           applyAccount(acc);
+          void rememberAccount(acc);
           await loadProfiles(token);
           void tryRegisterPushToken(token);
+        } else if (unreachable) {
+          // No signal (common at a track) or the server is down: stay signed in as
+          // the remembered account and let each screen show its own retry. Builds
+          // before this one saved no account, so those wait on the sign-in screen
+          // with the token kept for the next launch.
+          const cached = await AsyncStorage.getItem(ACCOUNT_CACHE_KEY).then(v => (v ? JSON.parse(v) : null)).catch(() => null);
+          if (cached && typeof cached.id === "number" && typeof cached.email === "string") {
+            applyAccount({ id: cached.id, email: cached.email, mobileToken: token });
+            setProfilesStatus("failed");
+          }
         } else {
-          await AsyncStorage.removeItem(TOKEN_KEY);
+          await AsyncStorage.multiRemove([TOKEN_KEY, ACCOUNT_CACHE_KEY]);
         }
       }
       setIsLoading(false);
@@ -323,11 +355,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void init().catch(() => { setIsLoading(false); markRestored(); });
   }, []);
 
+  // The rider list couldn't load (no signal at launch): try again each time the
+  // app comes back to the foreground, so it recovers without a restart.
+  useEffect(() => {
+    if (profilesStatus !== "failed" || !account?.mobileToken) return;
+    const token = account.mobileToken;
+    const sub = AppState.addEventListener("change", state => {
+      if (state === "active") void loadProfiles(token);
+    });
+    return () => sub.remove();
+  }, [profilesStatus, account?.mobileToken]);
+
   async function login(email: string, password: string): Promise<void> {
     const data = await postJson(`${BASE_URL}/api/rider/auth/login`,
       { email: email.trim().toLowerCase(), password }, "Sign-in failed");
     const acc: RiderAccount = { id: data.id, email: data.email, mobileToken: data.mobileToken };
     await AsyncStorage.setItem(TOKEN_KEY, data.mobileToken);
+    void rememberAccount(acc);
+    setProfilesStatus("loading");
     applyAccount(acc);
     // Refresh the saved credentials only when the rider opted into biometric sign-in
     if (biometricEnabled) {
@@ -364,6 +409,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       { email: email.trim().toLowerCase(), password }, "Couldn't create your account");
     const acc: RiderAccount = { id: data.id, email: data.email, mobileToken: data.mobileToken };
     await AsyncStorage.setItem(TOKEN_KEY, data.mobileToken);
+    void rememberAccount(acc);
+    setProfilesStatus("loading");
     applyAccount(acc);
     void loadProfiles(data.mobileToken);
     void tryRegisterPushToken(data.mobileToken);
@@ -383,13 +430,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       await bestEffortFetch("/api/rider/auth/logout", token, { method: "POST" });
     }
-    const keysToRemove: string[] = [TOKEN_KEY, SELECTED_IDS_KEY, PUSH_TOKEN_KEY];
-    if (account) keysToRemove.push(`workout_plan_${account.id}`);
+    const keysToRemove: string[] = [TOKEN_KEY, ACCOUNT_CACHE_KEY, SELECTED_IDS_KEY, PUSH_TOKEN_KEY];
+    // The Train tab's saved plan (current key, and the one older builds used).
+    if (account) keysToRemove.push(`workout_plan_v2_${account.id}`, `workout_plan_${account.id}`);
     await AsyncStorage.multiRemove(keysToRemove);
     // Clear biometric only if it was enabled; don't clear the stored creds so
     // they stay ready if user re-enables after signing back in.
     applyAccount(null);
     setProfiles([]);
+    setProfilesStatus("loading");
     setSelectedProfileIdsState([]);
   }
 
@@ -474,6 +523,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         account,
         profiles,
+        profilesStatus,
         activeProfiles,
         selectedProfileIds,
         setSelectedProfileIds,

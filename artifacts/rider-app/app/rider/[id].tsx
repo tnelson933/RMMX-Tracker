@@ -23,6 +23,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
 import { goBack } from "@/lib/navigation";
+import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -204,12 +205,12 @@ function StatePickerField({
         <Text style={s.fieldEmpty}>Not set</Text>
       )}
 
-      <Modal visible={open} animationType="slide" transparent>
+      <Modal visible={open} animationType="slide" transparent onRequestClose={() => setOpen(false)}>
         <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" }}>
           <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, maxHeight: "75%", paddingBottom: 24 }}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
               <Text style={{ fontSize: 16, fontWeight: "600", color: colors.foreground }}>Select State</Text>
-              <Pressable onPress={() => setOpen(false)}>
+              <Pressable onPress={() => setOpen(false)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Close">
                 <Feather name="x" size={20} color={colors.mutedForeground} />
               </Pressable>
             </View>
@@ -382,7 +383,7 @@ export default function RiderDetailScreen() {
       setRider(data);
       setRfidValue(data.rfidNumber ?? "");
     } catch (e: any) {
-      setLoadError(e.message);
+      setLoadError(e instanceof TypeError ? NETWORK_ERROR_MESSAGE : e.message);
     } finally {
       setLoading(false);
     }
@@ -460,14 +461,15 @@ export default function RiderDetailScreen() {
         throw new Error((data as any).error ?? `Error ${res.status}`);
       }
       const updated: RiderFull = await res.json();
-      setRider({ ...updated, rfidNumber: rider.rfidNumber });
+      // Servers before this release left isMinor out of this reply: keep what we had.
+      setRider({ ...updated, rfidNumber: rider.rfidNumber, isMinor: updated.isMinor ?? rider.isMinor });
       setEditing(false);
       setSavedOk(true);
       await refreshProfiles();
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setTimeout(() => setSavedOk(false), 3000);
     } catch (e: any) {
-      setSaveError(e.message);
+      setSaveError(e instanceof TypeError ? NETWORK_ERROR_MESSAGE : e.message);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setSaving(false);
@@ -491,7 +493,7 @@ export default function RiderDetailScreen() {
       setRfidEditing(false);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e: any) {
-      Alert.alert("Error", e.message);
+      Alert.alert("Number not saved", e instanceof TypeError ? NETWORK_ERROR_MESSAGE : e.message);
     } finally {
       setRfidSaving(false);
     }
@@ -839,7 +841,7 @@ export default function RiderDetailScreen() {
     return (
       <View style={[s.root, { paddingTop: insets.top }]}>
         <View style={s.header}>
-          <Pressable style={s.backBtn} onPress={() => goBack(router)}>
+          <Pressable style={s.backBtn} onPress={() => goBack(router)} accessibilityRole="button" accessibilityLabel="Back">
             <Feather name="arrow-left" size={18} color={colors.foreground} />
           </Pressable>
           <Text style={s.headerTitle}>Rider Profile</Text>
@@ -855,7 +857,7 @@ export default function RiderDetailScreen() {
     return (
       <View style={[s.root, { paddingTop: insets.top }]}>
         <View style={s.header}>
-          <Pressable style={s.backBtn} onPress={() => goBack(router)}>
+          <Pressable style={s.backBtn} onPress={() => goBack(router)} accessibilityRole="button" accessibilityLabel="Back">
             <Feather name="arrow-left" size={18} color={colors.foreground} />
           </Pressable>
           <Text style={s.headerTitle}>Rider Profile</Text>
@@ -883,7 +885,7 @@ export default function RiderDetailScreen() {
     <View style={[s.root, { paddingTop: insets.top }]}>
       {/* Header */}
       <View style={s.header}>
-        <Pressable style={s.backBtn} onPress={() => goBack(router)}>
+        <Pressable style={s.backBtn} onPress={() => goBack(router)} accessibilityRole="button" accessibilityLabel="Back">
           <Feather name="arrow-left" size={18} color={colors.foreground} />
         </Pressable>
         <Text style={s.headerTitle} numberOfLines={1}>
@@ -952,7 +954,9 @@ export default function RiderDetailScreen() {
           </View>
 
           {/* ── Racer profile: visibility, plate colour, bio ─────────────── */}
-          {!editing && (
+          {/* Hidden (not removed) while editing, so what was just saved here, such as
+              "Only us" or a new photo, is still shown after Edit then Cancel. */}
+          <View style={{ display: editing ? "none" : "flex" }}>
             <RacerProfileSettings
               key={`${rider.id}-${rider.bibNumber ?? ""}`}
               riderId={rider.id}
@@ -970,7 +974,7 @@ export default function RiderDetailScreen() {
               name={`${rider.firstName} ${rider.lastName}`.trim()}
               onPhotosChanged={() => { void refreshProfiles(); }}
             />
-          )}
+          </View>
 
           {/* ── Who can manage this profile (moved from Career stats) ───── */}
           {!editing && <ProfileManagers riderId={rider.id} riderFetch={riderFetch} />}
@@ -1270,7 +1274,7 @@ export default function RiderDetailScreen() {
                       autoFocus
                       onSubmitEditing={saveRfid}
                     />
-                    <Pressable style={s.rfidSaveBtn} onPress={saveRfid} disabled={rfidSaving}>
+                    <Pressable style={s.rfidSaveBtn} onPress={saveRfid} disabled={rfidSaving} accessibilityRole="button" accessibilityLabel="Save number">
                       {rfidSaving ? (
                         <ActivityIndicator color="#fff" size="small" />
                       ) : (
@@ -1281,6 +1285,8 @@ export default function RiderDetailScreen() {
                       style={s.rfidCancelBtn}
                       onPress={() => { setRfidEditing(false); setRfidValue(rider.rfidNumber ?? ""); }}
                       disabled={rfidSaving}
+                      accessibilityRole="button"
+                      accessibilityLabel="Cancel"
                     >
                       <Feather name="x" size={16} color={colors.foreground} />
                     </Pressable>
@@ -1297,6 +1303,8 @@ export default function RiderDetailScreen() {
                 <Pressable
                   style={s.rfidEditBtn}
                   onPress={() => { setRfidValue(rider.rfidNumber ?? ""); setRfidEditing(true); }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Edit number"
                 >
                   <Feather name="edit-2" size={14} color={colors.mutedForeground} />
                 </Pressable>

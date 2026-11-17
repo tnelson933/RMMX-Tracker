@@ -24,6 +24,7 @@ import { ROCKY_QUICK_QUESTIONS, RockyAvatar } from "@/components/RockyAvatar";
 import { ROCKY_HINT_PENDING_KEY, ROCKY_INTRO_SEEN_KEY } from "@/components/RockyLauncher";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { openInApp } from "@/lib/inAppBrowser";
+import { riderBikeLabel } from "@/lib/bike";
 
 const CONFIRM_CLEAR_LABEL = "Clear chat";
 
@@ -239,11 +240,7 @@ export default function MechanicScreen() {
   }
 
   const primaryProfile = activeProfiles[0] ?? null;
-  const bikeStr = [
-    primaryProfile?.bikeYear,
-    primaryProfile?.bikeManufacturer,
-    primaryProfile?.bikeModel,
-  ].filter(Boolean).join(" ");
+  const bikeStr = riderBikeLabel(primaryProfile);
   const storedInfo = primaryProfile ? (bikeInfoMap[primaryProfile.id] ?? {}) : {};
 
   const listRef = useRef<FlatList>(null);
@@ -304,6 +301,8 @@ export default function MechanicScreen() {
 
         {/* Clear chat button */}
         <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={confirmingClear ? "Tap again to clear the chat" : "Clear chat"}
           onPress={() => {
             if (confirmingClear) {
               void clearChat();
@@ -437,7 +436,7 @@ export default function MechanicScreen() {
         <View style={{ marginHorizontal: 12, marginBottom: 6, padding: 10, borderRadius: 8, backgroundColor: colors.dangerTint, flexDirection: "row", alignItems: "center", gap: 8 }}>
           <Feather name="alert-circle" size={14} color={colors.destructive} />
           <Text style={{ flex: 1, fontSize: 12, color: colors.destructive, fontFamily: "Roboto_400Regular" }}>{error}</Text>
-          <Pressable onPress={() => setError(null)}>
+          <Pressable onPress={() => setError(null)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Dismiss">
             <Feather name="x" size={14} color={colors.destructive} />
           </Pressable>
         </View>
@@ -503,6 +502,8 @@ export default function MechanicScreen() {
           />
           <Pressable
             onPress={handleSend}
+            accessibilityRole="button"
+            accessibilityLabel="Send"
             disabled={!inputText.trim() || isTyping}
             style={({ pressed }) => ({
               width: 42, height: 42, borderRadius: 21,

@@ -10,6 +10,7 @@ import { StatsShareCard, formatLap, useShareCapture, type CareerStats } from "@/
 import { fonts } from "@/constants/fonts";
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 import { finishSpread, lapsLedTakeaway, spreadTakeaway, startTakeaway } from "@/lib/career";
 import { goBack } from "@/lib/navigation";
 import { fmtLapShort } from "@/lib/raceReport";
@@ -41,7 +42,7 @@ export default function RiderStatsScreen() {
       setStats(sj.stats);
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't load stats.");
+      setError(e instanceof TypeError ? NETWORK_ERROR_MESSAGE : e instanceof Error ? e.message : "Couldn't load stats.");
     }
   }, [id, riderFetch]);
   useEffect(() => { (async () => { setLoading(true); await load(); setLoading(false); })(); }, [load]);
@@ -74,7 +75,12 @@ export default function RiderStatsScreen() {
       {loading ? (
         <View style={s.center}><ActivityIndicator color={colors.primaryText} /></View>
       ) : error ? (
-        <View style={s.center}><Text style={s.muted}>{error}</Text></View>
+        <View style={s.center}>
+          <Text style={s.muted}>{error}</Text>
+          <Pressable onPress={async () => { setLoading(true); await load(); setLoading(false); }} accessibilityRole="button" hitSlop={8} style={{ marginTop: 12 }}>
+            <Text style={{ fontSize: 14, color: colors.primaryText, fontFamily: fonts.semibold }}>Try again</Text>
+          </Pressable>
+        </View>
       ) : !stats || stats.starts === 0 ? (
         <View style={s.center}><Text style={s.muted}>No races yet. Stats appear after your first timed moto.</Text></View>
       ) : (

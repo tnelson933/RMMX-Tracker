@@ -24,6 +24,8 @@ import { useColors } from "@/hooks/useColors";
 import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 import { goBack } from "@/lib/navigation";
 import { openInApp } from "@/lib/inAppBrowser";
+import { riderBikeLabel } from "@/lib/bike";
+import { daysSinceService } from "@/lib/profileCard";
 
 interface MaintenanceItem {
   id: number;
@@ -40,8 +42,9 @@ interface MaintenanceItem {
 
 function getDaysSince(dateStr: string | null): number | null {
   if (!dateStr) return null;
-  const ms = Date.now() - new Date(dateStr).getTime();
-  return Math.floor(ms / (1000 * 60 * 60 * 24));
+  // Calendar days on this phone (a service logged this evening is "today", not "1d ago").
+  const days = daysSinceService(dateStr, Date.now());
+  return Number.isFinite(days) ? Math.max(0, days) : null;
 }
 
 function getStatus(item: MaintenanceItem): "overdue" | "due_soon" | "ok" | "unknown" {
@@ -90,8 +93,7 @@ export default function MaintenanceScreen() {
   const { riderFetch, profiles, bikeInfoMap } = useRiderAuth();
 
   const profile = profiles.find(p => p.id === riderId);
-  const bikeStr = [profile?.bikeYear, profile?.bikeManufacturer, profile?.bikeModel]
-    .filter(Boolean).join(" ");
+  const bikeStr = riderBikeLabel(profile);
 
   const [items, setItems] = useState<MaintenanceItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -146,6 +148,7 @@ export default function MaintenanceScreen() {
       }
       const data: MaintenanceItem[] = await res.json();
       setItems(data);
+      await load();
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
       Alert.alert("Error", NETWORK_ERROR_MESSAGE);
@@ -326,7 +329,7 @@ export default function MaintenanceScreen() {
   return (
     <View style={[s.root, { paddingTop: insets.top }]}>
       <View style={s.header}>
-        <Pressable style={s.backBtn} onPress={() => goBack(router)}>
+        <Pressable style={s.backBtn} onPress={() => goBack(router)} accessibilityRole="button" accessibilityLabel="Back">
           <Feather name="arrow-left" size={18} color={colors.foreground} />
         </Pressable>
         <View style={s.headerCenter}>
@@ -339,6 +342,8 @@ export default function MaintenanceScreen() {
         </View>
         <View style={s.headerActions}>
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Service history"
             style={s.historyBtn}
             onPress={() => router.push(`/maintenance/history/${riderId}` as any)}
           >
@@ -478,6 +483,8 @@ export default function MaintenanceScreen() {
 
                     <Pressable
                       style={s.deleteBtn}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${item.itemName}`}
                       onPress={() => handleDelete(item)}
                     >
                       <Feather name="trash-2" size={15} color="#DC2626" />

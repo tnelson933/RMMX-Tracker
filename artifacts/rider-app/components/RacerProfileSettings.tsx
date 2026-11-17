@@ -12,6 +12,7 @@ import { NumberPlate, PLATE_COLORS, PLATE_COLOR_NAMES } from "@/components/Numbe
 import { RacerPhotos } from "@/components/RacerPhotos";
 import { fonts } from "@/constants/fonts";
 import { useColors } from "@/hooks/useColors";
+import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 
 const BIO_MAX = 160;
 
@@ -56,9 +57,11 @@ export function RacerProfileSettings({
         profileVisibility: data.profileVisibility ?? null,
         effectiveVisibility: data.effectiveVisibility ?? f.effectiveVisibility,
       }));
-      setBio(data.bio ?? "");
+      // Only a bio save replaces the box: picking a plate colour or who can see the
+      // profile used to wipe a bio that was typed but not saved yet.
+      if (key === "bio") setBio(data.bio ?? "");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't save. Try again.");
+      setError(e instanceof TypeError ? NETWORK_ERROR_MESSAGE : e instanceof Error ? e.message : "Couldn't save. Try again.");
     } finally {
       setSaving(null);
     }

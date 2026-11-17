@@ -64,13 +64,9 @@ async function pick(kind: Kind, source: Source): Promise<ImagePickerT.ImagePicke
     const r = await ImagePicker.launchCameraAsync(options);
     return r.canceled ? null : r.assets[0] ?? null;
   }
-  if (Platform.OS !== "web") {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      say("Photos are off for RM Roost", "To choose a photo, allow photo access for RM Roost in your phone's Settings.", !perm.canAskAgain);
-      return null;
-    }
-  }
+  // No permission request: the phone's own photo picker needs none (iOS 14+,
+  // Android 13+). Asking for the whole library first locked out riders who said
+  // no, and Android 13+ never grants it without a permission the app doesn't declare.
   const r = await ImagePicker.launchImageLibraryAsync(options);
   return r.canceled ? null : r.assets[0] ?? null;
 }
@@ -112,7 +108,7 @@ export function RacerPhotos({ riderId, name, initial, riderFetch, onChanged }: {
       setPhotos({ avatarUrl: data.avatarUrl ?? null, coverUrl: data.coverUrl ?? null });
       onChanged?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't upload the photo. Try again.");
+      setError(e instanceof TypeError ? "Couldn't upload the photo. Check your signal and try again." : e instanceof Error ? e.message : "Couldn't upload the photo. Try again.");
     } finally {
       setBusy(null);
     }

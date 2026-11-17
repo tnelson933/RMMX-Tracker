@@ -36,6 +36,20 @@ export function eventDateReached(event: { date: string } & EventPlace, now = new
   return !!start && start <= eventToday(event, now);
 }
 
+/**
+ * Whether a rider's schedule (the app's Home and My Races) still lists an event:
+ * finished events always (for history), anything else until its last day has
+ * passed at the track. `localToday` is eventToday(event), never the server's date.
+ */
+export function scheduleShowsEvent(
+  event: { status: string; date: string | null; endDate?: string | null },
+  localToday: string,
+): boolean {
+  if (event.status === "completed") return true;
+  const lastDay = day(event.endDate) ?? day(event.date);
+  return !!lastDay && lastDay >= localToday;
+}
+
 /** The single next status for an event, or null when it should stay as is. */
 export function computeAutoStatus(event: EventStatusRow, now = new Date()): string | null {
   const today = eventToday(event, now);

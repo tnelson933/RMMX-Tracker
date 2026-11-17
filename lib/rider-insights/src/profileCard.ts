@@ -45,6 +45,19 @@ export interface NextMaintenance {
 const DAY = 86_400_000;
 
 /**
+ * Whole days since a service was logged. Service dates are calendar days
+ * ("2026-11-16", the rider's own date when they tapped Log), so they are counted
+ * as calendar days on this device. Reading one as UTC midnight made a service
+ * logged in the US evening show as "1d ago" straight away, and due a day early.
+ */
+export function daysSinceService(lastServicedAt: string, nowMs: number): number {
+  const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(lastServicedAt.trim());
+  if (!day) return Math.floor((nowMs - new Date(lastServicedAt).getTime()) / DAY);
+  const now = new Date(nowMs);
+  return Math.round((Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) - Date.UTC(+day[1], +day[2] - 1, +day[3])) / DAY);
+}
+
+/**
  * The item that needs attention first: most overdue, then soonest due. Items
  * never logged come last. Null when the rider has no maintenance items.
  */
@@ -52,7 +65,7 @@ export function nextMaintenance(items: MaintenanceLike[], nowMs: number): NextMa
   if (items.length === 0) return null;
   const rated = items.map(it => {
     if (!it.lastServicedAt || !it.intervalDays) return { it, dueIn: null as number | null };
-    const since = Math.floor((nowMs - new Date(it.lastServicedAt).getTime()) / DAY);
+    const since = daysSinceService(it.lastServicedAt, nowMs);
     return { it, dueIn: it.intervalDays - since };
   });
   const logged = rated.filter(r => r.dueIn != null).sort((a, b) => a.dueIn! - b.dueIn!);

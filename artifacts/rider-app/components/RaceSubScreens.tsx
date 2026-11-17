@@ -172,6 +172,8 @@ export function SubHeader({
         <Pressable
           onPress={onBack}
           hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
           style={({ pressed }) => ({
             width: 36, height: 36, borderRadius: 18,
             backgroundColor: colors.muted,
@@ -337,7 +339,7 @@ export function EventDetailScreen({
                   <View style={{ flexDirection: "row", paddingHorizontal: 14, paddingVertical: 7, backgroundColor: colors.muted + "40", borderBottomWidth: 1, borderBottomColor: colors.border }}>
                     <Text style={{ width: 36, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Lap</Text>
                     <Text style={{ flex: 1, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Time</Text>
-                    <Text style={{ width: 68, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Gap to Leader</Text>
+                    <Text style={{ width: 68, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>{gapMode === "best" ? "vs Best" : gapMode === "leader" ? "Gap to Leader" : "Gap Ahead"}</Text>
                   </View>
                   {moto.lapTimes.map((t, i) => {
                     const isFastest = i === fastestIdx;
@@ -345,12 +347,12 @@ export function EventDetailScreen({
                     // What to show in the Gap column for this lap, per mode
                     let gapEl: { kind: "best" } | { kind: "leader" } | { kind: "text"; text: string } | null = null;
                     if (gapMode === "best") {
+                      // This lap against the rider's own best lap (not the leader).
+                      const delta = isFastest || !Number.isFinite(lapMsArr[i]) || !Number.isFinite(bestMs) ? "" : lapDeltaStr(lapMsArr[i], bestMs);
                       if (isFastest) {
                         gapEl = { kind: "best" };
-                      } else if (gap?.leader != null) {
-                        gapEl = { kind: "text", text: gapMsStr(gap.leader) };
                       } else {
-                        gapEl = null;
+                        gapEl = delta ? { kind: "text", text: delta } : null;
                       }
                     } else if (gap == null || gap.leader == null) {
                       gapEl = { kind: "text", text: "—" };
@@ -478,7 +480,7 @@ export function EventsListScreen({
           </View>
         ) : (
           events.map(ev => (
-            <View key={`${ev.eventId}-${ev.raceClass}`} style={{ marginHorizontal: -16 }}>
+            <View key={`${ev.eventId}-${ev.raceClass}-${ev.riderName ?? ""}`} style={{ marginHorizontal: -16 }}>
               <ResultCard
                 position={ev.bestPosition}
                 title={ev.eventName}
@@ -560,10 +562,10 @@ export function SeriesStandingsScreen({
     let cancelled = false;
     setLoading(true);
     riderFetch(`/api/public/series/${seriesId}/standings`)
-      .then(r => r.json())
+      .then(r => (r.ok ? r.json() : []))
       .then((data: PublicSeriesStandingRow[]) => {
         if (cancelled) return;
-        const forClass = (data ?? []).filter(r => r.raceClass === riderClass);
+        const forClass = (Array.isArray(data) ? data : []).filter(r => r.raceClass === riderClass);
         forClass.sort((a, b) => a.position - b.position);
         setRows(forClass);
       })
@@ -727,8 +729,8 @@ export function PointsScreen({
     let cancelled = false;
     setSeriesLoading(true);
     riderFetch("/api/rider/series")
-      .then(r => r.json())
-      .then((data: RiderSeriesEntry[]) => { if (!cancelled) setSeriesList(data ?? []); })
+      .then(r => (r.ok ? r.json() : []))
+      .then((data: RiderSeriesEntry[]) => { if (!cancelled) setSeriesList(Array.isArray(data) ? data : []); })
       .catch(() => { if (!cancelled) setSeriesList([]); })
       .finally(() => { if (!cancelled) setSeriesLoading(false); });
     return () => { cancelled = true; };
@@ -808,7 +810,7 @@ export function PointsScreen({
                       {s.position}
                     </Text>
                     <Text style={{ fontSize: 12, fontWeight: "700", color: "rgba(255,255,255,0.8)", fontFamily: "Barlow_700Bold", lineHeight: 12, textTransform: "uppercase", letterSpacing: 0.3 }}>
-                      {s.position === 1 ? "1st" : s.position === 2 ? "2nd" : s.position === 3 ? "3rd" : `${s.position}th`}
+                      {ordinal(s.position)}
                     </Text>
                   </View>
                   <View style={{ flex: 1, gap: 4 }}>
@@ -848,7 +850,7 @@ export function PointsScreen({
           </View>
         ) : (
           eventsWithPoints.map(ev => (
-            <View key={`${ev.eventId}-${ev.raceClass}`} style={{
+            <View key={`${ev.eventId}-${ev.raceClass}-${ev.riderName ?? ""}`} style={{
               borderRadius: 12, borderWidth: 1, borderColor: colors.border,
               backgroundColor: colors.card, overflow: "hidden",
             }}>

@@ -9,6 +9,8 @@ import React, {
 } from "react";
 
 import { useRiderAuth } from "@/context/AuthContext";
+import { riderBike, riderBikeLabel } from "@/lib/bike";
+import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -86,10 +88,9 @@ export function RockyChatProvider({ children }: { children: React.ReactNode }) {
   const { activeProfiles, bikeInfoMap, riderFetch } = useRiderAuth();
   const primaryProfile = activeProfiles[0] ?? null;
 
-  const _defaultBike = primaryProfile?.bikes?.find(b => b.isDefault) ?? primaryProfile?.bikes?.[0];
-  const bikeStr = _defaultBike
-    ? [_defaultBike.bikeYear, _defaultBike.bikeManufacturer, _defaultBike.bikeModel].filter(Boolean).join(" ")
-    : "";
+  // The main garage bike, or the bike saved on the profile (Edit profile / registration).
+  const _defaultBike = riderBike(primaryProfile);
+  const bikeStr = riderBikeLabel(primaryProfile);
   const storedInfo = primaryProfile ? (bikeInfoMap[primaryProfile.id] ?? {}) : {};
 
   const greetingText = primaryProfile
@@ -117,9 +118,9 @@ export function RockyChatProvider({ children }: { children: React.ReactNode }) {
     ? {
         riderId: primaryProfile.id,
         name: `${primaryProfile.firstName} ${primaryProfile.lastName}`,
-        bikeMake: (primaryProfile.bikes?.find(b => b.isDefault) ?? primaryProfile.bikes?.[0])?.bikeManufacturer ?? "",
-        bikeModel: (primaryProfile.bikes?.find(b => b.isDefault) ?? primaryProfile.bikes?.[0])?.bikeModel ?? "",
-        bikeYear: (primaryProfile.bikes?.find(b => b.isDefault) ?? primaryProfile.bikes?.[0])?.bikeYear ?? "",
+        bikeMake: _defaultBike?.bikeManufacturer ?? "",
+        bikeModel: _defaultBike?.bikeModel ?? "",
+        bikeYear: _defaultBike?.bikeYear ?? "",
         rideExperience: storedInfo.rideExperience ?? "not specified",
         eventsRaced: primaryProfile.eventsRaced,
         bestPosition: primaryProfile.bestPosition,
@@ -145,6 +146,9 @@ export function RockyChatProvider({ children }: { children: React.ReactNode }) {
   // ── Initialize messages for a profile ────────────────────────────────────
 
   const initializedProfileId = useRef<number | null | "none">("none");
+  // The profile whose saved chat is in `messages`. While another profile's chat is
+  // still loading, nothing is saved, so one rider's chat never lands under another's.
+  const loadedProfileId = useRef<number | null | "none">("none");
 
   useEffect(() => {
     const pid = primaryProfile?.id ?? null;
@@ -152,6 +156,7 @@ export function RockyChatProvider({ children }: { children: React.ReactNode }) {
     // Guard: only run when the profile ID actually changes
     if (initializedProfileId.current === pid) return;
     initializedProfileId.current = pid;
+    loadedProfileId.current = "none";
 
     const key = storageKey(pid);
     const mKey = memoryKey(pid);
@@ -229,6 +234,7 @@ export function RockyChatProvider({ children }: { children: React.ReactNode }) {
           AsyncStorage.setItem(mCheckKey, Date.now().toString()).catch(() => {});
         }
 
+        loadedProfileId.current = pid;
         messagesRef.current = baseMessages;
         setMessages(baseMessages);
       },
@@ -243,6 +249,7 @@ export function RockyChatProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const pid = primaryProfile?.id ?? null;
+    if (loadedProfileId.current !== pid) return;
     void saveMessages(messages, pid);
   }, [messages, primaryProfile?.id, saveMessages]);
 
@@ -274,7 +281,11 @@ export function RockyChatProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // non-fatal
     }
-  }, [primaryProfile?.id]);
+    // Clear the server's copy too; otherwise it came back on the next launch.
+    if (pid != null) {
+      riderFetch("/api/rider/memory", { method: "PATCH", body: JSON.stringify({ memory: "" }) }).catch(() => {});
+    }
+  }, [primaryProfile?.id, riderFetch]);
 
   // ── Append a new entry to the memory blob and persist it ─────────────────
 
@@ -380,7 +391,7 @@ export function RockyChatProvider({ children }: { children: React.ReactNode }) {
           })
           .catch(() => {});
       } catch (e: any) {
-        setError(e.message ?? "Something went wrong. Try again.");
+        setError(e instanceof TypeError ? NETWORK_ERROR_MESSAGE : (e.message ?? "Something went wrong. Try again."));
       } finally {
         setIsTyping(false);
       }

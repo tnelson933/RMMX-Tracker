@@ -14,6 +14,7 @@ import { RiderAvatar } from "@/components/RiderPhoto";
 import { useRiderAuth, type RiderProfile } from "@/context/AuthContext";
 import { fonts } from "@/constants/fonts";
 import { useColors } from "@/hooks/useColors";
+import { riderBike } from "@/lib/bike";
 import { cardSummary, nextMaintenance, recentFinishes, type MaintenanceLike } from "@/lib/profileCard";
 
 interface CardData {
@@ -137,7 +138,7 @@ export function RiderCard({ profile, selected, isOnlyOne, onToggle }: {
 
   const finishes = data ? recentFinishes(data.recent) : [];
   const next = data ? nextMaintenance(data.maintenance, Date.now()) : null;
-  const hasBike = (profile.bikes?.length ?? 0) > 0;
+  const hasBike = riderBike(profile) != null;
   const statusColor = next?.status === "overdue" ? colors.destructive : next?.status === "due_soon" ? colors.warning : next?.status === "ok" ? colors.success : colors.mutedForeground;
   const followers = data?.followerCount ?? 0;
 

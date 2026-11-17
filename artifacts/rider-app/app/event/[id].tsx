@@ -1,7 +1,7 @@
 import { API_BASE_URL } from "@/lib/apiBase";
 import { useBottomSpace } from "@/hooks/useBottomSpace";
 import { Feather } from "@expo/vector-icons";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -16,11 +16,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useRiderAuth } from "@/context/AuthContext";
-import { nativePaymentSheetAvailable } from "@/lib/payments";
 import { useColors } from "@/hooks/useColors";
 import { RmCashWidget } from "@/components/RmCashWidget";
 import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
-import * as WebBrowser from "expo-web-browser";
 import { EmptyState } from "@/components/EmptyState";
 import { eventDay, placeLabel } from "@/lib/format";
 import { goBack } from "@/lib/navigation";
@@ -41,6 +39,7 @@ interface EventDetail {
   clubName: string | null;
   clubId: number;
   paymentEnabled: boolean;
+  registrationOpen?: string | null;
   registrationClose: string | null;
   classStartTimes: Record<string, string | null>;
 }
@@ -89,13 +88,13 @@ function fmtStartTime(t: string | null | undefined): string {
   return `${displayH}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
-/** In-app registration (with in-app payment) in builds that have it; older builds keep the website form. */
-function startRegistration(router: ReturnType<typeof useRouter>, eventId: number, query: string, email?: string | null) {
-  if (nativePaymentSheetAvailable()) {
-    router.push(`/register/${eventId}?${query}` as any);
-    return;
-  }
-  void WebBrowser.openBrowserAsync(`${BASE_URL}/register/${eventId}${email ? `?email=${encodeURIComponent(email)}` : ""}`);
+/**
+ * Registration always happens on the app's own screen (every build from 1.0.23
+ * has the in-app payment form). It used to fall back to the website's form in a
+ * browser, with the rider's email in the link.
+ */
+function startRegistration(router: ReturnType<typeof useRouter>, eventId: number, query: string) {
+  router.push(`/register/${eventId}?${query}` as any);
 }
 
 export default function EventDetailScreen() {
@@ -104,7 +103,7 @@ export default function EventDetailScreen() {
   const colors    = useColors();
   const insets    = useSafeAreaInsets();
   const bottomSpace = useBottomSpace();
-  const { profiles, isAuthenticated, riderFetch, account } = useRiderAuth();
+  const { profiles, isAuthenticated, riderFetch } = useRiderAuth();
 
   const scrollViewRef = useRef<ScrollView>(null);
   const [scheduleY,  setScheduleY]  = useState<number | null>(null);
@@ -148,17 +147,21 @@ export default function EventDetailScreen() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Fetch which classes this rider is already registered for
-  useEffect(() => {
+  // Which classes this rider is already registered for. Checked again each time
+  // the screen comes back into view, so it's right after registering.
+  useFocusEffect(useCallback(() => {
     if (!isAuthenticated || !id) { setRegisteredClasses(new Set()); setMyRegistrations([]); return; }
+    let cancelled = false;
     riderFetch(`/api/rider/events/${id}/my-registrations`)
       .then(r => r.ok ? r.json() : null)
       .then((data: { registeredClasses: string[]; registrations?: MyRegistration[] } | null) => {
+        if (cancelled) return;
         if (data?.registeredClasses) setRegisteredClasses(new Set(data.registeredClasses));
         if (data?.registrations) setMyRegistrations(data.registrations);
       })
       .catch(() => {});
-  }, [isAuthenticated, id, riderFetch]);
+    return () => { cancelled = true; };
+  }, [isAuthenticated, id, riderFetch]));
 
   async function handleChangeClass(reg: MyRegistration, newClass: string) {
     setChangeClassLoading(true);
@@ -402,7 +405,11 @@ export default function EventDetailScreen() {
   }
 
   const isRaceDay = event.status === "race_day";
-  const isRegOpen = event.status === "registration_open";
+  // Open by status and inside the registration window (the same test the register screen and server use).
+  const nowMs = Date.now();
+  const isRegOpen = event.status === "registration_open"
+    && !(event.registrationOpen && new Date(event.registrationOpen).getTime() > nowMs)
+    && !(event.registrationClose && new Date(event.registrationClose).getTime() < nowMs);
   const isFinished = event.status === "completed";
 
   const chipFor = (status: string) => {
@@ -803,7 +810,7 @@ export default function EventDetailScreen() {
                 </Text>
                 <Pressable
                   style={[s.primaryBtn, { marginTop: 4 }]}
-                  onPress={() => { setShowRegisterModal(false); startRegistration(router, event.id, "newRider=1", account?.email); }}
+                  onPress={() => { setShowRegisterModal(false); startRegistration(router, event.id, "newRider=1"); }}
                 >
                   <Text style={s.btnText}>Start registration</Text>
                 </Pressable>
@@ -822,7 +829,7 @@ export default function EventDetailScreen() {
                 {(profiles ?? []).map(p => (
                   <Pressable
                     key={p.id}
-                    onPress={() => { setShowRegisterModal(false); startRegistration(router, event.id, `riderId=${p.id}`, p.email ?? account?.email); }}
+                    onPress={() => { setShowRegisterModal(false); startRegistration(router, event.id, `riderId=${p.id}`); }}
                     style={({ pressed }) => ({
                       marginBottom: 10,
                       padding: 12,
@@ -849,7 +856,7 @@ export default function EventDetailScreen() {
                   </Pressable>
                 ))}
                 <Pressable
-                  onPress={() => { setShowRegisterModal(false); startRegistration(router, event.id, "newRider=1", account?.email); }}
+                  onPress={() => { setShowRegisterModal(false); startRegistration(router, event.id, "newRider=1"); }}
                   style={({ pressed }) => ({ marginBottom: 10, padding: 12, borderRadius: 10, borderWidth: 1, borderStyle: "dashed", borderColor: pressed ? colors.primary : colors.border, flexDirection: "row", alignItems: "center", gap: 8 })}
                 >
                   <Feather name="user-plus" size={16} color={colors.primaryText} />

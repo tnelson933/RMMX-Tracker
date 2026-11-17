@@ -22,6 +22,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { goBack } from "@/lib/navigation";
+import { riderBikeLabel } from "@/lib/bike";
+import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 
 interface HistoryEntry {
   id: number;
@@ -76,6 +78,9 @@ function EditModal({
     try {
       await onSave(entry.id, servicedAt, notes);
       onClose();
+    } catch (e: any) {
+      // The sheet stays open with what was typed.
+      Alert.alert("Entry not saved", e instanceof TypeError ? NETWORK_ERROR_MESSAGE : (e?.message ?? "Try again."));
     } finally {
       setSaving(false);
     }
@@ -267,12 +272,12 @@ export default function MaintenanceHistoryScreen() {
   const { riderFetch, profiles } = useRiderAuth();
 
   const profile = profiles.find(p => p.id === riderId);
-  const bikeStr = [profile?.bikeYear, profile?.bikeManufacturer, profile?.bikeModel]
-    .filter(Boolean).join(" ");
+  const bikeStr = riderBikeLabel(profile);
   const nameStr = bikeStr || `${profile?.firstName ?? ""} ${profile?.lastName ?? ""}`.trim();
 
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [editEntry, setEditEntry] = useState<HistoryEntry | null>(null);
   const [editVisible, setEditVisible] = useState(false);
@@ -280,8 +285,17 @@ export default function MaintenanceHistoryScreen() {
   const load = useCallback(async () => {
     try {
       const res = await riderFetch(`/api/rider/maintenance/${riderId}/history`);
-      if (res.ok) setEntries(await res.json());
-    } catch { }
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setLoadError((d as any).error ?? `Couldn't load your service history (error ${res.status}).`);
+        return;
+      }
+      setEntries(await res.json());
+      setLoadError(null);
+    } catch {
+      // Not the same as "no history yet".
+      setLoadError(NETWORK_ERROR_MESSAGE);
+    }
   }, [riderFetch, riderId]);
 
   useEffect(() => {
@@ -324,14 +338,19 @@ export default function MaintenanceHistoryScreen() {
           text: "Delete",
           style: "destructive",
           onPress: async () => {
-            const res = await riderFetch(`/api/rider/maintenance/${riderId}/history/${entry.id}`, {
-              method: "DELETE",
-            });
-            if (res.ok) {
-              setEntries(prev => prev.filter(e => e.id !== entry.id));
-              await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            } else {
-              Alert.alert("Error", "Could not delete the entry. Please try again.");
+            try {
+              const res = await riderFetch(`/api/rider/maintenance/${riderId}/history/${entry.id}`, {
+                method: "DELETE",
+              });
+              if (res.ok) {
+                setEntries(prev => prev.filter(e => e.id !== entry.id));
+                await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              } else {
+                const d = await res.json().catch(() => ({}));
+                Alert.alert("Entry not deleted", (d as any).error ?? "Could not delete the entry. Please try again.");
+              }
+            } catch {
+              Alert.alert("Entry not deleted", NETWORK_ERROR_MESSAGE);
             }
           },
         },
@@ -378,7 +397,7 @@ export default function MaintenanceHistoryScreen() {
   return (
     <View style={[s.root, { paddingTop: insets.top }]}>
       <View style={s.header}>
-        <Pressable style={s.backBtn} onPress={() => goBack(router)}>
+        <Pressable style={s.backBtn} onPress={() => goBack(router)} accessibilityRole="button" accessibilityLabel="Back">
           <Feather name="arrow-left" size={18} color={colors.foreground} />
         </Pressable>
         <View style={s.headerCenter}>
@@ -398,7 +417,16 @@ export default function MaintenanceHistoryScreen() {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
         >
-          {entries.length === 0 ? (
+          {loadError && entries.length === 0 ? (
+            <View style={s.emptyBox}>
+              <Feather name="wifi-off" size={36} color={colors.mutedForeground + "50"} />
+              <Text style={s.emptyTitle}>Couldn't load your service history</Text>
+              <Text style={s.emptyText}>{loadError}</Text>
+              <Pressable onPress={handleRefresh} accessibilityRole="button" hitSlop={8} style={{ marginTop: 12 }}>
+                <Text style={{ fontSize: 14, color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>Try again</Text>
+              </Pressable>
+            </View>
+          ) : entries.length === 0 ? (
             <View style={s.emptyBox}>
               <Feather name="clock" size={36} color={colors.mutedForeground + "50"} />
               <Text style={s.emptyTitle}>No Service History</Text>

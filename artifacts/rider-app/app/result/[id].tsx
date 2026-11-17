@@ -19,6 +19,7 @@ import { ShareResultButton } from "@/components/ShareCard";
 import { PositionBadge } from "@/components/RaceStats";
 import { displayDate } from "@/lib/format";
 import { goBack } from "@/lib/navigation";
+import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 import { MotoChips, MotoReport, RaceReportHero } from "@/components/RaceReport";
 import type { MotoResult as HistoryMoto } from "@/components/RaceSubScreens";
 
@@ -72,7 +73,7 @@ export default function ResultDetailScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const bottomSpace = useBottomSpace();
-  const { activeProfiles, riderFetch } = useRiderAuth();
+  const { activeProfiles, riderFetch, profilesStatus, refreshProfiles } = useRiderAuth();
 
   const [results, setResults] = useState<EventResult[]>([]);
   const [eventName, setEventName] = useState<string>("");
@@ -86,10 +87,17 @@ export default function ResultDetailScreen() {
   const profileKey = activeProfiles.map(p => p.id).join(",");
 
   const load = useCallback(async () => {
+    if (id && activeProfiles.length === 0 && profilesStatus === "loading") {
+      // Opened from a link or notification before the rider list arrived: keep the spinner.
+      setLoading(true);
+      return;
+    }
     if (!id || activeProfiles.length === 0) {
       // Nothing to fetch: stop the spinner and show the empty/error state instead.
       setResults([]);
-      setError(!id ? "This result link is missing an event." : "Add a rider profile to see your results.");
+      setError(!id ? "This result link is missing an event."
+        : profilesStatus === "failed" ? NETWORK_ERROR_MESSAGE
+        : "Add a rider profile to see your results.");
       setLoading(false);
       return;
     }
@@ -99,6 +107,11 @@ export default function ResultDetailScreen() {
       const responses = await Promise.all(
         activeProfiles.map(p => riderFetch(`/api/rider/profiles/${p.id}/history?eventId=${id}`))
       );
+      // The server couldn't answer for any rider: that isn't "not posted yet".
+      if (responses.every(r => !r.ok)) {
+        const body = await responses[0].json().catch(() => null);
+        throw new Error(body?.error ?? `Couldn't load these results (error ${responses[0].status}).`);
+      }
       const all: EventResult[] = [];
       for (let i = 0; i < responses.length; i++) {
         if (!responses[i].ok) continue;
@@ -115,11 +128,11 @@ export default function ResultDetailScreen() {
       }
       setResults(all);
     } catch (e: any) {
-      setError(e.message ?? "Failed to load results");
+      setError(e instanceof TypeError ? NETWORK_ERROR_MESSAGE : (e.message ?? "Failed to load results"));
     } finally {
       setLoading(false);
     }
-  }, [id, profileKey, riderFetch]);
+  }, [id, profileKey, riderFetch, profilesStatus]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -138,16 +151,28 @@ export default function ResultDetailScreen() {
       <View style={{ flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center", padding: 32, gap: 10 }}>
         <Feather name="alert-circle" size={36} color={colors.mutedForeground} />
         <Text style={{ fontSize: 18, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold", textAlign: "center" }}>
-          No results found
+          {error ? "Couldn't load results" : "No results found"}
         </Text>
         <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center" }}>
           {error ?? "Results for this event haven't been posted yet."}
         </Text>
+        {error ? (
+          <Pressable
+            onPress={() => { if (profilesStatus === "failed") void refreshProfiles(); void load(); }}
+            accessibilityRole="button"
+            style={{ marginTop: 8, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10, backgroundColor: colors.primary }}
+          >
+            <Text style={{ color: "#fff", fontFamily: "Roboto_600SemiBold", fontSize: 14 }}>Try again</Text>
+          </Pressable>
+        ) : null}
         <Pressable
           onPress={() => goBack(router)}
-          style={{ marginTop: 8, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10, backgroundColor: colors.primary }}
+          accessibilityRole="button"
+          style={error
+            ? { paddingHorizontal: 20, paddingVertical: 10 }
+            : { marginTop: 8, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10, backgroundColor: colors.primary }}
         >
-          <Text style={{ color: "#fff", fontFamily: "Roboto_600SemiBold", fontSize: 14 }}>Go Back</Text>
+          <Text style={{ color: error ? colors.primaryText : "#fff", fontFamily: "Roboto_600SemiBold", fontSize: 14 }}>Go Back</Text>
         </Pressable>
       </View>
     );

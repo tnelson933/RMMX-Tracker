@@ -120,6 +120,8 @@ interface RaceAnalytics {
   fastestLaps: AnalyticsRider[];
 }
 
+const MOTO_STATUS_ORDER: Record<string, number> = { scheduled: 0, in_progress: 1, completed: 2 };
+
 interface PublicMotoDetail {
   motoId: number;
   motoName: string;
@@ -136,9 +138,10 @@ interface PublicMotoDetail {
 interface PublicSeries {
   id: number;
   name: string;
-  season: string | null;
-  clubName: string;
-  state: string;
+  /** The season year: a number from the server. */
+  season: number | string | null;
+  clubName: string | null;
+  state: string | null;
   classes: string[] | null;
 }
 
@@ -275,7 +278,7 @@ function PublicRiderLapSheet({
             </Text>
             <RacerLink riderId={riderId} onBeforeOpen={onClose} />
           </View>
-          <Pressable onPress={onClose} hitSlop={8} style={{ padding: 4 }}>
+          <Pressable onPress={onClose} hitSlop={8} style={{ padding: 4 }} accessibilityRole="button" accessibilityLabel="Close">
             <Feather name="x" size={20} color={colors.mutedForeground} />
           </Pressable>
         </View>
@@ -590,9 +593,12 @@ function PublicMotoSheet({
   const [selectedLeader, setSelectedLeader] = useState<PublicLeaderEntry | null>(null);
   const [liveView, setLiveView] = useState<LiveMotoView>("timing");
   const { top: topInset } = useSafeAreaInsets();
-  const isLive      = moto.status === "in_progress";
-  const isScheduled = moto.status === "scheduled";
-  const chip        = chipFor(moto.status);
+  // Whichever is further along: the schedule's status (refreshed by the screen
+  // behind this sheet) or the one in this sheet's own latest results.
+  const status = (MOTO_STATUS_ORDER[detail?.status ?? ""] ?? -1) > (MOTO_STATUS_ORDER[moto.status] ?? -1) ? detail!.status : moto.status;
+  const isLive      = status === "in_progress";
+  const isScheduled = status === "scheduled";
+  const chip        = chipFor(status);
 
   const fetchDetail = useCallback(async () => {
     try {
@@ -665,7 +671,7 @@ function PublicMotoSheet({
                 {moto.raceClass}
               </Text>
             )}
-            {moto.status === "completed" && detail && (
+            {status === "completed" && detail && (
               <Text style={{ fontSize: 12, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.6, marginTop: 4, color: (detail as any).resultsOfficial ? "#15803d" : "#b45309" }}>
                 {(detail as any).resultsOfficial ? "✓ Official results" : "Unofficial results"}
               </Text>
@@ -677,7 +683,7 @@ function PublicMotoSheet({
                 {isLive ? "🔴 LIVE" : chip.label}
               </Text>
             </View>
-            <Pressable onPress={onClose} hitSlop={8} style={{ padding: 4 }}>
+            <Pressable onPress={onClose} hitSlop={8} style={{ padding: 4 }} accessibilityRole="button" accessibilityLabel="Close">
               <Feather name="x" size={20} color={colors.mutedForeground} />
             </Pressable>
           </View>
@@ -909,6 +915,8 @@ function EventScheduleScreen({
         <Pressable
           onPress={onBack}
           hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
           style={({ pressed }) => ({ padding: 4, opacity: pressed ? 0.6 : 1, marginTop: 2 })}
         >
           <Feather name="arrow-left" size={22} color={colors.foreground} />
@@ -1064,7 +1072,7 @@ function EventScheduleScreen({
       >
         {selectedMoto && (
           <PublicMotoSheet
-            moto={selectedMoto}
+            moto={motos.find(m => m.motoId === selectedMoto.motoId) ?? selectedMoto}
             onClose={() => setSelectedMoto(null)}
             colors={colors}
             bottomInset={bottomInset}
@@ -1236,6 +1244,8 @@ function SeriesStandingsScreen({
         <Pressable
           onPress={onBack}
           hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
           style={({ pressed }) => ({ padding: 4, opacity: pressed ? 0.6 : 1, marginTop: 2 })}
         >
           <Feather name="arrow-left" size={22} color={colors.foreground} />
@@ -1406,7 +1416,7 @@ function SeriesStandingsScreen({
                   </Text>
                   <RacerLink riderId={selectedRider.riderId} onBeforeOpen={() => setSelectedRider(null)} />
                 </View>
-                <Pressable onPress={() => setSelectedRider(null)} hitSlop={8} style={{ padding: 4 }}>
+                <Pressable onPress={() => setSelectedRider(null)} hitSlop={8} style={{ padding: 4 }} accessibilityRole="button" accessibilityLabel="Close">
                   <Feather name="x" size={20} color={colors.mutedForeground} />
                 </Pressable>
               </View>
@@ -1526,12 +1536,17 @@ export default function ResultsScreen() {
   }, []);
 
   // ── Races data loading ───────────────────────────────────────────────────────
+  const eventsRequest = useRef(0);
   const loadEvents = useCallback(async (q: string) => {
+    const request = ++eventsRequest.current;
     try {
       const res = await publicFetch(`/api/public/events/browse?q=${encodeURIComponent(q)}`);
-      if (res.ok) setEvents(await res.json());
+      if (res.ok) {
+        const rows = await res.json();
+        if (request === eventsRequest.current) setEvents(rows);
+      }
     } catch { /* silently ignore */ }
-    finally { setEventsLoading(false); setEventsRefreshing(false); }
+    finally { if (request === eventsRequest.current) { setEventsLoading(false); setEventsRefreshing(false); } }
   }, []);
 
   useEffect(() => { void loadEvents(racesDebouncedQ); }, [racesDebouncedQ, loadEvents]);
@@ -1620,10 +1635,8 @@ export default function ResultsScreen() {
   const filteredSeries = seriesDebouncedQ
     ? seriesList.filter(s => {
         const q = seriesDebouncedQ.toLowerCase();
-        return s.name.toLowerCase().includes(q)
-          || s.clubName.toLowerCase().includes(q)
-          || s.state.toLowerCase().includes(q)
-          || (s.season ?? "").toLowerCase().includes(q);
+        const has = (v: unknown) => String(v ?? "").toLowerCase().includes(q);
+        return has(s.name) || has(s.clubName) || has(s.state) || has(s.season);
       })
     : seriesList;
 
@@ -1697,7 +1710,6 @@ export default function ResultsScreen() {
               placeholderTextColor={colors.mutedForeground}
               style={{ flex: 1, fontSize: 14, color: colors.foreground, fontFamily: "Roboto_400Regular", padding: 0 }}
               returnKeyType="search"
-              clearButtonMode="while-editing"
               autoCorrect={false}
               autoCapitalize="none"
             />
@@ -1709,7 +1721,6 @@ export default function ResultsScreen() {
               placeholderTextColor={colors.mutedForeground}
               style={{ flex: 1, fontSize: 14, color: colors.foreground, fontFamily: "Roboto_400Regular", padding: 0 }}
               returnKeyType="search"
-              clearButtonMode="while-editing"
               autoCorrect={false}
               autoCapitalize="none"
             />
@@ -1717,10 +1728,13 @@ export default function ResultsScreen() {
           {(tab === "races" ? racesQuery : seriesQuery).length > 0 && (
             <Pressable
               onPress={() => {
-                if (tab === "races") { setRacesQuery(""); setRacesDebouncedQ(""); }
-                else { setSeriesQuery(""); setSeriesDebouncedQ(""); }
+                // Also drop a search still waiting on its typing delay.
+                if (tab === "races") { if (racesDebounceRef.current) clearTimeout(racesDebounceRef.current); setRacesQuery(""); setRacesDebouncedQ(""); }
+                else { if (seriesDebounceRef.current) clearTimeout(seriesDebounceRef.current); setSeriesQuery(""); setSeriesDebouncedQ(""); }
               }}
               hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Clear search"
             >
               <Feather name="x-circle" size={16} color={colors.mutedForeground} />
             </Pressable>

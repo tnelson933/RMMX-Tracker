@@ -122,11 +122,18 @@ function headline(stats: CareerStats, seasons: RacerResume["seasons"], firstYear
   return firstYear ? `Racing since ${firstYear}: ${motos} so far.` : `${motos} so far.`;
 }
 
-/** Age in whole years from "YYYY-MM-DD"; null when unknown or unreadable. */
+/**
+ * Age in whole years; null when unknown or unreadable. Birth dates are saved as
+ * typed: "YYYY-MM-DD", or the US "MM/DD/YYYY" that the registration forms ask for
+ * (checkBirthDate accepts both). Reading only the first form treated a child
+ * entered the US way as an adult, so their profile wasn't private.
+ */
 export function ageOn(dateOfBirth: string | null | undefined, todayYmd: string): number | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateOfBirth ?? "");
-  if (!m) return null;
-  const [y, mo, d] = [+m[1], +m[2], +m[3]];
+  const text = (dateOfBirth ?? "").trim();
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(text);
+  const us = iso ? null : /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(text);
+  if (!iso && !us) return null;
+  const [y, mo, d] = iso ? [+iso[1], +iso[2], +iso[3]] : [+us![3], +us![1], +us![2]];
   const [ty, tmo, td] = [+todayYmd.slice(0, 4), +todayYmd.slice(5, 7), +todayYmd.slice(8, 10)];
   return ty - y - (tmo < mo || (tmo === mo && td < d) ? 1 : 0);
 }

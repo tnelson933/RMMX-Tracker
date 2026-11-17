@@ -20,7 +20,8 @@ type RiderMotoSectors = {
   fieldBestMs: Array<number | null>;
 };
 import { rejectIfThrottled, recordFailedLogin, clearFailedLogins } from "../lib/loginThrottle";
-import { eventDateReached } from "../lib/eventStatus";
+import { eventDateReached, scheduleShowsEvent } from "../lib/eventStatus";
+import { eventToday } from "@workspace/api-zod";
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { randomBytes, randomUUID } from "crypto";
@@ -702,7 +703,7 @@ router.post("/rider/events/:eventId/registrations/cancel", requireRiderAuth, asy
 
   // Verify ownership — all IDs must belong to a family rider for this event
   const regs = await db
-    .select({ id: registrationsTable.id, riderId: registrationsTable.riderId, status: registrationsTable.status })
+    .select({ id: registrationsTable.id, riderId: registrationsTable.riderId, status: registrationsTable.status, compCode: registrationsTable.compCode })
     .from(registrationsTable)
     .where(and(
       inArray(registrationsTable.id, ids),
@@ -738,7 +739,7 @@ router.post("/rider/events/:eventId/registrations/cancel", requireRiderAuth, asy
   // Give discount-code uses back once nothing active carries the code.
   const codeHolders = new Map<string, { riderId: number; code: string }>();
   for (const r of regs) {
-    const code = (r as any).compCode as string | null;
+    const code = r.compCode;
     if (r.riderId != null && code) codeHolders.set(`${r.riderId}:${code}`, { riderId: r.riderId, code });
   }
   for (const { riderId, code } of codeHolders.values()) {
@@ -1345,6 +1346,8 @@ router.patch("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
     myLapsTransponderNumber: updated.mylapsTransponderId ?? null,
     raceTypes: (updated.raceTypes as string[] | null) ?? [],
     effectiveVisibility: effectiveVisibility(updated, new Date().toISOString().slice(0, 10)),
+    // Same as GET: the app replaces its copy of the profile with this reply.
+    isMinor: (() => { const a = ageOn(updated.dateOfBirth, new Date().toISOString().slice(0, 10)); return a != null && a < 18; })(),
   });
 });
 
@@ -1554,7 +1557,8 @@ router.post("/rider/profiles", requireRiderAuth, async (req, res) => {
   if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
   const { firstName, lastName, phone, dateOfBirth, bibNumber, amaNumber,
-    bikeManufacturer, sponsors, streetAddress, city, homeState, zip, myLapsTransponderNumber } = req.body;
+    bikeManufacturer, bikeModel, bikeYear, sponsors, streetAddress, city, homeState, zip, myLapsTransponderNumber } = req.body;
+  const text = (v: unknown) => (typeof v === "string" ? v.trim() || null : null);
   const invalidNewDob = checkBirthDate(dateOfBirth);
   if (invalidNewDob) return res.status(400).json({ error: invalidNewDob });
 
@@ -1571,6 +1575,9 @@ router.post("/rider/profiles", requireRiderAuth, async (req, res) => {
     bibNumber: bibNumber?.trim() || null,
     amaNumber: amaNumber?.trim() || null,
     bikeManufacturer: bikeManufacturer?.trim() || null,
+    // The app's "Add rider" form sends these too; they used to be dropped.
+    bikeModel: text(bikeModel),
+    bikeYear: text(bikeYear),
     sponsors: sponsors?.trim() || null,
     streetAddress: streetAddress?.trim() || null,
     city: city?.trim() || null,
@@ -2010,18 +2017,22 @@ router.get("/rider/profiles/:riderId/schedule", requireRiderAuth, async (req, re
 
   // Fetch events — exclude drafts and events whose race day has fully passed
   // (completed events are kept so registeredEventIds stays correct for history display)
-  const events = await db
+  const events = (await db
     .select()
     .from(eventsTable)
     .where(and(
       inArray(eventsTable.id, eventIds),
       ne(eventsTable.status, "draft"),
+      // A day of slack for the database's own clock (UTC); each event's local date decides below.
       sql`(
         ${eventsTable.status} = 'completed'
-        OR SUBSTRING(COALESCE(${eventsTable.endDate}, ${eventsTable.date}), 1, 10) >= to_char(CURRENT_DATE, 'YYYY-MM-DD')
+        OR SUBSTRING(COALESCE(${eventsTable.endDate}, ${eventsTable.date}), 1, 10) >= to_char(CURRENT_DATE - 1, 'YYYY-MM-DD')
       )`,
     ))
-    .orderBy(asc(eventsTable.date));
+    .orderBy(asc(eventsTable.date)))
+    // Still racing or ahead by the track's own date. The database runs in UTC, so
+    // without this an evening race day (after 5 or 6 pm Mountain) dropped off My Races.
+    .filter(e => scheduleShowsEvent(e, eventToday(e)));
 
   if (events.length === 0) return res.json({ familyRiderIds, events: [] });
 
@@ -2722,13 +2733,11 @@ You MUST respond with a valid JSON object and nothing else — no markdown fence
         const item = maintenanceItems.find(i => i.itemKey === update.itemKey);
         if (!item) continue;
         try {
-          await db
-            .insert(riderMaintenanceTable)
-            .values({ ...item, id: undefined as any, lastServicedAt: today, createdAt: undefined as any })
-            .onConflictDoUpdate({
-              target: [riderMaintenanceTable.riderId, riderMaintenanceTable.itemKey],
-              set: { lastServicedAt: sql`${today}` },
-            });
+          // The item is one of this rider's own rows, so update it. (rider_maintenance
+          // has no unique index on rider + key, so ON CONFLICT would be refused.)
+          await db.update(riderMaintenanceTable)
+            .set({ lastServicedAt: today })
+            .where(eq(riderMaintenanceTable.id, item.id));
           await db.insert(riderMaintenanceHistoryTable).values({
             riderId: item.riderId,
             itemKey: item.itemKey,
@@ -3168,7 +3177,16 @@ router.post("/rider/maintenance/:riderId/ai-generate", requireRiderAuth, async (
     return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   }
 
-  const bikeStr = [rider.bikeYear, rider.bikeManufacturer, rider.bikeModel].filter(Boolean).join(" ");
+  // The bike on the profile, or the garage's default bike (the app's Profile tab
+  // adds bikes to the garage without touching the profile's own bike fields).
+  let bikeStr = [rider.bikeYear, rider.bikeManufacturer, rider.bikeModel].filter(Boolean).join(" ");
+  if (!bikeStr) {
+    const [garageBike] = await db.select().from(riderBikesTable)
+      .where(eq(riderBikesTable.riderId, riderId))
+      .orderBy(desc(riderBikesTable.isDefault), asc(riderBikesTable.createdAt))
+      .limit(1);
+    bikeStr = [garageBike?.bikeYear, garageBike?.bikeManufacturer, garageBike?.bikeModel].filter(Boolean).join(" ");
+  }
   if (!bikeStr) return res.status(400).json({ error: "No bike on file. Add your bike make/model first." });
 
   // Optional engine hours from client — improves interval accuracy
@@ -3213,37 +3231,27 @@ Include 10–15 items tailored to this specific make and model. Common categorie
     // Upsert all generated items into the DB (preserve lastServicedAt if already set)
     const saved = await Promise.all(
       items.map(async (item) => {
-        const [existing] = await db
-          .select({ lastServicedAt: riderMaintenanceTable.lastServicedAt })
-          .from(riderMaintenanceTable)
+        // Update the rider's item with this key, or add it. (rider_maintenance has no
+        // unique index on rider + key, so ON CONFLICT is refused; the saved service
+        // date and any older duplicate rows are left as they are.)
+        const fields = {
+          itemName: item.itemName,
+          intervalDesc: item.intervalDesc ?? null,
+          intervalDays: item.intervalDays ?? null,
+          notes: item.notes ?? null,
+          sortOrder: item.sortOrder ?? 0,
+        };
+        const [updated] = await db
+          .update(riderMaintenanceTable)
+          .set(fields)
           .where(and(
             eq(riderMaintenanceTable.riderId, riderId),
             eq(riderMaintenanceTable.itemKey, item.itemKey),
-          ));
-
-        const [row] = await db
-          .insert(riderMaintenanceTable)
-          .values({
-            riderId,
-            itemKey: item.itemKey,
-            itemName: item.itemName,
-            intervalDesc: item.intervalDesc ?? null,
-            intervalDays: item.intervalDays ?? null,
-            lastServicedAt: existing?.lastServicedAt ?? null,
-            notes: item.notes ?? null,
-            sortOrder: item.sortOrder ?? 0,
-          })
-          .onConflictDoUpdate({
-            target: [riderMaintenanceTable.riderId, riderMaintenanceTable.itemKey],
-            set: {
-              itemName: sql`EXCLUDED.item_name`,
-              intervalDesc: sql`EXCLUDED.interval_desc`,
-              intervalDays: sql`EXCLUDED.interval_days`,
-              notes: sql`EXCLUDED.notes`,
-              sortOrder: sql`EXCLUDED.sort_order`,
-            },
-          })
+          ))
           .returning();
+        const [row] = updated
+          ? [updated]
+          : await db.insert(riderMaintenanceTable).values({ riderId, itemKey: item.itemKey, ...fields, lastServicedAt: null }).returning();
         return row;
       }),
     );
