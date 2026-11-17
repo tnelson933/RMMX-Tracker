@@ -1165,6 +1165,10 @@ function processPracticeCrossing(opts: {
     );
 
   claimUnassignedPracticeReads(db, session.id);
+  // Hardware reads must reach an open practice screen right away (the cloud's
+  // processPracticeCrossing does the same); without this the lap only showed
+  // after the page was reopened.
+  broadcastPracticeBoard(session.id);
   return { id: Number(ins.lastInsertRowid), lapNumber, lapTimeMs };
 }
 
