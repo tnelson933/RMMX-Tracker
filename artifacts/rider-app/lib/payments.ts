@@ -58,3 +58,13 @@ export async function payWithSheet(p: SheetParams): Promise<SheetResult> {
   }
   return { status: "paid" };
 }
+
+/** Hand a bank's card-check return link (rider-app://stripe-redirect) to Stripe. */
+export function handlePaymentReturn(url: string): void {
+  if (!nativePaymentSheetAvailable()) return;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const stripe = require("@stripe/stripe-react-native") as typeof import("@stripe/stripe-react-native");
+    void stripe.handleURLCallback(url).catch(() => {});
+  } catch { /* the payment form finishes on its own */ }
+}

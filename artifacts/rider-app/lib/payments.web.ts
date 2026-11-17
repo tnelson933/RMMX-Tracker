@@ -22,3 +22,5 @@ export type SheetResult = { status: "paid" } | { status: "canceled" } | { status
 export async function payWithSheet(_p: SheetParams): Promise<SheetResult> {
   return { status: "failed", message: "Card payment in the app isn't available in a browser." };
 }
+
+export function handlePaymentReturn(_url: string): void {}

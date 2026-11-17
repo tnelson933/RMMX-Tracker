@@ -5,7 +5,7 @@ import { ActivityIndicator, View } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
 import { goBack } from "@/lib/navigation";
-import { nativePaymentSheetAvailable } from "@/lib/payments";
+import { handlePaymentReturn } from "@/lib/payments";
 
 /**
  * Where a bank's card check sends the rider back to (rider-app://stripe-redirect,
@@ -20,13 +20,7 @@ export default function StripeRedirectScreen() {
   const url = Linking.useURL();
 
   useEffect(() => {
-    if (url && nativePaymentSheetAvailable()) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const stripe = require("@stripe/stripe-react-native") as typeof import("@stripe/stripe-react-native");
-        void stripe.handleURLCallback(url).catch(() => {});
-      } catch { /* the payment form finishes on its own */ }
-    }
+    if (url) handlePaymentReturn(url);
   }, [url]);
 
   useEffect(() => {
