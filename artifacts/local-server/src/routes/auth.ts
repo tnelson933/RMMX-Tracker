@@ -171,4 +171,11 @@ router.post("/auth/complete-setup", async (req, res) => {
   return res.json({ ok: true });
 });
 
+// The rider portal lives on the website. Pages shared with it ask who the rider
+// is; on the desktop nobody is signed in as a rider, online or offline (the
+// website answers the same way for a visitor who isn't signed in).
+router.get("/rider/auth/me", (_req, res) => {
+  res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
+});
+
 export default router;

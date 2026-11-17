@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { clearRecentTags, getRecentTags, noteScannerOpen } from "../lib/recentTags";
 import { getDb } from "../db";
 import { clubSellItems, ensureBuiltInSellItems, eventAddonSales, eventSellPrices } from "../lib/addons";
 import { newDesktopId } from "../lib/desktop-ids";
@@ -162,6 +163,36 @@ router.get("/readers", async (req, res, next) => {
     activeTimingConfig: (() => { try { return r.active_timing_config ? JSON.parse(r.active_timing_config) : null; } catch { return null; } })(),
     lastSeenAt: null, createdAt: r.created_at ?? null,
   })));
+});
+
+// Live tag scanner: tags recently seen by the readers connected to this
+// computer, with the rider each belongs to (same reply as the cloud).
+router.get("/readers/recent-tags", (req, res) => {
+  if (!signedIn(req, res)) return;
+  noteScannerOpen();
+  const tags = getRecentTags();
+  if (tags.length === 0) return res.json([]);
+  const db = getDb();
+  const find = db.prepare(
+    "SELECT id, first_name, last_name FROM riders WHERE rfid_number = ? COLLATE NOCASE OR mylaps_transponder_id = ? COLLATE NOCASE LIMIT 1",
+  );
+  return res.json(tags.map((t) => {
+    const rider = find.get(t.rfidNumber, t.rfidNumber) as { id: number; first_name: string | null; last_name: string | null } | undefined;
+    return {
+      rfidNumber: t.rfidNumber,
+      count: t.count,
+      firstSeenAt: new Date(t.firstSeenAt).toISOString(),
+      lastSeenAt: new Date(t.lastSeenAt).toISOString(),
+      riderId: rider?.id ?? null,
+      riderName: rider ? `${rider.first_name ?? ""} ${rider.last_name ?? ""}`.trim() : null,
+    };
+  }));
+});
+
+router.delete("/readers/recent-tags", (req, res) => {
+  if (!signedIn(req, res)) return;
+  clearRecentTags();
+  return res.status(204).end();
 });
 
 export default router;

@@ -1,4 +1,5 @@
 import { teamTagRider } from "../lib/group-teams";
+import { recordTagsInPayload, scannerOpen } from "../lib/recentTags";
 import { Router } from "express";
 import { compareStandings, computeFinishAt, everyoneFinished, finishGraceMs, flagTimeFor, scoreRider, type ScoringMoto } from "../lib/lapScoring";
 import type { Response } from "express";
@@ -27,6 +28,14 @@ import {
 } from "../lib/enduroScoring";
 
 const router = Router();
+
+// Live tag scanner: note every tag a reader reports before it is scored (it
+// shows on Reader Setup even with nothing running). No effect on scoring.
+router.post(
+  ["/timing/crossing", "/timing/active/crossing", "/timing/transponder-crossing", "/timing/impinj-crossing", "/timing/zebra-crossing"],
+  rejectForeignBrowserIngest,
+  (req, _res, next) => { try { recordTagsInPayload(req.body); } catch { /* never block a read */ } next(); },
+);
 const MAX_CROSSING_FUTURE_MS = 5 * 60 * 1000;
 
 // Must match the direct active provenance emitted by RM Connect, RM Roost,
@@ -1164,7 +1173,8 @@ function processPracticeCrossing(opts: {
 // "reading" uses the ingest's own rule, so the loops are open exactly when
 // /timing/active/crossing would take a read.
 router.get("/timing/reader-state", (_req, res) => {
-  return res.json({ reading: readsAccepted() });
+  // Also while the live tag scanner is open, so a transponder can be read to assign it.
+  return res.json({ reading: readsAccepted() || scannerOpen() });
 });
 
 // POST /timing/crossing — direct motoId crossing (hardware or simulation)
