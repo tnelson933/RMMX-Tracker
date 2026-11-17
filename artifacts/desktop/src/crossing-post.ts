@@ -16,10 +16,12 @@ export interface LocalCrossing {
   readerName?: string;
   /** The reader's network address, to match it to the club's reader list when names differ. */
   readerAddress?: string;
+  /** RFID antenna port that saw the tag (enduro gates and time checks match on it). */
+  antennaId?: number | null;
 }
 
 export function buildLocalCrossingPayload(opts: LocalCrossing): Record<string, string> {
-  const { tag, fieldName = "rfidNumber", crossingTime, receivedAtUtc, deviceTimezone, source, timeSource, readerId, readerName, readerAddress } = opts;
+  const { tag, fieldName = "rfidNumber", crossingTime, receivedAtUtc, deviceTimezone, source, timeSource, readerId, readerName, readerAddress, antennaId } = opts;
   const payload: Record<string, string> = {
     [fieldName]: tag,
     crossingTime: (crossingTime ?? new Date()).toISOString(),
@@ -32,6 +34,7 @@ export function buildLocalCrossingPayload(opts: LocalCrossing): Record<string, s
   if (readerId) payload.readerId = readerId;
   if (readerName) payload.readerName = readerName;
   if (readerAddress) payload.readerAddress = readerAddress;
+  if (antennaId != null && Number.isFinite(antennaId)) payload.antennaId = String(antennaId);
   return payload;
 }
 
@@ -51,13 +54,76 @@ export interface CrossingPostCallbacks {
   onResponse?: (statusCode: number) => void;
 }
 
-export function postCrossingToLocalServer(
-  target: CrossingPostTarget,
-  crossing: LocalCrossing,
-  callbacks: CrossingPostCallbacks = {},
-): void {
+// ── Retry queue ────────────────────────────────────────────────────────────────
+// Like RM Connect (connector/src/crossing-retry-queue.ts): a read the local server
+// couldn't take because of a passing problem (no answer, HTTP 5xx or 429) is kept
+// and resent in order with its original crossing and receipt times, so a local
+// server restart or stall mid-moto doesn't lose laps. Rejections (404/409/other
+// 4xx) are final. Reads arriving while older ones wait queue behind them.
+
+const RETRY_BASE_MS = 1_000;
+const RETRY_MAX_MS = 10_000;
+const RETRY_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+const RETRY_MAX_ENTRIES = 5_000;
+const RETRY_MAX_SERVER_ERRORS = 20;
+
+interface QueuedPost {
+  target: CrossingPostTarget;
+  crossing: LocalCrossing;
+  callbacks: CrossingPostCallbacks;
+  queuedAt: number;
+  attempts: number;
+  serverErrors: number;
+}
+
+type SendOutcome = { kind: "done" } | { kind: "retry"; serverError: boolean; message: string };
+
+const queue: QueuedPost[] = [];
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let draining = false;
+
+/** Reads waiting to reach the local timing server (for status displays and tests). */
+export function pendingCrossingCount(): number {
+  return queue.length;
+}
+
+function scheduleDrain(delayMs: number): void {
+  if (retryTimer || draining) return;
+  retryTimer = setTimeout(() => { retryTimer = null; void drain(); }, delayMs);
+}
+
+async function drain(): Promise<void> {
+  if (draining) return;
+  draining = true;
+  try {
+    while (queue.length > 0) {
+      const entry = queue[0];
+      const label = entry.crossing.readerName || "The reader";
+      if (Date.now() - entry.queuedAt > RETRY_MAX_AGE_MS || entry.serverErrors >= RETRY_MAX_SERVER_ERRORS) {
+        queue.shift();
+        entry.callbacks.onFailure?.(`${label} read a real crossing, but the local timing server never accepted it, so it was dropped.`);
+        continue;
+      }
+      const outcome = await sendOnce(entry.target, entry.crossing, entry.callbacks);
+      if (outcome.kind === "done") { queue.shift(); continue; }
+      entry.attempts++;
+      if (outcome.serverError) entry.serverErrors++;
+      const delay = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** Math.min(entry.attempts - 1, 4));
+      draining = false;
+      scheduleDrain(delay);
+      return;
+    }
+  } finally {
+    draining = false;
+  }
+}
+
+function sendOnce(target: CrossingPostTarget, crossing: LocalCrossing, callbacks: CrossingPostCallbacks): Promise<SendOutcome> {
   const body = JSON.stringify(buildLocalCrossingPayload(crossing));
   const label = crossing.readerName || "The reader";
+  return new Promise<SendOutcome>((resolve) => {
+  let settled = false;
+  const finish = (outcome: SendOutcome) => { if (!settled) { settled = true; resolve(outcome); } };
   const req = http.request(
     {
       host: target.host ?? "127.0.0.1",
@@ -72,8 +138,9 @@ export function postCrossingToLocalServer(
     },
     (res) => {
       const statusCode = res.statusCode ?? 0;
+      callbacks.onResponse?.(statusCode);
       if (statusCode >= 400) {
-        console.error(`[rfid] crossing rejected: HTTP ${statusCode}`);
+        console.error(`[crossing] rejected: HTTP ${statusCode}`);
         let rejection = "";
         res.setEncoding("utf8");
         res.on("data", (chunk: string) => { rejection += chunk; });
@@ -82,22 +149,56 @@ export function postCrossingToLocalServer(
           // (nothing running, the rider's moto is over, a resent read from before
           // the start, an unknown tag). That is not a connection problem, so it
           // must not turn the reader status red.
-          if (statusCode === 404 || statusCode === 409) return;
-          callbacks.onFailure?.(`${label} read a real crossing, but the local timing server rejected it (HTTP ${statusCode}${rejection ? `: ${rejection}` : ""}).`);
+          if (statusCode === 404 || statusCode === 409) return finish({ kind: "done" });
+          const message = `${label} read a real crossing, but the local timing server rejected it (HTTP ${statusCode}${rejection ? `: ${rejection}` : ""}).`;
+          if (statusCode >= 500 || statusCode === 429) {
+            return finish({ kind: "retry", serverError: true, message: `${message} Retrying…` });
+          }
+          callbacks.onFailure?.(message);
+          finish({ kind: "done" });
         });
+        res.on("error", () => finish({ kind: "retry", serverError: false, message: `${label} read a real crossing, but the answer from the local timing server was cut off. Retrying…` }));
       } else {
         res.resume();
+        finish({ kind: "done" });
       }
-      callbacks.onResponse?.(statusCode);
     },
   );
   req.on("socket", (socket) => socket.setNoDelay(true));
+  req.setTimeout(10_000, () => req.destroy(new Error("no answer within 10 seconds")));
 
   req.on("error", (err) => {
-    console.error(`[rfid] failed to post crossing: ${err.message}`);
-    callbacks.onFailure?.(`${label} read a real crossing, but it could not reach the local timing server: ${err.message}`);
+    console.error(`[crossing] could not post: ${err.message}`);
+    finish({ kind: "retry", serverError: false, message: `${label} read a real crossing, but it could not reach the local timing server: ${err.message}. Retrying…` });
   });
 
   req.write(body);
   req.end();
+  });
+}
+
+/**
+ * Sends a read to the local timing server. A read that can't be delivered right
+ * now is kept and retried in order (see the retry queue above); onFailure reports
+ * it once so the reader can show the problem.
+ */
+export function postCrossingToLocalServer(
+  target: CrossingPostTarget,
+  crossing: LocalCrossing,
+  callbacks: CrossingPostCallbacks = {},
+): void {
+  // Pin the crossing time now, so a retried read keeps the moment it was made.
+  const pinned: LocalCrossing = { ...crossing, crossingTime: crossing.crossingTime ?? new Date() };
+  if (queue.length > 0 || draining) {
+    queue.push({ target, crossing: pinned, callbacks, queuedAt: Date.now(), attempts: 0, serverErrors: 0 });
+    if (queue.length > RETRY_MAX_ENTRIES) queue.splice(0, queue.length - RETRY_MAX_ENTRIES);
+    scheduleDrain(0);
+    return;
+  }
+  void sendOnce(target, pinned, callbacks).then((outcome) => {
+    if (outcome.kind === "done") return;
+    callbacks.onFailure?.(outcome.message);
+    queue.unshift({ target, crossing: pinned, callbacks, queuedAt: Date.now(), attempts: 1, serverErrors: outcome.serverError ? 1 : 0 });
+    scheduleDrain(RETRY_BASE_MS);
+  });
 }

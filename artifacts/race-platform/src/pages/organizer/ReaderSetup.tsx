@@ -613,7 +613,8 @@ export default function ReaderSetup() {
   const updateReaderMutation = useUpdateReader();
   const rotateReaderMutation = useRotateReaderToken();
   const [newReaderName, setNewReaderName] = useState("");
-  const [newReaderType, setNewReaderType] = useState<"rfid" | "active_transponder">("rfid");
+  // RM TrackR is the default hardware everywhere; RFID is the second choice.
+  const [newReaderType, setNewReaderType] = useState<"rfid" | "active_transponder">("active_transponder");
   const [newReaderAddress, setNewReaderAddress] = useState("");
   const [showAddReader, setShowAddReader] = useState(false);
 
@@ -770,7 +771,7 @@ export default function ReaderSetup() {
     }
   }
 
-  const [tech,       setTech]       = useState<"rfid" | "active_transponder">("rfid");
+  const [tech,       setTech]       = useState<"rfid" | "active_transponder">("active_transponder");
   const [readerType, setReaderType] = useState<ReaderType>("impinj-r700");
   const [readerIp,   setReaderIp]   = useState("");
   const [readerMac,  setReaderMac]  = useState("");
@@ -1049,16 +1050,6 @@ export default function ReaderSetup() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <button
-              onClick={() => { setTech("rfid"); setNewReaderType("rfid"); setTestResult(null); }}
-              className={`flex items-center gap-3 rounded-xl border-2 p-4 text-left transition-all ${tech === "rfid" ? "border-primary bg-primary/5 shadow-sm" : "border-border hover:border-primary/40"}`}
-            >
-              <Wifi size={22} className={tech === "rfid" ? "text-primary" : "text-muted-foreground"} />
-              <div>
-                <p className="font-semibold">RFID</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Sticker tags read by an Impinj, Zebra, or compatible RFID reader.</p>
-              </div>
-            </button>
-            <button
               onClick={() => { setTech("active_transponder"); setNewReaderType("active_transponder"); setTestResult(null); }}
               className={`flex items-center gap-3 rounded-xl border-2 p-4 text-left transition-all ${tech === "active_transponder" ? "border-primary bg-primary/5 shadow-sm" : "border-border hover:border-primary/40"}`}
             >
@@ -1066,6 +1057,16 @@ export default function ReaderSetup() {
               <div>
                 <p className="font-semibold">RM TrackR</p>
                 <p className="text-xs text-muted-foreground mt-0.5">RM TrackR reader with RM TrackR Transponders.</p>
+              </div>
+            </button>
+            <button
+              onClick={() => { setTech("rfid"); setNewReaderType("rfid"); setTestResult(null); }}
+              className={`flex items-center gap-3 rounded-xl border-2 p-4 text-left transition-all ${tech === "rfid" ? "border-primary bg-primary/5 shadow-sm" : "border-border hover:border-primary/40"}`}
+            >
+              <Wifi size={22} className={tech === "rfid" ? "text-primary" : "text-muted-foreground"} />
+              <div>
+                <p className="font-semibold">RFID</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Sticker tags read by an Impinj, Zebra, or compatible RFID reader.</p>
               </div>
             </button>
           </div>
@@ -1435,8 +1436,8 @@ export default function ReaderSetup() {
                   <Select value={newReaderType} onValueChange={v => setNewReaderType(v as "rfid" | "active_transponder")}>
                     <SelectTrigger className="h-9 w-40"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="rfid">RFID reader</SelectItem>
                       <SelectItem value="active_transponder">RM TrackR</SelectItem>
+                      <SelectItem value="rfid">RFID reader</SelectItem>
                     </SelectContent>
                   </Select>
                   <Input

@@ -18,7 +18,7 @@ type RfidHardware = "impinj" | "zebra" | "generic";
 
 interface NetworkAdapter { name: string; address: string; prefixLength: number; kind: "private" | "link-local" | "other" }
 interface NetworkInfo { adapters: NetworkAdapter[]; internet: boolean }
-interface DiscoveredDevice { address: string; port: number; kind: DeviceKind; hostname: string | null; adapter: string }
+interface DiscoveredDevice { address: string; port: number; kind: DeviceKind; hostname: string | null; adapter: string; hardware?: RfidHardware | null }
 interface ScanResult { devices: DiscoveredDevice[]; scannedHosts: number; skippedAdapters: string[] }
 interface RfidNetworkStatus {
   connected: boolean; connecting: boolean; reading: boolean; host: string | null; error: string | null;
@@ -29,6 +29,17 @@ interface ActiveStatus {
   passingCount: number; ready: boolean;
   machineId?: string | null; batteryPercent?: number | null;
   activeChannel?: number; activePower?: number; loopEnabled?: [boolean, boolean]; loopsReading?: boolean;
+  /** The RM TrackR's own counters and loop telemetry (machineState). */
+  totalTagsRead?: number | null; differentTagsRead?: number | null;
+  reader1Working?: string | null; reader2Working?: string | null;
+}
+
+/** The loop state as the RM TrackR reports it, in words. */
+function loopTelemetryText(value: string | null | undefined): string {
+  if (value == null || value.trim() === "") return "no report";
+  if (/^(1|true|enabled)$/i.test(value.trim()) || /working|running|open/i.test(value)) return "running";
+  if (/^(0|false|disabled)$/i.test(value.trim()) || /stop|closed|off/i.test(value)) return "stopped";
+  return value;
 }
 
 // Several readers at once: each has its own id and name, sent with every read.
@@ -149,6 +160,8 @@ function OfflineHardwareSetup({ tech, api }: { tech: Tech; api: DesktopApi }) {
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [scanning, setScanning] = useState(false);
   const [address, setAddress] = useState("");
+  /** Reader make guessed from the network name of a found device. */
+  const [foundHardware, setFoundHardware] = useState<RfidHardware | null>(null);
   const [checkResult, setCheckResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [checking, setChecking] = useState(false);
 
@@ -255,7 +268,7 @@ function OfflineHardwareSetup({ tech, api }: { tech: Tech; api: DesktopApi }) {
                   <p className="font-mono text-sm">{d.address}</p>
                   {d.hostname && <p className="text-xs text-muted-foreground truncate">{d.hostname}</p>}
                 </div>
-                <Button size="sm" variant="outline" onClick={() => { setAddress(d.address); setCheckResult(null); }}>Use</Button>
+                <Button size="sm" variant="outline" onClick={() => { setAddress(d.address); setFoundHardware(d.hardware ?? null); setCheckResult(null); }}>Use</Button>
               </div>
             ))}
             {others.length > 0 && (
@@ -283,7 +296,7 @@ function OfflineHardwareSetup({ tech, api }: { tech: Tech; api: DesktopApi }) {
 
       {api.readers ? (
         <Step n={4} title="Name it and add it">
-          <AddReader readers={api.readers} tech={tech} address={address} onAdded={() => { setAddress(""); setCheckResult(null); }} />
+          <AddReader readers={api.readers} tech={tech} address={address} suggestedHardware={foundHardware} onAdded={() => { setAddress(""); setFoundHardware(null); setCheckResult(null); }} />
         </Step>
       ) : (
         <Step n={4} title="Connect and test">
@@ -405,12 +418,16 @@ function ActiveConnect({ api, address }: { api: DesktopApi; address: string }) {
 
 // ── Several readers at once ───────────────────────────────────────────────────
 
-function AddReader({ readers, tech, address, onAdded }: { readers: ReadersApi; tech: Tech; address: string; onAdded: () => void }) {
+function AddReader({ readers, tech, address, suggestedHardware, onAdded }: { readers: ReadersApi; tech: Tech; address: string; suggestedHardware?: RfidHardware | null; onAdded: () => void }) {
   const [name, setName] = useState("");
   const [hardware, setHardware] = useState<RfidHardware>("impinj");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+
+  // A found Zebra must not be added as an Impinj: it would get Impinj-only
+  // commands, fail to connect and keep retrying.
+  useEffect(() => { if (suggestedHardware) setHardware(suggestedHardware); }, [suggestedHardware]);
 
   async function add() {
     setBusy(true);
@@ -589,6 +606,19 @@ function ReaderRow({ reader, readers }: { reader: ReaderStatus; readers: Readers
             : ""}
           {isRmTrackr && reader.active?.batteryPercent != null ? ` · battery ${reader.active.batteryPercent}%` : ""}
           {!isRmTrackr && reader.rfid?.antennaIds.length ? ` · antennas ${reader.rfid.antennaIds.join(", ")}` : ""}
+        </p>
+      )}
+
+      {/* What the RM TrackR itself reports. If its own count goes up while the reads
+          above don't, the reader is seeing transponders but they aren't reaching this
+          computer; if neither moves, the loops aren't picking the transponder up. */}
+      {reader.connected && isRmTrackr && reader.active && (reader.active.totalTagsRead != null || reader.active.reader1Working != null || reader.active.reader2Working != null) && (
+        <p className="text-xs text-muted-foreground">
+          Reader reports:
+          {reader.active.totalTagsRead != null ? <> <strong className="text-foreground tabular-nums">{reader.active.totalTagsRead}</strong> tags counted</> : null}
+          {reader.active.differentTagsRead != null ? ` (${reader.active.differentTagsRead} different)` : ""}
+          {reader.active.loopEnabled?.[0] !== false ? ` · loop 1 ${loopTelemetryText(reader.active.reader1Working)}` : ""}
+          {reader.active.loopEnabled?.[1] !== false ? ` · loop 2 ${loopTelemetryText(reader.active.reader2Working)}` : ""}
         </p>
       )}
 

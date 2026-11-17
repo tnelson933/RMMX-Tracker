@@ -317,7 +317,11 @@ export class ReaderManager {
       entry = { kind: "rm_trackr", session };
     } else {
       const session = new RfidNetworkSession({
-        onTag: (epc) => this.post(reader, { tag: epc }),
+        onTag: (epc, info) => this.post(
+          reader,
+          { tag: epc, antennaId: info.antennaId, receivedAtUtc: info.receivedAtUtc },
+          (error) => session.reportError(error),
+        ),
         onStatus: () => this.onSessionStatus(reader),
       });
       entry = { kind: "rfid", session };

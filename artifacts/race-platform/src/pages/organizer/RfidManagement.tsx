@@ -28,7 +28,8 @@ export default function RfidManagement() {
   const hasEventFilter = filterEventId !== "all";
   // Events don't pick a timing technology (RM TrackR loops and RFID readers can
   // time the same event), so choose which kind of tag to look at here.
-  const [kind, setKind] = useState<"rfid" | "transponder">("rfid");
+  // RM TrackR first, as everywhere; RFID stickers are the second choice.
+  const [kind, setKind] = useState<"rfid" | "transponder">("transponder");
   const isActiveTransponder = kind === "transponder";
   const isRfid = kind === "rfid";
   // Transponders are assigned per event (on the registration).
@@ -146,7 +147,7 @@ export default function RfidManagement() {
         <div className="p-4 bg-muted/30 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div className="flex flex-col sm:flex-row gap-3 w-full sm:max-w-3xl">
             <div className="flex rounded-md border overflow-hidden shrink-0 h-10" role="group" aria-label="Tag type">
-              {([["rfid", "RFID Stickers"], ["transponder", "RM TrackR"]] as const).map(([value, label]) => (
+              {([["transponder", "RM TrackR"], ["rfid", "RFID Stickers"]] as const).map(([value, label]) => (
                 <button
                   key={value}
                   type="button"

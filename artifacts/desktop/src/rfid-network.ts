@@ -69,8 +69,14 @@ export function friendlyRfidError(error: unknown, host: string): string {
   return message;
 }
 
+/** What came with a read: the antenna that saw it and when this computer got it. */
+export interface RfidReadInfo {
+  antennaId: number | null;
+  receivedAtUtc: string;
+}
+
 export interface RfidNetworkSessionHandlers {
-  onTag?: (epc: string) => void;
+  onTag?: (epc: string, info: RfidReadInfo) => void;
   onStatus?: (status: RfidNetworkStatus) => void;
 }
 
@@ -88,7 +94,9 @@ export class RfidNetworkSession {
   private lastFailure: string | null = null;
   /** Bumped by connect()/disconnect() so an attempt still in flight can't reopen the reader. */
   private epoch = 0;
-  private readonly onTag: ((epc: string) => void) | undefined;
+  private readonly onTag: ((epc: string, info: RfidReadInfo) => void) | undefined;
+  /** The last read the local server couldn't record; cleared by the next read. */
+  private postError: string | null = null;
   private readonly onStatus: ((status: RfidNetworkStatus) => void) | undefined;
 
   constructor(handlers: RfidNetworkSessionHandlers = {}) {
@@ -102,7 +110,13 @@ export class RfidNetworkSession {
     // in flight) must not report into this session any more.
     client.on("tag", (read) => {
       if (client !== this.client) return;
-      if (this.recentReads.accept(read.epcHex)) this.onTag?.(read.epcHex);
+      const receivedAtUtc = new Date().toISOString();
+      if (this.recentReads.accept(read.epcHex)) {
+        this.postError = null;
+        // The antenna goes with the read, as in RM Connect: enduro gates and time
+        // checks set up per antenna match on it.
+        this.onTag?.(read.epcHex, { antennaId: read.antennaId, receivedAtUtc });
+      }
       this.pushStatus();
     });
     client.on("disconnected", (reason: string) => {
@@ -112,6 +126,12 @@ export class RfidNetworkSession {
       this.scheduleReconnect();
     });
     client.on("error", () => { if (client === this.client) this.pushStatus(); });
+  }
+
+  /** A real read the local timing server couldn't record (shown on the reader). */
+  reportError(message: string): void {
+    this.postError = message;
+    this.pushStatus();
   }
 
   get wanted(): boolean {
@@ -133,7 +153,7 @@ export class RfidNetworkSession {
       reading: s.reading,
       hardware: this.hardware,
       host: this.host ?? s.host,
-      error: trying ? null : s.connected ? s.error : null,
+      error: trying ? null : s.connected ? s.error ?? this.postError : null,
       retryReason: trying ? this.lastFailure : null,
       lastReadAt: s.lastReadAt,
       readCount: s.readCount,

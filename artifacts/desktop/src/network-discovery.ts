@@ -33,6 +33,22 @@ export interface DiscoveredDevice {
   kind: DeviceKind;
   hostname: string | null;
   adapter: string;
+  /** RFID reader make guessed from its network name (as RM Connect does); null for RM TrackR. */
+  hardware: "impinj" | "zebra" | "generic" | null;
+}
+
+/**
+ * Same as RM Connect (connector/src/discovery.ts): addresses worth checking even
+ * outside every adapter's /24. An Impinj on a direct cable with no router falls
+ * back to 169.254.1.1; 192.168.1.200 is a common fixed address.
+ */
+const KNOWN_DEFAULT_ADDRESSES = ["169.254.1.1", "192.168.1.200"];
+
+/** Names the RFID reader make from its network name, as RM Connect does. */
+export function rfidHardwareFromHostname(hostname: string | null): "impinj" | "zebra" | "generic" {
+  if (hostname && /impinj/i.test(hostname)) return "impinj";
+  if (hostname && /zebra|fx7500|fx9600/i.test(hostname)) return "zebra";
+  return "generic";
 }
 
 export interface ScanResult {
@@ -120,7 +136,9 @@ function reverseLookup(ip: string, timeoutMs = 1200): Promise<string | null> {
 
 /** Host addresses to sweep for one adapter; null when the subnet is too big. */
 function hostsForAdapter(adapter: NetworkAdapter): string[] | null {
-  if (adapter.kind !== "private") return null;
+  // Link-local (169.254.x.x, a direct cable with no router) is swept around this
+  // computer's own /24 too, as RM Connect does; the fallback addresses below cover the rest.
+  if (adapter.kind === "other") return null;
   // Larger subnets (e.g. /16) are swept only around this computer's own /24,
   // which is where small race-day routers hand out addresses.
   const prefix = Math.max(adapter.prefixLength, 24);
@@ -158,7 +176,10 @@ export async function scanLocalNetwork(skipAddresses: string[] = []): Promise<Sc
       if (adapter.kind === "link-local") skippedAdapters.push(adapter.name);
       continue;
     }
-    for (const host of hosts) if (!skip.has(host)) targets.push({ host, adapter: adapter.name });
+    for (const host of hosts) if (!skip.has(host) && !targets.some(t => t.host === host)) targets.push({ host, adapter: adapter.name });
+  }
+  for (const host of KNOWN_DEFAULT_ADDRESSES) {
+    if (!skip.has(host) && !targets.some(t => t.host === host)) targets.push({ host, adapter: "default address" });
   }
 
   const devices: DiscoveredDevice[] = [];
@@ -168,11 +189,15 @@ export async function scanLocalNetwork(skipAddresses: string[] = []): Promise<Sc
   ]);
   await runPool(probes, 128, async (probe) => {
     if (await probePort(probe.host, probe.port, 500)) {
-      devices.push({ address: probe.host, port: probe.port, kind: probe.kind, hostname: null, adapter: probe.adapter });
+      devices.push({ address: probe.host, port: probe.port, kind: probe.kind, hostname: null, adapter: probe.adapter, hardware: null });
     }
   });
-  await Promise.all(devices.map(async d => { d.hostname = await reverseLookup(d.address); }));
-  devices.sort((a, b) => ipToInt(a.address) - ipToInt(b.address));
+  await Promise.all(devices.map(async d => {
+    d.hostname = await reverseLookup(d.address);
+    if (d.kind === "rfid") d.hardware = rfidHardwareFromHostname(d.hostname);
+  }));
+  // RM TrackR readers first (the default hardware), then by address.
+  devices.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === "active_transponder" ? -1 : 1) || ipToInt(a.address) - ipToInt(b.address));
   return { devices, scannedHosts: targets.length, skippedAdapters };
 }
 

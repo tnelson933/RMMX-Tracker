@@ -176,7 +176,9 @@ export async function scanLocalNetwork(skipAddresses: string[] = []): Promise<Sc
       hardware: f.port === RM_TRACKR_PORT ? "active_transponder" : rfidHardwareFromHostname(hostname),
     };
   }));
-  devices.sort((a, b) => ipToInt(a.address) - ipToInt(b.address) || a.port - b.port);
+  // RM TrackR readers first (the default hardware), then by address.
+  const trackrFirst = (d: { port: number }) => (d.port === RM_TRACKR_PORT ? 0 : 1);
+  devices.sort((a, b) => trackrFirst(a) - trackrFirst(b) || ipToInt(a.address) - ipToInt(b.address) || a.port - b.port);
   return { devices, scannedHosts: targets.size };
 }
 

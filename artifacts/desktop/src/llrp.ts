@@ -94,6 +94,11 @@ export interface LlrpRfConfig {
   rfModeIndex: number;
   tagPopulation: number;
   tagTransitTime: number;
+  /**
+   * Gen2 inventory session (0–3). Optional; 1 when not given: a tag that was
+   * read stays quiet for a moment and is then read again, which suits gates.
+   */
+  session?: number;
 }
 
 /** Recommended defaults for outdoor race timing gates. */
@@ -213,7 +218,10 @@ function buildROSpec(rfConfig?: LlrpRfConfig): Buffer {
     );
     const singulationControl = tlv(
       PARAM.C1G2SingulationControl,
-      Buffer.concat([u16(rfConfig.tagPopulation), u32(rfConfig.tagTransitTime)]),
+      // LLRP C1G2SingulationControl: Session (2 bits) + 6 reserved bits, then
+      // TagPopulation u16 and TagTransitTime u32. Without the Session byte every
+      // field is read one byte off and the reader rejects ADD_ROSPEC.
+      Buffer.concat([u8(((rfConfig.session ?? 1) & 3) << 6), u16(rfConfig.tagPopulation), u32(rfConfig.tagTransitTime)]),
     );
     c1g2InventoryCmd = tlv(
       PARAM.C1G2InventoryCommand,

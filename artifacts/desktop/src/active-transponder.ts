@@ -107,6 +107,10 @@ const HEARTBEAT_TIMEOUT_MS = 15_000;
 // Same limit RM Connect uses: a heartbeat older than this means not ready.
 const HEARTBEAT_STALE_MS = 5_000;
 const HEALTH_CHECK_INTERVAL_MS = 1_000;
+// Reopen the connection only after this long with nothing at all from the reader.
+// RM Connect never forces it; a reader pausing while it applies settings (or
+// heartbeating slowly) must not be caught in a reconnect loop.
+const SILENT_RECONNECT_MS = 15_000;
 const READER_OPEN_RETRY_MS = 2_000;
 // Replay after a dropout: ask from a little before the last contact (reads
 // already recorded are rejected as duplicates), expect the resent reads within
@@ -116,6 +120,9 @@ const REPLAY_WINDOW_MS = 2 * 60_000;
 const MAX_REPLAY_SPAN_MS = 12 * 60 * 60 * 1000;
 // readerOpen has no acknowledgement: re-send it a few times, then stop.
 const MAX_READER_OPEN_ATTEMPTS = 6;
+// As in RM Connect: the RM TrackR can ignore readerOpen while it applies settings,
+// so every few unanswered attempts re-send the settings and open on the next try.
+const FULL_CONFIGURATION_RETRY_INTERVAL = 5;
 export const DEFAULT_ACTIVE_TRANSPONDER_CONFIGURATION: ActiveTransponderConfiguration = {
   activeChannel: 0,
   activePower: 100,
@@ -196,17 +203,31 @@ function parseF2000WallTime(value: string): Date | null {
 }
 
 function parseF2000Timestamp(value: string, receivedAt: Date): Date | null {
-  const match = /^(\d{4})-(\d{1,2})-(\d{1,2})_(\d{1,2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/.exec(value);
+  const match = /^(\d{4})-(\d{1,2})-(\d{1,2})_(\d{1,2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/.exec(value.trim());
   if (!match) return null;
   const [, y, mo, d, h, mi, s, ms = "0"] = match;
   const date = new Date(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s), Number(ms.padEnd(3, "0")));
-  const valid = date.getFullYear() === Number(y) && date.getMonth() === Number(mo) - 1 && date.getDate() === Number(d) && date.getHours() === Number(h) && date.getMinutes() === Number(mi) && date.getSeconds() === Number(s);
-  if (!valid) return receivedAt;
-  return Math.abs(date.getTime() - receivedAt.getTime()) > 5 * 60 * 1000 ? receivedAt : date;
+  const matchesWallTime = (candidate: Date) => !Number.isNaN(candidate.getTime())
+    && candidate.getFullYear() === Number(y) && candidate.getMonth() === Number(mo) - 1 && candidate.getDate() === Number(d)
+    && candidate.getHours() === Number(h) && candidate.getMinutes() === Number(mi) && candidate.getSeconds() === Number(s);
+  // Same as RM Connect: a spring-forward wall time doesn't exist; a fall-back one
+  // happens twice, so take the occurrence nearest the socket receipt.
+  if (!matchesWallTime(date)) return receivedAt;
+  const candidates = [date];
+  for (const offset of [-2, -1, 1, 2]) {
+    const alternative = new Date(date.getTime() + offset * 60 * 60 * 1000);
+    if (matchesWallTime(alternative)) candidates.push(alternative);
+  }
+  const nearest = candidates.reduce((best, c) =>
+    Math.abs(c.getTime() - receivedAt.getTime()) < Math.abs(best.getTime() - receivedAt.getTime()) ? c : best);
+  return Math.abs(nearest.getTime() - receivedAt.getTime()) > 5 * 60 * 1000 ? receivedAt : nearest;
 }
 
+// Same test as RM Connect (artifacts/connector/src/active-transponder-client.ts,
+// isLoopWorking): firmware reports values such as "1", "running" or "working".
 function isWorking(value: string | null): boolean {
-  return value !== null && ["1", "true", "working", "open", "enabled"].includes(value.toLowerCase());
+  if (value === null) return false;
+  return /^(1|true|enabled)$/i.test(value.trim()) || /working|running|open/i.test(value);
 }
 
 export interface ActiveTransponderSessionHandlers {
@@ -232,10 +253,14 @@ export class ActiveTransponderSession {
   // loop telemetry says (some RM TrackR firmware never reports it).
   private loopsProvenByReads = false;
   private readerOpenAttempts = 0;
+  /** readerStop was sent and no readerOpen or new settings since. */
+  private readersStopSent = false;
   private reader1Working: string | null = null;
   private reader2Working: string | null = null;
   private eventId: string | null = null;
   private connectError: string | null = null;
+  /** The last read the local server couldn't record; cleared by the next read. */
+  private postError: string | null = null;
   private recvBuffer = "";
   private commandSerialNumber = 0;
   private reader1State: "open" | "closed" | "unknown" = "unknown";
@@ -287,7 +312,7 @@ export class ActiveTransponderSession {
       deviceIp: this.deviceIp,
       port: this.targetPort,
       machineId: this.machineId,
-      error: trying ? null : this.connectError,
+      error: trying ? null : this.connectError ?? this.postError,
       retryReason: trying ? this.connectError : null,
       diagnosis: this.getDiagnosis(state),
       lastPassingAt: this.lastPassingAt,
@@ -304,7 +329,7 @@ export class ActiveTransponderSession {
       // doesn't gate it: some RM TrackR firmware reports a loop as 0 (off) while
       // it reads. A transponder pass is the proof. A stopped heartbeat means the
       // reader can't be trusted to be reading.
-      ready: this.configApplied && !this.heartbeatStale && (!this.readersShouldBeOpen() || this.enabledLoopsOpened()),
+      ready: this.configApplied && this.lastHeartbeatMs !== null && !this.heartbeatStale && (!this.readersShouldBeOpen() || this.enabledLoopsOpened()),
       activeChannel: this.configuration.activeChannel,
       activePower: this.configuration.activePower,
       loopEnabled: [...this.configuration.loopEnabled] as [boolean, boolean],
@@ -367,7 +392,7 @@ export class ActiveTransponderSession {
     this.connectionEpoch++;
     this.clearReconnectTimer();
     this.clearHealthWatch();
-    this.stopReaders();
+    this.stopReaders(true);
     for (const connection of [this.socket, this.connectingSocket]) {
       if (connection && !connection.destroyed) {
         this.intentionallyDisconnectedSockets.add(connection);
@@ -404,7 +429,7 @@ export class ActiveTransponderSession {
     if (this.socket && !this.socket.destroyed && this.machineId) {
       // Reconfigure safely: close readers, set all device parameters, then reopen
       // only the enabled loops if local race/test state still requires them.
-      this.stopReaders();
+      this.stopReaders(true);
       this.applyConfiguration();
     }
     this.notifyStatus();
@@ -436,7 +461,9 @@ export class ActiveTransponderSession {
 
   /** Lets the owner surface a rejected real crossing (for example, a server failure). */
   reportError(message: string): void {
-    this.connectError = message;
+    // Shown as the reader's error, but it isn't a connection problem: the reader
+    // stays connected and reading (the state doesn't turn to "error").
+    this.postError = message;
     this.notifyStatus();
   }
 
@@ -567,7 +594,7 @@ export class ActiveTransponderSession {
       this.heartbeatStale = stale;
       this.notifyStatus();
     }
-    if (stale && this.lastContactAt !== null && now - this.lastContactAt > HEARTBEAT_STALE_MS) {
+    if (stale && this.lastContactAt !== null && now - this.lastContactAt > SILENT_RECONNECT_MS) {
       this.connectError = "RM TrackR heartbeat stopped. Reconnecting…";
       connection.destroy();
     }
@@ -584,6 +611,7 @@ export class ActiveTransponderSession {
     this.eventId = null; this.recvBuffer = ""; this.commandSerialNumber = 0; this.reader1State = "unknown"; this.reader2State = "unknown"; this.configApplied = false; this.lastReaderOpenRequestAt = 0;
     this.loopsProvenByReads = false;
     this.readerOpenAttempts = 0;
+    this.readersStopSent = false;
   }
 
   private processPackets(receivedAt: Date): void {
@@ -596,11 +624,18 @@ export class ActiveTransponderSession {
 
   private processPacket(packet: string, receivedAt: Date): void {
     const parts = packet.split("@");
-    if (parts.length < 4) return;
+    // Three fields are enough (RM Connect accepts "id@heartBeat@0001" with no parameters).
+    if (parts.length < 3) return;
     const [packetMachineId, command, , ...parameterParts] = parts;
     if (!packetMachineId || !command) return;
     this.lastContactAt = receivedAt.getTime();
-    if (!this.machineId) { this.machineId = packetMachineId; this.applyConfiguration(); this.requestReplay(receivedAt); }
+    if (this.machineId !== packetMachineId) {
+      // First packet, or a different RM TrackR answering at this address: set it up from scratch.
+      const firstPacket = this.machineId === null;
+      this.machineId = packetMachineId;
+      this.applyConfiguration();
+      if (firstPacket) this.requestReplay(receivedAt);
+    }
     const parameters = parameterParts.join("@");
     if (command === "epc") this.processEpc(parameters, receivedAt);
     else if (command === "heartBeat") {
@@ -644,7 +679,7 @@ export class ActiveTransponderSession {
     }
     const timestamp = parseF2000Timestamp(stamp, receivedAt);
     if (!timestamp || !epc) return;
-    this.lastPassingAt = timestamp.toISOString(); this.passingCount++; this.connectError = null;
+    this.lastPassingAt = timestamp.toISOString(); this.passingCount++; this.connectError = null; this.postError = null;
     // Reading works: stop re-sending readerOpen, which can briefly interrupt loops.
     if (this.reader1State === "open" || this.reader2State === "open") this.loopsProvenByReads = true;
     this.passingCallback?.(epc, timestamp, {
@@ -660,9 +695,27 @@ export class ActiveTransponderSession {
     for (const item of parameters.split(",")) {
       const separator = item.indexOf("="); if (separator > 0) values.set(item.slice(0, separator).trim(), item.slice(separator + 1).trim());
     }
+    const previous1 = this.reader1Working, previous2 = this.reader2Working;
     this.batteryPercent = parseOptionalNumber(values.get("batteryPercent")); this.totalTagsRead = parseOptionalNumber(values.get("totalTagsRead"));
     this.differentTagsRead = parseOptionalNumber(values.get("differentTagsRead")); this.reader1Working = values.get("reader1Working") ?? null;
     this.reader2Working = values.get("reader2Working") ?? null; this.eventId = values.get("eventId") ?? null;
+
+    // A loop the reader said was working and now reports as stopped was closed on
+    // the reader's side (a restart, a settings change, a hiccup). Open it again,
+    // even after a pass proved the loops: otherwise reading stops for the rest of
+    // the session. Only a change counts, so firmware that always reports a loop as
+    // 0 while it reads (see getStatus) is left alone.
+    const dropped = (enabled: boolean, before: string | null, now: string | null) =>
+      enabled && isWorking(before) && now !== null && !isWorking(now);
+    const loop1Dropped = dropped(this.configuration.loopEnabled[0], previous1, this.reader1Working);
+    const loop2Dropped = dropped(this.configuration.loopEnabled[1], previous2, this.reader2Working);
+    if ((loop1Dropped || loop2Dropped) && this.readersShouldBeOpen()) {
+      if (loop1Dropped) this.reader1State = "closed";
+      if (loop2Dropped) this.reader2State = "closed";
+      this.loopsProvenByReads = false;
+      this.readerOpenAttempts = 0;
+      this.lastReaderOpenRequestAt = 0;
+    }
   }
 
   /**
@@ -682,7 +735,15 @@ export class ActiveTransponderSession {
     this.sendCommand("rewindData", `${formatF2000DeviceTime(fromMs + offsetMs)},${formatF2000DeviceTime(nowMs + offsetMs)}`);
   }
 
-  private readersShouldBeOpen(): boolean { return this.localReaderActive || this.testActive; }
+  /**
+   * Loops stay open whenever the RM TrackR is connected, as in RM Connect
+   * (reader-session.ts starts reading on every connect). The local server decides
+   * which reads count (it answers 404/409 when nothing is running). Opening loops
+   * only while a moto runs lost the start of each moto to the 1 s state poll and
+   * readerOpen settle time, and left the loops shut if the poll failed: the
+   * RM TrackR then never recorded the crossing, so even a replay couldn't bring it back.
+   */
+  private readersShouldBeOpen(): boolean { return this.desiredConnected; }
 
   private syncReaders(): void {
     if (this.readersShouldBeOpen()) this.openReaders(); else this.stopReaders();
@@ -702,6 +763,15 @@ export class ActiveTransponderSession {
     if (!shouldRetry && this.reader1State === "open" && this.reader2State === "open") return;
     if (this.enabledLoopsOpened() && this.readerOpenAttempts >= MAX_READER_OPEN_ATTEMPTS) return;
     this.readerOpenAttempts++;
+    if (this.readerOpenAttempts > 1 && (this.readerOpenAttempts - 1) % FULL_CONFIGURATION_RETRY_INTERVAL === 0) {
+      // Settings reset the loops to stopped: mark them closed so the next retry opens them.
+      this.sendDeviceSettings();
+      this.reader1State = "closed";
+      this.reader2State = "closed";
+      this.lastReaderOpenRequestAt = Date.now();
+      return;
+    }
+    this.readersStopSent = false;
     if (needsReader1) {
       this.sendReaderCommand("readerOpen", 1); this.reader1State = "open";
     }
@@ -711,8 +781,15 @@ export class ActiveTransponderSession {
     this.lastReaderOpenRequestAt = Date.now();
   }
 
-  private stopReaders(): void {
+  /**
+   * Closes both loops. Sent once per change, like RM Connect: syncReaders runs on
+   * every packet, and re-sending readerStop with each heartbeat floods the reader.
+   */
+  private stopReaders(force = false): void {
+    if (!force && this.readersStopSent) return;
+    if (!this.socket || this.socket.destroyed || !this.machineId) return;
     this.sendReaderCommand("readerStop", 1); this.sendReaderCommand("readerStop", 2); this.reader1State = "closed"; this.reader2State = "closed"; this.lastReaderOpenRequestAt = 0;
+    this.readersStopSent = true;
   }
 
   private sendReaderCommand(command: "readerOpen" | "readerStop", reader: 1 | 2): void {
@@ -735,17 +812,23 @@ export class ActiveTransponderSession {
     if (!this.socket || this.socket.destroyed || !this.machineId) return;
     // Clock and settings must precede readerOpen and any first-packet crossing.
     this.sendClockCommands();
-    this.sendCommand("setActiveChannel", String(this.configuration.activeChannel));
-    this.sendCommand("setActivePower", String(this.configuration.activePower));
-    this.sendCommand(this.configuration.loopEnabled[0] ? "loopEnable" : "loopDisable", "1");
-    this.sendCommand(this.configuration.loopEnabled[1] ? "loopEnable" : "loopDisable", "2");
+    this.sendDeviceSettings();
     this.configApplied = true;
     this.loopsProvenByReads = false;
     this.readerOpenAttempts = 0;
+    this.readersStopSent = false;
     this.reader1State = "closed";
     this.reader2State = "closed";
     this.lastReaderOpenRequestAt = 0;
     this.syncReaders();
+  }
+
+  /** Channel and power before loop enable/disable (the order the RM TrackR needs). */
+  private sendDeviceSettings(): void {
+    this.sendCommand("setActiveChannel", String(this.configuration.activeChannel));
+    this.sendCommand("setActivePower", String(this.configuration.activePower));
+    this.sendCommand(this.configuration.loopEnabled[0] ? "loopEnable" : "loopDisable", "1");
+    this.sendCommand(this.configuration.loopEnabled[1] ? "loopEnable" : "loopDisable", "2");
   }
 
   private enabledLoopsOpened(): boolean {
@@ -777,10 +860,11 @@ export class ActiveTransponderSession {
     if (!this.machineId) return "TCP connected; waiting for the RM TrackR heartbeat before loop settings can be applied.";
     if (this.heartbeatStale) return "RM TrackR heartbeat stopped. Check the reader and its network connection.";
     if (!this.configApplied) return "RM TrackR is not ready: applying saved loop, channel, and power settings.";
+    if (this.postError) return this.postError;
     if (this.readersShouldBeOpen() && !this.loopsProvenByReads && !this.areEnabledLoopsTelemetryReady()) return "Ready. The first transponder pass confirms the loop is reading.";
     if (state === "testing") return this.lastPassingAt ? "Both loops are open for testing; a real RM TrackR crossing was observed." : "Both loops are open for testing. Pass a tagged transponder over a loop to verify it.";
-    if (state === "race_active") return "Local moto/practice reader state is active; both RM TrackR loops are open.";
-    return "Connected and idle; loops are closed until a moto, practice, or loop test starts.";
+    if (state === "race_active") return "A moto or practice is running; the RM TrackR loops are open and reads are being timed.";
+    return "Connected; the loops are open. Reads are timed once a moto or practice starts.";
   }
 
   private notifyStatus(): void { this.statusCallback?.(this.getStatus()); }

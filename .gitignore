@@ -58,3 +58,6 @@ Thumbs.db
 .uploads/
 .local-pg/
 .claude/settings.local.json
+
+# Local desktop installer output
+artifacts/desktop/release/
