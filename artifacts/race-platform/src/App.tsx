@@ -59,6 +59,11 @@ import RiderCreateProfile from "@/pages/rider/RiderCreateProfile";
 import RmCash from "@/pages/rider/RmCash";
 import RacerProfile from "@/pages/rider/RacerProfile";
 import RiderFollowing from "@/pages/rider/RiderFollowing";
+import RiderHome from "@/pages/rider/RiderHome";
+import RiderRaces from "@/pages/rider/RiderRaces";
+import RiderResults from "@/pages/rider/RiderResults";
+import RiderTrain from "@/pages/rider/RiderTrain";
+import RiderMechanic from "@/pages/rider/RiderMechanic";
 import WatchLive from "@/pages/public/WatchLive";
 import HandScanner from "@/pages/public/HandScanner";
 import EventWidget from "@/pages/public/EventWidget";
@@ -166,9 +171,9 @@ function OrganizerOnlyRoute({ children }: { children: React.ReactNode }) {
 function RiderProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useRiderAuth();
   // Remember where the rider was going so sign-in can bring them back.
-  const here = typeof window !== "undefined" ? window.location.pathname + window.location.search : "/rider/portal";
+  const here = typeof window !== "undefined" ? window.location.pathname + window.location.search : "/rider/home";
   if (isLoading) return (
-    <div className="flex items-center justify-center h-screen">
+    <div className="rider-theme flex items-center justify-center h-screen">
       <div className="font-heading text-xl uppercase tracking-widest animate-pulse text-muted-foreground">Loading...</div>
     </div>
   );
@@ -193,7 +198,7 @@ function Router() {
         <DeleteAccount />
       </Route>
       <Route path="/rider/reset-password">
-        <PublicLayout><ResetRiderPassword /></PublicLayout>
+        <ResetRiderPassword />
       </Route>
       <Route path="/rider-app">
         <RiderAppLanding />
@@ -244,7 +249,25 @@ function Router() {
 
       {/* ── Rider portal ── */}
       <Route path="/rider/login">
-        <PublicLayout><RiderLogin /></PublicLayout>
+        <RiderLogin />
+      </Route>
+      <Route path="/rider">
+        <Redirect to="/rider/home" />
+      </Route>
+      <Route path="/rider/home">
+        <RiderProtectedRoute><RiderHome /></RiderProtectedRoute>
+      </Route>
+      <Route path="/rider/races">
+        <RiderProtectedRoute><RiderRaces /></RiderProtectedRoute>
+      </Route>
+      <Route path="/rider/results">
+        <RiderProtectedRoute><RiderResults /></RiderProtectedRoute>
+      </Route>
+      <Route path="/rider/train">
+        <RiderProtectedRoute><RiderTrain /></RiderProtectedRoute>
+      </Route>
+      <Route path="/rider/mechanic">
+        <RiderProtectedRoute><RiderMechanic /></RiderProtectedRoute>
       </Route>
       <Route path="/rider/new-profile">
         <RiderProtectedRoute><RiderCreateProfile /></RiderProtectedRoute>

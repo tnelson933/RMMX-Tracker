@@ -42,7 +42,7 @@ function MotoCharts({ moto, raceStyle }: { moto: MotoResult; raceStyle?: string 
     const ticks = worst >= 5 ? [1, Math.round((1 + worst) / 2), worst] : worst > 1 ? [1, worst] : [1];
     cards.push(
       <ChartCard key="pos" title="Position by lap" takeaway={positionTakeaway(positions)}
-        right={<span className="text-[12px] text-[#707070]">{moto.fieldSize} riders</span>}>
+        right={<span className="text-[12px] text-[#A8A8A8]">{moto.fieldSize} riders</span>}>
         <TrendChart data={positions.map((p, i) => ({ x: `L${i + 1}`, you: p }))}
           series={[{ key: "you", name: "Position", color: CHART.you, dots: true }]}
           yMin={0.5} yMax={Math.max(worst + 0.5, 3.5)} yTicks={ticks} yFormat={v => `P${v}`} invert band={[0.5, 3.5]}
@@ -164,7 +164,7 @@ export function RaceReportCard({ event, defaultOpen, renderMotoTable }: {
                 const result = m.dnf ? "DNF" : m.dns ? "DNS" : m.position != null ? `P${m.position}` : "";
                 return (
                   <button key={m.motoId} type="button" role="tab" aria-selected={on} onClick={() => setMotoIdx(i)}
-                    className={`rounded-full border px-4 py-1.5 font-heading font-bold uppercase tracking-[0.8px] text-[14px] transition-colors ${on ? "bg-[#242424] text-white border-[#242424]" : "border-[#D0D0D0] text-[#242424] hover:bg-[#F2F2F2]"}`}>
+                    className={`rounded-full border px-4 py-1.5 font-heading font-bold uppercase tracking-[0.8px] text-[14px] transition-colors ${on ? "bg-[#B30000] text-white border-[#B30000]" : "border-[#3A3A3A] text-white hover:bg-[#2E2E2E]"}`}>
                     {m.motoName}{result ? `  ·  ${result}` : ""}
                   </button>
                 );
@@ -172,12 +172,12 @@ export function RaceReportCard({ event, defaultOpen, renderMotoTable }: {
             </div>
           )}
           <MotoCharts moto={moto} raceStyle={event.raceStyle} />
-          <div className="rounded-xl border border-[#E2E2E2] bg-white">
+          <div className="rounded-xl border border-[#3A3A3A] bg-[#242424]">
             <button type="button" onClick={() => setShowTable(s => !s)} aria-expanded={showTable}
-              className="flex w-full items-center justify-between px-4 py-3 font-heading font-bold uppercase tracking-[1px] text-[14px] text-[#242424]">
+              className="flex w-full items-center justify-between px-4 py-3 font-heading font-bold uppercase tracking-[1px] text-[14px] text-white">
               All laps and splits {showTable ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
             </button>
-            {showTable && <div className="border-t border-[#E2E2E2] p-3">{renderMotoTable(moto)}</div>}
+            {showTable && <div className="border-t border-[#3A3A3A] p-3">{renderMotoTable(moto)}</div>}
           </div>
         </div>
       )}

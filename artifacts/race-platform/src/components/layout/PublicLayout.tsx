@@ -28,7 +28,7 @@ function Lockup({ onClick }: { onClick?: () => void }) {
 export function PublicLayout({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
   const { isAuthenticated: riderSignedIn } = useRiderAuth();
-  const riderHref = riderSignedIn ? "/rider/portal" : "/rider/login";
+  const riderHref = riderSignedIn ? "/rider/home" : "/rider/login";
   const riderLabel = riderSignedIn ? "Rider Portal" : "Rider Login";
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);

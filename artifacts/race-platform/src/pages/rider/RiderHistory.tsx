@@ -1,5 +1,5 @@
 import { eventTimingTags, timingTagsLabel } from "@/components/organizer/timingTags";
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, type ReactNode } from "react";
 import { OfficialResultsBadge } from "@/components/OfficialResultsBadge";
 import { formatEventDates } from "@/lib/eventDates";
 import { useRoute, useLocation, useSearch } from "wouter";
@@ -9,7 +9,7 @@ import {
   Flag, AlertTriangle, Calendar, MapPin, Hash, User, Timer,
   Wifi, Pencil, Check, X, Loader2, Radio, DoorOpen,
   Navigation, LocateFixed, ExternalLink, LayoutList, LayoutGrid,
-  Settings, Phone, Shield, Bike, Ribbon, TrendingUp, BarChart3
+  Settings, Phone, Shield, Bike, Ribbon, TrendingUp, BarChart3, Zap, Award, ChevronRight
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -56,11 +56,44 @@ import {
 } from "@/lib/rider-api";
 import { responseErrorMessage } from "@/lib/friendlyErrors";
 
+// Podium fills from the rider app (components/RaceStats.tsx), with dark text so they stay readable.
+const PODIUM = { 1: "#F5B700", 2: "#C9D1DB", 3: "#D08A4A" } as Record<number, string>;
+
 function positionBadge(pos: number) {
-  if (pos === 1) return "bg-yellow-400/20 text-yellow-600 border-yellow-400/40";
-  if (pos === 2) return "bg-slate-200/40 text-slate-600 border-slate-300/60";
-  if (pos === 3) return "bg-amber-500/20 text-amber-700 border-amber-400/40";
+  if (pos === 1) return "bg-[#F5B700] text-[#161616] border-[#F5B700]";
+  if (pos === 2) return "bg-[#C9D1DB] text-[#161616] border-[#C9D1DB]";
+  if (pos === 3) return "bg-[#D08A4A] text-[#161616] border-[#D08A4A]";
   return "bg-muted text-muted-foreground border-border";
+}
+
+/** The app's red calendar block (rider-app components/RaceCards.tsx): month over day. */
+function DateBlock({ iso }: { iso: string | null | undefined }) {
+  const d = iso ? new Date(iso) : null;
+  const ok = d && !Number.isNaN(d.getTime());
+  return (
+    <div className="w-[52px] h-[56px] shrink-0 rounded-xl bg-primary text-white flex flex-col items-center justify-center leading-none">
+      <span className="text-[10px] font-bold tracking-[1.2px]">{ok ? d!.toLocaleDateString("en-US", { month: "short", timeZone: "UTC" }).toUpperCase() : "TBD"}</span>
+      <span className="text-[23px] font-bold mt-1">{ok ? d!.getUTCDate() : "–"}</span>
+    </div>
+  );
+}
+
+/** The app's big-number stat tile: card with a red race stripe (podium colour for a P1-P3 finish). */
+function StatTile({ value, label, position, onClick }: { value: ReactNode; label: string; position?: number | null; onClick?: () => void }) {
+  const metal = position ? PODIUM[position] : undefined;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="relative overflow-hidden rounded-[14px] border bg-card px-2 py-4 text-center hover:bg-[#2A2A2A] transition-colors"
+      style={{ borderColor: metal ? `${metal}66` : undefined }}
+    >
+      <span className="absolute top-0 left-[14px] right-[14px] h-[3px] rounded-b-[3px]" style={{ backgroundColor: metal ?? "#B30000" }} />
+      <ChevronRight size={12} className="absolute right-2 top-2.5 text-muted-foreground" />
+      <span className="block font-heading font-extrabold italic text-[30px] sm:text-[36px] leading-none tracking-[-0.5px] truncate" style={{ color: metal ?? "#FAFAFA" }}>{value}</span>
+      <span className="block mt-1.5 text-[12px] font-bold uppercase tracking-[1px] text-muted-foreground truncate">{label}</span>
+    </button>
+  );
 }
 
 function formatMs(ms: number | null | undefined): string {
@@ -88,7 +121,7 @@ function isLapEligible(lapNumber: number, raceStyle?: string | null): boolean {
 
 // ─── RFID editor ────────────────────────────────────────────────────────────
 
-// Sits in the dark TitleBand, so text and icons use white/gray, never red.
+// Sits under the dark page title, so text and icons use white/gray, never red.
 function RfidEditor({ riderId, currentRfid }: { riderId: number; currentRfid: string | null }) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
@@ -132,11 +165,11 @@ function RfidEditor({ riderId, currentRfid }: { riderId: number; currentRfid: st
             value={value}
             onChange={e => setValue(e.target.value)}
             placeholder="e.g. AB12CD34"
-            className="h-9 text-sm font-mono w-48 bg-white text-[#333] border-white"
+            className="h-9 text-sm font-mono w-48 bg-muted text-white border-border"
             autoFocus
             onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); }}
           />
-          <Button size="sm" aria-label="Save transponder" className="h-9 w-9 px-0 bg-white text-[#242424] border-white hover:bg-[#F2F2F2]" onClick={save} disabled={saving}>
+          <Button size="sm" aria-label="Save transponder" className="h-9 w-9 px-0 bg-primary text-white border-primary hover:bg-[#990000]" onClick={save} disabled={saving}>
             {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
           </Button>
           <Button size="sm" variant="ghost" aria-label="Cancel" className="h-9 w-9 px-0 text-white hover:bg-white/10" onClick={cancel} disabled={saving}>
@@ -158,7 +191,7 @@ function RfidEditor({ riderId, currentRfid }: { riderId: number; currentRfid: st
       )}
       <button
         onClick={startEdit}
-        className="ml-1 inline-flex items-center gap-1 rounded-full border-2 border-white/60 px-3 min-h-[32px] text-[13px] font-bold uppercase tracking-[0.5px] text-white hover:bg-white/10 transition-colors"
+        className="ml-1 inline-flex items-center gap-1 rounded-full border border-border bg-muted px-3 min-h-[32px] text-[13px] font-bold uppercase tracking-[0.5px] text-white hover:bg-white/10 transition-colors"
         title="Edit transponder number"
       >
         <Pencil size={12} /> Edit
@@ -280,7 +313,7 @@ function ProfileEditor({ rider }: { rider: RiderFull }) {
         {!editing ? (
           <div className="flex items-center gap-2">
             {saved && (
-              <span className="flex items-center gap-1 text-sm text-green-600 font-medium">
+              <span className="flex items-center gap-1 text-sm text-[#22c55e] font-medium">
                 <Check size={14} /> Saved
               </span>
             )}
@@ -466,7 +499,7 @@ function GarageCard({ riderId }: { riderId: number }) {
           const label = [bike.bikeYear, bike.bikeManufacturer, bike.bikeModel].filter(Boolean).join(" ") || "Unnamed bike";
           const brand = BIKE_BRANDS.find(b => b.name === bike.bikeManufacturer);
           return (
-            <div key={bike.id} className={`flex items-center gap-3 rounded-lg border px-4 py-3 transition-colors ${bike.isDefault ? "border-primary/50 bg-primary/5" : "border-border bg-card"}`}>
+            <div key={bike.id} className={`flex items-center gap-3 rounded-lg border px-4 py-3 transition-colors ${bike.isDefault ? "border-primary/50 bg-primary/15" : "border-border bg-card"}`}>
               <button
                 type="button"
                 title={bike.isDefault ? "Default bike" : "Set as default"}
@@ -481,7 +514,7 @@ function GarageCard({ riderId }: { riderId: number }) {
               ) : null}
               <span className="flex-1 text-sm font-medium">{bike.bikeModel ? `${bike.bikeYear ?? ""} ${bike.bikeModel}`.trim() : label}</span>
               {bike.isDefault && (
-                <Badge variant="outline" className="text-xs text-primary border-primary/40">Default</Badge>
+                <Badge variant="outline" className="text-xs text-white border-primary/40">Default</Badge>
               )}
               <Button
                 size="sm"
@@ -531,7 +564,7 @@ function GarageCard({ riderId }: { riderId: number }) {
               />
             </div>
           </div>
-          <BikeBrandChips brands={BIKE_BRANDS} value={addForm.manufacturer} onChange={v => setAddForm(f => ({ ...f, manufacturer: v }))} />
+          <BikeBrandChips brands={BIKE_BRANDS} value={addForm.manufacturer} onChange={v => setAddForm(f => ({ ...f, manufacturer: v }))} dark />
           {addError && <p className="text-xs text-destructive">{addError}</p>}
           <div className="flex gap-2">
             <Button size="sm" variant="outline" onClick={() => { setShowAdd(false); setAddForm({ manufacturer: "", model: "", year: "" }); setAddError(null); }}>
@@ -602,7 +635,7 @@ function MotoRow({ moto, raceStyle, defaultLapsOpen }: { moto: MotoResult; raceS
           )}
 
           {moto.points !== null && !moto.dnf && !moto.dns && (
-            <span className="flex items-center gap-1 text-primary font-bold text-sm">
+            <span className="flex items-center gap-1 text-white font-bold text-sm">
               <Star size={12} /> {moto.points}
             </span>
           )}
@@ -628,7 +661,7 @@ function MotoRow({ moto, raceStyle, defaultLapsOpen }: { moto: MotoResult; raceS
       </div>
 
       {lapOpen && hasTimes && (
-        <div className="px-4 py-3 bg-background border-t">
+        <div className="px-4 py-3 bg-card border-t">
           <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
             <div className="text-xs text-muted-foreground font-heading uppercase tracking-wider">Lap Times</div>
             {hasGaps && (
@@ -659,7 +692,7 @@ function MotoRow({ moto, raceStyle, defaultLapsOpen }: { moto: MotoResult; raceS
                   <div className="text-xs text-muted-foreground">Lap {i + 1}</div>
                   <div className="font-mono text-xs font-medium">{t}</div>
                   {gl && (
-                    <div className={`text-[10px] font-mono ${gl.highlight ? "text-primary font-bold" : "text-muted-foreground"}`}>
+                    <div className={`text-[10px] font-mono ${gl.highlight ? "text-white font-bold" : "text-muted-foreground"}`}>
                       {gl.text}
                     </div>
                   )}
@@ -679,7 +712,7 @@ function TeamLaps({ team }: { team: NonNullable<MotoResult["team"]> }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="px-4 pb-3">
-      <button type="button" className="text-xs font-semibold text-primary hover:underline" onClick={() => setOpen(o => !o)}>
+      <button type="button" className="text-xs font-semibold text-white hover:underline" onClick={() => setOpen(o => !o)}>
         {open ? "Hide" : "Show"} each rider's laps{team.name ? ` (Team ${team.name})` : ""}
       </button>
       {open && (
@@ -696,7 +729,7 @@ function TeamLaps({ team }: { team: NonNullable<MotoResult["team"]> }) {
             </thead>
             <tbody>
               {team.members.map(m => (
-                <tr key={m.position} className={`border-t ${m.isYou ? "bg-primary/5 font-semibold" : ""}`}>
+                <tr key={m.position} className={`border-t ${m.isYou ? "bg-primary/15 font-semibold" : ""}`}>
                   <td className="py-1.5 pr-3 whitespace-nowrap">{m.name}{m.isYou ? " (you)" : ""}</td>
                   <td className="py-1.5 pr-3 font-mono">{m.lapCount}</td>
                   <td className="py-1.5 pr-3 font-mono">{m.bestLap ?? "—"}</td>
@@ -798,7 +831,7 @@ function EventPracticeSessionCard({
       <CardHeader className="py-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 flex-1 min-w-0">
-            <Timer size={14} className="text-primary shrink-0" />
+            <Timer size={14} className="text-white shrink-0" />
             <CardTitle className="font-heading font-bold text-base uppercase tracking-tight truncate">
               {session.sessionName}
             </CardTitle>
@@ -806,7 +839,7 @@ function EventPracticeSessionCard({
           {isLive ? (
             <span className={`flex items-center gap-1.5 text-xs font-bold uppercase px-2.5 py-1 rounded-full border shrink-0 ${
               sseConnected
-                ? "text-primary bg-primary/10 border-primary/20"
+                ? "text-white bg-primary/20 border-primary/50"
                 : "text-muted-foreground bg-muted border-border"
             }`}>
               <Radio size={10} className={sseConnected ? "animate-pulse" : ""} />
@@ -838,18 +871,18 @@ function EventPracticeSessionCard({
               <div
                 key={entry.rank}
                 className={`grid grid-cols-[2.25rem_1fr_2.75rem_5rem] gap-2 items-center px-3 py-2.5 border-b border-border/50 last:border-b-0 ${
-                  entry.isMe ? "bg-primary/10 border-l-2 border-l-primary" : ""
+                  entry.isMe ? "bg-primary/20 border-l-2 border-l-primary" : ""
                 }`}
               >
                 <div className="text-center">
                   {entry.rank === 1 ? (
-                    <Trophy size={13} className="text-primary mx-auto" />
+                    <Trophy size={13} className="text-white mx-auto" />
                   ) : (
                     <span className="text-xs font-mono font-bold text-muted-foreground">{entry.rank}</span>
                   )}
                 </div>
                 <div className="flex items-center gap-1.5 min-w-0">
-                  <span className={`text-sm truncate ${entry.isMe ? "font-bold text-primary" : "text-foreground"}`}>
+                  <span className={`text-sm truncate ${entry.isMe ? "font-bold text-white" : "text-foreground"}`}>
                     {entry.riderName}
                   </span>
                   {entry.bibNumber && (
@@ -860,7 +893,7 @@ function EventPracticeSessionCard({
                   )}
                 </div>
                 <div className="text-center text-sm font-heading font-bold text-foreground">{entry.lapCount}</div>
-                <div className={`text-center font-mono text-sm font-bold ${entry.isMe || entry.rank === 1 ? "text-primary" : "text-foreground"}`}>
+                <div className={`text-center font-mono text-sm font-bold ${entry.isMe || entry.rank === 1 ? "text-white" : "text-foreground"}`}>
                   {formatMs(entry.bestLapMs)}
                 </div>
               </div>
@@ -872,7 +905,7 @@ function EventPracticeSessionCard({
           <div className="mt-3">
             <button
               onClick={() => setShowMyLaps(v => !v)}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors"
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-white transition-colors"
             >
               {showMyLaps ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
               Lap times ({myLapsWithTime.length})
@@ -888,14 +921,14 @@ function EventPracticeSessionCard({
                     <div
                       key={lap.lapNumber}
                       className={`rounded px-2 py-2 text-center border ${
-                        isBest ? "bg-primary/10 border-primary/30" : "bg-muted border-transparent"
+                        isBest ? "bg-primary/20 border-primary/50" : "bg-muted border-transparent"
                       }`}
                     >
                       <div className="text-xs text-muted-foreground">Lap {lap.lapNumber}</div>
-                      <div className={`font-mono text-xs font-bold mt-0.5 ${isBest ? "text-primary" : ""}`}>
+                      <div className={`font-mono text-xs font-bold mt-0.5 ${isBest ? "text-white" : ""}`}>
                         {formatMs(lap.lapTimeMs)}
                       </div>
-                      {isBest && <div className="text-xs text-primary font-bold mt-0.5">Best</div>}
+                      {isBest && <div className="text-xs text-white font-bold mt-0.5">Best</div>}
                     </div>
                   );
                 })}
@@ -948,7 +981,7 @@ function EventPracticePanel({
       {eventsWithSessions.map(event => (
         <div key={event.eventId}>
           <div className="flex items-center gap-2 mb-3 flex-wrap">
-            <Flag size={13} className="text-primary shrink-0" />
+            <Flag size={13} className="text-white shrink-0" />
             <h3 className="font-heading font-bold uppercase tracking-wider text-sm text-foreground">
               {event.eventName}
             </h3>
@@ -1150,14 +1183,14 @@ function PracticeSessionCard({
         <div className="flex items-center justify-between gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <Timer size={15} className="text-primary shrink-0" />
+              <Timer size={15} className="text-white shrink-0" />
               <CardTitle className="font-heading font-bold text-base uppercase tracking-tight truncate">
                 {session.sessionName}
               </CardTitle>
               {isLive && (
                 <span className={`flex items-center gap-1.5 text-xs font-bold uppercase px-2 py-0.5 rounded-full border shrink-0 ${
                   sseConnected
-                    ? "text-primary bg-primary/10 border-primary/20"
+                    ? "text-white bg-primary/20 border-primary/50"
                     : "text-muted-foreground bg-muted border-border"
                 }`}>
                   <Radio size={9} className={sseConnected ? "animate-pulse" : ""} />
@@ -1165,7 +1198,7 @@ function PracticeSessionCard({
                 </span>
               )}
               {isVenuePb && !pbFlash && (
-                <span className="flex items-center gap-1 bg-yellow-400/20 text-yellow-700 border border-yellow-400/50 text-xs font-bold px-2 py-0.5 rounded-full shrink-0">
+                <span className="flex items-center gap-1 bg-yellow-400/20 text-[#F5B700] border border-yellow-400/50 text-xs font-bold px-2 py-0.5 rounded-full shrink-0">
                   <Ribbon size={10} /> PB ★
                 </span>
               )}
@@ -1203,7 +1236,7 @@ function PracticeSessionCard({
             </div>
             <div className="text-center">
               <div className="text-xs text-muted-foreground mb-0.5">Best Lap</div>
-              <div className={`font-mono font-bold text-sm transition-colors duration-300 ${pbFlash ? "text-yellow-500" : "text-primary"}`}>
+              <div className={`font-mono font-bold text-sm transition-colors duration-300 ${pbFlash ? "text-[#F5B700]" : "text-white"}`}>
                 {formatMs(displayBestMs)}
               </div>
             </div>
@@ -1232,16 +1265,16 @@ function PracticeSessionCard({
                       isVenuePb
                         ? "bg-yellow-400/15 border-yellow-400/40"
                         : isSessionBest
-                          ? "bg-primary/10 border-primary/30"
+                          ? "bg-primary/20 border-primary/50"
                           : "bg-muted border-transparent"
                     }`}
                   >
                     <div className="text-xs text-muted-foreground">Lap {lap.lapNumber}</div>
-                    <div className={`font-mono text-xs font-bold mt-0.5 ${isVenuePb ? "text-yellow-600" : isSessionBest ? "text-primary" : ""}`}>
+                    <div className={`font-mono text-xs font-bold mt-0.5 ${isVenuePb ? "text-[#F5B700]" : isSessionBest ? "text-white" : ""}`}>
                       {formatMs(lap.lapTimeMs)}
                     </div>
-                    {isVenuePb && <div className="text-xs text-yellow-600 font-bold mt-0.5">PB ★</div>}
-                    {!isVenuePb && isSessionBest && <div className="text-xs text-primary font-bold mt-0.5">Best</div>}
+                    {isVenuePb && <div className="text-xs text-[#F5B700] font-bold mt-0.5">PB ★</div>}
+                    {!isVenuePb && isSessionBest && <div className="text-xs text-white font-bold mt-0.5">Best</div>}
                   </div>
                 );
               })}
@@ -1264,15 +1297,15 @@ function PracticeSessionCard({
                           {session.sectorNames!.map((_, i) => {
                             const v = l.sectorsMs[i] ?? null;
                             const best = v != null && v === session.bestSectors?.[i];
-                            return <td key={i} className={`text-right px-2 py-0.5 ${best ? "text-primary font-bold" : ""}`}>{v == null ? "—" : (v / 1000).toFixed(3)}</td>;
+                            return <td key={i} className={`text-right px-2 py-0.5 ${best ? "text-white font-bold" : ""}`}>{v == null ? "—" : (v / 1000).toFixed(3)}</td>;
                           })}
                         </tr>
                       ))}
                       <tr className="border-t">
-                        <td className="px-1 py-1 font-bold text-primary">Best</td>
+                        <td className="px-1 py-1 font-bold text-white">Best</td>
                         {session.sectorNames!.map((_, i) => {
                           const v = session.bestSectors?.[i] ?? null;
-                          return <td key={i} className="text-right px-2 py-1 font-bold text-primary">{v == null ? "—" : (v / 1000).toFixed(3)}</td>;
+                          return <td key={i} className="text-right px-2 py-1 font-bold text-white">{v == null ? "—" : (v / 1000).toFixed(3)}</td>;
                         })}
                       </tr>
                     </tbody>
@@ -1339,9 +1372,9 @@ interface UpcomingEvent {
 function statusLabel(s: string, date?: string | null) {
   const todayStr = new Date().toLocaleDateString("en-CA");
   const isToday = !!date && date.substring(0, 10) === todayStr;
-  if (isToday && s !== "completed" && s !== "draft") return { label: "Race Day", cls: "bg-primary/15 text-primary border-primary/40" };
-  if (s === "registration_open") return { label: "Registration Open", cls: "bg-green-500/15 text-green-700 border-green-400/40" };
-  if (s === "race_day") return { label: "Race Day", cls: "bg-primary/15 text-primary border-primary/40" };
+  if (isToday && s !== "completed" && s !== "draft") return { label: "Race Day", cls: "bg-primary text-white border-primary" };
+  if (s === "registration_open") return { label: "Registration Open", cls: "bg-green-500/15 text-[#22c55e] border-green-400/40" };
+  if (s === "race_day") return { label: "Race Day", cls: "bg-primary/15 text-white border-primary/40" };
   return { label: s.replace(/_/g, " "), cls: "bg-muted text-muted-foreground border-border" };
 }
 
@@ -1351,8 +1384,9 @@ function NearbyEventCard({ event, riderEmail }: { event: UpcomingEvent; riderEma
   const canRegister = event.status === "registration_open";
 
   return (
-    <div className={`rounded-xl border overflow-hidden ${canRegister ? "border-green-400/50 bg-green-500/5" : "border-border bg-card"}`}>
-      <div className="p-4">
+    <div className="relative rounded-2xl border border-border bg-card overflow-hidden">
+      <span aria-hidden className={`absolute left-0 inset-y-0 w-1 ${canRegister ? "bg-[#22c55e]" : "bg-[#3A3A3A]"}`} />
+      <div className="p-4 pl-5">
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <h3 className="font-heading font-bold text-base uppercase tracking-tight leading-tight truncate">
@@ -1454,9 +1488,9 @@ function NearMeTab({ riderEmail }: { riderEmail?: string | null }) {
     <div className="space-y-4">
       {/* Location banner */}
       {geoStatus === "idle" && (
-        <div className="flex items-center justify-between gap-4 rounded-xl border border-dashed border-primary/40 bg-primary/5 px-4 py-3">
+        <div className="flex items-center justify-between gap-4 rounded-xl border border-dashed border-primary/40 bg-primary/15 px-4 py-3">
           <div className="flex items-center gap-2 text-sm text-muted-foreground min-w-0">
-            <LocateFixed size={16} className="text-primary shrink-0" />
+            <LocateFixed size={16} className="text-white shrink-0" />
             <span>Allow location to sort by distance from you</span>
           </div>
           <Button size="sm" variant="outline" className="shrink-0 font-heading uppercase text-xs tracking-wider" onClick={requestLocation}>
@@ -1471,7 +1505,7 @@ function NearMeTab({ riderEmail }: { riderEmail?: string | null }) {
         </div>
       )}
       {geoStatus === "granted" && (
-        <div className="flex items-center gap-2 rounded-xl border border-green-400/40 bg-green-500/5 px-4 py-3 text-sm text-green-700">
+        <div className="flex items-center gap-2 rounded-xl border border-green-400/40 bg-green-500/10 px-4 py-3 text-sm text-[#22c55e]">
           <LocateFixed size={14} className="shrink-0" />
           Sorted closest to farthest from your location
         </div>
@@ -1487,8 +1521,8 @@ function NearMeTab({ riderEmail }: { riderEmail?: string | null }) {
         <Card>
           <CardContent className="p-12 text-center">
             <MapPin size={40} className="mx-auto text-muted-foreground/30 mb-3" />
-            <h3 className="font-heading font-bold text-lg uppercase mb-1">No Upcoming Events</h3>
-            <p className="text-muted-foreground text-sm">Check back soon — new events are added regularly.</p>
+            <h3 className="font-heading font-extrabold text-lg uppercase mb-1">No open races nearby</h3>
+            <p className="text-muted-foreground text-sm">Nothing's open for registration around you right now. Check back soon.</p>
           </CardContent>
         </Card>
       ) : (
@@ -1539,8 +1573,8 @@ function PracticeCountdown({ startedAt, timeLimitMs, variant = "badge" }: {
         remaining < 60000
           ? "text-destructive bg-destructive/10 border-destructive/20 animate-pulse"
           : remaining < 120000
-          ? "text-primary bg-primary/10 border-primary/20"
-          : "text-sky-600 bg-sky-500/10 border-sky-400/20"
+          ? "text-white bg-primary/20 border-primary/50"
+          : "text-sky-400 bg-sky-500/10 border-sky-400/20"
       }`}>
         <Timer size={9} />
         <span className="font-mono tabular-nums">{formatCountdownMs(remaining)}</span>
@@ -1556,8 +1590,8 @@ function PracticeCountdown({ startedAt, timeLimitMs, variant = "badge" }: {
         : remaining < 60000
         ? "bg-destructive/10 border-destructive/30 text-destructive animate-pulse"
         : remaining < 120000
-        ? "bg-primary/10 border-primary/30 text-primary"
-        : "bg-sky-500/5 border-sky-400/20 text-sky-700 dark:text-sky-400"
+        ? "bg-primary/20 border-primary/50 text-white"
+        : "bg-sky-500/5 border-sky-400/20 text-sky-400"
     }`}>
       <Timer size={14} className="shrink-0" />
       <span className="flex-1 text-xs font-bold uppercase tracking-wider">
@@ -1571,7 +1605,7 @@ function PracticeCountdown({ startedAt, timeLimitMs, variant = "badge" }: {
 }
 
 function motoStatusBadge(status: string) {
-  if (status === "in_progress") return "bg-green-500/20 text-green-700 border-green-400/50";
+  if (status === "in_progress") return "bg-green-500/20 text-[#22c55e] border-green-400/50";
   if (status === "completed") return "bg-muted text-muted-foreground border-border";
   return "bg-muted/50 text-muted-foreground border-border/50";
 }
@@ -1607,7 +1641,7 @@ function ScheduleMotoCard({
         isLive
           ? "border-green-400/60 bg-green-500/5"
           : isUpNext
-          ? "border-primary/40 bg-primary/5"
+          ? "border-primary/40 bg-primary/15"
           : isDone
           ? "border-border bg-muted/20 opacity-50"
           : "border-border bg-card"
@@ -1625,7 +1659,7 @@ function ScheduleMotoCard({
             </span>
             {moto.type === "practice" ? (
               <span className="text-xs text-muted-foreground">
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-500/10 text-sky-600 border border-sky-400/30 mr-1">Practice</span>
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-500/10 text-sky-400 border border-sky-400/30 mr-1">Practice</span>
                 {moto.raceClass ?? "All Classes"}
               </span>
             ) : moto.raceClass ? (
@@ -1643,12 +1677,12 @@ function ScheduleMotoCard({
               <PracticeCountdown startedAt={moto.startedAt} timeLimitMs={moto.timeLimitMs} variant="badge" />
             )}
             {(isLive || isNowUp) && (
-              <span className="flex items-center gap-1 text-xs font-bold text-green-700 bg-green-500/15 border border-green-400/50 rounded-full px-2 py-0.5">
+              <span className="flex items-center gap-1 text-xs font-bold text-[#22c55e] bg-green-500/15 border border-green-400/50 rounded-full px-2 py-0.5">
                 <Radio size={9} className={isLive ? "animate-pulse" : undefined} /> Now Up
               </span>
             )}
             {isUpNext && !isLive && !isNowUp && (
-              <span className="text-xs font-bold text-primary bg-primary/10 border border-primary/20 rounded-full px-2 py-0.5">
+              <span className="text-xs font-bold text-white bg-primary/20 border border-primary/50 rounded-full px-2 py-0.5">
                 Up Next
               </span>
             )}
@@ -1660,7 +1694,7 @@ function ScheduleMotoCard({
         </button>
 
         {open && (
-          <div className="border-t bg-background">
+          <div className="border-t bg-card">
             {moto.lineup.length > 0 ? (
               <>
                 <div className="px-4 pt-2 pb-1 text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground">
@@ -1702,7 +1736,7 @@ function ScheduleMotoCard({
     }`}>
       {/* Header */}
       <div className={`px-4 py-3 flex items-center justify-between gap-3 ${
-        isLive ? "bg-green-500 text-white" : isDone ? "bg-muted" : "bg-primary text-primary-foreground"
+        isLive ? "bg-green-600 text-white" : isDone ? "bg-muted" : "bg-primary text-primary-foreground"
       }`}>
         <div className="flex items-center gap-2 min-w-0 flex-wrap">
           {isLive && <Radio size={14} className="animate-pulse shrink-0" />}
@@ -1732,7 +1766,7 @@ function ScheduleMotoCard({
       {moto.type === "practice" ? (
         <>
           {/* Slot assignment or open practice */}
-          <div className="px-4 py-3 bg-background border-b space-y-3">
+          <div className="px-4 py-3 bg-card border-b space-y-3">
             {moto.familyGates.length > 0 ? (
               <div className="space-y-3">
                 {moto.familyGates.map(fg => {
@@ -1753,7 +1787,7 @@ function ScheduleMotoCard({
                         <span className="text-[8px] font-bold uppercase tracking-wider opacity-70 mt-0.5">Slot</span>
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="text-sm font-bold text-primary leading-tight">{fg.riderName}</div>
+                        <div className="text-sm font-bold text-white leading-tight">{fg.riderName}</div>
                         <div className="text-xs text-muted-foreground mt-0.5">
                           {moto.raceClass ? <span className="font-medium text-foreground">{moto.raceClass} · </span> : null}
                           Practice Session{moto.lineup.length > 0 ? ` · ${moto.lineup.length} riders` : ""}
@@ -1775,7 +1809,7 @@ function ScheduleMotoCard({
               </div>
             ) : (
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold bg-sky-500/10 text-sky-600 border border-sky-400/30">Practice</span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold bg-sky-500/10 text-sky-400 border border-sky-400/30">Practice</span>
                 <span className="text-sm text-muted-foreground">Open to all checked-in riders</span>
                 {moto.scheduledTime && !isLive && (
                   <span className="flex items-center gap-1 text-xs text-muted-foreground font-mono ml-auto">
@@ -1801,7 +1835,7 @@ function ScheduleMotoCard({
               ? Math.min(...eligibleLaps.map(l => l.lapTimeMs!))
               : null;
             return (
-              <div className="px-4 py-3 bg-background border-b">
+              <div className="px-4 py-3 bg-card border-b">
                 <div className="text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground mb-2">Lap Times</div>
                 <div className="flex flex-wrap gap-2">
                   {laps.map((lap, i) => {
@@ -1810,12 +1844,12 @@ function ScheduleMotoCard({
                     return (
                       <div key={i} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs border ${
                         isPB
-                          ? "bg-yellow-400/10 border-yellow-400/30 text-yellow-700 dark:text-yellow-400 font-bold"
+                          ? "bg-yellow-400/10 border-yellow-400/30 text-[#F5B700] font-bold"
                           : "bg-muted/50 border-border text-muted-foreground"
                       }`}>
                         <span className="text-[10px] uppercase tracking-wide opacity-60">L{lap.lapNumber}</span>
                         <span className="font-mono">{formatMs(lap.lapTimeMs)}</span>
-                        {isPB && <span className="text-[9px] font-black uppercase text-yellow-600">PB</span>}
+                        {isPB && <span className="text-[9px] font-black uppercase text-[#F5B700]">PB</span>}
                       </div>
                     );
                   })}
@@ -1825,7 +1859,7 @@ function ScheduleMotoCard({
           })()}
         </>
       ) : (
-      <div className="px-4 py-3 bg-background border-b">
+      <div className="px-4 py-3 bg-card border-b">
         <div className="text-xs text-muted-foreground uppercase tracking-wider font-bold mb-2">
           {moto.familyGates.length === 1 ? "Gate Pick" : "Gate Picks"}
         </div>
@@ -1838,7 +1872,7 @@ function ScheduleMotoCard({
                 <span className="text-[9px] font-bold uppercase tracking-wider opacity-60 mt-0.5">Gate Pick</span>
               </div>
               <div>
-                <div className="text-sm font-bold text-primary leading-tight">{fg.riderName}</div>
+                <div className="text-sm font-bold text-white leading-tight">{fg.riderName}</div>
                 <div className="text-xs text-muted-foreground mt-0.5">
                   {moto.raceClass && <span className="text-foreground font-medium">{moto.raceClass}</span>}
                   {moto.raceClass && " · "}
@@ -1859,21 +1893,21 @@ function ScheduleMotoCard({
       {moto.type === "practice" ? (
         <>
           {open && (moto.practiceLeaderboard?.length ?? 0) > 0 && (
-            <div className="bg-background">
+            <div className="bg-card">
               <div className="px-4 pt-3 pb-1 text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground">
                 Session Leaderboard
               </div>
               <div className="divide-y">
                 {(moto.practiceLeaderboard ?? []).map(entry => (
-                  <div key={`${entry.riderId}-${entry.rank}`} className={`flex items-center gap-3 px-4 py-2.5 ${entry.isMe ? "bg-primary/5" : ""}`}>
+                  <div key={`${entry.riderId}-${entry.rank}`} className={`flex items-center gap-3 px-4 py-2.5 ${entry.isMe ? "bg-primary/15" : ""}`}>
                     <span className={`w-8 h-8 rounded-full flex items-center justify-center font-heading font-bold text-xs shrink-0 border ${positionBadge(entry.rank)}`}>
                       {entry.rank}
                     </span>
-                    <span className={`flex-1 text-sm ${entry.isMe ? "font-bold text-primary" : "font-medium text-foreground"}`}>
+                    <span className={`flex-1 text-sm ${entry.isMe ? "font-bold text-white" : "font-medium text-foreground"}`}>
                       {entry.riderName}
-                      {entry.isMe && <span className="text-[10px] text-primary ml-1.5 font-normal opacity-70">You</span>}
+                      {entry.isMe && <span className="text-[10px] text-white ml-1.5 font-normal opacity-70">You</span>}
                     </span>
-                    <span className={`text-xs font-mono shrink-0 ${entry.isMe ? "text-primary font-bold" : "text-muted-foreground"}`}>
+                    <span className={`text-xs font-mono shrink-0 ${entry.isMe ? "text-white font-bold" : "text-muted-foreground"}`}>
                       {formatMs(entry.bestLapMs)}
                     </span>
                   </div>
@@ -1882,17 +1916,17 @@ function ScheduleMotoCard({
             </div>
           )}
           {open && (moto.practiceLeaderboard?.length ?? 0) === 0 && moto.lineup.length > 0 && (
-            <div className="bg-background">
+            <div className="bg-card">
               <div className="px-4 pt-3 pb-1 text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground">
                 Session Lineup
               </div>
               <div className="divide-y">
                 {moto.lineup.map(entry => (
-                  <div key={entry.gate} className={`flex items-center gap-3 px-4 py-2.5 ${entry.isFamilyMember ? "bg-primary/5" : ""}`}>
+                  <div key={entry.gate} className={`flex items-center gap-3 px-4 py-2.5 ${entry.isFamilyMember ? "bg-primary/15" : ""}`}>
                     <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
                       entry.isFamilyMember ? "bg-sky-500 text-white" : "bg-muted text-muted-foreground"
                     }`}>{entry.gate}</span>
-                    <span className={`flex-1 text-sm ${entry.isFamilyMember ? "font-bold text-primary" : "font-medium text-foreground"}`}>
+                    <span className={`flex-1 text-sm ${entry.isFamilyMember ? "font-bold text-white" : "font-medium text-foreground"}`}>
                       {entry.riderName}
                     </span>
                     {entry.bibNumber && (
@@ -1917,7 +1951,7 @@ function ScheduleMotoCard({
       ) : (
         <>
           {open && moto.lineup.length > 0 && (
-            <div className="bg-background">
+            <div className="bg-card">
               <div className="px-4 pt-3 pb-1 text-xs font-heading font-bold uppercase tracking-wider text-muted-foreground">
                 Gate Pick
               </div>
@@ -1926,7 +1960,7 @@ function ScheduleMotoCard({
                   <div
                     key={entry.gate}
                     className={`flex items-center gap-3 px-4 py-2.5 ${
-                      entry.isFamilyMember ? "bg-primary/5" : ""
+                      entry.isFamilyMember ? "bg-primary/15" : ""
                     }`}
                   >
                     <span className={`w-8 h-8 rounded-full flex items-center justify-center font-heading font-bold text-sm shrink-0 ${
@@ -1938,14 +1972,14 @@ function ScheduleMotoCard({
                     </span>
                     <span className={`flex-1 text-sm ${
                       entry.isFamilyMember
-                        ? "font-bold text-primary"
+                        ? "font-bold text-white"
                         : "font-medium text-foreground"
                     }`}>
                       {entry.riderName}
                     </span>
                     {entry.bibNumber && (
                       <span className={`text-xs font-mono shrink-0 ${
-                        entry.isFamilyMember ? "text-primary font-bold" : "text-muted-foreground"
+                        entry.isFamilyMember ? "text-white font-bold" : "text-muted-foreground"
                       }`}>
                         #{entry.bibNumber}
                       </span>
@@ -2040,7 +2074,7 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
   const finished = sortedMotos.filter(m => m.status === "completed" || m.status === "cancelled");
 
   return (
-    <div className="rounded-2xl border-2 overflow-hidden shadow-sm">
+    <div className="rounded-2xl border border-border bg-card overflow-hidden">
       {/* Event header — prominent, clickable to collapse */}
       <button
         onClick={() => setCollapsed(v => !v)}
@@ -2084,7 +2118,7 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
                 <span key={r.riderId} className={`inline-flex items-center gap-1 text-xs rounded-full px-2.5 py-0.5 font-semibold border ${
                   isRaceDay
                     ? "bg-white/15 text-white border-white/25"
-                    : "bg-primary/10 text-primary border-primary/20"
+                    : "bg-primary/20 text-white border-primary/50"
                 }`}>
                   {r.riderName}{r.raceClass ? ` · ${r.raceClass}` : ""}
                 </span>
@@ -2101,7 +2135,7 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
                 enduroStartTimes.length === 1 ? (
                   <>
                     <div className={`text-xs ${isRaceDay ? "text-white/60" : "text-muted-foreground"}`}>Test Start</div>
-                    <div className={`font-heading font-black text-xl leading-none ${isRaceDay ? "text-white" : "text-primary"}`}>
+                    <div className={`font-heading font-black text-xl leading-none text-white`}>
                       {fmtStartTime(enduroStartTimes[0].startTime)}
                     </div>
                   </>
@@ -2110,7 +2144,7 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
                     {enduroStartTimes.map(cs => (
                       <div key={cs.raceClass} className="text-right">
                         <div className={`text-[10px] ${isRaceDay ? "text-white/60" : "text-muted-foreground"}`}>{cs.riderName.split(" ")[0]}</div>
-                        <div className={`font-heading font-black text-lg leading-none ${isRaceDay ? "text-white" : "text-primary"}`}>
+                        <div className={`font-heading font-black text-lg leading-none text-white`}>
                           {fmtStartTime(cs.startTime)}
                         </div>
                       </div>
@@ -2143,7 +2177,7 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
                   </div>
                 ) : (
                   <>
-                    <div className={`font-heading font-black text-3xl leading-none text-right ${isRaceDay ? "text-white" : "text-primary"}`}>{racesUntilTurn}</div>
+                    <div className={`font-heading font-black text-3xl leading-none text-right text-white`}>{racesUntilTurn}</div>
                     <div className={`text-xs leading-tight text-right ${isRaceDay ? "text-white/60" : "text-muted-foreground"}`}>races away</div>
                   </>
                 )}
@@ -2151,7 +2185,7 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
             ) : (
               <>
                 <div className={`text-xs ${isRaceDay ? "text-white/60" : "text-muted-foreground"}`}>Your Races</div>
-                <div className={`font-heading font-black text-3xl ${isRaceDay ? "text-white" : "text-primary"}`}>{myMotos.length}</div>
+                <div className={`font-heading font-black text-3xl text-white`}>{myMotos.length}</div>
               </>
             )}
           </div>
@@ -2164,7 +2198,7 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
 
       {/* Motos — toggle bar + content */}
       {!collapsed && (
-        <div className="bg-background">
+        <div className="bg-card">
           {/* View toggle bar */}
           {sortedMotos.length > 0 && (
             <div className="flex items-center justify-between px-3 pt-3 pb-1 gap-2">
@@ -2177,7 +2211,7 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
                   title="My schedule view"
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${
                     !showRunOrder
-                      ? "bg-background text-foreground shadow-sm"
+                      ? "bg-primary text-white shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
@@ -2189,7 +2223,7 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
                   title="Full run order"
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold transition-colors ${
                     showRunOrder
-                      ? "bg-background text-foreground shadow-sm"
+                      ? "bg-primary text-white shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
@@ -2225,7 +2259,7 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
                           isLive
                             ? "bg-green-500/8 border-l-[3px] border-l-green-500"
                             : isMine && !isDone
-                            ? "bg-primary/5 border-l-[3px] border-l-primary"
+                            ? "bg-primary/15 border-l-[3px] border-l-primary"
                             : isDone
                             ? "opacity-50"
                             : isFirstScheduled
@@ -2236,13 +2270,13 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
                         {/* Moto number circle */}
                         <div className={`w-7 h-7 rounded-full flex items-center justify-center font-heading font-bold text-sm shrink-0 ${
                           isLive
-                            ? "bg-green-500 text-white"
+                            ? "bg-green-600 text-white"
                             : isMine && !isDone
                             ? "bg-primary text-primary-foreground"
                             : isDone
                             ? "bg-muted text-muted-foreground"
                             : isFirstScheduled
-                            ? "bg-amber-500/20 text-amber-700 border border-amber-400/40"
+                            ? "bg-amber-500/20 text-[#f59e0b] border border-amber-400/40"
                             : "bg-muted/60 text-muted-foreground"
                         }`}>
                           {moto.motoNumber}
@@ -2261,17 +2295,17 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
                               </span>
                             )}
                             {isMine && !isDone && (
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-primary shrink-0">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-white shrink-0">
                                 {isNowUp ? "Now Up" : isUpNext ? "Up Next" : "Mine"}
                               </span>
                             )}
                             {isFirstScheduled && !isMine && (
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 shrink-0">Next</span>
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-[#f59e0b] shrink-0">Next</span>
                             )}
                           </div>
                           {moto.type === "practice" ? (
                             <span className="text-xs text-muted-foreground">
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-500/10 text-sky-600 border border-sky-400/30 mr-1">Practice</span>
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-500/10 text-sky-400 border border-sky-400/30 mr-1">Practice</span>
                               {moto.raceClass ?? "All Classes"}
                             </span>
                           ) : moto.raceClass ? (
@@ -2285,7 +2319,7 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
                         {/* Status */}
                         <div className="shrink-0">
                           {isLive ? (
-                            <span className="flex items-center gap-1 text-xs font-bold text-green-700 bg-green-500/15 border border-green-400/40 rounded-full px-2 py-0.5">
+                            <span className="flex items-center gap-1 text-xs font-bold text-[#22c55e] bg-green-500/15 border border-green-400/40 rounded-full px-2 py-0.5">
                               <Radio size={9} className="animate-pulse" /> Live
                             </span>
                           ) : isDone ? (
@@ -2341,9 +2375,13 @@ function ScheduleEventSection({ event }: { event: ScheduleEvent }) {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-export default function RiderHistory() {
+/**
+ * A rider's races (the rider app's My Races screen). Used at /rider/portal/:riderId,
+ * and by /rider/races with `riderId` and a rider switcher when several riders are active.
+ */
+export default function RiderHistory({ riderId: riderIdProp, riderSwitcher }: { riderId?: number; riderSwitcher?: ReactNode } = {}) {
   const [, params] = useRoute("/rider/portal/:riderId");
-  const riderId = parseInt(params?.riderId ?? "0", 10);
+  const riderId = riderIdProp ?? parseInt(params?.riderId ?? "0", 10);
   const searchStr = useSearch();
   const tabParam = new URLSearchParams(searchStr).get("tab");
   const validTabs = ["today", "upcoming", "nearby", "season", "races", "stats", "practice", "profile"] as const;
@@ -2480,10 +2518,10 @@ export default function RiderHistory() {
 
   return (
     <RiderLayout
-      showBack
+      showBack={!riderSwitcher}
       backTo="/rider/portal"
       backLabel="My Profiles"
-      eyebrow="Rider profile"
+      eyebrow="My Races"
       title={rider ? `${rider.firstName} ${rider.lastName}` : undefined}
       subtitle={rider ? (
         <span className="block">
@@ -2501,6 +2539,7 @@ export default function RiderHistory() {
         </span>
       ) : undefined}
     >
+      {riderSwitcher && <div className="mb-5">{riderSwitcher}</div>}
       {isLoading ? (
         <div className="space-y-4">
           <div className="h-24 bg-muted animate-pulse rounded-xl" />
@@ -2532,186 +2571,79 @@ export default function RiderHistory() {
             )}
           </div>
 
-          {/* Summary stats */}
-          <div className="grid grid-cols-3 gap-3 sm:gap-4">
-            <Card>
-              <CardContent className="p-3 sm:p-5 text-center">
-                <div className="flex items-center justify-center gap-1.5 text-[#707070] text-[13px] font-bold uppercase tracking-[0.5px] mb-1.5">
-                  <Calendar size={14} className="hidden sm:block" /> Events
-                </div>
-                <div className="font-heading font-extrabold text-3xl sm:text-4xl text-[#242424]">{eventsRaced}</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-3 sm:p-5 text-center">
-                <div className="flex items-center justify-center gap-1.5 text-[#707070] text-[13px] font-bold uppercase tracking-[0.5px] mb-1.5">
-                  <Trophy size={14} className="hidden sm:block" /> Best
-                </div>
-                <div className="font-heading font-extrabold text-3xl sm:text-4xl text-[#242424]">
-                  {bestPosition ? `P${bestPosition}` : "—"}
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-3 sm:p-5 text-center">
-                <div className="flex items-center justify-center gap-1.5 text-[#707070] text-[13px] font-bold uppercase tracking-[0.5px] mb-1.5">
-                  <Star size={14} className="hidden sm:block" /> Points
-                </div>
-                <div className="font-heading font-extrabold text-3xl sm:text-4xl text-primary">{totalPoints}</div>
-              </CardContent>
-            </Card>
+          {/* Stat tiles (the app's My Racing header: Events, Points, Best Finish) */}
+          <div className="grid grid-cols-3 gap-2.5 sm:gap-4">
+            <StatTile value={eventsRaced} label="Events" onClick={() => setActiveTab("races")} />
+            <StatTile value={totalPoints} label="Points" onClick={() => setActiveTab("season")} />
+            <StatTile value={bestPosition ? `P${bestPosition}` : "—"} position={bestPosition} label="Best Finish" onClick={() => setActiveTab("stats")} />
           </div>
 
           {/* Track records */}
           {venueBestLapMs.size > 0 && (
-            <Card>
-              <CardContent className="px-4 py-3">
-                <div className="flex items-center gap-2 mb-3 text-[15px] font-heading font-extrabold uppercase tracking-[0.5px] text-[#242424]">
-                  <MapPin size={15} /> Track Records
-                </div>
-                <div className="space-y-1.5">
-                  {Array.from(venueBestLapMs.entries())
-                    .sort((a, b) => a[0].localeCompare(b[0]))
-                    .map(([venue, bestMs]) => (
-                      <div key={venue} className="flex items-center justify-between gap-3">
-                        <span className="text-sm text-foreground truncate">{venue}</span>
-                        <span className="font-mono text-sm font-medium text-primary shrink-0">{formatMs(bestMs)}</span>
-                      </div>
-                    ))}
-                </div>
-              </CardContent>
-            </Card>
+            <div className="rounded-2xl border border-border bg-card px-4 py-3">
+              <div className="flex items-center gap-2 mb-3 text-[15px] font-heading font-extrabold uppercase tracking-[0.5px] text-foreground">
+                <MapPin size={15} className="text-muted-foreground" /> Track Records
+              </div>
+              <div className="space-y-1.5">
+                {Array.from(venueBestLapMs.entries())
+                  .sort((a, b) => a[0].localeCompare(b[0]))
+                  .map(([venue, bestMs]) => (
+                    <div key={venue} className="flex items-center justify-between gap-3">
+                      <span className="text-sm text-foreground truncate">{venue}</span>
+                      <span className="font-mono text-sm font-bold text-white shrink-0">{formatMs(bestMs)}</span>
+                    </div>
+                  ))}
+              </div>
+            </div>
           )}
 
-          {/* Tab switcher */}
-          <div className="flex gap-1 p-1 bg-[#F2F2F2] rounded-full overflow-x-auto hide-scrollbar">
-            {/* Today tab */}
-            {(() => {
-              const hasLive = todayEvents.some(e => e.motos.some(m => m.status === "in_progress"));
-              return (
-                <button
-                  onClick={() => setActiveTab("today")}
-                  className={`flex items-center gap-2 px-4 sm:px-5 min-h-[44px] rounded-full text-[15px] font-heading font-bold uppercase tracking-[0.5px] whitespace-nowrap transition-colors shrink-0 ${
-                    activeTab === "today"
-                      ? "bg-[#242424] text-white"
-                      : "text-[#555] hover:text-[#242424] hover:bg-white"
-                  }`}
-                >
-                  {hasLive ? <Radio size={14} className="animate-pulse text-green-500" /> : <Flag size={14} />}
-                  Today
-                  {todayEvents.length > 0 && (
-                    <span className={`text-[13px] rounded-full px-2 py-0.5 font-sans font-bold ${
-                      activeTab === "today"
-                        ? hasLive ? "bg-[#1A8409] text-white" : "bg-white/20 text-white"
-                        : "bg-white text-[#333]"
-                    }`}>
-                      {todayEvents.length}
-                    </span>
-                  )}
-                </button>
-              );
-            })()}
-            {/* Upcoming tab */}
-            <button
-              onClick={() => setActiveTab("upcoming")}
-              className={`flex items-center gap-2 px-4 sm:px-5 min-h-[44px] rounded-full text-[15px] font-heading font-bold uppercase tracking-[0.5px] whitespace-nowrap transition-colors shrink-0 ${
-                activeTab === "upcoming"
-                  ? "bg-[#242424] text-white"
-                  : "text-[#555] hover:text-[#242424] hover:bg-white"
-              }`}
-            >
-              <Calendar size={14} />
-              Upcoming
-              {upcomingEvents.length > 0 && (
-                <span className={`text-[13px] rounded-full px-2 py-0.5 font-sans font-bold ${
-                  activeTab === "upcoming" ? "bg-white/20 text-white" : "bg-white text-[#333]"
-                }`}>
-                  {upcomingEvents.length}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab("nearby")}
-              className={`flex items-center gap-2 px-4 sm:px-5 min-h-[44px] rounded-full text-[15px] font-heading font-bold uppercase tracking-[0.5px] whitespace-nowrap transition-colors shrink-0 ${
-                activeTab === "nearby"
-                  ? "bg-[#242424] text-white"
-                  : "text-[#555] hover:text-[#242424] hover:bg-white"
-              }`}
-            >
-              <MapPin size={14} />
-              Near Me
-            </button>
-            <button
-              onClick={() => setActiveTab("season")}
-              className={`flex items-center gap-2 px-4 sm:px-5 min-h-[44px] rounded-full text-[15px] font-heading font-bold uppercase tracking-[0.5px] whitespace-nowrap transition-colors shrink-0 ${
-                activeTab === "season"
-                  ? "bg-[#242424] text-white"
-                  : "text-[#555] hover:text-[#242424] hover:bg-white"
-              }`}
-            >
-              <TrendingUp size={14} />
-              Season
-            </button>
-            <button
-              onClick={() => setActiveTab("races")}
-              className={`flex items-center gap-2 px-4 sm:px-5 min-h-[44px] rounded-full text-[15px] font-heading font-bold uppercase tracking-[0.5px] whitespace-nowrap transition-colors shrink-0 ${
-                activeTab === "races"
-                  ? "bg-[#242424] text-white"
-                  : "text-[#555] hover:text-[#242424] hover:bg-white"
-              }`}
-            >
-              <Trophy size={14} />
-              Race History
-              {eventsRaced > 0 && (
-                <span className={`text-[13px] rounded-full px-2 py-0.5 font-sans font-bold ${
-                  activeTab === "races" ? "bg-white/20 text-white" : "bg-white text-[#333]"
-                }`}>
-                  {eventsRaced}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab("stats")}
-              className={`flex items-center gap-2 px-4 sm:px-5 min-h-[44px] rounded-full text-[15px] font-heading font-bold uppercase tracking-[0.5px] whitespace-nowrap transition-colors shrink-0 ${
-                activeTab === "stats"
-                  ? "bg-[#242424] text-white"
-                  : "text-[#555] hover:text-[#242424] hover:bg-white"
-              }`}
-            >
-              <BarChart3 size={14} />
-              Stats
-            </button>
-            <button
-              onClick={() => setActiveTab("practice")}
-              className={`flex items-center gap-2 px-4 sm:px-5 min-h-[44px] rounded-full text-[15px] font-heading font-bold uppercase tracking-[0.5px] whitespace-nowrap transition-colors shrink-0 ${
-                activeTab === "practice"
-                  ? "bg-[#242424] text-white"
-                  : "text-[#555] hover:text-[#242424] hover:bg-white"
-              }`}
-            >
-              <Timer size={14} />
-              Practice
-              {practiceSessions.length > 0 && (
-                <span className={`text-[13px] rounded-full px-2 py-0.5 font-sans font-bold ${
-                  activeTab === "practice" ? "bg-white/20 text-white" : "bg-white text-[#333]"
-                }`}>
-                  {practiceSessions.length}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab("profile")}
-              className={`flex items-center gap-2 px-4 sm:px-5 min-h-[44px] rounded-full text-[15px] font-heading font-bold uppercase tracking-[0.5px] whitespace-nowrap transition-colors shrink-0 ${
-                activeTab === "profile"
-                  ? "bg-[#242424] text-white"
-                  : "text-[#555] hover:text-[#242424] hover:bg-white"
-              }`}
-            >
-              <Settings size={14} />
-              Profile
-            </button>
-          </div>
-
+          {/* Filter tab bar (the app's segmented pills: red fill on the active tab) */}
+          {(() => {
+            const hasLive = todayEvents.some(e => e.motos.some(m => m.status === "in_progress"));
+            const tabs: { key: typeof validTabs[number]; label: string; Icon: typeof Flag; count?: number; live?: boolean }[] = [
+              { key: "today", label: "Today", Icon: hasLive ? Radio : Zap, count: todayEvents.length, live: hasLive },
+              { key: "upcoming", label: "Upcoming", Icon: Calendar, count: upcomingEvents.length },
+              { key: "nearby", label: "Near Me", Icon: MapPin },
+              { key: "season", label: "Season", Icon: TrendingUp },
+              { key: "races", label: "History", Icon: Award, count: eventsRaced },
+              { key: "stats", label: "Stats", Icon: BarChart3 },
+              { key: "practice", label: "Practice", Icon: Timer, count: practiceSessions.length },
+              { key: "profile", label: "Profile", Icon: Settings },
+            ];
+            return (
+              <div role="tablist" aria-label="My races" className="flex gap-1.5 p-2 rounded-xl border border-border bg-card overflow-x-auto hide-scrollbar">
+                {tabs.map(({ key, label, Icon, count, live }) => {
+                  const on = activeTab === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      role="tab"
+                      aria-selected={on}
+                      onClick={() => setActiveTab(key)}
+                      className={`flex-1 min-w-[76px] flex flex-col items-center justify-center gap-0.5 px-2 min-h-[48px] rounded-lg border text-[12px] sm:text-[13px] font-bold uppercase tracking-[0.5px] whitespace-nowrap transition-colors shrink-0 ${
+                        on
+                          ? "bg-primary border-primary text-white"
+                          : "bg-muted border-border text-muted-foreground hover:text-white hover:bg-[#383838]"
+                      }`}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <Icon size={14} className={live ? `animate-pulse ${on ? "text-white" : "text-[#22c55e]"}` : undefined} />
+                        {!!count && count > 0 && (
+                          <span className={`text-[11px] leading-none rounded-full px-1.5 py-0.5 font-bold ${
+                            live ? "bg-[#22c55e] text-[#161616]" : on ? "bg-white/25 text-white" : "bg-[#3A3A3A] text-white"
+                          }`}>
+                            {count}
+                          </span>
+                        )}
+                      </span>
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })()}
           {/* Near Me tab */}
           {activeTab === "nearby" && <NearMeTab riderEmail={rider?.email} />}
 
@@ -2726,11 +2658,11 @@ export default function RiderHistory() {
                 <Card>
                   <CardContent className="p-12 text-center">
                     <Flag size={40} className="mx-auto text-muted-foreground/30 mb-3" />
-                    <h3 className="font-heading font-bold text-lg uppercase mb-1">No Events Today</h3>
+                    <h3 className="font-heading font-extrabold text-lg uppercase mb-1">No racing today</h3>
                     <p className="text-muted-foreground text-sm">
-                      You don't have any races scheduled for today.
+                      Nothing on the gate today.
                       {upcomingEvents.length > 0 && (
-                        <> Check the <button onClick={() => setActiveTab("upcoming")} className="text-primary underline underline-offset-2">Upcoming</button> tab for future events.</>
+                        <> Check the <button onClick={() => setActiveTab("upcoming")} className="text-white underline underline-offset-2">Upcoming</button> tab for future events.</>
                       )}
                     </p>
                   </CardContent>
@@ -2756,18 +2688,23 @@ export default function RiderHistory() {
                 <Card>
                   <CardContent className="p-12 text-center">
                     <Calendar size={40} className="mx-auto text-muted-foreground/30 mb-3" />
-                    <h3 className="font-heading font-bold text-lg uppercase mb-1">No Upcoming Events</h3>
+                    <h3 className="font-heading font-extrabold text-lg uppercase mb-1">Calendar's wide open</h3>
                     <p className="text-muted-foreground text-sm">
-                      You're not registered for any future events yet.
+                      You're not entered in any upcoming races. Find one near you and get registered.
                     </p>
+                    <Button className="mt-4 font-heading uppercase tracking-wider gap-2" onClick={() => setActiveTab("nearby")}>
+                      <MapPin size={14} /> Find a race near me
+                    </Button>
                   </CardContent>
                 </Card>
               ) : (
                 <div className="space-y-4">
                   {upcomingEvents.map(event => (
-                    <div key={event.eventId} className="rounded-2xl border-2 overflow-hidden shadow-sm">
-                      <div className="p-5 bg-muted">
+                    <div key={event.eventId} className="relative rounded-2xl border border-border bg-card overflow-hidden">
+                      <span aria-hidden className="absolute left-0 inset-y-0 w-1 bg-primary" />
+                      <div className="p-5 pl-6">
                         <div className="flex items-start justify-between gap-4">
+                          <DateBlock iso={event.eventDate} />
                           <div className="flex-1 min-w-0">
                             <h3 className="font-heading font-black text-xl uppercase tracking-tight leading-none">
                               {event.eventName}
@@ -2790,7 +2727,7 @@ export default function RiderHistory() {
                             {event.registrations.length > 0 && (
                               <div className="flex flex-wrap gap-1.5 mt-2.5">
                                 {event.registrations.map(r => (
-                                  <span key={r.riderId} className="inline-flex items-center gap-1 text-xs bg-primary/10 text-primary border border-primary/20 rounded-full px-2.5 py-0.5 font-semibold">
+                                  <span key={r.riderId} className="inline-flex items-center gap-1 text-xs bg-primary/20 text-white border border-primary/50 rounded-full px-2.5 py-0.5 font-semibold">
                                     {r.riderName}{r.raceClass ? ` · ${r.raceClass}` : ""}
                                   </span>
                                 ))}
@@ -2802,7 +2739,7 @@ export default function RiderHistory() {
                               const days = Math.ceil((new Date(event.eventDate).getTime() - Date.now()) / 86_400_000);
                               return days > 0 ? (
                                 <>
-                                  <div className="font-heading font-black text-3xl text-primary leading-none">{days}</div>
+                                  <div className="font-heading font-black text-3xl text-white leading-none">{days}</div>
                                   <div className="text-xs text-muted-foreground">day{days !== 1 ? "s" : ""} away</div>
                                 </>
                               ) : null;
@@ -2811,16 +2748,16 @@ export default function RiderHistory() {
                         </div>
                       </div>
                       {event.motos.length > 0 ? (
-                        <div className="px-5 py-3 bg-background border-t text-sm text-muted-foreground">
+                        <div className="px-5 py-3 bg-card border-t text-sm text-muted-foreground">
                           {event.motos.length} race{event.motos.length !== 1 ? "s" : ""} scheduled — full lineup available on race day
                         </div>
                       ) : (
-                        <div className="px-5 py-3 bg-background border-t text-sm text-muted-foreground">
+                        <div className="px-5 py-3 bg-card border-t text-sm text-muted-foreground">
                           Race schedule not posted yet — check back closer to race day
                         </div>
                       )}
                       {event.status === "registration_open" && event.registrations.length > 0 && (
-                        <div className="px-5 py-3 bg-background border-t flex justify-end">
+                        <div className="px-5 py-3 bg-card border-t flex justify-end">
                           <Button
                             variant="destructive"
                             size="sm"
@@ -2861,7 +2798,8 @@ export default function RiderHistory() {
                 <Card>
                   <CardContent className="p-12 text-center">
                     <Flag size={40} className="mx-auto text-muted-foreground/30 mb-3" />
-                    <p className="text-muted-foreground text-sm">No race results yet</p>
+                    <h3 className="font-heading font-extrabold text-lg uppercase mb-1">Your story starts here</h3>
+                    <p className="text-muted-foreground text-sm">Results from every race you run land here: finishes, laps and points.</p>
                   </CardContent>
                 </Card>
               ) : (
@@ -2895,7 +2833,7 @@ export default function RiderHistory() {
                   onClick={() => setPracticeMode("event")}
                   className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-xs font-heading font-bold uppercase tracking-wider transition-colors ${
                     practiceMode === "event"
-                      ? "bg-background text-primary shadow-sm"
+                      ? "bg-primary text-white shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
@@ -2906,7 +2844,7 @@ export default function RiderHistory() {
                   onClick={() => setPracticeMode("open")}
                   className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-xs font-heading font-bold uppercase tracking-wider transition-colors ${
                     practiceMode === "open"
-                      ? "bg-background text-primary shadow-sm"
+                      ? "bg-primary text-white shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
@@ -3009,7 +2947,7 @@ export default function RiderHistory() {
                           <div className="flex items-center justify-center gap-1 text-muted-foreground text-xs mb-1.5">
                             <Clock size={11} /> Best Lap
                           </div>
-                          <div className="font-heading font-bold text-xl text-primary font-mono">
+                          <div className="font-heading font-bold text-xl text-white font-mono">
                             {formatMs(overallBestPracticeMs)}
                           </div>
                         </CardContent>
@@ -3100,7 +3038,7 @@ export default function RiderHistory() {
                   <label
                     key={r.id}
                     className={`flex items-center gap-3 rounded-lg border-2 px-4 py-3 cursor-pointer transition-colors ${
-                      checked ? "border-destructive bg-destructive/5" : "border-border bg-background hover:border-border/80"
+                      checked ? "border-destructive bg-destructive/5" : "border-border bg-card hover:border-border/80"
                     }`}
                   >
                     <Checkbox

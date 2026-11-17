@@ -1,7 +1,7 @@
 /**
- * Chart pieces for the rider website, matching the rider app: the rider in
- * charcoal, the field in grey, their best in gold, one plain-language takeaway
- * per chart. The maths and takeaways come from @workspace/rider-insights,
+ * Chart pieces for the rider website, matching the rider app's dark theme:
+ * the rider in white, the field in grey, their best in gold, one plain-language
+ * takeaway per chart. The maths and takeaways come from @workspace/rider-insights,
  * shared with the app.
  */
 import type { ReactNode } from "react";
@@ -10,13 +10,13 @@ import {
 } from "recharts";
 
 export const CHART = {
-  you: "#242424",
-  field: "#A3A3A0",
-  best: "#B8860B",
-  teammate: "#2F6FD6",
-  area: "rgba(179,0,0,0.14)",
-  grid: "#E4E4E2",
-  muted: "#707070",
+  you: "#FFFFFF",
+  field: "#7A7A7A",
+  best: "#F5B700",
+  teammate: "#7FB2FF",
+  area: "rgba(179,0,0,0.35)",
+  grid: "#3A3A3A",
+  muted: "#A8A8A8",
   red: "#B30000",
 };
 
@@ -32,9 +32,9 @@ export function ChartCard({ title, right, takeaway, children }: {
   title: string; right?: ReactNode; takeaway?: string | null; children: ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-[#E2E2E2] bg-white p-4 space-y-3">
+    <div className="rounded-xl border border-[#3A3A3A] bg-[#242424] p-4 space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <h4 className="font-heading font-bold text-[14px] uppercase tracking-[1px] text-[#707070]">{title}</h4>
+        <h4 className="font-heading font-bold text-[14px] uppercase tracking-[1px] text-[#A8A8A8]">{title}</h4>
         {right}
       </div>
       {children}
@@ -45,7 +45,7 @@ export function ChartCard({ title, right, takeaway, children }: {
 
 export function Takeaway({ text }: { text: string }) {
   return (
-    <p className="flex items-start gap-2 text-[15px] font-medium text-[#242424] leading-snug">
+    <p className="flex items-start gap-2 text-[15px] font-medium text-white leading-snug">
       <span aria-hidden className="mt-[3px] inline-block h-4 w-1 shrink-0 -skew-x-[18deg] bg-[#B30000]" />
       {text}
     </p>
@@ -54,7 +54,7 @@ export function Takeaway({ text }: { text: string }) {
 
 export function Legend({ items }: { items: Array<{ label: string; color: string }> }) {
   return (
-    <div className="flex flex-wrap gap-3 text-[12px] text-[#707070]">
+    <div className="flex flex-wrap gap-3 text-[12px] text-[#A8A8A8]">
       {items.map(it => (
         <span key={it.label} className="inline-flex items-center gap-1.5">
           <span className="inline-block h-[3px] w-3 rounded" style={{ background: it.color }} />
@@ -98,7 +98,10 @@ export function TrendChart({
           {band && <ReferenceArea y1={band[0]} y2={band[1]} fill={CHART.best} fillOpacity={0.12} stroke="none" ifOverflow="extendDomain" />}
           <Tooltip
             formatter={(v: number | string, n: string) => [typeof v === "number" ? yFormat(v) : v, n]}
-            contentStyle={{ borderRadius: 8, border: `1px solid ${CHART.grid}`, fontSize: 13 }}
+            contentStyle={{ borderRadius: 8, border: `1px solid ${CHART.grid}`, background: "#242424", color: "#FAFAFA", fontSize: 13 }}
+            labelStyle={{ color: "#FAFAFA" }}
+            itemStyle={{ color: "#FAFAFA" }}
+            cursor={{ stroke: CHART.grid }}
           />
           {series.map(s => s.area ? (
             <Area key={s.key} type="linear" dataKey={s.key} name={s.name} stroke={s.color} strokeWidth={s.width ?? 2.5}
@@ -107,7 +110,7 @@ export function TrendChart({
             <Line key={s.key} type="linear" dataKey={s.key} name={s.name} stroke={s.color} strokeWidth={s.width ?? 2.5}
               connectNulls={false} dot={s.dots ? { r: 3, fill: s.color, strokeWidth: 0 } : false} isAnimationActive={false} />
           ))}
-          {mark && <ReferenceDot x={mark.x} y={mark.y} r={6} fill={CHART.best} stroke="#fff" strokeWidth={2} />}
+          {mark && <ReferenceDot x={mark.x} y={mark.y} r={6} fill={CHART.best} stroke="#161616" strokeWidth={2} />}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -124,10 +127,10 @@ export function Columns({ columns, ariaLabel }: {
     <div role="img" aria-label={ariaLabel} className="flex items-end gap-2 h-36">
       {columns.map(c => (
         <div key={c.key} className="flex-1 flex flex-col items-center gap-1 min-w-0">
-          <span className="text-[12px] font-bold text-[#242424] tabular-nums">{c.valueLabel}</span>
+          <span className="text-[12px] font-bold text-white tabular-nums">{c.valueLabel}</span>
           <div className="w-3/5 max-w-[40px] rounded-t" style={{ height: `${Math.max(3, (c.value / max) * 96)}px`, background: c.highlight ? CHART.you : CHART.field }} />
-          <div className="self-stretch h-px bg-[#E4E4E2]" />
-          <span className="text-[11px] text-[#707070] truncate max-w-full">{c.label}</span>
+          <div className="self-stretch h-px bg-[#3A3A3A]" />
+          <span className="text-[11px] text-[#A8A8A8] truncate max-w-full">{c.label}</span>
         </div>
       ))}
     </div>
@@ -143,11 +146,11 @@ export function HBars({ rows, max, ariaLabel }: {
     <div role="img" aria-label={ariaLabel} className="space-y-2">
       {rows.map(r => (
         <div key={r.key} className="flex items-center gap-3">
-          <span className="w-32 shrink-0 truncate text-[13px] text-[#242424]">{r.label}</span>
-          <div className="flex-1 h-3 rounded bg-[#EFEFEF] overflow-hidden">
+          <span className="w-32 shrink-0 truncate text-[13px] text-white">{r.label}</span>
+          <div className="flex-1 h-3 rounded bg-[#2E2E2E] overflow-hidden">
             <div className="h-full rounded" style={{ width: `${Math.max(2, Math.min(100, (r.value / (max || 1)) * 100))}%`, background: r.color }} />
           </div>
-          <span className="w-16 text-right text-[13px] font-bold tabular-nums text-[#242424]">{r.valueLabel}</span>
+          <span className="w-16 text-right text-[13px] font-bold tabular-nums text-white">{r.valueLabel}</span>
         </div>
       ))}
     </div>

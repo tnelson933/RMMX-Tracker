@@ -19,7 +19,7 @@ function Chips({ items, selected, onSelect }: { items: string[]; selected: strin
     <div className="flex flex-wrap gap-2">
       {items.map(it => (
         <button key={it} type="button" onClick={() => onSelect(it)} aria-pressed={it === selected}
-          className={`rounded-full border px-4 py-1.5 font-heading font-bold uppercase tracking-[0.8px] text-[14px] ${it === selected ? "bg-[#242424] text-white border-[#242424]" : "border-[#D0D0D0] text-[#242424] hover:bg-[#F2F2F2]"}`}>
+          className={`rounded-full border px-4 py-1.5 font-heading font-bold uppercase tracking-[0.8px] text-[14px] ${it === selected ? "bg-[#B30000] text-white border-[#B30000]" : "border-[#3A3A3A] text-white hover:bg-[#2E2E2E]"}`}>
           {it}
         </button>
       ))}
@@ -48,7 +48,7 @@ export function SeasonPanel({ riderId, history, onOpenEvent }: {
     .sort((a, b) => a.position - b.position)[0] ?? null;
 
   if (rounds.length === 0) {
-    return <div className="rounded-xl border border-[#E2E2E2] bg-white p-10 text-center text-sm text-[#707070]">Race once and your finishes, points and pace trends show up here.</div>;
+    return <div className="rounded-xl border border-[#3A3A3A] bg-[#242424] p-10 text-center text-sm text-[#A8A8A8]">Race once and your finishes, points and pace trends show up here.</div>;
   }
 
   const xs = rounds.map((_, i) => `R${i + 1}`);
@@ -78,9 +78,9 @@ export function SeasonPanel({ riderId, history, onOpenEvent }: {
           { v: podiums, l: podiums === 1 ? "Podium" : "Podiums" },
           { v: totalPoints, l: "Points" },
         ].map(t => (
-          <div key={t.l} className="rounded-xl border border-[#E2E2E2] bg-white py-3 text-center">
-            <div className="font-heading font-extrabold italic text-3xl text-[#242424]">{t.v}</div>
-            <div className="font-heading font-bold uppercase tracking-[1px] text-[12px] text-[#707070]">{t.l}</div>
+          <div key={t.l} className="rounded-xl border border-[#3A3A3A] bg-[#242424] py-3 text-center">
+            <div className="font-heading font-extrabold italic text-3xl text-white">{t.v}</div>
+            <div className="font-heading font-bold uppercase tracking-[1px] text-[12px] text-[#A8A8A8]">{t.l}</div>
           </div>
         ))}
       </div>
@@ -99,7 +99,7 @@ export function SeasonPanel({ riderId, history, onOpenEvent }: {
           </ChartCard>
         )}
         <ChartCard title="Points by race" takeaway={pointsTakeaway(rounds, seasonSeries)}
-          right={seasonSeries ? <span className="inline-flex items-center gap-2 text-[12px] text-[#707070]">{ordinal(seasonSeries.position)} in series <PosBadge position={seasonSeries.position} size="sm" /></span> : null}>
+          right={seasonSeries ? <span className="inline-flex items-center gap-2 text-[12px] text-[#A8A8A8]">{ordinal(seasonSeries.position)} in series <PosBadge position={seasonSeries.position} size="sm" /></span> : null}>
           <Columns columns={rounds.map((r, i) => ({ key: String(r.eventId), label: xs[i], value: r.points, valueLabel: String(r.points), highlight: i === rounds.length - 1 }))}
             ariaLabel={`Points by race: ${rounds.map(r => `${r.eventName} ${r.points}`).join(", ")}.`} />
         </ChartCard>
@@ -119,16 +119,16 @@ export function SeasonPanel({ riderId, history, onOpenEvent }: {
         )}
       </div>
 
-      <div className="divide-y divide-[#E2E2E2] rounded-xl border border-[#E2E2E2] bg-white">
+      <div className="divide-y divide-[#3A3A3A] rounded-xl border border-[#3A3A3A] bg-[#242424]">
         {rounds.map((r, i) => {
           const ev = roundEvents.find(e => e.eventId === r.eventId);
           return (
             <button key={r.eventId} type="button" onClick={() => ev && onOpenEvent(ev)}
-              className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-[#F7F7F7]">
-              <span className="w-8 font-heading font-bold text-[#707070]">{xs[i]}</span>
-              <span className="flex-1 truncate text-[15px] text-[#242424]">{r.eventName}</span>
+              className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-[#2E2E2E]">
+              <span className="w-8 font-heading font-bold text-[#A8A8A8]">{xs[i]}</span>
+              <span className="flex-1 truncate text-[15px] text-white">{r.eventName}</span>
               <PosBadge position={ev?.bestPosition} size="sm" />
-              <span className="w-16 text-right text-[13px] text-[#707070]">{r.points} pts</span>
+              <span className="w-16 text-right text-[13px] text-[#A8A8A8]">{r.points} pts</span>
             </button>
           );
         })}

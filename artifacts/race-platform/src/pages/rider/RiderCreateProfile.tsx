@@ -8,8 +8,32 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { RiderLayout } from "@/components/layout/RiderLayout";
-import { BikeBrandChips } from "@/components/BikeBrandChips";
 import { riderApi, type CreateProfilePayload } from "@/lib/rider-api";
+
+/** Bike brand chips in the dark rider theme (the shared BikeBrandChips are light, for the public site). */
+function DarkBrandChips({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {BIKE_BRANDS.map(brand => {
+        const selected = value === brand.name;
+        return (
+          <button
+            key={brand.name}
+            type="button"
+            aria-pressed={selected}
+            onClick={() => onChange(selected ? "" : brand.name)}
+            className={`inline-flex items-center gap-2 rounded-full border px-4 min-h-[44px] text-[15px] font-bold text-white transition-colors ${
+              selected ? "border-[#B30000] bg-[#B30000]" : "border-[#3A3A3A] bg-[#2E2E2E] hover:border-[#5A5A5A]"
+            }`}
+          >
+            <span aria-hidden className="w-3 h-3 rounded-full shrink-0 ring-1 ring-white/30" style={{ backgroundColor: brand.color }} />
+            {brand.name}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 const BIKE_BRANDS = [
   { name: "KTM",       color: "#FF6600", text: "#ffffff" },
@@ -79,7 +103,7 @@ export default function RiderCreateProfile() {
     type = "text",
   ) => (
     <div className="space-y-1.5">
-      <Label className="font-medium text-[#333]">{label}</Label>
+      <Label className="font-medium text-white">{label}</Label>
       <Input
         type={type}
         value={String(form[key] ?? "")}
@@ -106,8 +130,8 @@ export default function RiderCreateProfile() {
 
         {/* Name — required */}
         <Card>
-          <CardHeader className="px-6 py-4 border-b-2 border-[#ECECEC]">
-            <CardTitle className="font-heading font-extrabold text-lg uppercase tracking-[0.5px] text-[#242424] flex items-center gap-2">
+          <CardHeader className="px-6 py-4 border-b-2 border-[#3A3A3A]">
+            <CardTitle className="font-heading font-extrabold text-lg uppercase tracking-[0.5px] text-white flex items-center gap-2">
               <span aria-hidden className="w-[4px] h-5 bg-primary -skew-x-[18deg] shrink-0" /> Rider Name <span className="text-destructive">*</span>
             </CardTitle>
           </CardHeader>
@@ -121,8 +145,8 @@ export default function RiderCreateProfile() {
 
         {/* Racing info — optional */}
         <Card>
-          <CardHeader className="px-6 py-4 border-b-2 border-[#ECECEC]">
-            <CardTitle className="font-heading font-extrabold text-lg uppercase tracking-[0.5px] text-[#242424] flex items-center gap-2">
+          <CardHeader className="px-6 py-4 border-b-2 border-[#3A3A3A]">
+            <CardTitle className="font-heading font-extrabold text-lg uppercase tracking-[0.5px] text-white flex items-center gap-2">
               <span aria-hidden className="w-[4px] h-5 bg-primary -skew-x-[18deg] shrink-0" /> Racing Info <span className="font-sans text-[13px] font-normal normal-case tracking-normal text-muted-foreground">(optional)</span>
             </CardTitle>
           </CardHeader>
@@ -134,21 +158,21 @@ export default function RiderCreateProfile() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="font-medium text-[#333]">Bike Brand</Label>
+              <Label className="font-medium text-white">Bike Brand</Label>
               <div className="mt-1">
-                <BikeBrandChips brands={BIKE_BRANDS} value={form.bikeManufacturer} onChange={v => set("bikeManufacturer", v)} />
+                <DarkBrandChips value={form.bikeManufacturer ?? ""} onChange={v => set("bikeManufacturer", v)} />
               </div>
               <input
                 type="text"
                 placeholder="Other brand (e.g. Sherco, TM, Rieju…)"
                 value={BIKE_BRANDS.some(b => b.name === form.bikeManufacturer) ? "" : (form.bikeManufacturer ?? "")}
                 onChange={e => set("bikeManufacturer", e.target.value)}
-                className="mt-3 w-full rounded-none border-2 border-input bg-background px-3 text-base placeholder:text-muted-foreground focus:outline-none focus:border-foreground"
+                className="mt-3 w-full rounded-none border-2 border-input bg-transparent px-3 text-base text-white placeholder:text-muted-foreground focus:outline-none focus:border-foreground"
               />
             </div>
 
             <div className="space-y-1.5">
-              <Label className="font-medium text-[#333]">Sponsors</Label>
+              <Label className="font-medium text-white">Sponsors</Label>
               <Textarea
                 value={String(form.sponsors ?? "")}
                 onChange={e => set("sponsors", e.target.value)}
@@ -161,19 +185,19 @@ export default function RiderCreateProfile() {
 
         {/* Location — optional */}
         <Card>
-          <CardHeader className="px-6 py-4 border-b-2 border-[#ECECEC]">
-            <CardTitle className="font-heading font-extrabold text-lg uppercase tracking-[0.5px] text-[#242424] flex items-center gap-2">
+          <CardHeader className="px-6 py-4 border-b-2 border-[#3A3A3A]">
+            <CardTitle className="font-heading font-extrabold text-lg uppercase tracking-[0.5px] text-white flex items-center gap-2">
               <span aria-hidden className="w-[4px] h-5 bg-primary -skew-x-[18deg] shrink-0" /> Location <span className="font-sans text-[13px] font-normal normal-case tracking-normal text-muted-foreground">(optional)</span>
             </CardTitle>
           </CardHeader>
           <CardContent className="p-6 grid grid-cols-2 gap-4">
             {field("Hometown", "hometown", "City")}
             <div className="space-y-1.5">
-              <Label className="font-medium text-[#333]">Home State</Label>
+              <Label className="font-medium text-white">Home State</Label>
               <select
                 value={form.homeState ?? ""}
                 onChange={e => set("homeState", e.target.value)}
-                className="h-[52px] w-full rounded-none border-2 border-input bg-background px-3 text-base focus:outline-none focus:border-foreground"
+                className="h-[52px] w-full rounded-none border-2 border-input bg-[#1c1c1c] px-3 text-base text-white focus:outline-none focus:border-foreground"
               >
                 <option value="">Select state…</option>
                 {US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
@@ -183,13 +207,13 @@ export default function RiderCreateProfile() {
         </Card>
 
         <div className="flex gap-3 pb-8">
-          <Button type="submit" disabled={saving} className="min-h-[52px] px-8 text-base bg-[#242424] border-[#242424] text-white hover:bg-black">
+          <Button type="submit" disabled={saving} className="min-h-[52px] px-8 text-base bg-[#B30000] border-[#B30000] text-white hover:bg-[#990000]">
             {saving
               ? <><Loader2 size={14} className="animate-spin mr-2" /> Creating…</>
               : <><Check size={14} className="mr-2" /> Create Profile</>
             }
           </Button>
-          <Button type="button" variant="outline" className="min-h-[52px] px-8 text-base border-2 border-[#8C8C8C] bg-white text-[#333] hover:bg-[#F2F2F2] hover:border-[#333]" onClick={() => navigate("/rider/portal")} disabled={saving}>
+          <Button type="button" variant="ghost" className="min-h-[52px] px-8 text-base border border-[#3A3A3A] bg-[#242424] text-white hover:bg-[#2E2E2E]" onClick={() => navigate("/rider/portal")} disabled={saving}>
             Cancel
           </Button>
         </div>

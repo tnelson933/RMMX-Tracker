@@ -58,18 +58,18 @@ export function RecentForm({ history, onOpen }: { history: EventHistory[]; onOpe
   const recent = [...history].sort((a, b) => a.eventDate.localeCompare(b.eventDate)).slice(-5);
   if (recent.length === 0) return null;
   return (
-    <div className="rounded-xl border border-[#E2E2E2] bg-white p-4">
+    <div className="rounded-xl border border-[#3A3A3A] bg-[#242424] p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h4 className="font-heading font-bold text-[14px] uppercase tracking-[1px] text-[#707070]">Recent form</h4>
-        <span className="text-[12px] text-[#707070]">Latest on the right</span>
+        <h4 className="font-heading font-bold text-[14px] uppercase tracking-[1px] text-[#A8A8A8]">Recent form</h4>
+        <span className="text-[12px] text-[#A8A8A8]">Latest on the right</span>
       </div>
       <div className="flex gap-2">
         {recent.map(ev => (
           <button key={`${ev.eventId}-${ev.raceClass}`} type="button" onClick={() => onOpen(ev)}
             title={ev.eventName} aria-label={`${ev.eventName}: ${ev.bestPosition != null ? `best finish P${ev.bestPosition}` : "no finish"}`}
-            className="flex flex-1 flex-col items-center gap-1 rounded-lg py-1 hover:bg-[#F7F7F7]">
-            {ev.bestPosition != null ? <PosBadge position={ev.bestPosition} size="sm" /> : <span className="text-[13px] font-bold text-[#707070]">DNF</span>}
-            <span className="text-[11px] text-[#707070]">{shortDate(ev.eventDate)}</span>
+            className="flex flex-1 flex-col items-center gap-1 rounded-lg py-1 hover:bg-[#2E2E2E]">
+            {ev.bestPosition != null ? <PosBadge position={ev.bestPosition} size="sm" /> : <span className="text-[13px] font-bold text-[#A8A8A8]">DNF</span>}
+            <span className="text-[11px] text-[#A8A8A8]">{shortDate(ev.eventDate)}</span>
           </button>
         ))}
       </div>
@@ -86,7 +86,7 @@ export function FormTrend({ history }: { history: EventHistory[] }) {
     const last = paceVals[paceVals.length - 1];
     return (
       <ChartCard title="Pace vs the winner" takeaway={paceTakeaway(rounds, `in your last ${rounds.length} races`)}
-        right={<span className="font-heading font-extrabold italic text-2xl text-[#242424]">{last.toFixed(1)}%</span>}>
+        right={<span className="font-heading font-extrabold italic text-2xl text-white">{last.toFixed(1)}%</span>}>
         <TrendChart data={rounds.map((_, i) => ({ x: xs[i], you: pace[i] }))}
           series={[{ key: "you", name: "% off winner", color: CHART.you, dots: true, area: true }]}
           yMin={0} yMax={Math.max(1, ...paceVals) * 1.2} yFormat={v => `${Math.round(v * 10) / 10}%`} height={140}

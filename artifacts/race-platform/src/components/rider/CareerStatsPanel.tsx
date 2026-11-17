@@ -11,7 +11,7 @@ import { fmtLapShort } from "@workspace/rider-insights/raceReport";
 import { riderApi } from "@/lib/rider-api";
 import { CHART, ChartCard, HBars } from "./insights";
 
-const SEG_COLOR: Record<string, string> = { wins: CHART.best, podiums: CHART.you, top5: CHART.teammate, rest: CHART.field, dnf: "#C62828" };
+const SEG_COLOR: Record<string, string> = { wins: CHART.best, podiums: CHART.you, top5: CHART.teammate, rest: CHART.field, dnf: "#EF4444" };
 
 export function CareerStatsPanel({ riderId }: { riderId: number }) {
   const { data, isLoading, error } = useQuery({ queryKey: ["rider-career", riderId], queryFn: () => riderApi.careerStats(riderId) });
@@ -19,14 +19,14 @@ export function CareerStatsPanel({ riderId }: { riderId: number }) {
   if (error) return <p className="text-sm text-destructive">{(error as Error).message}</p>;
   const stats = data?.stats;
   if (!stats || stats.starts === 0) {
-    return <div className="rounded-xl border border-[#E2E2E2] bg-white p-10 text-center text-sm text-[#707070]">No races yet. Stats appear after your first timed moto.</div>;
+    return <div className="rounded-xl border border-[#3A3A3A] bg-[#242424] p-10 text-center text-sm text-[#A8A8A8]">No races yet. Stats appear after your first timed moto.</div>;
   }
   const spread = finishSpread(stats);
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="font-heading font-extrabold italic uppercase text-[22px] text-[#242424]">Career stats</h3>
-        <Link href={`/rider/racer/${riderId}`} className="inline-flex items-center gap-1 text-[15px] font-semibold text-[#B30000] hover:underline">
+        <h3 className="font-heading font-extrabold italic uppercase text-[22px] text-white">Career stats</h3>
+        <Link href={`/rider/racer/${riderId}`} className="inline-flex items-center gap-1 text-[15px] font-semibold text-white hover:underline">
           Racer profile <ChevronRight size={16} />
         </Link>
       </div>
@@ -37,18 +37,18 @@ export function CareerStatsPanel({ riderId }: { riderId: number }) {
           { v: stats.avgFinish != null ? `P${stats.avgFinish.toFixed(1)}` : "—", l: "Avg finish" },
           { v: stats.bestLap ? fmtLapShort(stats.bestLap.ms) : "—", l: "Best lap" },
         ].map(t => (
-          <div key={t.l} className="rounded-xl border border-[#E2E2E2] bg-white py-3 text-center">
-            <div className="font-heading font-extrabold italic text-3xl text-[#242424]">{t.v}</div>
-            <div className="font-heading font-bold uppercase tracking-[1px] text-[12px] text-[#707070]">{t.l}</div>
+          <div key={t.l} className="rounded-xl border border-[#3A3A3A] bg-[#242424] py-3 text-center">
+            <div className="font-heading font-extrabold italic text-3xl text-white">{t.v}</div>
+            <div className="font-heading font-bold uppercase tracking-[1px] text-[12px] text-[#A8A8A8]">{t.l}</div>
           </div>
         ))}
       </div>
       <div className="grid gap-3 md:grid-cols-2">
         <ChartCard title="How your motos finish" takeaway={spreadTakeaway(stats)}>
-          <div role="img" aria-label={spread.map(x => `${x.label} ${x.count}`).join(", ")} className="flex h-5 overflow-hidden rounded bg-[#EFEFEF]">
+          <div role="img" aria-label={spread.map(x => `${x.label} ${x.count}`).join(", ")} className="flex h-5 overflow-hidden rounded bg-[#2E2E2E]">
             {spread.filter(x => x.count > 0).map(x => <div key={x.key} style={{ flex: x.count, background: SEG_COLOR[x.key] }} />)}
           </div>
-          <div className="flex flex-wrap gap-3 text-[13px] text-[#242424]">
+          <div className="flex flex-wrap gap-3 text-[13px] text-white">
             {spread.map(x => (
               <span key={x.key} className="inline-flex items-center gap-1.5">
                 <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: SEG_COLOR[x.key] }} />
@@ -62,13 +62,13 @@ export function CareerStatsPanel({ riderId }: { riderId: number }) {
             <div className="flex items-center justify-around py-2"
               aria-label={`Average position after lap 1 P${stats.avgLap1Position}, average finish P${stats.avgFinish}.`}>
               <div className="text-center">
-                <div className="font-heading font-extrabold italic text-4xl text-[#242424]">P{stats.avgLap1Position.toFixed(1)}</div>
-                <div className="font-heading font-bold uppercase tracking-[1px] text-[12px] text-[#707070]">After lap 1</div>
+                <div className="font-heading font-extrabold italic text-4xl text-white">P{stats.avgLap1Position.toFixed(1)}</div>
+                <div className="font-heading font-bold uppercase tracking-[1px] text-[12px] text-[#A8A8A8]">After lap 1</div>
               </div>
-              <ArrowRight className="text-[#707070]" />
+              <ArrowRight className="text-[#A8A8A8]" />
               <div className="text-center">
-                <div className="font-heading font-extrabold italic text-4xl text-[#242424]">P{stats.avgFinish.toFixed(1)}</div>
-                <div className="font-heading font-bold uppercase tracking-[1px] text-[12px] text-[#707070]">Finish</div>
+                <div className="font-heading font-extrabold italic text-4xl text-white">P{stats.avgFinish.toFixed(1)}</div>
+                <div className="font-heading font-bold uppercase tracking-[1px] text-[12px] text-[#A8A8A8]">Finish</div>
               </div>
             </div>
           </ChartCard>
@@ -82,7 +82,7 @@ export function CareerStatsPanel({ riderId }: { riderId: number }) {
             ariaLabel={`Led ${stats.lapsLed} of ${stats.totalLaps} laps. Led lap 1 in ${stats.lap1Leads} of ${stats.starts} motos.`} />
         </ChartCard>
       </div>
-      <p className="text-[12px] text-[#707070]">From lap-by-lap timing, so laps led and lap-1 positions only count races with recorded laps.</p>
+      <p className="text-[12px] text-[#A8A8A8]">From lap-by-lap timing, so laps led and lap-1 positions only count races with recorded laps.</p>
     </div>
   );
 }

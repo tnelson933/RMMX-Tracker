@@ -77,8 +77,8 @@ export function RacerPhotosEditor({ riderId, name, avatarUrl, coverUrl }: {
   const busyKind = upload.isPending ? upload.variables?.kind : remove.isPending ? remove.variables : null;
   const busy = busyKind != null;
 
-  const label = "font-heading font-bold uppercase tracking-[1.1px] text-[13px] text-[#707070]";
-  const btn = "inline-flex items-center gap-1.5 rounded-full border-2 border-[#D0D0D0] px-3 py-1.5 text-[14px] font-semibold text-[#242424] hover:border-[#242424] disabled:opacity-50";
+  const label = "font-heading font-bold uppercase tracking-[1.1px] text-[13px] text-[#A8A8A8]";
+  const btn = "inline-flex items-center gap-1.5 rounded-full border-2 border-[#3A3A3A] px-3 py-1.5 text-[14px] font-semibold text-white hover:border-white disabled:opacity-50";
 
   const picker = (kind: PhotoKind, ref: React.RefObject<HTMLInputElement | null>) => (
     <input ref={ref} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" tabIndex={-1} aria-hidden
@@ -128,11 +128,11 @@ export function RacerPhotosEditor({ riderId, name, avatarUrl, coverUrl }: {
         {picker("cover", coverInput)}
       </div>
 
-      <p className="flex items-start gap-1.5 text-[13px] text-[#707070]">
+      <p className="flex items-start gap-1.5 text-[13px] text-[#A8A8A8]">
         <Camera size={14} className="mt-0.5 shrink-0" />
         JPEG, PNG or WebP, up to 8 MB. Photos follow the same setting as the bio: on a private profile only you and the profile's managers see them.
       </p>
-      {error && <p role="alert" className="text-[14px] font-medium text-[#C62828]">{error}</p>}
+      {error && <p role="alert" className="text-[14px] font-medium text-destructive">{error}</p>}
     </div>
   );
 }

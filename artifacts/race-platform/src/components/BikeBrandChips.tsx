@@ -5,10 +5,13 @@ export function BikeBrandChips({
   brands,
   value,
   onChange,
+  dark = false,
 }: {
   brands: ReadonlyArray<{ name: string; color: string }>;
   value: string | null | undefined;
   onChange: (next: string) => void;
+  /** Rider pages' dark race theme. */
+  dark?: boolean;
 }) {
   return (
     <div className="flex flex-wrap gap-2">
@@ -20,9 +23,13 @@ export function BikeBrandChips({
             type="button"
             aria-pressed={selected}
             onClick={() => onChange(selected ? "" : brand.name)}
-            className={`inline-flex items-center gap-2 rounded-full border-2 px-4 min-h-[44px] text-[15px] font-bold text-[#333] transition-colors ${
-              selected ? "border-[#242424] bg-[#F2F2F2]" : "border-[#8C8C8C] bg-white hover:bg-[#F2F2F2] hover:border-[#333]"
-            }`}
+            className={dark
+              ? `inline-flex items-center gap-2 rounded-full border px-4 min-h-[44px] text-[15px] font-bold text-white transition-colors ${
+                  selected ? "border-[#B30000] bg-[#B30000]" : "border-[#3A3A3A] bg-[#242424] hover:bg-[#2E2E2E]"
+                }`
+              : `inline-flex items-center gap-2 rounded-full border-2 px-4 min-h-[44px] text-[15px] font-bold text-[#333] transition-colors ${
+                  selected ? "border-[#242424] bg-[#F2F2F2]" : "border-[#8C8C8C] bg-white hover:bg-[#F2F2F2] hover:border-[#333]"
+                }`}
           >
             <span aria-hidden className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: brand.color }} />
             {brand.name}

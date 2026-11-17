@@ -27,8 +27,8 @@ export function NumberPlate({ number, color, size = 32 }: { number: string; colo
   );
 }
 
-const sectionTitle = "font-heading font-extrabold italic uppercase text-[20px] text-[#242424]";
-const label = "font-heading font-bold uppercase tracking-[1.1px] text-[13px] text-[#707070]";
+const sectionTitle = "font-heading font-extrabold italic uppercase text-[20px] text-white";
+const label = "font-heading font-bold uppercase tracking-[1.1px] text-[13px] text-[#A8A8A8]";
 
 export function RacerProfileSettings({ riderId }: { riderId: number }) {
   const qc = useQueryClient();
@@ -49,10 +49,10 @@ export function RacerProfileSettings({ riderId }: { riderId: number }) {
   const plate = detail.plateColor ?? "white";
 
   return (
-    <div className="rounded-xl border border-[#E2E2E2] bg-white p-5 space-y-5">
+    <div className="rounded-xl border border-[#3A3A3A] bg-[#242424] p-5 space-y-5">
       <div className="flex items-center justify-between">
         <h3 className={sectionTitle}>Racer profile</h3>
-        <Link href={`/rider/racer/${riderId}`} className="inline-flex items-center gap-1 text-[15px] font-semibold text-[#B30000] hover:underline">
+        <Link href={`/rider/racer/${riderId}`} className="inline-flex items-center gap-1 text-[15px] font-semibold text-white hover:underline">
           View <ChevronRight size={16} />
         </Link>
       </div>
@@ -62,16 +62,16 @@ export function RacerProfileSettings({ riderId }: { riderId: number }) {
 
       <div className="space-y-2">
         <div className={label}>Who can see the photos, bio and home state</div>
-        <div role="radiogroup" className="inline-flex rounded-full border border-[#D0D0D0] p-1">
+        <div role="radiogroup" className="inline-flex rounded-full border border-[#3A3A3A] p-1">
           {(["public", "private"] as const).map(v => (
             <button key={v} type="button" role="radio" aria-checked={vis === v} disabled={save.isPending}
               onClick={() => vis !== v && save.mutate({ profileVisibility: v })}
-              className={`rounded-full px-5 py-2 font-heading font-bold uppercase tracking-[1px] text-[14px] ${vis === v ? "bg-[#242424] text-white" : "text-[#242424] hover:bg-[#F2F2F2]"}`}>
+              className={`rounded-full px-5 py-2 font-heading font-bold uppercase tracking-[1px] text-[14px] ${vis === v ? "bg-[#B30000] text-white" : "text-white hover:bg-[#2E2E2E]"}`}>
               {v === "public" ? "Everyone" : "Only us"}
             </button>
           ))}
         </div>
-        <p className="text-[13px] text-[#707070]">
+        <p className="text-[13px] text-[#A8A8A8]">
           {vis === "public"
             ? "Signed-in riders can find this profile and see the photos, bio and home state."
             : "Other riders see published results only, with initials instead of photos. The profile isn't listed in rider search."}
@@ -85,7 +85,7 @@ export function RacerProfileSettings({ riderId }: { riderId: number }) {
           {PLATE_COLOR_NAMES.map(c => (
             <button key={c} type="button" role="radio" aria-checked={plate === c} aria-label={`${c} plate`} disabled={save.isPending}
               onClick={() => plate !== c && save.mutate({ plateColor: c })}
-              className={`rounded-lg border-2 p-1 ${plate === c ? "border-[#242424]" : "border-transparent hover:border-[#D0D0D0]"}`}>
+              className={`rounded-lg border-2 p-1 ${plate === c ? "border-white" : "border-transparent hover:border-[#5A5A5A]"}`}>
               <NumberPlate number={detail.bibNumber || "00"} color={c} size={28} />
             </button>
           ))}
@@ -98,7 +98,7 @@ export function RacerProfileSettings({ riderId }: { riderId: number }) {
           onChange={e => setBio(e.target.value.slice(0, BIO_MAX))}
           placeholder="e.g. 250 B rider out of Boise. Chasing the Snake River title." />
         <div className="flex items-center justify-between">
-          <span className="text-[12px] text-[#707070]">{bioValue.length}/{BIO_MAX}</span>
+          <span className="text-[12px] text-[#A8A8A8]">{bioValue.length}/{BIO_MAX}</span>
           <Button size="sm" disabled={save.isPending || bio == null || bioValue === (detail.bio ?? "")}
             onClick={() => save.mutate({ bio: bioValue })}>
             {save.isPending ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : null} Save bio
@@ -133,25 +133,25 @@ export function ProfileManagers({ riderId }: { riderId: number }) {
   if (!data) return null;
 
   return (
-    <div className="rounded-xl border border-[#E2E2E2] bg-white p-5 space-y-3">
+    <div className="rounded-xl border border-[#3A3A3A] bg-[#242424] p-5 space-y-3">
       <h3 className={sectionTitle}>Who can manage this profile</h3>
-      <p className="text-[14px] text-[#707070]">
+      <p className="text-[14px] text-[#A8A8A8]">
         {data.isOwner
           ? "Add a second parent or a coach. They'll see this rider's races, schedule and stats in their own RM Roost account."
           : "You're a manager of this profile. Only the profile owner can add people."}
       </p>
-      <div className="divide-y divide-[#E2E2E2]">
+      <div className="divide-y divide-[#3A3A3A]">
         {data.managers.map(m => (
           <div key={m.id} className="flex items-center gap-3 py-2.5">
-            {m.joined ? <UserCheck size={16} className="text-[#707070]" /> : <Mail size={16} className="text-[#707070]" />}
+            {m.joined ? <UserCheck size={16} className="text-[#A8A8A8]" /> : <Mail size={16} className="text-[#A8A8A8]" />}
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[15px] font-semibold text-[#242424]">{m.email}{m.isYou ? " (you)" : ""}</div>
-              <div className="text-[12px] text-[#707070]">{m.joined ? "Has access" : "Invited: gets access after signing in with this email"}</div>
+              <div className="truncate text-[15px] font-semibold text-white">{m.email}{m.isYou ? " (you)" : ""}</div>
+              <div className="text-[12px] text-[#A8A8A8]">{m.joined ? "Has access" : "Invited: gets access after signing in with this email"}</div>
             </div>
             {(data.isOwner || m.isYou) && (
               <button type="button" aria-label={m.isYou ? "Stop managing this profile" : `Remove ${m.email}`}
                 onClick={() => { if (window.confirm(m.isYou ? "Stop managing this profile? You'll lose access to it." : `Remove ${m.email}? They'll lose access to this rider's profile.`)) remove.mutate(m.id); }}
-                className="text-[#707070] hover:text-[#B30000]">
+                className="text-[#A8A8A8] hover:text-white">
                 <XCircle size={18} />
               </button>
             )}
@@ -166,7 +166,7 @@ export function ProfileManagers({ riderId }: { riderId: number }) {
           </Button>
         </form>
       )}
-      {msg ? <p className="text-[13px] text-[#242424]">{msg}</p> : null}
+      {msg ? <p className="text-[13px] text-white">{msg}</p> : null}
     </div>
   );
 }

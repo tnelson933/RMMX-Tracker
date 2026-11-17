@@ -146,6 +146,37 @@
   --ring: 0 0% 98%;
 }
 
+/* Rider pages use the rider app's race theme (rider-app/constants/colors.ts, dark):
+   background #161616, cards #242424, muted #2E2E2E, borders #3A3A3A, muted text #A8A8A8.
+   The brand red is a fill only here (~2.1:1 on charcoal): accent text is white. */
+.rider-theme {
+  color-scheme: dark;
+  --background: 0 0% 8.6%;            /* #161616 */
+  --foreground: 0 0% 98%;             /* #FAFAFA */
+  --border: 0 0% 22.7%;               /* #3A3A3A */
+  --card: 0 0% 14%;                   /* #242424 */
+  --card-foreground: 0 0% 98%;
+  --card-border: 0 0% 22.7%;
+  --popover: 0 0% 14%;
+  --popover-foreground: 0 0% 98%;
+  --popover-border: 0 0% 22.7%;
+  --primary: 0 100% 35%;              /* #B30000 */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 126 30% 42%;           /* #4a8a52 */
+  --secondary-foreground: 0 0% 100%;
+  --muted: 0 0% 18%;                  /* #2E2E2E */
+  --muted-foreground: 0 0% 66%;       /* #A8A8A8 */
+  --accent: 0 0% 18%;
+  --accent-foreground: 0 0% 98%;
+  --destructive: 0 86% 59%;           /* #f03c3c */
+  --destructive-foreground: 0 0% 100%;
+  --input: 0 0% 22.7%;
+  --ring: 0 0% 98%;
+  --button-outline: #3A3A3A;
+  background-color: #161616;
+  color: #FAFAFA;
+}
+
 @layer base {
   * {
     @apply border-border;

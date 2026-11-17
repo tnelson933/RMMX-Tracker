@@ -15,6 +15,9 @@ import { NumberPlate } from "@/components/rider/ProfileSettings";
 import { riderApi, type RacerProfile as Racer } from "@/lib/rider-api";
 import { Button } from "@/components/ui/button";
 
+/** Secondary button on the dark theme (the shared outline variant has no dark border colour). */
+const OUTLINE_BTN = "border-[#3A3A3A] bg-[#242424] text-white hover:bg-[#2E2E2E]";
+
 const STATE_NAMES: Record<string, string> = {
   AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California", CO: "Colorado", CT: "Connecticut", DE: "Delaware",
   DC: "District of Columbia", FL: "Florida", GA: "Georgia", HI: "Hawaii", ID: "Idaho", IL: "Illinois", IN: "Indiana", IA: "Iowa",
@@ -48,9 +51,9 @@ export default function RacerProfile() {
       {isLoading ? (
         <div className="h-64 animate-pulse rounded-2xl bg-muted" />
       ) : error || !data ? (
-        <div className="rounded-xl border border-[#E2E2E2] bg-white p-12 text-center">
-          <AlertTriangle size={36} className="mx-auto mb-3 text-[#707070]" />
-          <p className="text-[#707070]">{error ? (error as Error).message : "This rider has no results yet."}</p>
+        <div className="rounded-xl border border-[#3A3A3A] bg-[#242424] p-12 text-center">
+          <AlertTriangle size={36} className="mx-auto mb-3 text-[#A8A8A8]" />
+          <p className="text-[#A8A8A8]">{error ? (error as Error).message : "This rider has no results yet."}</p>
         </div>
       ) : (
         <RacerBody data={data} riderId={riderId} onToggle={() => toggle.mutate(!data.following)} pending={toggle.isPending} />
@@ -81,61 +84,61 @@ function RacerBody({ data, riderId, onToggle, pending }: { data: Racer; riderId:
 
       <div className="flex flex-wrap items-center gap-4">
         {profile?.number ? <NumberPlate number={profile.number} color={profile.plateColor} /> : null}
-        <span className="flex-1 text-[15px] text-[#707070]">{data.followerCount} {data.followerCount === 1 ? "follower" : "followers"}</span>
+        <span className="flex-1 text-[15px] text-[#A8A8A8]">{data.followerCount} {data.followerCount === 1 ? "follower" : "followers"}</span>
         {data.isManager ? (
-          <Link href={`/rider/portal/${riderId}?tab=profile`}><Button variant="outline">Edit profile</Button></Link>
+          <Link href={`/rider/portal/${riderId}?tab=profile`}><Button variant="ghost" className={OUTLINE_BTN}>Edit profile</Button></Link>
         ) : (
-          <Button onClick={onToggle} disabled={pending} variant={data.following ? "outline" : "default"} aria-pressed={data.following}>
+          <Button onClick={onToggle} disabled={pending} variant={data.following ? "ghost" : "default"} className={data.following ? OUTLINE_BTN : undefined} aria-pressed={data.following}>
             {data.following ? "Following" : "Follow"}
           </Button>
         )}
       </div>
 
       {data.isManager && data.visibility === "private" && (
-        <p className="flex items-center gap-2 rounded-lg bg-[#F2F2F2] px-4 py-3 text-[14px] text-[#555]">
+        <p className="flex items-center gap-2 rounded-lg bg-[#2E2E2E] px-4 py-3 text-[14px] text-[#A8A8A8]">
           <Lock size={15} /> Private profile. Other riders see published results only, not the bio or home state.
         </p>
       )}
-      {profile?.bio ? <p className="text-[16px] text-[#242424]">{profile.bio}</p> : null}
+      {profile?.bio ? <p className="text-[16px] text-white">{profile.bio}</p> : null}
 
       {resume?.headline ? (
-        <p className="flex items-start gap-2 rounded-xl border border-[#E2E2E2] bg-white p-4 text-[17px] font-medium text-[#242424]">
+        <p className="flex items-start gap-2 rounded-xl border border-[#3A3A3A] bg-[#242424] p-4 text-[17px] font-medium text-white">
           <span aria-hidden className="mt-1 inline-block h-5 w-1 shrink-0 -skew-x-[18deg] bg-[#B30000]" />{resume.headline}
         </p>
       ) : null}
 
       <div className="grid grid-cols-3 gap-3">
         {[{ v: st.starts, l: st.starts === 1 ? "Moto" : "Motos" }, { v: st.wins, l: st.wins === 1 ? "Win" : "Wins" }, { v: st.podiums, l: st.podiums === 1 ? "Podium" : "Podiums" }].map(t => (
-          <div key={t.l} className="rounded-xl border border-[#E2E2E2] bg-white py-3 text-center">
-            <div className="font-heading font-extrabold italic text-3xl text-[#242424]">{t.v}</div>
-            <div className="font-heading font-bold uppercase tracking-[1px] text-[12px] text-[#707070]">{t.l}</div>
+          <div key={t.l} className="rounded-xl border border-[#3A3A3A] bg-[#242424] py-3 text-center">
+            <div className="font-heading font-extrabold italic text-3xl text-white">{t.v}</div>
+            <div className="font-heading font-bold uppercase tracking-[1px] text-[12px] text-[#A8A8A8]">{t.l}</div>
           </div>
         ))}
       </div>
 
       {(resume?.highlights.bestFinish || st.bestLap || resume?.highlights.bestComeback) && (
         <div className="space-y-2">
-          <h3 className="font-heading font-bold uppercase tracking-[1.4px] text-[14px] text-[#707070]">Highlights</h3>
+          <h3 className="font-heading font-bold uppercase tracking-[1.4px] text-[14px] text-[#A8A8A8]">Highlights</h3>
           <div className="grid gap-3 sm:grid-cols-3">
             {resume?.highlights.bestFinish && (
-              <div className="rounded-xl border border-[#E2E2E2] bg-white p-4">
+              <div className="rounded-xl border border-[#3A3A3A] bg-[#242424] p-4">
                 <PosBadge position={resume.highlights.bestFinish.position} />
-                <div className="mt-2 font-heading font-bold uppercase tracking-[1px] text-[12px] text-[#707070]">Best finish</div>
-                <div className="text-[14px] text-[#242424]">{resume.highlights.bestFinish.eventName}</div>
+                <div className="mt-2 font-heading font-bold uppercase tracking-[1px] text-[12px] text-[#A8A8A8]">Best finish</div>
+                <div className="text-[14px] text-white">{resume.highlights.bestFinish.eventName}</div>
               </div>
             )}
             {st.bestLap && (
-              <div className="rounded-xl border border-[#E2E2E2] bg-white p-4">
-                <div className="font-heading font-extrabold italic text-2xl text-[#242424]">{fmtLapShort(st.bestLap.ms)}</div>
-                <div className="mt-1 font-heading font-bold uppercase tracking-[1px] text-[12px] text-[#707070]">Fastest lap</div>
-                <div className="text-[14px] text-[#242424]">{st.bestLap.eventName}</div>
+              <div className="rounded-xl border border-[#3A3A3A] bg-[#242424] p-4">
+                <div className="font-heading font-extrabold italic text-2xl text-white">{fmtLapShort(st.bestLap.ms)}</div>
+                <div className="mt-1 font-heading font-bold uppercase tracking-[1px] text-[12px] text-[#A8A8A8]">Fastest lap</div>
+                <div className="text-[14px] text-white">{st.bestLap.eventName}</div>
               </div>
             )}
             {resume?.highlights.bestComeback && (
-              <div className="rounded-xl border border-[#E2E2E2] bg-white p-4">
-                <div className="font-heading font-extrabold italic text-2xl text-[#242424]">+{resume.highlights.bestComeback.gained}</div>
-                <div className="mt-1 font-heading font-bold uppercase tracking-[1px] text-[12px] text-[#707070]">Best comeback</div>
-                <div className="text-[14px] text-[#242424]">{resume.highlights.bestComeback.eventName}</div>
+              <div className="rounded-xl border border-[#3A3A3A] bg-[#242424] p-4">
+                <div className="font-heading font-extrabold italic text-2xl text-white">+{resume.highlights.bestComeback.gained}</div>
+                <div className="mt-1 font-heading font-bold uppercase tracking-[1px] text-[12px] text-[#A8A8A8]">Best comeback</div>
+                <div className="text-[14px] text-white">{resume.highlights.bestComeback.eventName}</div>
               </div>
             )}
           </div>
@@ -156,7 +159,7 @@ function RacerBody({ data, riderId, onToggle, pending }: { data: Racer; riderId:
       {(resume?.badges.length ?? 0) > 0 && (
         <div className="flex flex-wrap gap-2">
           {resume!.badges.map(b => (
-            <span key={b.key} className="inline-flex items-center gap-2 rounded-full border border-[#E2E2E2] bg-white px-3 py-1.5 text-[13px] text-[#242424]">
+            <span key={b.key} className="inline-flex items-center gap-2 rounded-full border border-[#3A3A3A] bg-[#242424] px-3 py-1.5 text-[13px] text-white">
               <span className="inline-block h-2 w-2 rounded-full" style={{ background: CHART.best }} />{b.label}
             </span>
           ))}
@@ -164,24 +167,24 @@ function RacerBody({ data, riderId, onToggle, pending }: { data: Racer; riderId:
       )}
 
       {((resume?.classes.length ?? 0) > 0 || (resume?.tracks.length ?? 0) > 0) && (
-        <div className="space-y-1 rounded-xl border border-[#E2E2E2] bg-white p-4 text-[14px] text-[#555]">
-          {(resume?.classes.length ?? 0) > 0 && <div><b className="text-[#242424]">Classes</b>  {resume!.classes.slice(0, 4).join(", ")}</div>}
-          {(resume?.tracks.length ?? 0) > 0 && <div><b className="text-[#242424]">Tracks</b>  {resume!.tracks.slice(0, 4).join(", ")}</div>}
+        <div className="space-y-1 rounded-xl border border-[#3A3A3A] bg-[#242424] p-4 text-[14px] text-[#A8A8A8]">
+          {(resume?.classes.length ?? 0) > 0 && <div><b className="text-white">Classes</b>  {resume!.classes.slice(0, 4).join(", ")}</div>}
+          {(resume?.tracks.length ?? 0) > 0 && <div><b className="text-white">Tracks</b>  {resume!.tracks.slice(0, 4).join(", ")}</div>}
         </div>
       )}
 
       <div className="space-y-2">
-        <h3 className="font-heading font-bold uppercase tracking-[1.4px] text-[14px] text-[#707070]">Recent results</h3>
-        {data.recent.length === 0 ? <p className="text-sm text-[#707070]">No published results yet.</p> : (
-          <div className="divide-y divide-[#E2E2E2] rounded-xl border border-[#E2E2E2] bg-white">
+        <h3 className="font-heading font-bold uppercase tracking-[1.4px] text-[14px] text-[#A8A8A8]">Recent results</h3>
+        {data.recent.length === 0 ? <p className="text-sm text-[#A8A8A8]">No published results yet.</p> : (
+          <div className="divide-y divide-[#3A3A3A] rounded-xl border border-[#3A3A3A] bg-[#242424]">
             {data.recent.map(r => (
-              <Link key={`${r.eventId}-${r.raceClass}`} href={`/results/${r.eventId}`} className="flex items-center gap-3 px-4 py-3 hover:bg-[#F7F7F7]">
+              <Link key={`${r.eventId}-${r.raceClass}`} href={`/results/${r.eventId}`} className="flex items-center gap-3 px-4 py-3 hover:bg-[#2E2E2E]">
                 <PosBadge position={r.bestPosition} size="sm" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[15px] text-[#242424]">{r.eventName}</span>
-                  <span className="text-[12px] text-[#707070]">{new Date(r.eventDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })} · {r.raceClass}</span>
+                  <span className="block truncate text-[15px] text-white">{r.eventName}</span>
+                  <span className="text-[12px] text-[#A8A8A8]">{new Date(r.eventDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })} · {r.raceClass}</span>
                 </span>
-                <ChevronRight size={16} className="text-[#707070]" />
+                <ChevronRight size={16} className="text-[#A8A8A8]" />
               </Link>
             ))}
           </div>

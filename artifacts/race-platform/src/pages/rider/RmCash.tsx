@@ -1,9 +1,10 @@
-import { Zap, Clock, ExternalLink } from "lucide-react";
+import { Zap, Clock, Inbox, ExternalLink } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { RiderLayout } from "@/components/layout/RiderLayout";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 
+// The rider app's RM Cash screen (rider-app/app/rm-cash.tsx): the balance in a
+// card with the RM Cash green border, transaction history, and a red
+// "Use your cash" button.
 export default function RmCash() {
   const { data } = useQuery<{ balance: number; currency: string }>({
     queryKey: ["rm-cash-balance"],
@@ -25,35 +26,34 @@ export default function RmCash() {
       subtitle="Your Rocky Mountain ATV/MC balance."
     >
       <div className="max-w-md mx-auto flex flex-col gap-6">
-        <Card className="border-2 border-[#015F2D]">
-          <CardContent className="py-8 text-center">
-            <p className="flex items-center justify-center gap-1.5 text-[13px] font-bold uppercase tracking-[2px] text-[#707070] mb-2"><Zap size={14} className="text-[#015F2D] fill-[#015F2D]" /> Available Balance</p>
-            <p className="text-5xl font-heading font-extrabold text-[#015F2D]">${balance.toFixed(2)}</p>
-          </CardContent>
-        </Card>
-
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <span aria-hidden className="w-[4px] h-5 bg-primary -skew-x-[18deg] shrink-0" />
-            <h2 className="m-0 font-heading font-extrabold text-lg uppercase tracking-[0.5px] text-[#242424]">Transaction History</h2>
-          </div>
-          <Card>
-            <CardContent className="py-10 text-center">
-              <Clock size={32} className="text-muted-foreground mx-auto mb-3 opacity-40" />
-              <p className="text-[15px] text-[#555]">Your RM Cash history will appear here once you've earned credits</p>
-            </CardContent>
-          </Card>
+        <div className="rounded-2xl border border-[#22c55e] bg-[#242424] px-4 py-8 text-center">
+          <span aria-hidden className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-[rgba(34,197,94,0.15)]">
+            <Zap size={26} className="text-[#22c55e]" />
+          </span>
+          <p className="text-[12px] font-bold uppercase tracking-[1.5px] text-[#A8A8A8] mb-1">Available Balance</p>
+          <p className="text-5xl font-heading font-extrabold text-[#22c55e]">${balance.toFixed(2)}</p>
         </div>
 
-        <Button
-          asChild
-          className="w-full mt-2 min-h-[52px] text-base bg-[#015F2D] border-[#015F2D] text-white hover:bg-[#017A3A]"
+        <div>
+          <div className="flex items-center gap-1.5 mb-2.5">
+            <Clock size={14} className="text-[#A8A8A8]" />
+            <h2 className="m-0 font-heading font-bold text-[14px] uppercase tracking-[1px] text-[#A8A8A8]">Transaction History</h2>
+          </div>
+          <div className="rounded-xl border border-[#3A3A3A] bg-[#242424] px-6 py-10 text-center">
+            <Inbox size={32} className="text-[#A8A8A8] mx-auto mb-3 opacity-40" />
+            <p className="text-[15px] text-[#A8A8A8]">Your RM Cash history will appear here once you've earned credits</p>
+          </div>
+        </div>
+
+        <a
+          href="https://www.rockymountainatvmc.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="w-full mt-2 min-h-[56px] rounded-full bg-[#B30000] text-white font-heading font-extrabold uppercase tracking-[1px] text-[17px] flex items-center justify-center gap-2 hover:bg-[#990000] transition-colors"
         >
-          <a href="https://www.rockymountainatvmc.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
-            Use your cash
-            <ExternalLink size={16} />
-          </a>
-        </Button>
+          Use your cash
+          <ExternalLink size={17} />
+        </a>
       </div>
     </RiderLayout>
   );
