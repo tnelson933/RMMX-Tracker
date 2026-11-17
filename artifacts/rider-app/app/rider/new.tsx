@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
 import { goBack } from "@/lib/navigation";
+import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 
 const BIKE_BRANDS = [
   { name: "KTM",       color: "#FF6600", text: "#ffffff" },
@@ -88,7 +89,7 @@ export default function NewRiderScreen() {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       goBack(router);
     } catch (e: any) {
-      setError(e.message);
+      setError(e instanceof TypeError ? NETWORK_ERROR_MESSAGE : e.message);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setSaving(false);
@@ -257,7 +258,7 @@ export default function NewRiderScreen() {
   return (
     <View style={[s.root, { paddingTop: insets.top }]}>
       <View style={s.header}>
-        <Pressable style={s.backBtn} onPress={() => goBack(router)} disabled={saving}>
+        <Pressable style={s.backBtn} onPress={() => goBack(router)} disabled={saving} accessibilityRole="button" accessibilityLabel="Back">
           <Feather name="arrow-left" size={18} color={colors.foreground} />
         </Pressable>
         <Text style={s.headerTitle}>New Rider Profile</Text>

@@ -8,10 +8,11 @@ import { useColors } from "@/hooks/useColors";
 export function RmCashWidget() {
   const colors = useColors();
   const { isAuthenticated, riderFetch } = useRiderAuth();
-  const [balance, setBalance] = useState<number>(0);
+  // null until the balance is known: a failed request must not read as "$0.00".
+  const [balance, setBalance] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated) { setBalance(null); return; }
 
     riderFetch("/api/rider/rm-cash-balance")
       .then((response) => (response.ok ? response.json() : null))
@@ -35,7 +36,7 @@ export function RmCashWidget() {
         <Text style={[styles.label, { color: colors.mutedForeground }]}>
           RM CASH
         </Text>
-        <Text style={styles.amount}>${balance.toFixed(2)}</Text>
+        <Text style={styles.amount}>{balance == null ? "$—" : `$${balance.toFixed(2)}`}</Text>
       </View>
     </View>
   );

@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SessionLapChart, TrackProgressChart } from "@/components/PracticeCharts";
 import { fmtLapShort } from "@/lib/raceReport";
 import { Feather } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -28,6 +28,7 @@ import { NoProfileLinked } from "@/components/NoProfileLinked";
 import { EmptyState } from "@/components/EmptyState";
 import { StatTile } from "@/components/RaceStats";
 import { displayDate } from "@/lib/format";
+import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -64,8 +65,14 @@ function dateLabel(iso: string | null | undefined): string {
   return displayDate(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function equipmentIcon(equipment: string): keyof typeof Feather.glyphMap {
-  const eq = equipment.toLowerCase();
+/** A plan the screen can draw: the AI's reply isn't checked by the server. */
+function usablePlan(p: unknown): p is WorkoutPlan {
+  return !!p && typeof p === "object" && Array.isArray((p as WorkoutPlan).phases)
+    && (p as WorkoutPlan).phases.every(ph => !!ph && typeof ph === "object");
+}
+
+function equipmentIcon(equipment: string | null | undefined): keyof typeof Feather.glyphMap {
+  const eq = (equipment ?? "").toLowerCase();
   if (eq.includes("treadmill") || eq.includes("cardio")) return "trending-up";
   if (eq.includes("pull-up") || eq.includes("chin")) return "chevron-up";
   if (eq.includes("plyo") || eq.includes("box") || eq.includes("jump")) return "zap";
@@ -892,6 +899,11 @@ export default function TrainScreen() {
         const raw = await AsyncStorage.getItem(planStorageKey!);
         if (raw) {
           const saved = JSON.parse(raw);
+          // A saved plan the screen can't draw would crash this tab on every visit: drop it.
+          if (!usablePlan(saved && typeof saved === "object" && "plan" in saved ? saved.plan : saved)) {
+            await AsyncStorage.removeItem(planStorageKey!).catch(() => {});
+            return;
+          }
           // Support new format { plan, workoutType } and old format (raw WorkoutPlan)
           if (saved && typeof saved === "object" && "plan" in saved) {
             setPlan(saved.plan as WorkoutPlan);
@@ -930,6 +942,8 @@ export default function TrainScreen() {
         riderFetch(`/api/rider/profiles/${profile.id}/practice`),
         riderFetch(`/api/rider/profiles/${profile.id}/event-practice`),
       ]));
+      // Nothing came back at all (server trouble, signed out): that isn't "no laps yet".
+      if (responses.every(r => !r.ok)) throw new Error("practice load failed");
       const built: TrackItem[] = [];
       const isMultiProfile = activeProfiles.length > 1;
 
@@ -1080,6 +1094,7 @@ export default function TrainScreen() {
         throw new Error((err as any).error ?? "Failed to generate plan");
       }
       const data: WorkoutPlan = await res.json();
+      if (!usablePlan(data)) throw new Error("The plan didn't come through properly. Try again.");
       setPlan(data);
       setSavedWorkoutType(workoutType);
       setCoachState("plan");
@@ -1087,7 +1102,7 @@ export default function TrainScreen() {
         AsyncStorage.setItem(planStorageKey, JSON.stringify({ plan: data, workoutType })).catch(() => {});
       }
     } catch (e: any) {
-      setCoachError(e?.message ?? "Something went wrong. Please try again.");
+      setCoachError(e instanceof TypeError ? NETWORK_ERROR_MESSAGE : (e?.message ?? "Something went wrong. Please try again."));
       setCoachState("error");
     }
   }, [riderFetch, planStorageKey]);
@@ -1121,6 +1136,13 @@ export default function TrainScreen() {
     if (date?.sessions.length) setSelectedSession(date.sessions[0].key);
   }, [currentTrack]);
 
+  // Live laps are only fetched while this tab is the one on screen.
+  const [focused, setFocused] = useState(true);
+  useFocusEffect(useCallback(() => {
+    setFocused(true);
+    return () => setFocused(false);
+  }, []));
+
   // ── Poll for live lap updates when an open-practice session is in progress ──
   useEffect(() => {
     let cancelled = false;
@@ -1129,10 +1151,14 @@ export default function TrainScreen() {
     pbAnim.setValue(0);
     if (pbTimerRef.current) clearTimeout(pbTimerRef.current);
 
-    const isLive = currentSession?.status === "in_progress";
+    // A session nobody ended stays "in progress" forever: only one started in the
+    // last 12 hours is treated as live (it used to be polled every 3 s for good).
+    const startedMs = currentSession?.startedAt ? Date.parse(currentSession.startedAt) : NaN;
+    const recent = !Number.isFinite(startedMs) || Date.now() - startedMs < 12 * 3_600_000;
+    const isLive = currentSession?.status === "in_progress" && recent;
     const sessionId = currentSession?.practiceSessionId;
     const riderId = currentSession?.riderId;
-    if (!isLive || sessionId == null || riderId == null) return;
+    if (!isLive || !focused || sessionId == null || riderId == null) return;
 
     // Baseline: best lap across all other sessions on the same track
     const otherSessions = (currentTrack?.sessions ?? []).filter(s => s.key !== currentSession.key);
@@ -1199,6 +1225,7 @@ export default function TrainScreen() {
       if (pbTimerRef.current) clearTimeout(pbTimerRef.current);
     };
   }, [
+    focused,
     currentSession?.key,
     currentSession?.status,
     currentSession?.riderId,
@@ -1384,7 +1411,7 @@ export default function TrainScreen() {
                         <View style={{ alignItems: "flex-end", gap: 2 }}>
                           <Text style={{ fontSize: 24, fontWeight: "800", color: pbFlash ? "#ca8a04" : colors.primaryText, fontFamily: "Roboto_700Bold" }}>{fmtLap(displayBest)}</Text>
                           <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_500Medium", textTransform: "uppercase", letterSpacing: 0.5 }}>Best Lap</Text>
-                          <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>{lapCount} laps</Text>
+                          <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>{lapCount} {lapCount === 1 ? "lap" : "laps"}</Text>
                         </View>
                       </View>
                     </Animated.View>

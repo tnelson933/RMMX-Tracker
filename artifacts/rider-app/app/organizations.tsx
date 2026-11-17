@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -16,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
 import { goBack } from "@/lib/navigation";
+import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 
 interface Organization {
   clubId: number;
@@ -48,7 +50,7 @@ export default function OrganizationsScreen() {
       setOrganizations(data);
       setError(null);
     } catch (e: any) {
-      setError(e.message);
+      setError(e instanceof TypeError ? NETWORK_ERROR_MESSAGE : e.message);
     }
   }, [riderFetch]);
 
@@ -86,9 +88,12 @@ export default function OrganizationsScreen() {
               org.clubId === clubId ? { ...org, notificationsEnabled: !newValue } : org,
             ),
           );
+          const body = await res.json().catch(() => null);
+          Alert.alert("Notifications not changed", body?.error ?? `Try again (error ${res.status}).`);
         }
       } catch {
         // Revert on network error
+        Alert.alert("Notifications not changed", NETWORK_ERROR_MESSAGE);
         setOrganizations((prev) =>
           prev.map((org) =>
             org.clubId === clubId ? { ...org, notificationsEnabled: !newValue } : org,
@@ -219,6 +224,8 @@ export default function OrganizationsScreen() {
       <View style={[s.header, { paddingTop: insets.top + 8 }]}>
         <Pressable
           onPress={() => goBack(router)}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
           style={({ pressed }) => [s.backBtn, { opacity: pressed ? 0.6 : 1 }]}
         >
           <Feather name="arrow-left" size={18} color={colors.foreground} />

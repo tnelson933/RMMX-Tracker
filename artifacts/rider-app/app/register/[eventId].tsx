@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, KeyboardTypeOptions, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Alert, BackHandler, KeyboardTypeOptions, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { PdfViewer } from "@/components/PdfViewer";
@@ -209,6 +209,8 @@ export default function RegisterScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingPayment | null>(null);
+  // The profile the server put this entry on (a new rider's profile, once made).
+  const [entryRiderId, setEntryRiderId] = useState<number | null>(null);
   const [done, setDone] = useState<Done | null>(null);
 
   const set = useCallback(<K extends keyof Form>(key: K, value: Form[K]) => {
@@ -262,7 +264,8 @@ export default function RegisterScreen() {
         }
         if (cancelled) return;
         setF(next);
-        setSignerName(`${next.firstName} ${next.lastName}`.trim());
+        // A minor's waiver is signed by a parent or guardian, so don't offer the child's name as the signature.
+        setSignerName((ageOf(next.dateOfBirth) ?? 99) < 18 ? "" : `${next.firstName} ${next.lastName}`.trim());
         setEditInfo(!next.firstName || !next.lastName);
         setLoadError(null);
       } catch (e: any) {
@@ -309,7 +312,12 @@ export default function RegisterScreen() {
   }) : null, [info, f.classes, f.trackrChoice, f.rfidSticker, f.options, f.gear, comp]);
 
   const minorNow = isMinor || (ageOf(f.dateOfBirth) ?? 99) < 18;
-  useEffect(() => { if (minorNow) setAsGuardian(true); }, [minorNow]);
+  useEffect(() => {
+    if (!minorNow) return;
+    setAsGuardian(true);
+    // The pre-filled signature was the rider's own name: a guardian types theirs.
+    setSignerName(prev => (prev.trim() === `${f.firstName} ${f.lastName}`.trim() ? "" : prev));
+  }, [minorNow]);
 
   // ── Validation per step ──
   const validate = (id: StepId): { error: string | null; fields: Record<string, string> } => {
@@ -340,10 +348,21 @@ export default function RegisterScreen() {
     return { error: null, fields };
   };
 
+  // The rider backed out of the payment form and is changing something: the next
+  // tap registers again for the new total (the server voids the unpaid entry and
+  // cancels its payment). The waiver signature went with that entry, so it's
+  // signed again with the name and consent already given.
+  const dropPending = () => {
+    if (!pending) return;
+    setPending(null);
+    setSignatureId(null);
+  };
+
   const goTo = (i: number) => {
     setStepIdx(i);
     setStepError(null);
     setSubmitError(null);
+    dropPending();
   };
 
   const next = () => {
@@ -366,6 +385,7 @@ export default function RegisterScreen() {
   const applyComp = async () => {
     const code = compInput.trim().toUpperCase();
     if (!code) return;
+    dropPending();
     setCompBusy(true);
     setCompError(null);
     try {
@@ -413,9 +433,11 @@ export default function RegisterScreen() {
         });
         if (r.status === "canceled") { setSubmitError("Payment not finished. Your spot isn't held until you pay."); return; }
         if (r.status === "failed") { setSubmitError(r.message); return; }
-        // The card went through; Stripe can take a moment to report it.
+        // The card went through; Stripe can take a moment to report it. A lost
+        // connection here doesn't undo the payment (the server also confirms it
+        // on its own), so never fall back to showing "Pay" again.
         for (let i = 0; i < 6; i++) {
-          const d = await verifyPayment(p);
+          const d = await verifyPayment(p).catch(() => null);
           if (d) { finish(d); return; }
           await new Promise(res => setTimeout(res, 1500));
         }
@@ -448,11 +470,12 @@ export default function RegisterScreen() {
           method: "POST", headers: { "Content-Type": "application/json", ...(account?.mobileToken ? { Authorization: `Bearer ${account.mobileToken}` } : {}) },
           body: JSON.stringify({
             signerName: signerName.trim(), signerEmail: f.email.trim(), consentToEsign: true,
-            signerType: asGuardian ? "guardian" : "self", minorRiderName: asGuardian ? `${f.firstName} ${f.lastName}`.trim() : null,
+            signerType: asGuardian || minorNow ? "guardian" : "self", minorRiderName: asGuardian || minorNow ? `${f.firstName} ${f.lastName}`.trim() : null,
           }),
         });
         if (!res.ok) throw new Error(await errorOf(res, "Couldn't sign the waiver. Try again."));
-        sigId = (await res.json()).signatureId;
+        sigId = (await res.json().catch(() => null))?.signatureId ?? null;
+        if (!sigId) throw new Error("Couldn't sign the waiver. Try again.");
         setSignatureId(sigId);
       }
       const group = !!info.groupRace;
@@ -475,8 +498,9 @@ export default function RegisterScreen() {
         waiverAcknowledgedAt: info.requireWaiver && ackAccepted ? ackAt : null,
         waiverSnapshot: info.requireWaiver && ackAccepted ? (info.waiverText ?? null) : null,
         liabilityWaiverSignatureId: sigId,
-        ...(riderId && !newRiderParam ? { riderId } : {}),
-        ...(newRider ? { newRider: true } : {}),
+        // Trying again after an unfinished payment: the same profile, never a second new rider.
+        ...(entryRiderId ? { riderId: entryRiderId } : riderId && !newRiderParam ? { riderId } : {}),
+        ...(newRider && !entryRiderId ? { newRider: true } : {}),
         ...(group ? {
           teamName: f.teamName.trim(),
           teamMembers: f.members.slice(0, size - 1).map(m => ({ firstName: m.firstName.trim(), lastName: m.lastName.trim(), email: m.email.trim() })),
@@ -493,6 +517,7 @@ export default function RegisterScreen() {
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j.error || "Registration didn't go through. Try again.");
+      if (typeof j.riderId === "number") setEntryRiderId(j.riderId);
       if (j.requiresPayment) {
         const p: PendingPayment = {
           registrationId: j.registrationId, sessionId: j.sessionId, amountCents: Math.round((Number(j.entryFee) || 0) * 100),
@@ -521,6 +546,19 @@ export default function RegisterScreen() {
     }
     back();
   };
+
+  const leaveRef = useRef(confirmLeave);
+  leaveRef.current = confirmLeave;
+  const formOpen = !loading && !!info && !done && isAuthenticated;
+  useEffect(() => {
+    if (!formOpen) return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      // The waiver PDF closes itself (its Modal handles back).
+      leaveRef.current();
+      return true;
+    });
+    return () => sub.remove();
+  }, [formOpen]);
 
   // ── Styles ──
   const s = StyleSheet.create({
@@ -573,7 +611,7 @@ export default function RegisterScreen() {
           {done.payAtGate ? <Row colors={colors} label="Fees" value="Pay at the gate" /> : null}
         </Card>
         <Text style={[s.note, { textAlign: "center", marginBottom: 20 }]}>A confirmation email is on its way. Your race shows up in My Races.</Text>
-        <Pressable style={s.primaryBtn} onPress={() => router.replace(`/event/${eventId}` as any)}>
+        <Pressable style={s.primaryBtn} onPress={() => (router.canGoBack() ? router.back() : router.replace(`/event/${eventId}` as any))}>
           <Text style={s.btnText}>Back to event</Text>
         </Pressable>
         <Pressable style={{ alignItems: "center", marginTop: 16 }} onPress={() => router.replace("/(tabs)/my-races" as any)}>
@@ -811,17 +849,17 @@ export default function RegisterScreen() {
             </View>
           ) : (
             <>
-              {info.liabilityWaiverText ? <Text style={[s.note, { color: colors.foreground, marginBottom: 10 }]} numberOfLines={30}>{info.liabilityWaiverText}</Text> : null}
+              {info.liabilityWaiverText ? <Text style={[s.note, { color: colors.foreground, marginBottom: 10 }]}>{info.liabilityWaiverText}</Text> : null}
               {info.liabilityWaiverPdfUrl ? (
                 <Pressable onPress={() => setPdf({ url: info.liabilityWaiverPdfUrl!, title: "Liability waiver" })} style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 12 }}>
                   <Feather name="file-text" size={16} color={colors.primaryText} />
                   <Text style={[s.link, { textDecorationLine: "underline" }]}>Read the full waiver</Text>
                 </Pressable>
               ) : null}
-              <Check colors={colors} checked={asGuardian} onPress={() => { setAsGuardian(!asGuardian); setStepError(null); }}
+              <Check colors={colors} checked={asGuardian || minorNow} disabled={minorNow} onPress={() => { setAsGuardian(!asGuardian); setStepError(null); }}
                 label={`I'm signing as parent or guardian of ${`${f.firstName} ${f.lastName}`.trim() || "this rider"}`}
                 sub={minorNow ? "This rider is under 18, so a parent or guardian signs." : undefined} />
-              <Field colors={colors} label={asGuardian ? "Parent or guardian's full legal name" : "Your full legal name"} required value={signerName} onChange={v => { setSignerName(v); setStepError(null); }} />
+              <Field colors={colors} label={asGuardian || minorNow ? "Parent or guardian's full legal name" : "Your full legal name"} required value={signerName} onChange={v => { setSignerName(v); setStepError(null); }} />
               <Check colors={colors} checked={esignConsent} onPress={() => { setEsignConsent(!esignConsent); setStepError(null); }}
                 label="I agree to sign electronically" sub="Typing my name is my signature, and I've read the waiver. A copy is emailed to me." />
             </>
@@ -859,7 +897,7 @@ export default function RegisterScreen() {
           {comp ? (
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
               <Text style={{ fontSize: 15, color: colors.success, fontFamily: "Roboto_700Bold" }}>{comp.code} applied</Text>
-              <Pressable onPress={() => { setComp(null); setCompInput(""); }} hitSlop={10}><Text style={s.link}>Remove</Text></Pressable>
+              <Pressable onPress={() => { setComp(null); setCompInput(""); dropPending(); }} hitSlop={10}><Text style={s.link}>Remove</Text></Pressable>
             </View>
           ) : (
             <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-start" }}>
@@ -897,7 +935,7 @@ export default function RegisterScreen() {
 
   const bodies: Record<StepId, () => React.ReactNode> = { rider: riderStep, team: teamStep, classes: classesStep, gear: gearStep, bike: bikeStep, waiver: waiverStep, review: reviewStep };
   const isReview = step === "review";
-  const primaryLabel = pending ? `Pay ${dollars(pending.amountCents)}` : isReview ? (q?.payOnline ? `Pay ${dollars(q.totalCents)}` : "Register") : "Next";
+  const primaryLabel = pending && isReview ? `Pay ${dollars(pending.amountCents)}` : isReview ? (q?.payOnline ? `Pay ${dollars(q.totalCents)}` : "Register") : "Next";
 
   return (
     <View style={s.root}>
@@ -913,7 +951,7 @@ export default function RegisterScreen() {
         </View>
         <View style={{ flexDirection: "row", gap: 4, marginTop: 12 }}>
           {steps.map((id, i) => (
-            <Pressable key={id} disabled={i >= stepIdx || !!pending} onPress={() => goTo(i)} style={{ flex: 1, height: 5, borderRadius: 3, backgroundColor: i < stepIdx ? colors.foreground : i === stepIdx ? colors.primary : colors.muted }} accessibilityLabel={STEP_LABELS[id]} />
+            <Pressable key={id} disabled={i >= stepIdx || submitting} onPress={() => goTo(i)} style={{ flex: 1, height: 5, borderRadius: 3, backgroundColor: i < stepIdx ? colors.foreground : i === stepIdx ? colors.primary : colors.muted }} accessibilityLabel={STEP_LABELS[id]} />
           ))}
         </View>
       </View>
@@ -930,13 +968,13 @@ export default function RegisterScreen() {
         <Pressable
           style={({ pressed }) => [s.primaryBtn, { opacity: submitting ? 0.7 : pressed ? 0.85 : 1 }]}
           disabled={submitting}
-          onPress={() => (pending ? pay(pending) : isReview ? submit() : next())}
+          onPress={() => (pending && isReview ? pay(pending) : isReview ? submit() : next())}
         >
           {submitting ? <ActivityIndicator color="#fff" /> : (
             <>
-              {pending || (isReview && q?.payOnline) ? <Feather name="credit-card" size={18} color="#fff" /> : null}
+              {isReview && (pending || q?.payOnline) ? <Feather name="credit-card" size={18} color="#fff" /> : null}
               <Text style={s.btnText}>{primaryLabel}</Text>
-              {!isReview && !pending ? <Feather name="arrow-right" size={18} color="#fff" /> : null}
+              {!isReview ? <Feather name="arrow-right" size={18} color="#fff" /> : null}
             </>
           )}
         </Pressable>

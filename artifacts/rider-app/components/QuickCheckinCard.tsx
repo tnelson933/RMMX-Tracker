@@ -85,8 +85,12 @@ export function QuickCheckinCard() {
         riderFetch("/api/rider/quick-checkin-events"),
         riderFetch("/api/rider/quick-checkin-geofences"),
       ]);
-      const today: Row[] = todayRes.ok ? await todayRes.json() : [];
-      const fences: { events: GeofenceEvent[] } = fenceRes.ok ? await fenceRes.json() : { events: [] };
+      // A failed answer (server trouble, weak signal) keeps the card as it was.
+      if (!todayRes.ok || !fenceRes.ok) return;
+      const todayBody = await todayRes.json();
+      const fenceBody = await fenceRes.json();
+      const today: Row[] = Array.isArray(todayBody) ? todayBody : [];
+      const fences: { events: GeofenceEvent[] } = { events: Array.isArray(fenceBody?.events) ? fenceBody.events : [] };
       setRows(today);
       setUpcoming(fences.events);
       await syncArrivalGeofences(fences.events).catch(() => {});
@@ -173,6 +177,9 @@ export function QuickCheckinCard() {
       }
       setMessage(failed ? { eventId: targets[0].eventId, ok: false, text: failed } : { eventId: targets[0].eventId, ok: true, text: targets.length > 1 ? "Everyone's checked in. See you on the gate!" : "You're checked in. See you on the gate!" });
       await refresh();
+    } catch {
+      // The request never reached the server (weak signal at the track).
+      setMessage({ eventId: targets[0].eventId, ok: false, text: "No connection. Check your signal and tap Check In again, or check in at the gate." });
     } finally {
       setBusy(null);
     }
@@ -183,6 +190,8 @@ export function QuickCheckinCard() {
     setAlertStatus(status);
     const perm = await Location.getForegroundPermissionsAsync();
     setLocationAllowed(perm.granted);
+    // Turned down before: the phone won't ask again, so the switch is in Settings.
+    if (!perm.granted && !perm.canAskAgain) await Linking.openSettings().catch(() => {});
     void refresh();
   }
 

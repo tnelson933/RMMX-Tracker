@@ -89,8 +89,11 @@ export default function RacerScreen() {
     loadedId.current = id ?? null;
   }, [load, id]));
 
+  const toggling = React.useRef(false);
   const toggle = useCallback(async () => {
-    if (!data) return;
+    // One follow/unfollow at a time, so a double tap can't leave the button out of step.
+    if (!data || toggling.current) return;
+    toggling.current = true;
     const follow = !data.following;
     setData({ ...data, following: follow, followerCount: Math.max(0, data.followerCount + (follow ? 1 : -1)) });
     const rollback = () => setData(d => (d ? { ...d, following: !follow, followerCount: Math.max(0, d.followerCount + (follow ? -1 : 1)) } : d));
@@ -100,6 +103,8 @@ export default function RacerScreen() {
     } catch {
       rollback();
       Alert.alert(follow ? "Couldn't follow" : "Couldn't unfollow", NETWORK_ERROR_MESSAGE);
+    } finally {
+      toggling.current = false;
     }
   }, [data, id, riderFetch]);
 

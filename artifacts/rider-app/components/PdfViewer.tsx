@@ -13,6 +13,16 @@ import { openInApp } from "@/lib/inAppBrowser";
 
 const OWN_FILE = /^\/api\/storage\/[A-Za-z0-9/_.-]+\.pdf$/;
 
+/**
+ * Only RM Roost's own pages load in the viewer. The website's /pdf-view page
+ * ships pdf.js itself now (script, worker and the PDF all come from RM Roost),
+ * so no other site is allowed. The "/" keeps look-alike hosts out
+ * ("https://www.rmroost.com.example.com").
+ */
+export function viewerMayLoad(url: string): boolean {
+  return url === API_BASE_URL || url.startsWith(`${API_BASE_URL}/`) || url === "about:blank";
+}
+
 /** The page to load, or null when the file isn't one of RM Roost's uploads. */
 export function pdfViewerUrl(pdfUrl: string): string | null {
   let path = pdfUrl;
@@ -60,7 +70,7 @@ function ViewerBody({ url, title, onClose }: { url: string; title: string; onClo
               onError={() => { setFailed(true); setLoading(false); }}
               onHttpError={() => { setFailed(true); setLoading(false); }}
               // Stay on the document: links inside it don't navigate the viewer away.
-              onShouldStartLoadWithRequest={req => req.url.startsWith(API_BASE_URL) || req.url.startsWith("https://cdn.jsdelivr.net/") || req.url === "about:blank"}
+              onShouldStartLoadWithRequest={req => viewerMayLoad(req.url)}
             />
             {loading ? (
               <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center" }}>

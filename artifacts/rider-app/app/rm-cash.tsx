@@ -19,20 +19,25 @@ export default function RmCashScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { isAuthenticated, riderFetch, account } = useRiderAuth();
-  const [balance, setBalance] = useState<number>(0);
+  const { isAuthenticated, riderFetch } = useRiderAuth();
+  // null until the balance is known: a failed request must not read as "$0.00".
+  const [balance, setBalance] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!isAuthenticated) { setLoading(false); return; }
+    let cancelled = false;
+    setLoading(true);
     riderFetch("/api/rider/rm-cash-balance")
       .then(r => (r.ok ? r.json() : null))
       .then((d: { balance: number } | null) => {
-        if (d != null && typeof d.balance === "number") setBalance(d.balance);
+        if (!cancelled) setBalance(d != null && typeof d.balance === "number" ? d.balance : null);
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [isAuthenticated, riderFetch]);
+      .catch(() => { if (!cancelled) setBalance(null); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [isAuthenticated, riderFetch, attempt]);
 
   const s = StyleSheet.create({
     container: { flex: 1, backgroundColor: colors.background },
@@ -97,27 +102,6 @@ export default function RmCashScreen() {
       fontSize: 14, color: colors.mutedForeground,
       fontFamily: "Roboto_400Regular", textAlign: "center",
     },
-    txCard: {
-      borderRadius: 14, backgroundColor: colors.card,
-      borderWidth: 1, borderColor: colors.border,
-      overflow: "hidden",
-    },
-    txRow: {
-      flexDirection: "row", alignItems: "center",
-      justifyContent: "space-between",
-      paddingVertical: 14, paddingHorizontal: 16,
-    },
-    txDivider: {
-      height: 1, backgroundColor: colors.border, marginHorizontal: 16,
-    },
-    txName: {
-      fontSize: 14, color: colors.foreground,
-      fontFamily: "Roboto_600SemiBold",
-    },
-    txAmount: {
-      fontSize: 14, color: "#16a34a",
-      fontFamily: "Roboto_700Bold",
-    },
     useBtn: {
       marginBottom: insets.bottom + 20,
       marginTop: 16,
@@ -155,8 +139,15 @@ export default function RmCashScreen() {
         <View style={s.balanceCard}>
           <Text style={s.balanceLabel}>Available Balance</Text>
           <Text style={s.balanceAmount}>
-            {loading ? "—" : `$${balance.toFixed(2)}`}
+            {loading || balance == null ? "—" : `$${balance.toFixed(2)}`}
           </Text>
+          {!loading && balance == null && isAuthenticated ? (
+            <Pressable onPress={() => setAttempt(a => a + 1)} accessibilityRole="button" hitSlop={8} style={{ marginTop: 8 }}>
+              <Text style={{ fontSize: 13, color: colors.primaryText, fontFamily: "Roboto_600SemiBold", textAlign: "center" }}>
+                Couldn't load your balance. Tap to try again.
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
 
         <View style={s.sectionRow}>
@@ -164,30 +155,12 @@ export default function RmCashScreen() {
           <Text style={s.sectionTitle}>Transaction History</Text>
         </View>
 
-        {account?.email === "tnelson933@gmail.com" ? (
-          <View style={s.txCard}>
-            {[
-              { name: "RM Fantasy Cash", amount: "+$15.47" },
-              { name: "Race Gas", amount: "+$15.00" },
-              { name: "RM Quick Cash", amount: "+$17.03" },
-            ].map((tx, i, arr) => (
-              <React.Fragment key={tx.name}>
-                <View style={s.txRow}>
-                  <Text style={s.txName}>{tx.name}</Text>
-                  <Text style={s.txAmount}>{tx.amount}</Text>
-                </View>
-                {i < arr.length - 1 && <View style={s.txDivider} />}
-              </React.Fragment>
-            ))}
-          </View>
-        ) : (
-          <View style={s.emptyCard}>
-            <Feather name="inbox" size={32} color={colors.mutedForeground} style={{ opacity: 0.4 }} />
-            <Text style={s.emptyText}>
-              Your RM Cash history will appear here once you've earned credits
-            </Text>
-          </View>
-        )}
+        <View style={s.emptyCard}>
+          <Feather name="inbox" size={32} color={colors.mutedForeground} style={{ opacity: 0.4 }} />
+          <Text style={s.emptyText}>
+            Your RM Cash history will appear here once you've earned credits
+          </Text>
+        </View>
       </ScrollView>
 
       <Pressable

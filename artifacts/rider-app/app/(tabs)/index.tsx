@@ -2,7 +2,7 @@ import { QuickCheckinCard } from "@/components/QuickCheckinCard";
 import { StatusBarBackdrop } from "@/components/StatusBarBackdrop";
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -76,7 +76,7 @@ function UpcomingEventCard({ event, colors, onPress }: { event: UpcomingEvent; c
       dateIso={event.eventDate}
       place={placeLabel(event.eventLocation, event.eventState) || null}
       classes={classes}
-      status={isLive ? "live" : "open"}
+      status={isLive ? "live" : event.status === "registration_open" ? "open" : null}
       registered={event.isRegistered}
       onPress={onPress}
     />
@@ -128,6 +128,9 @@ export default function HomeScreen() {
   const [allHistory, setAllHistory] = useState<EventHistory[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  // Only the newest request may fill the screen (switching riders, polling).
+  const loadSeq = useRef(0);
 
   // View stack for stat-box drill-down
   const [viewStack, setViewStack] = useState<ViewState[]>([]);
@@ -146,16 +149,21 @@ export default function HomeScreen() {
 
   const activeProfileKey = activeProfiles.map(p => p.id).join(",");
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (opts: { quiet?: boolean } = {}) => {
     if (!primaryProfile) return;
-    setLoading(true);
+    const seq = ++loadSeq.current;
+    // The race-day poll refreshes quietly, so cards don't blink every 15 seconds.
+    if (!opts.quiet) setLoading(true);
     try {
       const [schedRes, ...histResponses] = await Promise.all([
         riderFetch(`/api/rider/profiles/${primaryProfile.id}/schedule`),
         ...activeProfiles.map(p => riderFetch(`/api/rider/profiles/${p.id}/history`)),
       ]);
+      if (seq !== loadSeq.current) return;
+      const allOk = schedRes.ok && histResponses.every(r => r.ok);
       if (schedRes.ok) {
         const sched = await schedRes.json();
+        if (seq !== loadSeq.current) return;
         const evts: UpcomingEvent[] = (sched.events ?? [])
           .filter((e: any) => e.status === "registration_open" || e.status === "registration_closed" || e.status === "race_day")
           .map((e: any) => ({
@@ -183,20 +191,37 @@ export default function HomeScreen() {
           allResults.push(riderName ? { ...ev, riderName } : ev);
         }
       }
-      allResults.sort((a, b) => new Date(b.eventDate).getTime() - new Date(a.eventDate).getTime());
-      setAllHistory(allResults);
-      setRecentResults(allResults.slice(0, 3));
-    } catch { /* silently fail */ }
-    finally { setLoading(false); }
+      if (seq !== loadSeq.current) return;
+      // A failed answer keeps the results already on screen instead of emptying them.
+      if (histResponses.every(r => r.ok)) {
+        allResults.sort((a, b) => new Date(b.eventDate).getTime() - new Date(a.eventDate).getTime());
+        setAllHistory(allResults);
+        setRecentResults(allResults.slice(0, 3));
+      }
+      setLoadFailed(!allOk);
+    } catch {
+      if (seq === loadSeq.current) setLoadFailed(true);
+    } finally {
+      if (seq === loadSeq.current) setLoading(false);
+    }
   }, [activeProfileKey, riderFetch]);
 
-  useEffect(() => { if (primaryProfile) void loadData(); }, [activeProfileKey]);
+  // Another rider (or another account) was picked: drop what the last one showed.
+  useEffect(() => {
+    loadSeq.current++;
+    setUpcoming([]);
+    setAllHistory([]);
+    setRecentResults([]);
+    setLoadFailed(false);
+    setViewStack([]);
+    if (primaryProfile) void loadData();
+  }, [activeProfileKey]);
 
   // Poll every 15 s when there's a live race-day event
   const hasLiveEvent = upcoming.some(e => e.status === "race_day");
   useEffect(() => {
     if (!hasLiveEvent || !primaryProfile) return;
-    const timer = setInterval(() => { void loadData(); }, 15_000);
+    const timer = setInterval(() => { void loadData({ quiet: true }); }, 15_000);
     return () => clearInterval(timer);
   }, [hasLiveEvent, loadData]);
 
@@ -318,6 +343,16 @@ export default function HomeScreen() {
         {/* ── No profile warning ── */}
         {!hasProfile && <NoProfileLinked variant="card" />}
 
+        {/* ── Couldn't reach the server ── */}
+        {hasProfile && loadFailed && !loading && (
+          <View accessibilityRole="alert" style={{ marginHorizontal: 16, marginBottom: 12, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <Feather name="wifi-off" size={16} color={colors.mutedForeground} />
+            <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Roboto_400Regular", lineHeight: 18 }}>
+              Couldn't load your races. Check your signal, then pull down to try again.
+            </Text>
+          </View>
+        )}
+
         {/* ── Next race: photo hero with a countdown ── */}
         {hasProfile && (
           loading && upcoming.length === 0 && recentResults.length === 0 ? (
@@ -366,7 +401,7 @@ export default function HomeScreen() {
             />
           </View>
         )}
-        {hasProfile && !loading && allHistory.length === 0 && (
+        {hasProfile && !loading && !loadFailed && allHistory.length === 0 && (
           <EmptyState
             variant="compact"
             icon="award"

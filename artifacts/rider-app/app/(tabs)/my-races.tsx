@@ -3,7 +3,7 @@ import { toStateCode } from "@/lib/usStates";
 import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Location from "expo-location";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
@@ -254,7 +254,7 @@ function RaceDaySection({ event, colors }: { event: ScheduleEvent; colors: Retur
           </View>
           <Text style={{ fontSize: 16, fontWeight: "800", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>{event.eventName}</Text>
           <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 }}>
-            {[event.eventLocation, event.eventState].filter(Boolean).join(", ")}
+            {placeLabel(event.eventLocation, event.eventState)}
             {event.eventDate ? `  ·  ${fmtDate(event.eventDate)}` : ""}
           </Text>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
@@ -304,7 +304,7 @@ function RaceDaySection({ event, colors }: { event: ScheduleEvent; colors: Retur
               </Text>
             </View>
             {enduroStartTimes.map(cs => (
-              <View key={cs.raceClass} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 2 }}>
+              <View key={`${cs.riderName}-${cs.raceClass}`} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 2 }}>
                 <Text style={{ fontSize: 12, color: colors.foreground, fontFamily: "Roboto_500Medium" }}>{cs.raceClass}</Text>
                 <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>{fmtStartTime(cs.startTime)}</Text>
               </View>
@@ -353,7 +353,7 @@ function UpcomingCard({ event, colors, isRegistered }: { event: PublicEvent; col
       dateIso={event.date}
       place={placeLabel(event.location, event.state) || null}
       club={event.clubName}
-      status="open"
+      status={event.status === "registration_open" ? "open" : null}
       registered={isRegistered}
       onPress={() => router.push(`/event/${event.eventId}` as any)}
     />
@@ -408,6 +408,8 @@ export default function MyRacesScreen() {
   useEffect(() => {
     if (filterParam === "today" || filterParam === "upcoming" || filterParam === "near_me" || filterParam === "season" || filterParam === "history") {
       setActiveFilter(filterParam);
+      // Used once: clear it so the same link works again after the rider picks another tab.
+      router.setParams({ filter: undefined } as never);
     }
   }, [filterParam]);
   const [schedule, setSchedule]             = useState<{ familyRiderIds: number[]; events: ScheduleEvent[] } | null>(null);
@@ -443,16 +445,22 @@ export default function MyRacesScreen() {
   const activeProfileKey = activeProfiles.map(p => p.id).join(",");
 
   // Lightweight schedule-only refresh — used for background polling during race day
+  // Only the newest request may fill the screen (switching riders, polling).
+  const loadSeq = useRef(0);
   const loadScheduleOnly = useCallback(async () => {
     if (!primaryProfile) return;
+    const seq = loadSeq.current;
     try {
       const res = await riderFetch(`/api/rider/profiles/${primaryProfile.id}/schedule`);
-      if (res.ok) setSchedule(await res.json());
+      if (!res.ok) return;
+      const sched = await res.json();
+      if (seq === loadSeq.current) setSchedule(sched);
     } catch { /* silently ignore polling errors */ }
   }, [activeProfileKey, riderFetch]);
 
   const loadAll = useCallback(async () => {
     if (!primaryProfile) return;
+    const seq = ++loadSeq.current;
     setError(null);
     setLoading(true);
     try {
@@ -464,9 +472,13 @@ export default function MyRacesScreen() {
         ...activeProfiles.map(p => riderFetch(`/api/rider/profiles/${p.id}/history`)),
       ];
       const [schedRes, pubRes, ...histResponses] = await Promise.all(requests);
+      if (seq !== loadSeq.current) return;
 
-      if (schedRes.ok) setSchedule(await schedRes.json());
-      if (pubRes.ok) setPublicEvents(await pubRes.json());
+      const sched = schedRes.ok ? await schedRes.json() : null;
+      const pub = pubRes.ok ? await pubRes.json() : null;
+      if (seq !== loadSeq.current) return;
+      if (sched) setSchedule(sched);
+      if (pub) setPublicEvents(pub);
 
       const allHistory: EventHistory[] = [];
       for (let i = 0; i < histResponses.length; i++) {
@@ -478,17 +490,30 @@ export default function MyRacesScreen() {
           allHistory.push(isMultiProfile ? { ...event, riderName } : event);
         }
       }
-      // Sort newest first
-      allHistory.sort((a, b) => new Date(b.eventDate).getTime() - new Date(a.eventDate).getTime());
-      setHistory(allHistory);
+      if (seq !== loadSeq.current) return;
+      // A failed answer keeps what's already on screen instead of showing "no races".
+      if (histResponses.every(r => r.ok)) {
+        // Sort newest first
+        allHistory.sort((a, b) => new Date(b.eventDate).getTime() - new Date(a.eventDate).getTime());
+        setHistory(allHistory);
+      }
+      if (!schedRes.ok || !histResponses.every(r => r.ok)) {
+        setError("Couldn't load your racing data. Pull to refresh.");
+      }
     } catch {
-      setError("Couldn't load your racing data. Pull to refresh.");
+      if (seq === loadSeq.current) setError("Couldn't load your racing data. Pull to refresh.");
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [activeProfileKey, riderFetch]);
 
+  // Another rider (or another account) was picked: drop what the last one showed.
   useEffect(() => {
+    loadSeq.current++;
+    setSchedule(null);
+    setHistory([]);
+    setError(null);
+    setViewStack([]);
     if (isAuthenticated && primaryProfile) void loadAll();
   }, [isAuthenticated, activeProfileKey]);
 
@@ -792,7 +817,7 @@ export default function MyRacesScreen() {
             </View>
             {history.map(e => (
               <HistoryCard
-                key={`${e.eventId}-${e.raceClass}`}
+                key={`${e.eventId}-${e.raceClass}-${e.riderName ?? ""}`}
                 event={e}
                 colors={colors}
                 onPress={() => pushView({ type: "event_detail", event: e })}

@@ -91,7 +91,7 @@ export default function LoginScreen() {
       setLoading(true);
       setError(null);
       try {
-        await postJson(`${BASE_URL}/api/rider/auth/forgot-password`, { email }, "Couldn't send the reset email");
+        await postJson(`${BASE_URL}/api/rider/auth/forgot-password`, { email: email.trim().toLowerCase() }, "Couldn't send the reset email");
         setForgotSent(true);
       } catch (e: any) {
         setError(e.message);
@@ -437,7 +437,7 @@ export default function LoginScreen() {
           returnKeyType="done"
           onSubmitEditing={handleSubmit}
         />
-        <Pressable onPress={() => setShowPassword(v => !v)} hitSlop={8}>
+        <Pressable onPress={() => setShowPassword(v => !v)} hitSlop={8} accessibilityRole="button" accessibilityLabel={showPassword ? "Hide password" : "Show password"}>
           <Feather name={showPassword ? "eye-off" : "eye"} size={16} color={muted} />
         </Pressable>
       </View>

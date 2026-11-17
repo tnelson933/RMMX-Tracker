@@ -10,6 +10,8 @@ import { ActivityIndicator, Alert, Pressable, Text, TextInput, View } from "reac
 import { fonts } from "@/constants/fonts";
 import { useColors } from "@/hooks/useColors";
 import { goBack } from "@/lib/navigation";
+import { useRiderAuth } from "@/context/AuthContext";
+import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 
 interface Manager { id: number; email: string; joined: boolean; isYou: boolean }
 
@@ -21,6 +23,8 @@ export function ProfileManagers({
   const [managers, setManagers] = useState<Manager[]>([]);
   const [isOwner, setIsOwner] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const { refreshProfiles } = useRiderAuth();
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviting, setInviting] = useState(false);
 
@@ -32,6 +36,9 @@ export function ProfileManagers({
         setManagers(j.managers ?? []);
         setIsOwner(!!j.isOwner);
       }
+      setLoadFailed(!r.ok);
+    } catch {
+      setLoadFailed(true);
     } finally {
       setLoaded(true);
     }
@@ -40,7 +47,7 @@ export function ProfileManagers({
 
   const invite = useCallback(async () => {
     const email = inviteEmail.trim();
-    if (!email) return;
+    if (!email || inviting) return;
     setInviting(true);
     try {
       const r = await riderFetch(`/api/rider/profiles/${riderId}/managers`, {
@@ -52,25 +59,49 @@ export function ProfileManagers({
       await load();
       Alert.alert("Manager added", `${email} can manage this profile after signing in to RM Roost with that email.`);
     } catch (e) {
-      Alert.alert("Couldn't add manager", e instanceof Error ? e.message : "Try again.");
+      Alert.alert("Couldn't add manager", e instanceof TypeError ? NETWORK_ERROR_MESSAGE : e instanceof Error ? e.message : "Try again.");
     } finally {
       setInviting(false);
     }
-  }, [riderId, inviteEmail, load, riderFetch]);
+  }, [riderId, inviteEmail, inviting, load, riderFetch]);
 
   const remove = useCallback((m: Manager) => {
     Alert.alert(m.isYou ? "Stop managing this profile?" : "Remove manager?",
       m.isYou ? "You'll lose access to this rider's profile." : `${m.email} will lose access to this rider's profile.`, [
         { text: "Cancel", style: "cancel" },
         { text: "Remove", style: "destructive", onPress: async () => {
-          const r = await riderFetch(`/api/rider/profiles/${riderId}/managers/${m.id}`, { method: "DELETE" });
-          if (!r.ok) { Alert.alert("Couldn't remove", `Error ${r.status}`); return; }
-          if (m.isYou) goBack(router); else void load();
+          try {
+            const r = await riderFetch(`/api/rider/profiles/${riderId}/managers/${m.id}`, { method: "DELETE" });
+            if (!r.ok) {
+              const j = await r.json().catch(() => ({}));
+              Alert.alert("Couldn't remove", (j as { error?: string }).error ?? `Error ${r.status}`);
+              return;
+            }
+            if (m.isYou) {
+              // The rider leaves this account's list right away, not after the next refresh.
+              await refreshProfiles().catch(() => {});
+              goBack(router);
+            } else void load();
+          } catch {
+            Alert.alert("Couldn't remove", NETWORK_ERROR_MESSAGE);
+          }
         } },
       ]);
-  }, [riderId, load, riderFetch, router]);
+  }, [riderId, load, riderFetch, router, refreshProfiles]);
 
   if (!loaded) return null;
+  // Couldn't tell who manages this profile: don't claim the owner is "only a manager".
+  if (loadFailed) {
+    return (
+      <View style={{ backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, padding: 14, gap: 10, marginBottom: 16 }}>
+        <Text style={{ fontSize: 18, color: colors.foreground, fontFamily: fonts.displayItalic, textTransform: "uppercase" }}>Who can manage this profile</Text>
+        <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: fonts.regular, lineHeight: 18 }}>Couldn't load this list. Check your signal.</Text>
+        <Pressable onPress={() => void load()} accessibilityRole="button" hitSlop={8}>
+          <Text style={{ fontSize: 14, color: colors.primaryText, fontFamily: fonts.semibold }}>Try again</Text>
+        </Pressable>
+      </View>
+    );
+  }
   const muted = { fontSize: 13, color: colors.mutedForeground, fontFamily: fonts.regular, lineHeight: 18 };
 
   return (

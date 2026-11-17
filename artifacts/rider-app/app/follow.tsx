@@ -10,6 +10,7 @@ import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
 import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 import { goBack } from "@/lib/navigation";
+import { displayDate } from "@/lib/format";
 
 interface FoundRider { id: number; name: string; avatarUrl?: string | null; lastRaced: string | null; clubName: string | null; following: boolean }
 interface Followed { riderId: number; name: string; avatarUrl?: string | null }
@@ -27,12 +28,16 @@ export default function FollowScreen() {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [followingError, setFollowingError] = useState<string | null>(null);
   const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Only the newest search may fill the list; one follow/unfollow per rider at a time.
+  const searchSeq = useRef(0);
+  const toggling = useRef(new Set<number>());
 
   const loadFollowing = useCallback(async () => {
     try {
       const r = await riderFetch("/api/rider/follows");
       if (!r.ok) { setFollowingError(`Couldn't load who you follow (error ${r.status}).`); return; }
-      setFollowing((await r.json()).following);
+      const list = (await r.json()).following;
+      setFollowing(Array.isArray(list) ? list : []);
       setFollowingError(null);
     } catch {
       setFollowingError(NETWORK_ERROR_MESSAGE);
@@ -42,21 +47,28 @@ export default function FollowScreen() {
 
   useEffect(() => {
     if (debounce.current) clearTimeout(debounce.current);
-    if (q.trim().length < 2) { setResults([]); setSearchError(null); return; }
+    const seq = ++searchSeq.current;
+    if (q.trim().length < 2) { setResults([]); setSearchError(null); setSearching(false); return; }
     debounce.current = setTimeout(async () => {
       setSearching(true);
       try {
         const r = await riderFetch(`/api/rider/riders/search?q=${encodeURIComponent(q.trim())}`);
+        // A slower answer for an earlier search must not replace a newer one.
+        if (seq !== searchSeq.current) return;
         if (!r.ok) { setSearchError(`Search failed (error ${r.status}). Try again.`); return; }
-        setResults((await r.json()).riders);
+        const found = (await r.json()).riders;
+        if (seq !== searchSeq.current) return;
+        setResults(Array.isArray(found) ? found : []);
         setSearchError(null);
       } catch {
-        setSearchError(NETWORK_ERROR_MESSAGE);
-      } finally { setSearching(false); }
+        if (seq === searchSeq.current) setSearchError(NETWORK_ERROR_MESSAGE);
+      } finally { if (seq === searchSeq.current) setSearching(false); }
     }, 300);
   }, [q, riderFetch]);
 
   const toggle = useCallback(async (riderId: number, follow: boolean) => {
+    if (toggling.current.has(riderId)) return;
+    toggling.current.add(riderId);
     setResults(prev => prev.map(r => (r.id === riderId ? { ...r, following: follow } : r)));
     const rollback = () => setResults(prev => prev.map(x => (x.id === riderId ? { ...x, following: !follow } : x)));
     try {
@@ -65,6 +77,8 @@ export default function FollowScreen() {
     } catch {
       rollback();
       Alert.alert(follow ? "Couldn't follow" : "Couldn't unfollow", NETWORK_ERROR_MESSAGE);
+    } finally {
+      toggling.current.delete(riderId);
     }
     void loadFollowing();
   }, [loadFollowing, riderFetch]);
@@ -90,7 +104,7 @@ export default function FollowScreen() {
   return (
     <View style={s.root}>
       <View style={[s.header, { paddingTop: insets.top + 8 }]}>
-        <Pressable onPress={() => goBack(router)} style={({ pressed }) => [s.backBtn, { opacity: pressed ? 0.6 : 1 }]}>
+        <Pressable onPress={() => goBack(router)} accessibilityRole="button" accessibilityLabel="Back" style={({ pressed }) => [s.backBtn, { opacity: pressed ? 0.6 : 1 }]}>
           <Feather name="arrow-left" size={18} color={colors.foreground} />
         </Pressable>
         <Text style={s.headerTitle}>Find riders</Text>
@@ -105,7 +119,7 @@ export default function FollowScreen() {
         <Text style={s.muted}>Follow friends, teammates or rivals. Their results show on your home screen, and you get a notification when their results are official.</Text>
 
         {results.map(r => (
-          <RiderRow key={r.id} title={r.name} avatarUrl={r.avatarUrl} subtitle={[r.clubName, r.lastRaced && `Last raced ${r.lastRaced}`].filter(Boolean).join(" · ")}
+          <RiderRow key={r.id} title={r.name} avatarUrl={r.avatarUrl} subtitle={[r.clubName, r.lastRaced && `Last raced ${displayDate(r.lastRaced).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`].filter(Boolean).join(" · ")}
             following={r.following} onToggle={() => toggle(r.id, !r.following)} onOpen={() => router.push(`/racer/${r.id}` as any)} colors={colors} />
         ))}
         {searchError && q.trim().length >= 2 && !searching && <Text style={[s.muted, { color: "#DC2626" }]}>{searchError}</Text>}

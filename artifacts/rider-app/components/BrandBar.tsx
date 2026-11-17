@@ -119,7 +119,7 @@ export function BrandBar() {
 
       <View style={styles.right}>
         <ProfileAvatars />
-        <TouchableOpacity onPress={() => router.push("/rm-cash")} activeOpacity={0.7}>
+        <TouchableOpacity onPress={() => router.push("/rm-cash")} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel="RM Cash balance">
           <RmCashWidget />
         </TouchableOpacity>
       </View>

@@ -70,7 +70,13 @@ test("age and default visibility: under 18 private, unknown treated as adult, ex
   assert.equal(ageOn("2008-11-05", "2026-11-04"), 17);
   assert.equal(ageOn("2008-11-04", "2026-11-04"), 18);
   assert.equal(ageOn(null, "2026-11-04"), null);
+  // Typed the US way (the registration forms ask for MM/DD/YYYY).
+  assert.equal(ageOn("11/05/2008", "2026-11-04"), 17);
+  assert.equal(ageOn("11/4/2008", "2026-11-04"), 18);
+  assert.equal(ageOn("3/1/2012", "2026-11-04"), 14);
+  assert.equal(ageOn("not a date", "2026-11-04"), null);
   const today = "2026-11-04";
+  assert.equal(effectiveVisibility({ dateOfBirth: "03/01/2012", profileVisibility: null }, today), "private");
   assert.equal(effectiveVisibility({ dateOfBirth: "2012-03-01", profileVisibility: null }, today), "private");
   assert.equal(effectiveVisibility({ dateOfBirth: "2012-03-01", profileVisibility: "public" }, today), "public");
   assert.equal(effectiveVisibility({ dateOfBirth: "1990-03-01", profileVisibility: null }, today), "public");

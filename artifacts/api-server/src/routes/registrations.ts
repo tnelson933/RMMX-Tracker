@@ -1992,6 +1992,12 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     }
   }
 
+  // Tell a signed-in rider account which of its profiles this entry is on (a brand
+  // new one included), so the app's next attempt names that profile instead of
+  // making another. Nobody else is told the profile's id.
+  const replyAccount = await requestRiderAccount(req);
+  const replyRiderId = replyAccount && (await canManageRider(replyAccount, rider)) ? rider.id : undefined;
+
   // If payment required, create a single Stripe Checkout session covering all classes
   if (needsPayment) {
     try {
@@ -2124,6 +2130,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
             sessionId: pi.id,
             registrationId: primaryRegId,
             riderName: `${rider.firstName} ${rider.lastName}`,
+            riderId: replyRiderId,
             raceClasses: raceClassList,
             eventName: events[0].name,
             entryFee: netFee,
@@ -2161,6 +2168,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
             sessionId: session.id,
             registrationId: primaryRegId,
             riderName: `${rider.firstName} ${rider.lastName}`,
+            riderId: replyRiderId,
             raceClasses: raceClassList,
             eventName: events[0].name,
             entryFee: netFee,
@@ -2195,6 +2203,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   return res.status(201).json({
     registrationId: insertedRegs[0].id,
     riderName: `${rider.firstName} ${rider.lastName}`,
+    riderId: replyRiderId,
     raceClasses: raceClassList,
     eventName: events[0].name,
     eventDate: events[0].date,

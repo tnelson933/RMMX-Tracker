@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import React, { useState } from "react";
-import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { PdfViewer } from "@/components/PdfViewer";
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
@@ -68,7 +68,8 @@ export function QuickCheckinFix({ registrationId, reason, onFixed }: Props) {
     body = button("Pay now", async () => {
       // Paid in the app's own Stripe payment sheet; riders never leave the app.
       const data = await post(`/api/rider/registrations/${registrationId}/checkout`, { paymentSheet: true }, "Couldn't start the payment.");
-      if (!data?.paymentSheet?.clientSecret) return;
+      if (!data) return;
+      if (!data.paymentSheet?.clientSecret) { setError("Card payments aren't available in the app right now. Pay at the gate."); return; }
       if (!nativePaymentSheetAvailable()) { setError("Update RM Roost to pay in the app, or pay at the gate."); return; }
       setBusy(true);
       try {
@@ -84,6 +85,8 @@ export function QuickCheckinFix({ registrationId, reason, onFixed }: Props) {
           await new Promise(res => setTimeout(res, 1500));
         }
         onFixed();
+      } catch (e: any) {
+        setError(e?.message ? `The payment form couldn't open: ${e.message}` : "The payment form couldn't open. Try again, or pay at the gate.");
       } finally {
         setBusy(false);
       }
@@ -127,8 +130,14 @@ export function QuickCheckinFix({ registrationId, reason, onFixed }: Props) {
       }
     }) : waiver && (
       <View style={{ gap: 8, borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 12 }}>
+        {waiver.kind === "acknowledgement" ? (
+          <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_600SemiBold" }}>Rider acknowledgement</Text>
+        ) : null}
         {waiver.text ? (
-          <Text style={{ fontSize: 12, color: colors.foreground, fontFamily: "Roboto_400Regular", maxHeight: 220 }} numberOfLines={14}>{waiver.text}</Text>
+          // The whole form, scrollable: it used to be cut off after 14 lines.
+          <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled>
+            <Text style={{ fontSize: 12, color: colors.foreground, fontFamily: "Roboto_400Regular", lineHeight: 17 }}>{waiver.text}</Text>
+          </ScrollView>
         ) : null}
         {waiver.pdfUrl ? (
           <Pressable onPress={() => setPdfOpen(true)} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
@@ -147,7 +156,22 @@ export function QuickCheckinFix({ registrationId, reason, onFixed }: Props) {
         </Pressable>
         <View style={{ flexDirection: "row", gap: 8 }}>
           <View style={{ flex: 1 }}>{button("Sign", async () => {
-            if (await post(`/api/rider/registrations/${registrationId}/waiver`, { signerName: value, consentToEsign: consent, asGuardian }, "Couldn't sign the waiver.")) onFixed();
+            const signed = await post(`/api/rider/registrations/${registrationId}/waiver`, { signerName: value, consentToEsign: consent, asGuardian }, "Couldn't sign the waiver.");
+            if (!signed) return;
+            // The event needs a second form too: show it before it can be signed.
+            if (signed.next) {
+              setConsent(false);
+              setBusy(true);
+              try {
+                const res = await riderFetch(`/api/rider/registrations/${registrationId}/waiver`);
+                if (res.ok) { setWaiver(await res.json()); return; }
+              } catch { /* fall through: closing lets the rider open the next form again */ }
+              finally { setBusy(false); }
+              setOpen(false);
+              setError("One more form to sign. Tap Sign waiver again.");
+              return;
+            }
+            onFixed();
           })}</View>
           <View style={{ flex: 1 }}>{button("Cancel", () => setOpen(false), false)}</View>
         </View>

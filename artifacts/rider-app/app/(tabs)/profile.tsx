@@ -3,7 +3,6 @@ import { StatusBarBackdrop } from "@/components/StatusBarBackdrop";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import * as WebBrowser from "expo-web-browser";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
@@ -28,6 +27,8 @@ import { useTheme, type ThemePreference } from "@/context/ThemeContext";
 import { BrandBar } from "@/components/BrandBar";
 import { RiderCard } from "@/components/RiderCard";
 import { NETWORK_ERROR_MESSAGE, postJson } from "@/lib/friendlyErrors";
+import { openInApp } from "@/lib/inAppBrowser";
+import { NoProfileLinked } from "@/components/NoProfileLinked";
 
 const BASE_URL = API_BASE_URL;
 const PRIVACY_URL = `${BASE_URL}/privacy`;
@@ -112,7 +113,7 @@ function AuthForm() {
             style={s.input} placeholder="Password" placeholderTextColor={colors.mutedForeground}
             value={password} onChangeText={setPassword} secureTextEntry={!showPassword}
           />
-          <Pressable onPress={() => setShowPassword(v => !v)}>
+          <Pressable onPress={() => setShowPassword(v => !v)} hitSlop={10} accessibilityRole="button" accessibilityLabel={showPassword ? "Hide password" : "Show password"}>
             <Feather name={showPassword ? "eye-off" : "eye"} size={16} color={colors.mutedForeground} />
           </Pressable>
         </View>
@@ -145,7 +146,7 @@ function ProfileList() {
   const tabBarHeight = React.useContext(BottomTabBarHeightContext) ?? 0;
   const router = useRouter();
   const {
-    account, profiles, activeProfiles, selectedProfileIds,
+    account, profiles, profilesStatus, activeProfiles, selectedProfileIds,
     setSelectedProfileIds, logout, refreshProfiles,
     bikeInfoMap, setBikeInfo, riderFetch,
     changePassword, enableBiometric, disableBiometric, biometricEnabled,
@@ -244,9 +245,29 @@ function ProfileList() {
   }
 
   function handleOpenPrivacy() {
-    void WebBrowser.openBrowserAsync(PRIVACY_URL).catch(() => {
-      Alert.alert("Couldn't open the privacy policy", NETWORK_ERROR_MESSAGE);
-    });
+    void openInApp(PRIVACY_URL);
+  }
+
+  // Garage changes (add / pick / remove a bike): one at a time, and a failed one says so.
+  const [bikeBusy, setBikeBusy] = useState(false);
+  async function bikeRequest(path: string, options: RequestInit, failTitle: string): Promise<boolean> {
+    if (bikeBusy) return false;
+    setBikeBusy(true);
+    try {
+      const res = await riderFetch(path, options);
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error ?? `That didn't save (error ${res.status}). Try again.`);
+      }
+      await refreshProfiles();
+      return true;
+    } catch (e: any) {
+      Alert.alert(failTitle, e instanceof TypeError ? NETWORK_ERROR_MESSAGE : (e?.message ?? "Try again."));
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+      return false;
+    } finally {
+      setBikeBusy(false);
+    }
   }
 
   async function submitDeletion() {
@@ -451,6 +472,9 @@ function ProfileList() {
       style={s.scroll}
       contentContainerStyle={s.container}
       showsVerticalScrollIndicator={false}
+      // Buttons work on the first tap while the keyboard is up, and iOS scrolls the field above it.
+      keyboardShouldPersistTaps="handled"
+      automaticallyAdjustKeyboardInsets
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
     >
       {/* Account section */}
@@ -488,7 +512,10 @@ function ProfileList() {
         )}
       </View>
 
-      {profiles.length === 0 ? (
+      {profiles.length === 0 && profilesStatus !== "loaded" ? (
+        // Still loading, or the list couldn't be fetched: not "no profiles".
+        <View style={{ marginHorizontal: -16 }}><NoProfileLinked variant="card" /></View>
+      ) : profiles.length === 0 ? (
         <View style={s.emptyBox}>
           <Feather name="user" size={36} color={colors.mutedForeground + "50"} />
           <Text style={s.emptyTitle}>No Rider Profiles</Text>
@@ -600,10 +627,10 @@ function ProfileList() {
                         return (
                           <Pressable
                             key={bike.id}
+                            accessibilityRole="button"
+                            accessibilityLabel={bike.isDefault ? `${bs}, your main bike` : `Make ${bs} your main bike`}
                             onPress={async () => {
-                              if (!bike.isDefault) {
-                                await riderFetch(`/api/rider/profiles/${profile.id}/bikes/${bike.id}/set-default`, { method: "POST" });
-                                await refreshProfiles();
+                              if (!bike.isDefault && await bikeRequest(`/api/rider/profiles/${profile.id}/bikes/${bike.id}/set-default`, { method: "POST" }, "Bike not changed")) {
                                 await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                               }
                             }}
@@ -621,13 +648,19 @@ function ProfileList() {
                             </View>
                             <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Roboto_600SemiBold" }}>{bs}</Text>
                             <Pressable
-                              onPress={async () => {
-                                await riderFetch(`/api/rider/profiles/${profile.id}/bikes/${bike.id}`, { method: "DELETE" });
-                                await refreshProfiles();
-                                await Haptics.selectionAsync();
+                              onPress={() => {
+                                // A small icon inside a tappable row: ask before removing.
+                                Alert.alert("Remove this bike?", bs, [
+                                  { text: "Cancel", style: "cancel" },
+                                  { text: "Remove", style: "destructive", onPress: async () => {
+                                    if (await bikeRequest(`/api/rider/profiles/${profile.id}/bikes/${bike.id}`, { method: "DELETE" }, "Bike not removed")) await Haptics.selectionAsync();
+                                  } },
+                                ]);
                               }}
                               style={({ pressed }) => ({ padding: 4, opacity: pressed ? 0.6 : 1 })}
                               hitSlop={8}
+                              accessibilityRole="button"
+                              accessibilityLabel={`Remove ${bs}`}
                             >
                               <Feather name="trash-2" size={14} color="#DC2626" />
                             </Pressable>
@@ -668,13 +701,15 @@ function ProfileList() {
                             <Pressable
                               disabled={addBikeSaving}
                               onPress={async () => {
+                                const bike = { bikeManufacturer: addBikeForm.manufacturer.trim() || null, bikeModel: addBikeForm.model.trim() || null, bikeYear: addBikeForm.year.trim() || null };
+                                if (!bike.bikeManufacturer && !bike.bikeModel) {
+                                  Alert.alert("Add a bike", "Enter the bike's make or model.");
+                                  return;
+                                }
                                 setAddBikeSaving(true);
                                 try {
-                                  await riderFetch(`/api/rider/profiles/${profile.id}/bikes`, {
-                                    method: "POST",
-                                    body: JSON.stringify({ bikeManufacturer: addBikeForm.manufacturer || null, bikeModel: addBikeForm.model || null, bikeYear: addBikeForm.year || null }),
-                                  });
-                                  await refreshProfiles();
+                                  // The form closes only once the bike is really saved.
+                                  if (!(await bikeRequest(`/api/rider/profiles/${profile.id}/bikes`, { method: "POST", body: JSON.stringify(bike) }, "Bike not added"))) return;
                                   setShowAddBike(null);
                                   setAddBikeForm({ manufacturer: "", model: "", year: "" });
                                   await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
