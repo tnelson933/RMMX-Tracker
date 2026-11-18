@@ -1378,7 +1378,8 @@ export const ListCheckinsResponseItem = zod.object({
   "checkedIn": zod.boolean(),
   "checkedInAt": zod.string().nullish(),
   "rfidNumber": zod.string().nullish(),
-  "rfidLinked": zod.boolean().optional()
+  "rfidLinked": zod.boolean().optional(),
+  "numbersFlaggedAt": zod.string().nullish().describe('When the rider reported at Quick Check-In that their RM TrackR \/ RFID sticker numbers are wrong')
 })
 export const ListCheckinsResponse = zod.array(ListCheckinsResponseItem)
 
@@ -1412,7 +1413,8 @@ export const CheckinRiderResponse = zod.object({
   "checkedIn": zod.boolean(),
   "checkedInAt": zod.string().nullish(),
   "rfidNumber": zod.string().nullish(),
-  "rfidLinked": zod.boolean().optional()
+  "rfidLinked": zod.boolean().optional(),
+  "numbersFlaggedAt": zod.string().nullish().describe('When the rider reported at Quick Check-In that their RM TrackR \/ RFID sticker numbers are wrong')
 })
 
 
@@ -2835,7 +2837,12 @@ export const GetRiderQuickCheckinEventsResponseItem = zod.object({
   "raceClass": zod.string().nullish(),
   "eligible": zod.boolean(),
   "checkedIn": zod.boolean(),
-  "ineligibleReason": zod.union([zod.literal('missing_rfid'),zod.literal('missing_transponder'),zod.literal('missing_waiver'),zod.literal(null)]).nullish()
+  "ineligibleReason": zod.union([zod.literal('payment_required'),zod.literal('missing_rfid'),zod.literal('missing_transponder'),zod.literal('missing_waiver'),zod.literal('pickup_required'),zod.literal('numbers_flagged'),zod.literal(null)]).nullish(),
+  "rmTrackrNumber": zod.string().nullish().describe('The rider\'s RM TrackR transponder number for this event (registration, rental or profile)'),
+  "rfidNumber": zod.string().nullish().describe('The rider\'s RFID sticker number for this event (event sticker or profile)'),
+  "usesRmTrackr": zod.boolean().optional().describe('The event times with RM TrackR transponders'),
+  "usesRfid": zod.boolean().optional().describe('The event times with RFID stickers'),
+  "numbersFlagged": zod.boolean().optional().describe('The rider reported their numbers as wrong; they must see the check-in booth')
 })
 export const GetRiderQuickCheckinEventsResponse = zod.array(GetRiderQuickCheckinEventsResponseItem)
 
@@ -2849,7 +2856,8 @@ export const PostEventQuickCheckinParams = zod.object({
 
 export const PostEventQuickCheckinBody = zod.object({
   "riderId": zod.number().optional().describe('Specific rider ID to check in (for family accounts; defaults to first rider)'),
-  "registrationId": zod.number().optional().describe('Specific registration to check in (checks in that registration\'s rider and class)')
+  "registrationId": zod.number().optional().describe('Specific registration to check in (checks in that registration\'s rider and class)'),
+  "numbersConfirmed": zod.boolean().optional().describe('The rider\'s answer to \"are these your RM TrackR and RFID sticker numbers?\". false records the report for the check-in booth and does not check the rider in (409). Omitted (older app builds) checks in as before.')
 })
 
 export const PostEventQuickCheckinResponse = zod.object({

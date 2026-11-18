@@ -32,13 +32,30 @@ type Row = {
   trackName: string | null;
   trackLat: number | null;
   trackLng: number | null;
+  riderId?: number;
   riderName: string;
   registrationId: number;
   raceClass: string | null;
   eligible: boolean;
   checkedIn: boolean;
   ineligibleReason: string | null;
+  // Timing numbers the rider confirms before checking in (servers before this
+  // release leave them out, and then the app checks in without asking).
+  rmTrackrNumber?: string | null;
+  rfidNumber?: string | null;
+  usesRmTrackr?: boolean;
+  usesRfid?: boolean;
+  numbersFlagged?: boolean;
 };
+
+/** The numbers to show a rider: the kinds the event times with, RM TrackR first. */
+function numbersToConfirm(r: Row): { label: string; value: string | null }[] | null {
+  if (r.rmTrackrNumber === undefined && r.rfidNumber === undefined) return null;
+  const out: { label: string; value: string | null }[] = [];
+  if (r.usesRmTrackr !== false || r.rmTrackrNumber) out.push({ label: "RM TrackR transponder", value: r.rmTrackrNumber ?? null });
+  if (r.usesRfid !== false || r.rfidNumber) out.push({ label: "RFID sticker", value: r.rfidNumber ?? null });
+  return out;
+}
 
 const REASONS: Record<string, string> = {
   missing_rfid: "No RFID sticker on file.",
@@ -46,6 +63,7 @@ const REASONS: Record<string, string> = {
   missing_waiver: "Waiver not signed yet.",
   payment_required: "Payment not complete.",
   pickup_required: "You have a transponder or RFID sticker to pick up at the gate.",
+  numbers_flagged: "You said your numbers are wrong. See the check-in booth.",
 };
 
 const REFRESH_MS = 60_000;
@@ -72,6 +90,8 @@ export function QuickCheckinCard() {
   const [locationFailed, setLocationFailed] = useState(false);
   const [busy, setBusy] = useState<number | "all" | null>(null);
   const [message, setMessage] = useState<{ eventId: number; ok: boolean; text: string } | null>(null);
+  // Check In tapped: the rider confirms their RM TrackR / RFID numbers first.
+  const [confirming, setConfirming] = useState<{ eventId: number; targets: Row[]; key: number | "all" } | null>(null);
   const announced = useRef(new Set<number>());
   const [alwaysDismissed, setAlwaysDismissed] = useState(true);
   useEffect(() => {
@@ -158,7 +178,47 @@ export function QuickCheckinCard() {
     }
   }, [events]);
 
-  async function checkIn(targets: Row[], key: number | "all") {
+  // Ask before checking in when the server sent the numbers; otherwise check in as before.
+  function startCheckIn(targets: Row[], key: number | "all") {
+    setMessage(null);
+    if (targets.some(r => numbersToConfirm(r) != null)) {
+      setConfirming({ eventId: targets[0].eventId, targets, key });
+      return;
+    }
+    void checkIn(targets, key);
+  }
+
+  // "No, they're wrong": recorded for the booth; the rider is not checked in.
+  async function reportWrongNumbers(targets: Row[], key: number | "all") {
+    setBusy(key);
+    setMessage(null);
+    try {
+      const loc = position ?? (await currentPosition().then(l => l && { lat: l.coords.latitude, lng: l.coords.longitude }));
+      let text = "You're not checked in yet. Please see the check-in booth so they can fix your numbers.";
+      const seen = new Set<string>();
+      for (const r of targets) {
+        const who = String(r.riderId ?? r.riderName);
+        if (seen.has(who)) continue;
+        seen.add(who);
+        const res = await riderFetch(`/api/events/${r.eventId}/quick-checkin`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ registrationId: r.registrationId, latitude: loc?.lat, longitude: loc?.lng, numbersConfirmed: false }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (typeof body?.error === "string") text = body.error;
+      }
+      setMessage({ eventId: targets[0].eventId, ok: false, text });
+      await refresh();
+    } catch {
+      setMessage({ eventId: targets[0].eventId, ok: false, text: "No connection. Please see the check-in booth so they can fix your numbers." });
+    } finally {
+      setBusy(null);
+      setConfirming(null);
+    }
+  }
+
+  async function checkIn(targets: Row[], key: number | "all", numbersConfirmed?: boolean) {
     setBusy(key);
     setMessage(null);
     try {
@@ -168,7 +228,7 @@ export function QuickCheckinCard() {
         const res = await riderFetch(`/api/events/${r.eventId}/quick-checkin`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ registrationId: r.registrationId, latitude: loc?.lat, longitude: loc?.lng }),
+          body: JSON.stringify({ registrationId: r.registrationId, latitude: loc?.lat, longitude: loc?.lng, ...(numbersConfirmed ? { numbersConfirmed: true } : {}) }),
         });
         if (!res.ok) {
           failed = (await res.json().catch(() => ({}))).error ?? "Check-in failed. Please try again.";
@@ -182,6 +242,7 @@ export function QuickCheckinCard() {
       setMessage({ eventId: targets[0].eventId, ok: false, text: "No connection. Check your signal and tap Check In again, or check in at the gate." });
     } finally {
       setBusy(null);
+      setConfirming(null);
     }
   }
 
@@ -273,7 +334,7 @@ export function QuickCheckinCard() {
                     <Text style={{ color: colors.success, fontWeight: "700", fontFamily: "Roboto_700Bold" }}>Checked in</Text>
                   </View>
                 ) : r.eligible && atTrack ? (
-                  <Pressable disabled={busy !== null} onPress={() => checkIn([r], r.registrationId)} style={button(true)}>
+                  <Pressable disabled={busy !== null || confirming !== null} onPress={() => startCheckIn([r], r.registrationId)} style={button(true)}>
                     {busy === r.registrationId
                       ? <ActivityIndicator color="#fff" size="small" />
                       : <Text style={{ color: "#fff", fontWeight: "700", fontFamily: "Roboto_700Bold" }}>Check In</Text>}
@@ -286,8 +347,44 @@ export function QuickCheckinCard() {
               </View>
             ))}
 
-            {atTrack && pending.length > 1 && (
-              <Pressable disabled={busy !== null} onPress={() => checkIn(pending, "all")} style={[button(true), { backgroundColor: colors.success }]}>
+            {confirming?.eventId === info.eventId && (
+              <View testID="quick-checkin-confirm-numbers" style={{ gap: 8, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background }}>
+                <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
+                  Are these your timing numbers?
+                </Text>
+                {[...new Map(confirming.targets.map(r => [String(r.riderId ?? r.riderName), r])).values()].map(r => (
+                  <View key={String(r.riderId ?? r.riderName)} style={{ gap: 2 }}>
+                    {confirming.targets.length > 1 && (
+                      <Text style={{ fontSize: 13, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>{r.riderName}</Text>
+                    )}
+                    {(numbersToConfirm(r) ?? []).map(n => (
+                      <Text key={n.label} style={{ fontSize: 13, color: colors.foreground, fontFamily: "Roboto_400Regular" }}>
+                        {n.label}: <Text style={{ fontFamily: "Roboto_700Bold", fontVariant: ["tabular-nums"] }}>{n.value ?? "None on file"}</Text>
+                      </Text>
+                    ))}
+                  </View>
+                ))}
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  <Pressable disabled={busy !== null} onPress={() => checkIn(confirming.targets, confirming.key, true)} style={[button(true), { flex: 1 }]}
+                    accessibilityRole="button" accessibilityLabel="Yes, these are correct. Check in.">
+                    {busy === confirming.key
+                      ? <ActivityIndicator color="#fff" size="small" />
+                      : <Text style={{ color: "#fff", fontWeight: "700", fontFamily: "Roboto_700Bold" }}>Yes, check in</Text>}
+                  </Pressable>
+                  <Pressable disabled={busy !== null} onPress={() => reportWrongNumbers(confirming.targets, confirming.key)}
+                    style={[button(false), { flex: 1, backgroundColor: "transparent", borderWidth: 1, borderColor: colors.border }]}
+                    accessibilityRole="button" accessibilityLabel="No, a number is wrong">
+                    <Text style={{ color: colors.foreground, fontWeight: "700", fontFamily: "Roboto_700Bold" }}>No, they're wrong</Text>
+                  </Pressable>
+                </View>
+                <Pressable disabled={busy !== null} onPress={() => setConfirming(null)} accessibilityRole="button">
+                  <Text style={{ textAlign: "center", fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>Cancel</Text>
+                </Pressable>
+              </View>
+            )}
+
+            {atTrack && pending.length > 1 && !confirming && (
+              <Pressable disabled={busy !== null} onPress={() => startCheckIn(pending, "all")} style={[button(true), { backgroundColor: colors.success }]}>
                 {busy === "all"
                   ? <ActivityIndicator color="#fff" size="small" />
                   : <Text style={{ color: "#fff", fontWeight: "700", fontFamily: "Roboto_700Bold" }}>Check In for All ({pending.length})</Text>}

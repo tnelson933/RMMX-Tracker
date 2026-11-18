@@ -1000,6 +1000,16 @@ export default function Checkin() {
                       </div>
                       <div className="flex items-center gap-2 text-xs md:text-sm font-medium mb-3 flex-wrap">
                         <span className="bg-primary/10 text-primary px-2 py-0.5 rounded uppercase tracking-wider">{checkin.raceClass}</span>
+                        {/* Rider said at Quick Check-In that their RM TrackR / RFID numbers are wrong. */}
+                        {!checkin.checkedIn && checkin.numbersFlaggedAt && (
+                          <span
+                            className="flex items-center gap-1 text-amber-800 bg-amber-50 border border-amber-300 px-2 py-0.5 rounded text-xs font-semibold"
+                            title={`Reported at Quick Check-In ${new Date(checkin.numbersFlaggedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}. Check their RM TrackR and RFID sticker numbers, then check them in here.`}
+                            data-testid={`numbers-flagged-${checkin.riderId}`}
+                          >
+                            <AlertCircle size={12} /> Rider says numbers are wrong
+                          </span>
+                        )}
                         {/* Liability waiver badge */}
                         {requireLiabilityWaiver && (
                           (checkin as any).waiverSigned ? (

@@ -355,11 +355,6 @@ export default function RiderDetailScreen() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedOk, setSavedOk] = useState(false);
 
-  // RFID edit state
-  const [rfidEditing, setRfidEditing] = useState(false);
-  const [rfidValue, setRfidValue] = useState("");
-  const [rfidSaving, setRfidSaving] = useState(false);
-
   useEffect(() => {
     if (isNaN(riderId)) {
       // Bad link: show the error state rather than spinning forever.
@@ -381,7 +376,6 @@ export default function RiderDetailScreen() {
       }
       const data: RiderFull = await res.json();
       setRider(data);
-      setRfidValue(data.rfidNumber ?? "");
     } catch (e: any) {
       setLoadError(e instanceof TypeError ? NETWORK_ERROR_MESSAGE : e.message);
     } finally {
@@ -449,7 +443,6 @@ export default function RiderDetailScreen() {
           bikeModel: form.bikeModel?.trim() || null,
           bikeYear: form.bikeYear?.trim() || null,
           sponsors: form.sponsors?.trim() || null,
-          myLapsTransponderNumber: form.myLapsTransponderNumber?.trim() || null,
           streetAddress: form.streetAddress?.trim() || null,
           city: form.city?.trim() || null,
           homeState: form.homeState?.trim() || null,
@@ -476,28 +469,6 @@ export default function RiderDetailScreen() {
     }
   }
 
-  async function saveRfid() {
-    if (!rider) return;
-    setRfidSaving(true);
-    try {
-      const res = await riderFetch(`/api/rider/profiles/${riderId}/rfid`, {
-        method: "PATCH",
-        body: JSON.stringify({ rfidNumber: rfidValue.trim() || null }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error((data as any).error ?? `Error ${res.status}`);
-      }
-      const data = await res.json();
-      setRider((r) => r ? { ...r, rfidNumber: data.rfidNumber } : r);
-      setRfidEditing(false);
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch (e: any) {
-      Alert.alert("Number not saved", e instanceof TypeError ? NETWORK_ERROR_MESSAGE : e.message);
-    } finally {
-      setRfidSaving(false);
-    }
-  }
 
   // ─── Styles ──────────────────────────────────────────────────────────────
 
@@ -1235,80 +1206,32 @@ export default function RiderDetailScreen() {
               }
             />
 
-            {/* Active Timing transponder */}
+            {/* Timing numbers: read only. Organizers change them (the API refuses rider changes). RM TrackR first. */}
             <View style={s.fieldRow}>
               <Text style={s.fieldLabel}>RM TrackR Transponder #</Text>
-              {editing && form ? (
-                <TextInput
-                  style={s.fieldInput}
-                  value={form.myLapsTransponderNumber ?? ""}
-                  onChangeText={(v) => setField("myLapsTransponderNumber", v)}
-                  placeholder="e.g. 4012345"
-                  placeholderTextColor={colors.mutedForeground}
-                  keyboardType="numeric"
-                  autoCorrect={false}
-                />
-              ) : rider.myLapsTransponderNumber ? (
-                <Text style={[s.fieldValue, { fontVariant: ["tabular-nums"] }]}>
+              {rider.myLapsTransponderNumber ? (
+                <Text style={[s.fieldValue, { fontVariant: ["tabular-nums"] }]} testID="rmtrackr-number">
                   {rider.myLapsTransponderNumber}
                 </Text>
               ) : (
-                <Text style={s.fieldEmpty}>Not set</Text>
+                <Text style={s.fieldEmpty}>None on file</Text>
               )}
             </View>
-
-            {/* RFID transponder — always separate inline edit */}
-            <View style={[s.rfidRow, { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }]}>
-              <View style={s.rfidLeft}>
-                <Text style={s.fieldLabel}>RFID Transponder</Text>
-                {rfidEditing ? (
-                  <View style={s.rfidEditRow}>
-                    <TextInput
-                      style={s.rfidInput}
-                      value={rfidValue}
-                      onChangeText={setRfidValue}
-                      placeholder="e.g. AB12CD34"
-                      placeholderTextColor={colors.mutedForeground}
-                      autoCorrect={false}
-                      autoCapitalize="characters"
-                      autoFocus
-                      onSubmitEditing={saveRfid}
-                    />
-                    <Pressable style={s.rfidSaveBtn} onPress={saveRfid} disabled={rfidSaving} accessibilityRole="button" accessibilityLabel="Save number">
-                      {rfidSaving ? (
-                        <ActivityIndicator color="#fff" size="small" />
-                      ) : (
-                        <Feather name="check" size={16} color="#fff" />
-                      )}
-                    </Pressable>
-                    <Pressable
-                      style={s.rfidCancelBtn}
-                      onPress={() => { setRfidEditing(false); setRfidValue(rider.rfidNumber ?? ""); }}
-                      disabled={rfidSaving}
-                      accessibilityRole="button"
-                      accessibilityLabel="Cancel"
-                    >
-                      <Feather name="x" size={16} color={colors.foreground} />
-                    </Pressable>
-                  </View>
-                ) : rider.rfidNumber ? (
-                  <Text style={[s.fieldValue, { fontVariant: ["tabular-nums"] }]}>
-                    {rider.rfidNumber}
-                  </Text>
-                ) : (
-                  <Text style={s.fieldEmpty}>No transponder set</Text>
-                )}
-              </View>
-              {!rfidEditing && (
-                <Pressable
-                  style={s.rfidEditBtn}
-                  onPress={() => { setRfidValue(rider.rfidNumber ?? ""); setRfidEditing(true); }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Edit number"
-                >
-                  <Feather name="edit-2" size={14} color={colors.mutedForeground} />
-                </Pressable>
+            <View style={s.fieldRow}>
+              <Text style={s.fieldLabel}>RFID Sticker #</Text>
+              {rider.rfidNumber ? (
+                <Text style={[s.fieldValue, { fontVariant: ["tabular-nums"] }]} testID="rfid-number">
+                  {rider.rfidNumber}
+                </Text>
+              ) : (
+                <Text style={s.fieldEmpty}>None on file</Text>
               )}
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 }}>
+                <Feather name="lock" size={12} color={colors.mutedForeground} />
+                <Text style={{ flex: 1, fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
+                  Only the organizer can change these. If one is wrong, see the check-in booth.
+                </Text>
+              </View>
             </View>
 
             {/* Sponsors */}

@@ -10,11 +10,11 @@ import {
   riderAccountsTable,
   liabilityWaiverSignaturesTable,
 } from "@workspace/db";
-import { eq, and, ne, inArray, isNull } from "drizzle-orm";
+import { eq, and, ne, inArray, isNull, isNotNull } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { requireRiderAuth } from "./rider-portal";
 import { eventTimingTags, eventsTimingTags, splitRegistrationTag } from "../lib/eventTimingTags";
-import { hasStickerBesidesTransponder, QUICK_CHECKIN_REASON_TEXT, quickCheckinIneligibleReason, quickCheckinRequirements } from "../lib/quickCheckinRequirements";
+import { hasStickerBesidesTransponder, NUMBERS_WRONG_TEXT, QUICK_CHECKIN_REASON_TEXT, quickCheckinIneligibleReason, quickCheckinRequirements } from "../lib/quickCheckinRequirements";
 import { managedRiderWhere } from "../lib/riderAccess";
 
 const router = Router();
@@ -33,6 +33,23 @@ function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number): 
     Math.sin(dLat / 2) ** 2 +
     Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/**
+ * The RM TrackR and RFID sticker numbers a rider races with at an event: the
+ * registration's (rentals included) and the event's sticker, else the profile's.
+ */
+function timingNumbersForEvent(
+  regTag: { transponder: string | null; sticker: string | null },
+  eventStickers: string[] | undefined,
+  profileTransponder: string | null | undefined,
+  profileRfid: string | null | undefined,
+): { rmTrackrNumber: string | null; rfidNumber: string | null } {
+  const rmTrackrNumber = regTag.transponder ?? (profileTransponder?.trim() || null);
+  const t = rmTrackrNumber?.toLowerCase() ?? "";
+  const profileSticker = profileRfid?.trim() && profileRfid.trim().toLowerCase() !== t ? profileRfid.trim() : null;
+  const sticker = (eventStickers ?? []).find(n => n.trim() && n.trim().toLowerCase() !== t) ?? regTag.sticker ?? profileSticker;
+  return { rmTrackrNumber, rfidNumber: sticker ?? null };
 }
 
 // GET /rider/quick-checkin-events
@@ -61,7 +78,7 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
 
   // Resolve all riders linked to this account by email
   const familyRiders = await db
-    .select({ id: ridersTable.id, firstName: ridersTable.firstName, lastName: ridersTable.lastName, transponderId: ridersTable.mylapsTransponderId })
+    .select({ id: ridersTable.id, firstName: ridersTable.firstName, lastName: ridersTable.lastName, transponderId: ridersTable.mylapsTransponderId, rfidNumber: ridersTable.rfidNumber })
     .from(ridersTable)
     .where(await managedRiderWhere(account));
 
@@ -69,6 +86,7 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
 
   const familyRiderIds = familyRiders.map(r => r.id);
   const transponderByRiderId = new Map(familyRiders.map(r => [r.id, r.transponderId]));
+  const profileRfidByRiderId = new Map(familyRiders.map(r => [r.id, r.rfidNumber]));
   const nameById = new Map(familyRiders.map(r => [r.id, `${r.firstName} ${r.lastName}`.trim()]));
 
   // Statuses advance on the server's schedule (lib/eventStatus sweep); a rider
@@ -132,17 +150,18 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
 
   // Check which riders are already checked in
   const checkins = await db
-    .select({ eventId: checkinsTable.eventId, riderId: checkinsTable.riderId, raceClass: checkinsTable.raceClass, checkedIn: checkinsTable.checkedIn })
+    .select({ eventId: checkinsTable.eventId, riderId: checkinsTable.riderId, raceClass: checkinsTable.raceClass, checkedIn: checkinsTable.checkedIn, numbersFlaggedAt: checkinsTable.numbersFlaggedAt })
     .from(checkinsTable)
     .where(
       and(
         inArray(checkinsTable.eventId, eventIds),
         inArray(checkinsTable.riderId, riderIds),
-        eq(checkinsTable.checkedIn, true),
       )
     );
   // Keyed per registration: event + rider + class
-  const checkedInSet = new Set(checkins.map(c => `${c.eventId}:${c.riderId}:${c.raceClass}`));
+  const checkedInSet = new Set(checkins.filter(c => c.checkedIn).map(c => `${c.eventId}:${c.riderId}:${c.raceClass}`));
+  // Rider said their timing numbers are wrong (per rider and event, any class).
+  const flaggedSet = new Set(checkins.filter(c => c.numbersFlaggedAt).map(c => `${c.eventId}:${c.riderId}`));
 
   // RFID stickers assigned for the events
   const rfidRows = await db
@@ -192,6 +211,12 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
     eligible: boolean;
     checkedIn: boolean;
     ineligibleReason: string | null;
+    /** Numbers the rider is asked to confirm before checking in (RM TrackR first). */
+    rmTrackrNumber: string | null;
+    rfidNumber: string | null;
+    usesRmTrackr: boolean;
+    usesRfid: boolean;
+    numbersFlagged: boolean;
   }> = [];
 
   for (const r of todayRegs) {
@@ -202,19 +227,23 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
     // An old sticker number in the transponder field is a sticker (lib/eventTimingTags).
     const regTag = splitRegistrationTag(r.myLapsTransponderNumber);
     const hasRfid = hasStickerBesidesTransponder(stickersByKey.get(key), regTag.transponder) || !!regTag.sticker;
+    const tags = tagsByEvent.get(r.eventId) ?? { transponder: true, rfid: true, fromReaders: false };
+    const numbers = timingNumbersForEvent(regTag, stickersByKey.get(key), transponderByRiderId.get(r.riderId), profileRfidByRiderId.get(r.riderId));
+    const numbersFlagged = flaggedSet.has(key);
     // requireWaiver = simple acknowledgment stored on the registration row (waiver_acknowledged_at)
     // requireLiabilityWaiver = full PDF e-signature stored in liability_waiver_signatures
     const waiverSigned = (!r.requireLiabilityWaiver || waiverByRider.has(key)) && (!r.requireWaiver || !!r.waiverAcknowledgedAt);
     const ineligibleReason = quickCheckinIneligibleReason(requirements, {
       // Unpaid online registrations (checkout not completed) pay at the gate.
       registrationConfirmed: r.regStatus === "confirmed",
-      tags: tagsByEvent.get(r.eventId) ?? { transponder: true, rfid: true, fromReaders: false },
+      tags,
       hasRfid,
       // A registration-level or rider-level number (including legacy stored values).
       hasTransponder: !!regTag.transponder || !!transponderByRiderId.get(r.riderId),
       waiverRequired: !!(r.requireWaiver || r.requireLiabilityWaiver),
       waiverSigned,
       needsPickup: needsGatePickup(r, hasRfid),
+      numbersFlagged,
     });
     const eligible = ineligibleReason == null;
     // Not required to be at the track: send no track location, so the app
@@ -239,6 +268,10 @@ router.get("/rider/quick-checkin-events", requireRiderAuth, async (req, res) => 
       eligible,
       checkedIn,
       ineligibleReason,
+      ...numbers,
+      usesRmTrackr: tags.transponder,
+      usesRfid: tags.rfid,
+      numbersFlagged,
     });
   }
 
@@ -301,8 +334,11 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
   const eventId = Number(req.params.eventId);
   if (isNaN(eventId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
 
-  const { riderId: bodyRiderId, registrationId: bodyRegistrationId, latitude, longitude } =
-    req.body as { riderId?: number; registrationId?: number; latitude?: number; longitude?: number };
+  // numbersConfirmed: the rider's answer to "are these your RM TrackR / RFID numbers?".
+  // false records it for the booth and doesn't check them in. Older app builds don't
+  // send it, so leaving it out still checks in as before.
+  const { riderId: bodyRiderId, registrationId: bodyRegistrationId, latitude, longitude, numbersConfirmed } =
+    req.body as { riderId?: number; registrationId?: number; latitude?: number; longitude?: number; numbersConfirmed?: boolean };
 
   const [account] = await db
     .select()
@@ -391,6 +427,19 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
     reg = row;
   }
 
+  // Wrong numbers: note it on the rider's check-in rows for the booth, and stop here.
+  if (numbersConfirmed === false) {
+    const now = new Date();
+    await db.update(checkinsTable).set({ numbersFlaggedAt: now })
+      .where(and(eq(checkinsTable.eventId, eventId), eq(checkinsTable.riderId, riderId), eq(checkinsTable.checkedIn, false)));
+    await db.insert(checkinsTable).values({
+      eventId, riderId, raceClass: reg.raceClass ?? "Unknown", bibNumber: reg.bibNumber ?? null,
+      checkedIn: false, rfidLinked: false, numbersFlaggedAt: now,
+    }).onConflictDoNothing();
+    req.log.info({ eventId, riderId, riderAccountId }, "Quick check-in: rider reported wrong timing numbers");
+    return res.status(409).json({ error: NUMBERS_WRONG_TEXT, reason: "numbers_flagged" });
+  }
+
   // The event's chosen requirements (timing tag, waiver, nothing to pick up).
   const stickers = await db
     .select({ rfidNumber: rfidAssignmentsTable.rfidNumber })
@@ -417,6 +466,9 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
   }
   const regTag = splitRegistrationTag(reg.myLapsTransponderNumber);
   const hasSticker = hasStickerBesidesTransponder(stickers.map(x => x.rfidNumber), regTag.transponder) || !!regTag.sticker;
+  const [flagged] = await db.select({ id: checkinsTable.id }).from(checkinsTable)
+    .where(and(eq(checkinsTable.eventId, eventId), eq(checkinsTable.riderId, riderId), isNotNull(checkinsTable.numbersFlaggedAt)))
+    .limit(1);
   const reason = quickCheckinIneligibleReason(requirements, {
     registrationConfirmed: reg.status === "confirmed",
     tags: await eventTimingTags(eventId),
@@ -425,6 +477,7 @@ router.post("/events/:eventId/quick-checkin", requireRiderAuth, async (req, res)
     waiverRequired: !!(event.requireWaiver || event.requireLiabilityWaiver),
     waiverSigned,
     needsPickup: needsGatePickup(reg, hasSticker),
+    numbersFlagged: !!flagged,
   });
   if (reason) return res.status(400).json({ error: QUICK_CHECKIN_REASON_TEXT[reason], reason });
 

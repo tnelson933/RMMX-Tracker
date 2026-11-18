@@ -626,6 +626,8 @@ export function initDb() {
   // Each entry is [table, "col_name  TYPE  DEFAULT ..."].
   // ALTER TABLE ADD COLUMN is idempotent: errors are swallowed when column already exists.
   const migrations: Array<[string, string]> = [
+    // checkins: rider reported wrong RM TrackR / RFID numbers at Quick Check-In (cloud)
+    ["checkins", "numbers_flagged_at         TEXT"],
     // events
     ["events", "track_name                 TEXT"],
     ["events", "race_classes               TEXT NOT NULL DEFAULT '[]'"],

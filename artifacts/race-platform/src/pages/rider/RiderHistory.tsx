@@ -7,7 +7,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Trophy, Clock, Star, ChevronDown, ChevronUp,
   Flag, AlertTriangle, Calendar, MapPin, Hash, User, Timer,
-  Wifi, Pencil, Check, X, Loader2, Radio, DoorOpen,
+  Wifi, Lock, Pencil, Check, X, Loader2, Radio, DoorOpen,
   Navigation, LocateFixed, ExternalLink, LayoutList, LayoutGrid,
   Settings, Phone, Shield, Bike, Ribbon, TrendingUp, BarChart3, Zap, Award, ChevronRight
 } from "lucide-react";
@@ -119,84 +119,29 @@ function isLapEligible(lapNumber: number, raceStyle?: string | null): boolean {
   return raceStyle !== "motocross" || lapNumber > 1;
 }
 
-// ─── RFID editor ────────────────────────────────────────────────────────────
+// ─── Timing numbers (read only) ──────────────────────────────────────────────
 
 // Sits under the dark page title, so text and icons use white/gray, never red.
-function RfidEditor({ riderId, currentRfid }: { riderId: number; currentRfid: string | null }) {
-  const queryClient = useQueryClient();
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(currentRfid ?? "");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  function startEdit() {
-    setValue(currentRfid ?? "");
-    setError(null);
-    setEditing(true);
-  }
-
-  function cancel() {
-    setEditing(false);
-    setError(null);
-  }
-
-  async function save() {
-    setSaving(true);
-    setError(null);
-    try {
-      await riderApi.updateRfid(riderId, value.trim() || null);
-      queryClient.invalidateQueries({ queryKey: ["rider-history", riderId] });
-      queryClient.invalidateQueries({ queryKey: ["rider-profiles"] });
-      queryClient.invalidateQueries({ queryKey: ["rider-practice", riderId] });
-      setEditing(false);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  if (editing) {
-    return (
-      <div className="flex flex-col gap-1.5 mt-2">
-        <div className="flex items-center gap-2">
-          <Wifi size={15} className="text-white/70 shrink-0" />
-          <Input
-            value={value}
-            onChange={e => setValue(e.target.value)}
-            placeholder="e.g. AB12CD34"
-            className="h-9 text-sm font-mono w-48 bg-muted text-white border-border"
-            autoFocus
-            onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); }}
-          />
-          <Button size="sm" aria-label="Save transponder" className="h-9 w-9 px-0 bg-primary text-white border-primary hover:bg-[#990000]" onClick={save} disabled={saving}>
-            {saving ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-          </Button>
-          <Button size="sm" variant="ghost" aria-label="Cancel" className="h-9 w-9 px-0 text-white hover:bg-white/10" onClick={cancel} disabled={saving}>
-            <X size={13} />
-          </Button>
-        </div>
-        {error && <p className="text-[13px] text-white bg-primary rounded px-2 py-1 ml-5 self-start">{error}</p>}
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex items-center gap-1.5 mt-2">
+// Riders see their numbers here but can't change them: only the organizer can
+// (the API refuses rider changes too). RM TrackR always comes first.
+function TimingNumbers({ rmTrackr, rfid }: { rmTrackr: string | null; rfid: string | null }) {
+  const row = (label: string, value: string | null) => (
+    <span className="flex items-center gap-1.5 text-[15px]">
       <Wifi size={15} className="text-white/70 shrink-0" />
-      {currentRfid ? (
-        <span className="text-[15px] font-mono text-white/85">{currentRfid}</span>
-      ) : (
-        <span className="text-[15px] text-white/75">No transponder set</span>
-      )}
-      <button
-        onClick={startEdit}
-        className="ml-1 inline-flex items-center gap-1 rounded-full border border-border bg-muted px-3 min-h-[32px] text-[13px] font-bold uppercase tracking-[0.5px] text-white hover:bg-white/10 transition-colors"
-        title="Edit transponder number"
-      >
-        <Pencil size={12} /> Edit
-      </button>
-    </div>
+      <span className="text-white/75">{label}:</span>
+      {value
+        ? <span className="font-mono text-white/90">{value}</span>
+        : <span className="text-white/75">None on file</span>}
+    </span>
+  );
+  return (
+    <span className="flex flex-col gap-1 mt-2" data-testid="rider-timing-numbers">
+      {row("RM TrackR transponder", rmTrackr)}
+      {row("RFID sticker", rfid)}
+      <span className="flex items-center gap-1.5 text-[13px] text-white/70">
+        <Lock size={12} className="shrink-0" /> Only the organizer can change these. If one is wrong, see the check-in booth.
+      </span>
+    </span>
   );
 }
 
@@ -233,7 +178,6 @@ function ProfileEditor({ rider }: { rider: RiderFull }) {
     sponsors: rider.sponsors ?? "",
     hometown: rider.hometown ?? "",
     homeState: rider.homeState ?? "",
-    myLapsTransponderNumber: rider.myLapsTransponderNumber ?? "",
   });
 
   function startEdit() {
@@ -250,7 +194,6 @@ function ProfileEditor({ rider }: { rider: RiderFull }) {
       sponsors: rider.sponsors ?? "",
       hometown: rider.hometown ?? "",
       homeState: rider.homeState ?? "",
-      myLapsTransponderNumber: rider.myLapsTransponderNumber ?? "",
     });
     setError(null);
     setSaved(false);
@@ -365,7 +308,19 @@ function ProfileEditor({ rider }: { rider: RiderFull }) {
         <CardContent className="px-5 pb-5 grid grid-cols-2 gap-4">
           {field("#", "bibNumber", "e.g. 42")}
           {field("AMA Number", "amaNumber", "AMA membership #")}
-          {field("RM TrackR Transponder #", "myLapsTransponderNumber", "e.g. 4012345")}
+          {/* Read only: organizers change timing numbers (shown under the page title too). */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1"><Lock size={11} /> RM TrackR Transponder #</Label>
+            <p className="text-sm py-1.5 min-h-[2rem] font-mono">
+              {rider.myLapsTransponderNumber || <span className="text-muted-foreground italic font-sans">None on file</span>}
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1"><Lock size={11} /> RFID Sticker #</Label>
+            <p className="text-sm py-1.5 min-h-[2rem] font-mono">
+              {rider.rfidNumber || <span className="text-muted-foreground italic font-sans">None on file</span>}
+            </p>
+          </div>
           <div className="col-span-2 space-y-1.5">
             <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sponsors</Label>
             {editing ? (
@@ -2535,7 +2490,7 @@ export default function RiderHistory({ riderId: riderIdProp, riderSwitcher }: { 
               )}
             </span>
           )}
-          <RfidEditor riderId={rider.id} currentRfid={rider.rfidNumber ?? null} />
+          <TimingNumbers rmTrackr={rider.myLapsTransponderNumber ?? null} rfid={rider.rfidNumber ?? null} />
         </span>
       ) : undefined}
     >

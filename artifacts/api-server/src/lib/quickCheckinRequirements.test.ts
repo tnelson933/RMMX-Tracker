@@ -71,3 +71,11 @@ test("an old sticker row holding the transponder number isn't a sticker", () => 
   assert.equal(hasStickerBesidesTransponder(["E280"], null), true);
   assert.equal(hasStickerBesidesTransponder([], "1a2b3c"), false);
 });
+
+test("numbers the rider reported wrong always send them to the booth", () => {
+  const none = { paid: false, timing: false, waiver: false, pickup: false, atTrack: false };
+  assert.equal(quickCheckinIneligibleReason(DEFAULT_QUICK_CHECKIN_REQUIREMENTS, { ...ready, numbersFlagged: true }), "numbers_flagged");
+  assert.equal(quickCheckinIneligibleReason(none, { ...ready, numbersFlagged: true }), "numbers_flagged");
+  // Things the rider can fix in the app come first.
+  assert.equal(quickCheckinIneligibleReason(DEFAULT_QUICK_CHECKIN_REQUIREMENTS, { ...ready, registrationConfirmed: false, numbersFlagged: true }), "payment_required");
+});

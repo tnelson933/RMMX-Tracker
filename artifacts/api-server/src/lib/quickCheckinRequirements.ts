@@ -56,10 +56,12 @@ export interface QuickCheckinRiderState {
   waiverRequired: boolean;
   waiverSigned: boolean;
   needsPickup: boolean;
+  /** The rider said their RM TrackR / RFID sticker numbers are wrong; the booth fixes them. */
+  numbersFlagged?: boolean;
 }
 
 export type QuickCheckinIneligibleReason =
-  | "payment_required" | "missing_rfid" | "missing_transponder" | "missing_waiver" | "pickup_required";
+  | "payment_required" | "missing_rfid" | "missing_transponder" | "missing_waiver" | "pickup_required" | "numbers_flagged";
 
 /** The first requirement the rider doesn't meet, or null when they can check in. */
 export function quickCheckinIneligibleReason(
@@ -74,6 +76,8 @@ export function quickCheckinIneligibleReason(
   }
   if (req.waiver && s.waiverRequired && !s.waiverSigned) return "missing_waiver";
   if (req.pickup && s.needsPickup) return "pickup_required";
+  // Not an organizer setting: wrong numbers always go to the booth.
+  if (s.numbersFlagged) return "numbers_flagged";
   return null;
 }
 
@@ -86,10 +90,14 @@ export function hasStickerBesidesTransponder(stickers: string[] | undefined, tra
   return (stickers ?? []).some(n => n.trim().toLowerCase() !== t);
 }
 
+/** Shown when a rider says their RM TrackR / RFID sticker numbers are wrong. */
+export const NUMBERS_WRONG_TEXT = "You're not checked in yet. Please see the check-in booth so they can fix your RM TrackR or RFID sticker number.";
+
 export const QUICK_CHECKIN_REASON_TEXT: Record<QuickCheckinIneligibleReason, string> = {
   payment_required: "No paid registration found for this event. Finish payment or check in at the gate.",
   missing_rfid: "RFID not assigned — contact the organizer",
   missing_transponder: "Active transponder number not assigned — contact the organizer",
   missing_waiver: "Waiver not signed — please complete the waiver before checking in",
   pickup_required: "You have a transponder or RFID sticker to pick up — check in at the gate",
+  numbers_flagged: NUMBERS_WRONG_TEXT,
 };

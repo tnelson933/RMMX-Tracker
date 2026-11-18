@@ -748,6 +748,8 @@ export interface QuickCheckinInput {
   riderId?: number;
   /** Specific registration to check in (checks in that registration's rider and class) */
   registrationId?: number;
+  /** The rider's answer to "are these your RM TrackR and RFID sticker numbers?". false records the report for the check-in booth and does not check the rider in (409). Omitted (older app builds) checks in as before. */
+  numbersConfirmed?: boolean;
 }
 
 /**
@@ -757,9 +759,12 @@ export type QuickCheckinEventIneligibleReason = typeof QuickCheckinEventIneligib
 
 
 export const QuickCheckinEventIneligibleReason = {
+  payment_required: 'payment_required',
   missing_rfid: 'missing_rfid',
   missing_transponder: 'missing_transponder',
   missing_waiver: 'missing_waiver',
+  pickup_required: 'pickup_required',
+  numbers_flagged: 'numbers_flagged',
 } as const;
 
 export interface QuickCheckinEvent {
@@ -784,6 +789,22 @@ export interface QuickCheckinEvent {
   checkedIn: boolean;
   /** @nullable */
   ineligibleReason?: QuickCheckinEventIneligibleReason;
+  /**
+     * The rider's RM TrackR transponder number for this event (registration, rental or profile)
+     * @nullable
+     */
+  rmTrackrNumber?: string | null;
+  /**
+     * The rider's RFID sticker number for this event (event sticker or profile)
+     * @nullable
+     */
+  rfidNumber?: string | null;
+  /** The event times with RM TrackR transponders */
+  usesRmTrackr?: boolean;
+  /** The event times with RFID stickers */
+  usesRfid?: boolean;
+  /** The rider reported their numbers as wrong; they must see the check-in booth */
+  numbersFlagged?: boolean;
 }
 
 export interface Rider {
@@ -1069,6 +1090,11 @@ export interface Checkin {
   /** @nullable */
   rfidNumber?: string | null;
   rfidLinked?: boolean;
+  /**
+     * When the rider reported at Quick Check-In that their RM TrackR / RFID sticker numbers are wrong
+     * @nullable
+     */
+  numbersFlaggedAt?: string | null;
 }
 
 export interface CheckinInput {

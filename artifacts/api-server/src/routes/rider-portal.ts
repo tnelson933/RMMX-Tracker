@@ -76,6 +76,9 @@ import { ageOn, BIO_MAX, effectiveVisibility, PLATE_COLORS } from "../lib/riderR
 
 const router = Router();
 
+/** Riders can add a missing RFID sticker or RM TrackR number, but only organizers change one. */
+export const TIMING_NUMBER_LOCKED = "Your RM TrackR and RFID sticker numbers can only be changed by the organizer. See the check-in booth if one is wrong.";
+
 function generateMobileToken(): string {
   return randomBytes(32).toString("hex");
 }
@@ -1247,6 +1250,14 @@ router.patch("/rider/profiles/:riderId/rfid", requireRiderAuth, async (req, res)
   const { rfidNumber } = req.body;
   const value = typeof rfidNumber === "string" ? rfidNumber.trim() : null;
 
+  // Riders can add a sticker number when none is on file; only organizers change or clear one.
+  const current = rider.rfidNumber?.trim() || null;
+  if (current) {
+    if ((value ?? "").toUpperCase() === current.toUpperCase()) return res.json({ rfidNumber: current });
+    return res.status(403).json({ error: TIMING_NUMBER_LOCKED });
+  }
+  if (!value) return res.json({ rfidNumber: null });
+
   const [updated] = await db
     .update(ridersTable)
     .set({ rfidNumber: value || null })
@@ -1292,10 +1303,20 @@ router.patch("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
     }
   }
 
-  // The legacy API property maps to the retained DB property.
+  // The legacy API property maps to the retained DB property. Riders can add an
+  // RM TrackR number when none is on file; only organizers change or clear one.
+  // Sending the saved number back unchanged (older app forms do) is fine.
   if ("myLapsTransponderNumber" in req.body) {
     const val = req.body.myLapsTransponderNumber;
-    patch.mylapsTransponderId = typeof val === "string" ? val.trim() || null : null;
+    const next = typeof val === "string" ? val.trim() || null : null;
+    const current = rider.mylapsTransponderId?.trim() || null;
+    if (current) {
+      if (next != null && next.toUpperCase() !== current.toUpperCase()) {
+        return res.status(403).json({ error: TIMING_NUMBER_LOCKED });
+      }
+    } else if (next) {
+      patch.mylapsTransponderId = next;
+    }
   }
 
   // Racer profile: bio, number-plate colour and who can see the profile.

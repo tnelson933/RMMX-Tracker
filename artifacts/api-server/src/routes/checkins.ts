@@ -60,8 +60,11 @@ router.get("/events/:eventId/checkins", async (req, res) => {
     .orderBy(asc(checkinsTable.id));
 
   const checkinByRider = new Map<number, typeof checkinRows[0]>();
+  // Rider said their RM TrackR / RFID numbers are wrong at Quick Check-In (any class entry).
+  const flaggedByRider = new Map<number, Date>();
   for (const c of checkinRows) {
     if (!checkinByRider.has(c.riderId)) checkinByRider.set(c.riderId, c);
+    if (c.numbersFlaggedAt) flaggedByRider.set(c.riderId, c.numbersFlaggedAt);
   }
 
   // Fetch all waiver signatures for this event to compute waiverSigned per rider.
@@ -157,6 +160,7 @@ router.get("/events/:eventId/checkins", async (req, res) => {
       // Each kind of tag on its own (rfidNumber above is whichever was set last).
       transponderNumber,
       rfidTag,
+      numbersFlaggedAt: flaggedByRider.get(r.riderId)?.toISOString() ?? null,
       waiverSigned: signedRiders.has(r.riderId)
         || (!!riderEmail && signedEmails.has(riderEmail))
         || signedMinors.has(normName(`${r.firstName ?? ""} ${r.lastName ?? ""}`)),

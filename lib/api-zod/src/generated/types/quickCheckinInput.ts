@@ -11,4 +11,6 @@ export interface QuickCheckinInput {
   riderId?: number;
   /** Specific registration to check in (checks in that registration's rider and class) */
   registrationId?: number;
+  /** The rider's answer to "are these your RM TrackR and RFID sticker numbers?". false records the report for the check-in booth and does not check the rider in (409). Omitted (older app builds) checks in as before. */
+  numbersConfirmed?: boolean;
 }

@@ -57,9 +57,12 @@ router.get("/events/:eventId/checkins", (req, res) => {
     .all(eventId) as Record<string, unknown>[];
 
   const checkinByRider = new Map<number, Record<string, unknown>>();
+  // Rider said their RM TrackR / RFID numbers are wrong at Quick Check-In (any class entry).
+  const flaggedByRider = new Map<number, string>();
   for (const c of checkinRows) {
     const rid = c.rider_id as number;
     if (!checkinByRider.has(rid)) checkinByRider.set(rid, c);
+    if (typeof c.numbers_flagged_at === "string" && c.numbers_flagged_at) flaggedByRider.set(rid, c.numbers_flagged_at);
   }
 
   // Signed waivers (pulled from the cloud or signed here at check-in), matched
@@ -117,6 +120,7 @@ router.get("/events/:eventId/checkins", (req, res) => {
         checkedInAt: c?.checked_in_at ?? null,
         rfidNumber: timingNumber,
         rfidLinked: parseBool(c?.rfid_linked as number) || !!timingNumber,
+        numbersFlaggedAt: flaggedByRider.get(r.riderId as number) ?? null,
         waiverSigned: riderEmail ? signedEmails.has(riderEmail) : false,
       };
     }),

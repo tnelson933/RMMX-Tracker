@@ -14,6 +14,9 @@ export const checkinsTable = pgTable("checkins", {
   checkedInAt: timestamp("checked_in_at"),
   rfidNumber: text("rfid_number"),
   rfidLinked: boolean("rfid_linked").notNull().default(false),
+  // Set when the rider said at Quick Check-In that their RM TrackR / RFID sticker
+  // numbers are wrong: they weren't checked in and should see the booth.
+  numbersFlaggedAt: timestamp("numbers_flagged_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
   // One row per rider, event and class (deploy/migrations/0012): concurrent payment

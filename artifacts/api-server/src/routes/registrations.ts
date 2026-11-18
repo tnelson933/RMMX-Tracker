@@ -214,6 +214,21 @@ function fillOnlyEmptyProfileFields(
   return out as Partial<typeof ridersTable.$inferInsert>;
 }
 
+/**
+ * Riders (and their managers) may edit their own profile while registering, but
+ * a saved RM TrackR or RFID sticker number is only changed by organizers. The
+ * number they enter still goes on this registration.
+ */
+function keepSavedTimingNumbers(
+  existing: RiderRow,
+  submitted: Partial<typeof ridersTable.$inferInsert>,
+): Partial<typeof ridersTable.$inferInsert> {
+  const out = { ...submitted };
+  if (existing.mylapsTransponderId?.trim()) delete out.mylapsTransponderId;
+  if (existing.rfidNumber?.trim()) delete out.rfidNumber;
+  return out;
+}
+
 async function checkEventOwnership(eventId: number, staffCId: number | null, res: any): Promise<boolean> {
   if (staffCId === null) return true;
   const [evt] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, eventId));
@@ -1827,7 +1842,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     const callerAccount = await requestRiderAccount(req);
     const callerManages = callerAccount ? await canManageRider(callerAccount, resolvedExistingRider) : false;
     const fieldsToSave = callerManages
-      ? profileFields
+      ? keepSavedTimingNumbers(resolvedExistingRider, profileFields)
       : fillOnlyEmptyProfileFields(resolvedExistingRider, profileFields);
     if (Object.keys(fieldsToSave).length > 0) {
       const [updated] = await db.update(ridersTable)

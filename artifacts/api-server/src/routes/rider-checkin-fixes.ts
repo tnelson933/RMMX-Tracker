@@ -11,9 +11,9 @@ import {
   rfidAssignmentsTable,
   liabilityWaiverSignaturesTable,
 } from "@workspace/db";
-import { and, eq, ilike, isNotNull, ne, or } from "drizzle-orm";
+import { and, eq, ilike, isNotNull, isNull, ne, or } from "drizzle-orm";
 import { eventTimeZone, normalizeActiveTransponderIdentifier, todayInZone } from "@workspace/api-zod";
-import { requireRiderAuth } from "./rider-portal";
+import { requireRiderAuth, TIMING_NUMBER_LOCKED } from "./rider-portal";
 import { canManageRider } from "../lib/riderAccess";
 import { resolvePurchaseOptions } from "../lib/purchaseOptions";
 import { getUncachableStripeClient } from "../stripeClient";
@@ -369,13 +369,15 @@ router.post("/rider/registrations/:regId/transponder", requireRiderAuth, async (
   // This screen only fills in a missing number; changing one goes through the organizer.
   const regs = await riderRegsForEvent(rider.id, event.id);
   if (regs.some(r => r.myLapsTransponderNumber && r.myLapsTransponderNumber.toUpperCase() !== number)) {
-    return res.status(409).json({ error: "You already have a transponder number for this event. See the organizer to change it." });
+    return res.status(409).json({ error: TIMING_NUMBER_LOCKED });
   }
 
   await db.update(registrationsTable)
     .set({ myLapsTransponderNumber: number })
     .where(and(eq(registrationsTable.riderId, rider.id), eq(registrationsTable.eventId, event.id), ne(registrationsTable.status, "void")));
-  await db.update(ridersTable).set({ mylapsTransponderId: number }).where(eq(ridersTable.id, rider.id));
+  // Fills the profile only when it has none: a saved number is changed by organizers.
+  await db.update(ridersTable).set({ mylapsTransponderId: number })
+    .where(and(eq(ridersTable.id, rider.id), or(isNull(ridersTable.mylapsTransponderId), eq(ridersTable.mylapsTransponderId, ""))));
   return res.json({ ok: true, transponderNumber: number });
 });
 
@@ -402,11 +404,12 @@ router.post("/rider/registrations/:regId/rfid", requireRiderAuth, async (req, re
     .where(and(eq(rfidAssignmentsTable.eventId, event.id), eq(rfidAssignmentsTable.riderId, rider.id))).limit(1);
   // This screen only fills in a missing sticker; changing one goes through the organizer.
   if (existing?.rfidNumber && existing.rfidNumber.toUpperCase() !== number) {
-    return res.status(409).json({ error: "You already have a sticker number for this event. See the organizer to change it." });
+    return res.status(409).json({ error: TIMING_NUMBER_LOCKED });
   }
   if (existing) await db.update(rfidAssignmentsTable).set({ rfidNumber: number }).where(eq(rfidAssignmentsTable.id, existing.id));
   else await db.insert(rfidAssignmentsTable).values({ riderId: rider.id, eventId: event.id, rfidNumber: number });
-  await db.update(ridersTable).set({ rfidNumber: number }).where(eq(ridersTable.id, rider.id));
+  await db.update(ridersTable).set({ rfidNumber: number })
+    .where(and(eq(ridersTable.id, rider.id), or(isNull(ridersTable.rfidNumber), eq(ridersTable.rfidNumber, ""))));
   return res.json({ ok: true, rfidNumber: number });
 });
 

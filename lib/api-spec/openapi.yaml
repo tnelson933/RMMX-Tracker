@@ -2524,6 +2524,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+        "409":
+          description: The rider reported their timing numbers as wrong (numbersConfirmed false); not checked in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "401":
           description: Not authenticated
           content:
@@ -4034,6 +4040,12 @@ components:
         registrationId:
           type: integer
           description: Specific registration to check in (checks in that registration's rider and class)
+        numbersConfirmed:
+          type: boolean
+          description: >-
+            The rider's answer to "are these your RM TrackR and RFID sticker numbers?".
+            false records the report for the check-in booth and does not check the rider in (409).
+            Omitted (older app builds) checks in as before.
 
     QuickCheckinEvent:
       type: object
@@ -4069,7 +4081,22 @@ components:
           type: boolean
         ineligibleReason:
           type: ["string", "null"]
-          enum: [missing_rfid, missing_transponder, missing_waiver, null]
+          enum: [payment_required, missing_rfid, missing_transponder, missing_waiver, pickup_required, numbers_flagged, null]
+        rmTrackrNumber:
+          type: ["string", "null"]
+          description: The rider's RM TrackR transponder number for this event (registration, rental or profile)
+        rfidNumber:
+          type: ["string", "null"]
+          description: The rider's RFID sticker number for this event (event sticker or profile)
+        usesRmTrackr:
+          type: boolean
+          description: The event times with RM TrackR transponders
+        usesRfid:
+          type: boolean
+          description: The event times with RFID stickers
+        numbersFlagged:
+          type: boolean
+          description: The rider reported their numbers as wrong; they must see the check-in booth
 
     Rider:
       type: object
@@ -4461,6 +4488,9 @@ components:
           type: ["string", "null"]
         rfidLinked:
           type: boolean
+        numbersFlaggedAt:
+          type: ["string", "null"]
+          description: When the rider reported at Quick Check-In that their RM TrackR / RFID sticker numbers are wrong
 
     CheckinInput:
       type: object

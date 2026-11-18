@@ -13,7 +13,10 @@ export type QuickCheckinEventIneligibleReason = typeof QuickCheckinEventIneligib
 
 
 export const QuickCheckinEventIneligibleReason = {
+  payment_required: 'payment_required',
   missing_rfid: 'missing_rfid',
   missing_transponder: 'missing_transponder',
   missing_waiver: 'missing_waiver',
+  pickup_required: 'pickup_required',
+  numbers_flagged: 'numbers_flagged',
 } as const;

@@ -29,4 +29,20 @@ export interface QuickCheckinEvent {
   checkedIn: boolean;
   /** @nullable */
   ineligibleReason?: QuickCheckinEventIneligibleReason;
+  /**
+     * The rider's RM TrackR transponder number for this event (registration, rental or profile)
+     * @nullable
+     */
+  rmTrackrNumber?: string | null;
+  /**
+     * The rider's RFID sticker number for this event (event sticker or profile)
+     * @nullable
+     */
+  rfidNumber?: string | null;
+  /** The event times with RM TrackR transponders */
+  usesRmTrackr?: boolean;
+  /** The event times with RFID stickers */
+  usesRfid?: boolean;
+  /** The rider reported their numbers as wrong; they must see the check-in booth */
+  numbersFlagged?: boolean;
 }

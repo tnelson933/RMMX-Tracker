@@ -732,15 +732,16 @@ export async function runPull(): Promise<{ ok: boolean; rows: Record<string, num
     const checkinStmt = db.prepare(`
       INSERT INTO checkins (
         id, event_id, rider_id, race_class, bib_number, checked_in,
-        checked_in_at, rfid_number, rfid_linked, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        checked_in_at, rfid_number, rfid_linked, created_at, numbers_flagged_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         rider_id      = excluded.rider_id,
         bib_number    = excluded.bib_number,
         checked_in    = excluded.checked_in,
         checked_in_at = excluded.checked_in_at,
         rfid_number   = excluded.rfid_number,
-        rfid_linked   = excluded.rfid_linked
+        rfid_linked   = excluded.rfid_linked,
+        numbers_flagged_at = excluded.numbers_flagged_at
     `);
 
     for (const c of data.checkins ?? []) {
@@ -754,6 +755,8 @@ export async function runPull(): Promise<{ ok: boolean; rows: Record<string, num
         toSQLiteScalar(c.rfidNumber) ?? null,
         c.rfidLinked ? 1 : 0,
         toDateStr(c.createdAt) ?? new Date().toISOString(),
+        // Rider reported wrong timing numbers at Quick Check-In (cloud only).
+        toDateStr(c.numbersFlaggedAt),
       );
       rows.checkinsPulled++;
     }

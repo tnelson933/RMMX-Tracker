@@ -30,4 +30,9 @@ export interface Checkin {
   /** @nullable */
   rfidNumber?: string | null;
   rfidLinked?: boolean;
+  /**
+     * When the rider reported at Quick Check-In that their RM TrackR / RFID sticker numbers are wrong
+     * @nullable
+     */
+  numbersFlaggedAt?: string | null;
 }
