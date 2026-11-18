@@ -68,8 +68,8 @@ router.post("/video/broadcast-ticket", async (req, res) => {
 // GET /video/watch-access/:eventId — may this viewer watch? While RM Roost
 // Premium is switched off (the default) everyone may, with no ticket. Once it's
 // on, the relay needs a short-lived ticket: the event's own club staff and
-// riders with Premium watch without limit; any other signed-in rider gets 1
-// free hour per event (website session or rider-app Bearer token).
+// riders with Premium watch without limit; any other signed-in rider gets 30
+// free minutes in total, never reset (website session or rider-app Bearer token).
 router.get("/video/watch-access/:eventId", async (req, res) => {
   const eventId = parseInt(req.params.eventId, 10);
   if (isNaN(eventId)) return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
@@ -89,13 +89,13 @@ router.get("/video/watch-access/:eventId", async (req, res) => {
     accountId = tok?.id;
   }
   if (!accountId) {
-    return res.status(402).json({ error: "Sign in to your RM Roost rider account to watch. Every rider gets 1 free hour of each event's stream.", code: "sign_in_required", required: true, signIn: true });
+    return res.status(402).json({ error: "Sign in to your RM Roost rider account to watch. Every rider gets 30 free minutes of live streaming.", code: "sign_in_required", required: true, signIn: true });
   }
   if ((await riderAccess(accountId)).premium) {
     return res.json({ required: true, ticket: createWatchTicket(eventId, { riderAccountId: accountId, allowUntil: NO_LIMIT, free: false }), freeSecondsLeft: null });
   }
-  const left = await freeStreamSecondsLeft(accountId, eventId);
-  if (left <= 0) return res.status(402).json(premiumRequired("Watching more than 1 hour of an event", { required: true, freeSecondsLeft: 0 }));
+  const left = await freeStreamSecondsLeft(accountId);
+  if (left <= 0) return res.status(402).json(premiumRequired("Live streaming beyond your 30 free minutes", { required: true, freeSecondsLeft: 0 }));
   return res.json({
     required: true,
     ticket: createWatchTicket(eventId, { riderAccountId: accountId, allowUntil: Date.now() + left * 1000, free: true }),

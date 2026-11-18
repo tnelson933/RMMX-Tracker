@@ -28,7 +28,7 @@ function appRiderToken(): string | null {
 }
 
 /** Message shown when a free rider's hour of this event's stream is used up. */
-export const FREE_TIME_OVER_MESSAGE = "You've watched your free hour of this event. RM Roost Premium unlocks unlimited live streams.";
+export const FREE_TIME_OVER_MESSAGE = "You've used your 30 free minutes of live streaming. RM Roost Premium unlocks unlimited live streams.";
 
 /** Forget this event's access so the next connect asks the server again. */
 export function resetWatchAccess(): void {

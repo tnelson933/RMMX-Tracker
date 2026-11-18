@@ -14,8 +14,8 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
  * grant Premium to an account by email.
  *
  * Free riders keep everything for race day: today's live laps and standings,
- * registration, check-in, 1 Rocky question every 24 hours, and 1 hour of each
- * event's live stream. There is no free trial: Premium is paid.
+ * registration, check-in, 1 Rocky question every 24 hours, and 30 minutes of
+ * live streaming in total (it never resets). There is no free trial: Premium is paid.
  */
 
 export const PREMIUM_ENFORCED_KEY = "premium_enforced";
@@ -107,11 +107,11 @@ export function isRecentPractice(startedAt: string | null, now = new Date()): bo
 // Once Premium is on, the video relay only accepts viewers carrying a ticket
 // from GET /video/watch-access/:eventId. A ticket says who is watching and
 // until when: Premium riders and the event's own club staff without limit, a
-// free rider until their free hour for that event runs out (the relay then
-// tells the player and closes). While Premium is off, no ticket is needed.
+// free rider until their 30 free minutes (in total, across all events) run out
+// (the relay then tells the player and closes). While Premium is off, no ticket is needed.
 
-/** Free live-stream time per rider account per event, once Premium is on. */
-export const FREE_STREAM_SECONDS = 60 * 60;
+/** Free live-stream time per rider account, in total across all events and never reset, once Premium is on. */
+export const FREE_STREAM_SECONDS = 30 * 60;
 /** "No limit" for Premium riders and club staff. */
 export const NO_LIMIT = 8_640_000_000_000_000;
 
@@ -126,7 +126,7 @@ export interface WatchGrant {
   riderAccountId: number;
   /** Epoch ms when this viewer must stop (NO_LIMIT for Premium and staff). */
   allowUntil: number;
-  /** Watching on the free hour: the relay records the time watched. */
+  /** Watching on the free minutes: the relay records the time watched. */
   free: boolean;
 }
 
@@ -148,14 +148,14 @@ export function verifyWatchTicket(ticket: string | null | undefined, eventId: nu
   return { riderAccountId: Number(acct), allowUntil: Number(until), free: free === "1" };
 }
 
-/** Free stream seconds this rider has left for an event. */
-export async function freeStreamSecondsLeft(riderAccountId: number, eventId: number): Promise<number> {
-  const [row] = await db.select({ seconds: riderStreamUsageTable.seconds }).from(riderStreamUsageTable)
-    .where(and(eq(riderStreamUsageTable.riderAccountId, riderAccountId), eq(riderStreamUsageTable.eventId, eventId)));
-  return Math.max(0, FREE_STREAM_SECONDS - (row?.seconds ?? 0));
+/** Free stream seconds this rider has left, in total across every event (never resets). */
+export async function freeStreamSecondsLeft(riderAccountId: number): Promise<number> {
+  const [row] = await db.select({ seconds: sql<number>`coalesce(sum(${riderStreamUsageTable.seconds}), 0)` })
+    .from(riderStreamUsageTable).where(eq(riderStreamUsageTable.riderAccountId, riderAccountId));
+  return Math.max(0, FREE_STREAM_SECONDS - Number(row?.seconds ?? 0));
 }
 
-/** Add watched seconds to a rider's free time for an event. */
+/** Add watched seconds to a rider's free time (kept per event, counted in total). */
 export async function recordStreamSeconds(riderAccountId: number, eventId: number, seconds: number): Promise<void> {
   const s = Math.max(0, Math.round(seconds));
   if (!riderAccountId || s === 0) return;

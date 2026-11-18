@@ -14,7 +14,7 @@ import { useLiveStreams, watchPageUrl } from "@/lib/liveStreams";
 /**
  * The live stream player: the website's Watch Live page (video plus live
  * standings, multiple cameras, 360° views) shown inside the app. The rider's
- * sign-in is handed to the page so RM Roost Premium and the free hour (once
+ * sign-in is handed to the page so RM Roost Premium and the 30 free minutes (once
  * switched on) apply to their account. Links elsewhere open in the browser.
  */
 export default function LivePlayerScreen() {

@@ -33,8 +33,9 @@ export const riderAiUsageTable = pgTable("rider_ai_usage", {
 }, t => [index("rider_ai_usage_account_time_idx").on(t.riderAccountId, t.createdAt)]);
 
 /**
- * Live-stream time a rider watched for free, per event. Once Premium is on, a
- * free rider gets FREE_STREAM_SECONDS (1 hour) per event before Premium is needed.
+ * Live-stream time a rider watched for free, kept per event. Once Premium is on, a
+ * free rider gets FREE_STREAM_SECONDS (30 minutes) in total, across all events and
+ * never reset, before Premium is needed.
  */
 export const riderStreamUsageTable = pgTable("rider_stream_usage", {
   riderAccountId: integer("rider_account_id").notNull().references(() => riderAccountsTable.id, { onDelete: "cascade" }),
