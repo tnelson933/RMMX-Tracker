@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
+import { StripeSwitchBanner } from "./StripeSwitchBanner";
 import { useLogout } from "@workspace/api-client-react";
 import { PastEventCheckDialog } from "@/components/organizer/PastEventCheckDialog";
 import { UnpublishedResultsDialog } from "@/components/organizer/UnpublishedResultsDialog";
@@ -344,6 +345,7 @@ export function OrganizerLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         {mirror && <MirrorBanner mirror={mirror} organizerEmail={user?.email} />}
+        {user?.role === "club_organizer" && <StripeSwitchBanner />}
 
         <main className="flex-1 overflow-y-auto">
           {children}

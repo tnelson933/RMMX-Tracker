@@ -22,6 +22,7 @@ type RiderMotoSectors = {
 import { rejectIfThrottled, recordFailedLogin, clearFailedLogins } from "../lib/loginThrottle";
 import { eventDateReached, scheduleShowsEvent } from "../lib/eventStatus";
 import { eventToday } from "@workspace/api-zod";
+import { premiumSummary, riderAccess, rockyQuestionAllowed, recordRockyQuestion, rockyLimitBody, isRecentPractice } from "../lib/premium";
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { randomBytes, randomUUID } from "crypto";
@@ -471,7 +472,7 @@ router.get("/rider/auth/me", async (req, res) => {
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
   if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
-  return res.json({ id: account.id, email: account.email, createdAt: account.createdAt.toISOString() });
+  return res.json({ id: account.id, email: account.email, createdAt: account.createdAt.toISOString(), premium: await premiumSummary(account.id) });
 });
 
 // GET /rider/auth/mobile-me — Bearer token auth check for mobile app startup
@@ -479,7 +480,7 @@ router.get("/rider/auth/mobile-me", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
   if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
-  return res.json({ id: account.id, email: account.email, createdAt: account.createdAt.toISOString() });
+  return res.json({ id: account.id, email: account.email, createdAt: account.createdAt.toISOString(), premium: await premiumSummary(account.id) });
 });
 
 // POST /rider/push-token — register Expo push token for the authenticated rider account
@@ -873,7 +874,7 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
     ? and(ownOrTeam, eq(raceResultsTable.eventId, eventIdFilter))
     : ownOrTeam;
 
-  const rows = await db
+  const allRows = await db
     .select({
       resultId: raceResultsTable.id,
       resultRiderId: raceResultsTable.riderId,
@@ -905,6 +906,15 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
     .leftJoin(eventsTable, eq(raceResultsTable.eventId, eventsTable.id))
     .where(historyWhere)
     .orderBy(desc(eventsTable.date), asc(motosTable.motoNumber));
+  // Premium (switched off by default, see lib/premium.ts): once on, a free rider
+  // sees only today's event here; past events are Premium.
+  const access = await riderAccess(riderAccountId);
+  const rows = access.full ? allRows : allRows.filter(r => {
+    if (!r.eventDate) return false;
+    const today = eventToday({ state: r.eventState });
+    return r.eventDate <= today && (r.eventEndDate ?? r.eventDate) >= today;
+  });
+  if (rows.length < allRows.length) res.setHeader("X-Premium-Limited", "history");
 
   // ── Per-lap gap computation ────────────────────────────────────────────────
   // For each moto this rider raced, load ALL riders' lap times so we can
@@ -1734,7 +1744,11 @@ router.get("/rider/profiles/:riderId/practice", requireRiderAuth, async (req, re
     });
   }
 
+  // Premium (switched off by default): once on, a free rider sees only the last 24 hours of practice.
+  const practiceAccess = await riderAccess(riderAccountId);
+  if (!practiceAccess.full) res.setHeader("X-Premium-Limited", "practice");
   const sessions = Array.from(sessionMap.values())
+    .filter(s => practiceAccess.full || isRecentPractice(s.startedAt))
     .sort((a, b) => {
       // Most recent session first
       const aTime = a.startedAt ?? "";
@@ -2488,6 +2502,9 @@ router.post("/rider/training-plan", requireRiderAuth, async (req, res) => {
   };
 
   if (!goal?.trim()) return res.status(400).json({ error: "Enter a goal for your training plan." });
+  const planAccountId = (req.session as any).riderAccountId as number;
+  const planAllowed = await rockyQuestionAllowed(planAccountId);
+  if (!planAllowed.allowed) return res.status(402).json(rockyLimitBody(planAllowed.nextFreeAt));
   if (!durationMinutes || durationMinutes < 15 || durationMinutes > 180) {
     return res.status(400).json({ error: "Choose a session length between 15 and 180 minutes." });
   }
@@ -2577,6 +2594,7 @@ Total session time: ${durationMinutes} minutes.`;
       );
     }
 
+    await recordRockyQuestion(planAccountId, "training_plan").catch(() => {});
     return res.json(plan);
   } catch (err) {
     req.log.error({ err }, "Training plan generation failed");
@@ -2592,6 +2610,9 @@ router.post("/rider/mechanic-chat", requireRiderAuth, async (req, res) => {
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
   }
+  // Premium (switched off by default): once on, a free rider gets 1 Rocky question per 24 hours.
+  const chatAllowed = await rockyQuestionAllowed(riderAccountId);
+  if (!chatAllowed.allowed) return res.status(402).json(rockyLimitBody(chatAllowed.nextFreeAt));
 
   const bikeStr = [riderContext?.bikeYear, riderContext?.bikeMake, riderContext?.bikeModel]
     .filter(Boolean)
@@ -2772,6 +2793,7 @@ You MUST respond with a valid JSON object and nothing else — no markdown fence
     }
 
     // Only Rocky Mountain ATV/MC links reach the rider (lib/approvedLinks).
+    await recordRockyQuestion(riderAccountId, "mechanic_chat").catch(() => {});
     return res.json({ reply: enforceApprovedLinks(reply), suggestedFollowUps: suggestedFollowUps.map(enforceApprovedLinks), maintenanceUpdates, loggedItems });
   } catch (err) {
     req.log.error({ err }, "Mechanic chat failed");
@@ -3197,6 +3219,8 @@ router.post("/rider/maintenance/:riderId/ai-generate", requireRiderAuth, async (
   if (!rider || !(await canManageRider(account, rider))) {
     return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   }
+  const maintAllowed = await rockyQuestionAllowed(riderAccountId);
+  if (!maintAllowed.allowed) return res.status(402).json(rockyLimitBody(maintAllowed.nextFreeAt));
 
   // The bike on the profile, or the garage's default bike (the app's Profile tab
   // adds bikes to the garage without touching the profile's own bike fields).
@@ -3277,6 +3301,7 @@ Include 10–15 items tailored to this specific make and model. Common categorie
       }),
     );
 
+    await recordRockyQuestion(riderAccountId, "maintenance_plan").catch(() => {});
     return res.json(saved.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)));
   } catch (err) {
     req.log.error({ err }, "Maintenance AI generate failed");

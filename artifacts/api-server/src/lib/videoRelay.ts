@@ -3,6 +3,7 @@ import type { IncomingMessage, Server } from "http";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { logger } from "./logger";
 import { WebmStreamParser } from "./webmStream";
+import { premiumEnforced, verifyWatchTicket } from "./premium";
 
 /**
  * Live video relay: browsers record WebM with MediaRecorder and send it here
@@ -16,7 +17,8 @@ import { WebmStreamParser } from "./webmStream";
  * keyframe and everything recorded since. Late joiners start there at once.
  *
  * Broadcasting needs a short-lived ticket from POST /video/broadcast-ticket,
- * which checks the organizer's session. Watching is public.
+ * which checks the organizer's session. Watching is public while RM Roost Premium
+ * is off (lib/premium.ts); once on, viewers need a ticket from /video/watch-access.
  */
 
 interface Camera {
@@ -152,7 +154,17 @@ export function attachVideoWebSocket(httpServer: Server) {
     } else {
       // Without a camera in the path, watch the first live camera.
       const explicit = watch![2] !== undefined;
-      wss.handleUpgrade(req, socket as any, head, ws => handleViewer(ws, eventId, explicit ? cameraId : null));
+      const ticket = url.searchParams.get("ticket");
+      // Watching is public while RM Roost Premium is off (the default). Once it's
+      // on, a viewer needs a ticket from GET /video/watch-access/:eventId.
+      premiumEnforced().catch(() => false).then(enforced => {
+        if (enforced && !verifyWatchTicket(ticket, eventId)) {
+          socket.write("HTTP/1.1 402 Payment Required\r\nConnection: close\r\n\r\n");
+          socket.destroy();
+          return;
+        }
+        wss.handleUpgrade(req, socket as any, head, ws => handleViewer(ws, eventId, explicit ? cameraId : null));
+      });
     }
   });
 

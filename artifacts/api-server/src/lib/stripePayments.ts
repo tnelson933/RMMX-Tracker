@@ -1,5 +1,5 @@
 import type Stripe from "stripe";
-import { db, clubsTable, eventsTable, registrationsTable } from "@workspace/db";
+import { db, clubsTable, eventsTable, registrationsTable, platformSettingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
 /**
@@ -57,6 +57,108 @@ export function onClub(c: ClubStripe): Stripe.RequestOptions | undefined {
 /** Older Express clubs: paid through RM Roost's account and transferred. Direct clubs: nothing to add. */
 export function transferTo(c: ClubStripe): { transfer_data?: { destination: string } } {
   return c.direct ? {} : { transfer_data: { destination: c.accountId } };
+}
+
+// ── RM Roost's registration fee ─────────────────────────────────────────────
+//
+// A flat fee per registration (class entry) paid by card, taken from the
+// club's payment as a Stripe application fee: the rider pays the listed price
+// and the club receives it less this fee (and Stripe's own fee). Refunds keep
+// it (Stripe only returns an application fee when asked to). Cash, comp and
+// free entries have no card charge, so no fee.
+
+export const REGISTRATION_FEE_KEY = "registration_fee_cents";
+/** Highest fee a super admin can set, so a typo can't take a club's whole entry. */
+export const MAX_REGISTRATION_FEE_CENTS = 2_000;
+
+export function validFeeCents(v: unknown): number | null {
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+  return Number.isInteger(n) && n >= 0 && n <= MAX_REGISTRATION_FEE_CENTS ? n : null;
+}
+
+/** The RM Roost-wide fee per registration, in cents (0 when never set). */
+export async function defaultRegistrationFeeCents(): Promise<number> {
+  const [row] = await db.select({ value: platformSettingsTable.value }).from(platformSettingsTable)
+    .where(eq(platformSettingsTable.key, REGISTRATION_FEE_KEY));
+  return validFeeCents(row?.value) ?? 0;
+}
+
+/** The fee per registration a club pays: its own override, else the RM Roost-wide fee. */
+export async function clubRegistrationFeeCents(clubId: number): Promise<{ cents: number; override: boolean }> {
+  const [club] = await db.select({ fee: clubsTable.registrationFeeCents }).from(clubsTable).where(eq(clubsTable.id, clubId));
+  const own = validFeeCents(club?.fee);
+  if (own != null) return { cents: own, override: true };
+  return { cents: await defaultRegistrationFeeCents(), override: false };
+}
+
+/**
+ * The fee on one card charge: per registration paid in it, never more than the
+ * charge itself (Stripe refuses that). 0 when nothing in it is a paid entry.
+ */
+export function registrationFeeFor(paidRegistrations: number, perRegistrationCents: number, chargeCents: number): number {
+  if (paidRegistrations <= 0 || perRegistrationCents <= 0 || chargeCents <= 0) return 0;
+  return Math.min(paidRegistrations * perRegistrationCents, chargeCents);
+}
+
+/** Stripe params for the fee on a PaymentIntent (or a Checkout Session's payment_intent_data). */
+export function applicationFee(cents: number): { application_fee_amount?: number } {
+  return cents > 0 ? { application_fee_amount: cents } : {};
+}
+
+/** The fee for a charge covering `paidRegistrations` entries of a club's event. */
+export async function registrationFeeForCharge(clubId: number, paidRegistrations: number, chargeCents: number): Promise<number> {
+  if (paidRegistrations <= 0) return 0;
+  const { cents } = await clubRegistrationFeeCents(clubId);
+  return registrationFeeFor(paidRegistrations, cents, chargeCents);
+}
+
+// ── Required switch to the club's own Stripe account ────────────────────────
+//
+// Clubs still on an older Express connection are paid through RM Roost's
+// account, so RM Roost pays their Stripe fees and their money passes through
+// RM Roost. A super admin sets a deadline (platform_settings); until then
+// those clubs see a banner, and after it they can't turn on card payments for
+// an event until they switch on the Payments page. Events that already take
+// card payments keep working, so no rider is stuck mid-registration.
+
+export const STRIPE_SWITCH_DEADLINE_KEY = "stripe_switch_deadline";
+
+/** A YYYY-MM-DD date, or null. */
+export function validDeadline(v: unknown): string | null {
+  return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v)) ? v : null;
+}
+
+export async function stripeSwitchDeadline(): Promise<string | null> {
+  const [row] = await db.select({ value: platformSettingsTable.value }).from(platformSettingsTable)
+    .where(eq(platformSettingsTable.key, STRIPE_SWITCH_DEADLINE_KEY));
+  return validDeadline(row?.value);
+}
+
+/** Past the deadline: the day after it, in UTC (the deadline day itself still counts). */
+export function deadlinePassed(deadline: string | null, now = new Date()): boolean {
+  return !!deadline && now.toISOString().slice(0, 10) > deadline;
+}
+
+export interface SwitchStatus {
+  /** The club is on an older Express connection and must move to its own Stripe account. */
+  mustSwitch: boolean;
+  deadline: string | null;
+  overdue: boolean;
+}
+
+export async function clubSwitchStatus(clubId: number): Promise<SwitchStatus> {
+  const [club] = await db.select({ stripeAccountId: clubsTable.stripeAccountId, stripeDirectCharges: clubsTable.stripeDirectCharges })
+    .from(clubsTable).where(eq(clubsTable.id, clubId));
+  const mustSwitch = !!club?.stripeAccountId && !club.stripeDirectCharges;
+  const deadline = mustSwitch ? await stripeSwitchDeadline() : null;
+  return { mustSwitch, deadline, overdue: mustSwitch && deadlinePassed(deadline) };
+}
+
+/** Why the club can't turn on card payments for an event right now, or null. */
+export async function cardPaymentsBlocked(clubId: number): Promise<string | null> {
+  const s = await clubSwitchStatus(clubId);
+  if (!s.overdue) return null;
+  return "Your club needs to switch to its own Stripe account before turning on card payments. Open Payments and press Switch account; it takes a few minutes.";
 }
 
 /** The account the browser's Stripe form must load for (only direct-charge clubs). */
@@ -158,6 +260,8 @@ export async function chargeOnReader(stripe: Stripe, opts: {
   amountCents: number;
   description: string;
   metadata: Record<string, string>;
+  /** RM Roost's registration fee on this charge, in cents (registrations only). */
+  applicationFeeCents?: number;
 }): Promise<{ ok: true; paymentIntentId: string } | { ok: false; error: string }> {
   if (!opts.club.direct) return { ok: false, error: "Card readers need your club on its own Stripe account. Switch on the Payments page first." };
   const reader = await clubReader(stripe, opts.clubId, opts.club, opts.readerId);
@@ -169,6 +273,7 @@ export async function chargeOnReader(stripe: Stripe, opts: {
     currency: "usd",
     payment_method_types: ["card_present"],
     capture_method: "automatic",
+    ...applicationFee(opts.applicationFeeCents ?? 0),
     description: opts.description.slice(0, 200),
     metadata: { ...opts.metadata, readerId: opts.readerId },
   }, o);

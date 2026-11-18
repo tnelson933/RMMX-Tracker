@@ -2,6 +2,7 @@ import express, { Router } from "express";
 import { db, riderAccountsTable, ridersTable, riderFollowsTable, riderProfileManagersTable, riderMaintenanceTable } from "@workspace/db";
 import { and, asc, count, eq, inArray } from "drizzle-orm";
 import { requireRiderAuth } from "./rider-portal";
+import { riderAccess, premiumRequired } from "../lib/premium";
 import { canManageRider, managedRiderIds, ownsRider } from "../lib/riderAccess";
 import { loadCareerStats, loadRacerResume, loadResultsFeed, searchPublicRiders } from "../lib/riderCareer";
 import { effectiveVisibility } from "../lib/riderResume";
@@ -70,6 +71,8 @@ router.get("/rider/profiles/:riderId/stats", requireRiderAuth, async (req, res) 
   const rider = await loadRider(Number(req.params.riderId));
   if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
   if (!(await canManageRider(account, rider))) return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
+  // Career stats are Premium once Premium is switched on (lib/premium.ts); free until then.
+  if (!(await riderAccess(account.id)).full) return res.status(402).json(premiumRequired("Career stats"));
   return res.json({ riderId: rider.id, name: `${rider.firstName} ${rider.lastName}`.trim(), stats: await loadCareerStats(rider.id, true) });
 });
 

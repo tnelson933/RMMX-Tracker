@@ -25,7 +25,7 @@ import { isMasked, maskDateOfBirth, maskName, maskPhone, maskStreet, maskZip } f
 import { parseTeamInput, parseTeamGear, saveTeamRoster, saveTeamTags, listTeamMembers, teamRegistrationId, teamRegistrationHasRoster, teamTagConflict, teamGearCounts } from "../lib/teams";
 import { eventTrackrPrice } from "../lib/sellItems";
 import { addonIsPaid, confirmAddonPayment, parseCashTendered, recordCardAddonPending, recordCashAddon, type AddonItem } from "../lib/addonPayments";
-import { browserAccount, chargeOnReader, embeddedAllowed, checkoutUiParams, clubStripeOf, onClub, onClubOrPlatform, registrationClubStripe, retrievePayment, transferTo, RIDER_APP_PAYMENT, paymentIntentAsPaid } from "../lib/stripePayments";
+import { browserAccount, chargeOnReader, embeddedAllowed, checkoutUiParams, clubStripeOf, onClub, onClubOrPlatform, registrationClubStripe, retrievePayment, transferTo, RIDER_APP_PAYMENT, paymentIntentAsPaid, applicationFee, registrationFeeForCharge } from "../lib/stripePayments";
 import { acknowledgementSnapshot, clubWaiverSettings, waiverPdfOf } from "../lib/waiverSettings";
 
 /** Payment-check failures: an unknown/invalid Stripe session is the caller's error (404), anything else a 500 without Stripe's internals. */
@@ -810,11 +810,13 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
     if (lineItems.length === 0) return res.status(409).json({ error: "Nothing is due on this entry. Mark it paid instead." });
     const chargeCents = lineItems.reduce((sum, li) => sum + li.price_data.unit_amount * li.quantity, 0);
     const metadata = { registrationId: String(regId), registrationIds: String(regId), type: "registration", eventId: String(eventId) };
+    // RM Roost's registration fee, from the club's payment (only when the entry itself is paid).
+    const feeCents = await registrationFeeForCharge(event.clubId, entryAfterDiscount > 0 ? 1 : 0, chargeCents);
 
     if (readerId) {
       const charged = await chargeOnReader(stripe, {
         clubId: event.clubId, club: clubStripeOf(club)!, readerId, amountCents: chargeCents,
-        description: `${event.name}: entry`, metadata,
+        description: `${event.name}: entry`, metadata, applicationFeeCents: feeCents,
       });
       if (!charged.ok) return res.status(409).json({ error: charged.error });
       await db.update(registrationsTable)
@@ -829,6 +831,7 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
       customer_email: rider?.email ?? undefined,
       payment_intent_data: {
         ...transferTo(clubStripeOf(club)!),
+        ...applicationFee(feeCents),
       },
       metadata,
       ...checkoutUiParams(await embeddedAllowed(embedded), {
@@ -2096,6 +2099,8 @@ router.post("/public/events/:eventId/register", async (req, res) => {
 
         const primaryRegId = insertedRegs[0].id;
         const allRegIds = insertedRegs.map(r => r.id).join(",");
+        // RM Roost's registration fee: one per entry with a paid class fee, from the club's payment.
+        const feeCents = await registrationFeeForCharge(events[0].clubId, classChargeCents.filter(c => c > 0).length, netCents);
         // Each entry's own charge: its class fee; add-ons ride on the first entry.
         const recordCharge = async (paymentId: string) => {
           for (const [idx, reg] of insertedRegs.entries()) {
@@ -2128,6 +2133,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
             description: `${events[0].name}: ${raceClassList.join(", ")}`.slice(0, 200),
             receipt_email: email,
             ...transferTo(c),
+            ...applicationFee(feeCents),
             metadata: {
               registrationId: String(primaryRegId),
               registrationIds: allRegIds,
@@ -2159,6 +2165,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
           line_items: lineItems,
           payment_intent_data: {
             ...transferTo(clubStripeOf(club)!),
+            ...applicationFee(feeCents),
           },
           // The website shows the form in its own page; other callers (the rider app) get Stripe's page.
           ...checkoutUiParams(await embeddedAllowed(req.body?.embeddedCheckout === true), {

@@ -44,6 +44,8 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { errorText } from "@/lib/friendlyErrors";
+import { RegistrationFeeCard } from "@/components/admin/RegistrationFeeCard";
+import { PremiumAdminCard } from "@/components/admin/PremiumAdminCard";
 
 const US_STATES = [
   "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA",
@@ -299,6 +301,9 @@ export default function ClubsAdmin() {
           New Club
         </Button>
       </div>
+
+      <RegistrationFeeCard />
+      <PremiumAdminCard />
 
       {/* Search */}
       <div className="mb-6">

@@ -16,6 +16,7 @@ import { quickCheckinRequirements } from "../lib/quickCheckinRequirements";
 import { missingWaiverSetup } from "../lib/waiverSettings";
 import { callerOwnsClub } from "../middleware/accessControl";
 import { eventTimingTags, eventsTimingTags } from "../lib/eventTimingTags";
+import { cardPaymentsBlocked } from "../lib/stripePayments";
 
 const router = Router();
 const normalizeTimingTechnology = (value: unknown) =>
@@ -160,6 +161,10 @@ router.post("/events", async (req, res) => {
   if (!(await scoringTableUsable(scoringTableId, clubId))) return res.status(400).json({ error: "That scoring table isn't available to this club." });
   const waiverSetupProblem = await missingWaiverSetup(clubId, { requireWaiver, requireLiabilityWaiver });
   if (waiverSetupProblem) return res.status(400).json({ error: waiverSetupProblem });
+  if (paymentEnabled) {
+    const blocked = await cardPaymentsBlocked(clubId);
+    if (blocked) return res.status(400).json({ error: blocked });
+  }
   if (!isDraftCreate && (!date || !state)) return res.status(400).json({ error: "Enter the event date and choose a state." });
 
   // For draft saves, default date to today and state to "TBD"
@@ -352,7 +357,7 @@ router.patch("/events/:eventId", async (req, res) => {
   const id = Number(req.params.eventId);
 
   // Capture previous status before update; also check club ownership for staff.
-  const [before] = await db.select({ status: eventsTable.status, clubId: eventsTable.clubId, date: eventsTable.date, endDate: eventsTable.endDate, trackName: eventsTable.trackName, location: eventsTable.location, state: eventsTable.state, quickCheckinEnabled: eventsTable.quickCheckinEnabled, streetAddress: eventsTable.streetAddress, zip: eventsTable.zip, purchaseOptions: eventsTable.purchaseOptions }).from(eventsTable).where(eq(eventsTable.id, id));
+  const [before] = await db.select({ status: eventsTable.status, clubId: eventsTable.clubId, date: eventsTable.date, endDate: eventsTable.endDate, trackName: eventsTable.trackName, location: eventsTable.location, state: eventsTable.state, quickCheckinEnabled: eventsTable.quickCheckinEnabled, streetAddress: eventsTable.streetAddress, zip: eventsTable.zip, purchaseOptions: eventsTable.purchaseOptions, paymentEnabled: eventsTable.paymentEnabled }).from(eventsTable).where(eq(eventsTable.id, id));
   const previousStatus = before?.status;
   const staffCId = getStaffClubId(res);
   if (staffCId !== null) {
@@ -366,6 +371,11 @@ router.patch("/events/:eventId", async (req, res) => {
   if (before) {
     const waiverSetupProblem = await missingWaiverSetup(before.clubId, req.body);
     if (waiverSetupProblem) return res.status(400).json({ error: waiverSetupProblem });
+    // Turning card payments on (not keeping them on) needs the club on its own Stripe account after the deadline.
+    if (req.body.paymentEnabled === true && !before.paymentEnabled) {
+      const blocked = await cardPaymentsBlocked(before.clubId);
+      if (blocked) return res.status(400).json({ error: blocked });
+    }
   }
 
   const patchDate = req.body.date ?? before?.date;

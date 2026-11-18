@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { checkoutUiParams, paymentIntentAsPaid } from "./stripePayments";
+import { applicationFee, deadlinePassed, validDeadline, checkoutUiParams, paymentIntentAsPaid, registrationFeeFor, validFeeCents } from "./stripePayments";
 import { checkStatesCode } from "./cardReaderInput";
 
 test("embedded checkout stays in our page; hosted keeps the return URLs", () => {
@@ -42,4 +42,34 @@ test("clubs on their own Stripe account are charged directly; older Express club
   assert.equal(found, "platform");
   assert.deepEqual(calls, ["acct_own", undefined]);
   await assert.rejects(onClubOrPlatform(own, async () => { throw Object.assign(new Error("boom"), { code: "api_error" }); }), /boom/);
+});
+
+test("registration fee: one per paid entry, never more than the charge", () => {
+  assert.equal(registrationFeeFor(1, 100, 4500), 100);
+  assert.equal(registrationFeeFor(3, 50, 9000), 150);
+  assert.equal(registrationFeeFor(2, 100, 150), 150);      // capped at the charge
+  assert.equal(registrationFeeFor(0, 100, 4500), 0);       // no paid entry (add-ons only, comp)
+  assert.equal(registrationFeeFor(2, 0, 4500), 0);         // fee off
+  assert.deepEqual(applicationFee(0), {});
+  assert.deepEqual(applicationFee(75), { application_fee_amount: 75 });
+});
+
+test("registration fee settings accept whole cents from $0 to $20 only", () => {
+  assert.equal(validFeeCents(50), 50);
+  assert.equal(validFeeCents("100"), 100);
+  assert.equal(validFeeCents(0), 0);
+  assert.equal(validFeeCents(2001), null);
+  assert.equal(validFeeCents(-1), null);
+  assert.equal(validFeeCents(1.5), null);
+  assert.equal(validFeeCents(""), null);
+  assert.equal(validFeeCents(null), null);
+});
+
+test("switch deadline: the deadline day still counts; the day after is overdue", () => {
+  assert.equal(deadlinePassed(null), false);
+  assert.equal(deadlinePassed("2026-12-31", new Date("2026-12-31T23:00:00Z")), false);
+  assert.equal(deadlinePassed("2026-12-31", new Date("2027-01-01T00:00:01Z")), true);
+  assert.equal(validDeadline("2026-12-31"), "2026-12-31");
+  assert.equal(validDeadline("12/31/2026"), null);
+  assert.equal(validDeadline(""), null);
 });

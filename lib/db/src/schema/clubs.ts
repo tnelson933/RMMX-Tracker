@@ -23,6 +23,11 @@ export const clubsTable = pgTable("clubs", {
   stripePendingAccountId: text("stripe_pending_account_id"),
   /** Stripe Terminal location the club's card readers are registered to. */
   stripeTerminalLocationId: text("stripe_terminal_location_id"),
+  /**
+   * RM Roost's fee per card-paid registration for this club, in cents,
+   * overriding the RM Roost-wide fee (platform_settings). Null: use that fee.
+   */
+  registrationFeeCents: integer("registration_fee_cents"),
   autoDnfEnabled: boolean("auto_dnf_enabled").notNull().default(false),
   autoDnfThreshold: integer("auto_dnf_threshold").notNull().default(75),
   active: boolean("active").notNull().default(true),

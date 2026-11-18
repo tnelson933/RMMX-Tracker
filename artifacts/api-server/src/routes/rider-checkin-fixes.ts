@@ -20,7 +20,7 @@ import { getUncachableStripeClient } from "../stripeClient";
 import { confirmRegistrationSession } from "./registrations";
 import { riderCardError } from "../lib/stripeErrors";
 import type Stripe from "stripe";
-import { browserAccount, clubStripeOf, onClub, onClubOrPlatform, paymentIntentAsPaid, RIDER_APP_PAYMENT, transferTo } from "../lib/stripePayments";
+import { browserAccount, clubStripeOf, onClub, onClubOrPlatform, paymentIntentAsPaid, RIDER_APP_PAYMENT, transferTo, applicationFee, registrationFeeForCharge } from "../lib/stripePayments";
 import { acknowledgementSnapshot, liabilityWaiverSnapshot, waiverPdfOf } from "../lib/waiverSettings";
 import { sendLiabilityWaiverConfirmation } from "../lib/email";
 
@@ -111,6 +111,9 @@ router.post("/rider/registrations/:regId/checkout", requireRiderAuth, async (req
     const stripe = await getUncachableStripeClient();
     const appUrl = getAppUrl();
     const cs = clubStripeOf(club)!;
+    // RM Roost's registration fee: one per entry when the class fee is paid, from the club's payment.
+    const chargeTotalCents = lineItems.reduce((sum, li) => sum + Math.round(li.amount * 100), 0);
+    const feeCents = await registrationFeeForCharge(event.clubId, perClass > 0 ? pending.length : 0, chargeTotalCents);
 
     // The rider app pays in its own Stripe payment sheet (a PaymentIntent),
     // never on a web page. Confirmed by verify-payment, webhooks and the sweeper.
@@ -151,6 +154,7 @@ router.post("/rider/registrations/:regId/checkout", requireRiderAuth, async (req
         description: `${event.name}: ${pending.map(r => r.raceClass).join(", ")}`.slice(0, 200),
         receipt_email: rider.email ?? undefined,
         ...transferTo(cs),
+        ...applicationFee(feeCents),
         metadata: { registrationId: String(first.id), registrationIds: pending.map(r => r.id).join(","), eventId: String(event.id), type: "registration", source: RIDER_APP_PAYMENT },
       }, onClub(cs));
       const classCents = perClass > 0 ? Math.round(perClass * 100) : 0;
@@ -211,7 +215,7 @@ router.post("/rider/registrations/:regId/checkout", requireRiderAuth, async (req
         quantity: 1,
       })),
       customer_email: rider.email ?? undefined,
-      payment_intent_data: { ...transferTo(cs) },
+      payment_intent_data: { ...transferTo(cs), ...applicationFee(feeCents) },
       metadata: { registrationIds: pending.map(r => r.id).join(","), type: "registration" },
       success_url: `${appUrl}/register/${event.id}?reg_id=${first.id}&session_id={CHECKOUT_SESSION_ID}&payment_success=1`,
       cancel_url: `${appUrl}/register/${event.id}?payment_cancelled=1`,

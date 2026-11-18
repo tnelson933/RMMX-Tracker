@@ -98,6 +98,16 @@ export default function StripeConnect() {
 
   const { data: status, isLoading, isError, error: statusError, isFetching, refetch } = useStripeConnectStatus();
   const offline = isDesktopOrOffline(status?.source);
+  // RM Roost's fee per card-paid registration, taken from the club's payment.
+  const { data: feeData } = useQuery({
+    queryKey: ["registration-fee"],
+    enabled: !offline,
+    queryFn: async () => {
+      const res = await fetch("/api/stripe/registration-fee", { credentials: "include" });
+      return res.ok ? (res.json() as Promise<{ cents: number | null }>) : { cents: null };
+    },
+  });
+  const registrationFeeCents = feeData?.cents ?? 0;
   // Connecting, disconnecting and the Stripe dashboard are for the club organizer.
   const canManage = user?.role === "club_organizer" || user?.role === "super_admin";
 
@@ -229,6 +239,13 @@ export default function StripeConnect() {
         <p className="text-muted-foreground mt-1">
           Connect your Stripe account to collect entry fees from riders at registration.
         </p>
+        {registrationFeeCents > 0 && (
+          <p className="text-sm text-muted-foreground mt-2">
+            RM Roost's fee is ${(registrationFeeCents / 100).toFixed(2)} per registration paid by card. It comes out of
+            the payment you receive, along with Stripe's processing fee; riders pay your listed price. Cash and free
+            entries have no fee, and the fee isn't returned when you refund.
+          </p>
+        )}
       </div>
 
       {offline && (

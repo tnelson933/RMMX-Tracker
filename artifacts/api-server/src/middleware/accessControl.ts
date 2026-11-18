@@ -54,6 +54,7 @@ export const PUBLIC_RULES: PublicRule[] = [
   { pattern: /^\/timing\/announcer-audio\/\d+$/, methods: READ, reason: "watch-live announcer audio" },
   { pattern: /^\/timing\/rmonitor-(feed|snapshot|status)$/, methods: READ, reason: "scoreboard feed" },
   { pattern: /^\/video\/(live-events|status\/\d+)$/, methods: READ, reason: "watch-live video status" },
+  { pattern: /^\/video\/watch-access\/\d+$/, methods: READ, reason: "watch-live access check (Premium, off by default; handler checks the rider or organizer)" },
   { pattern: /^\/practice\/\d+\/live$/, methods: READ, reason: "practice live SSE (handler: own club, or a rider account's own riders only)" },
   { pattern: /^\/storage\/(objects|public-objects|uploads)\//, methods: READ, reason: "images and logos" },
 

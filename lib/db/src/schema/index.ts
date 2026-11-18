@@ -41,3 +41,4 @@ export * from "./sell_items";
 export * from "./addon_payments";
 export * from "./race_gas_credits";
 export * from "./team_members";
+export * from "./platform_settings";
