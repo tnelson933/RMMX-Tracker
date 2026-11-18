@@ -31,3 +31,27 @@ test("watch tickets carry who is watching and until when", () => {
 test("locked features say what Premium unlocks", () => {
   assert.equal(premiumRequired("Career stats").code, "premium_required");
 });
+
+test("plans: Individual covers 1 rider and 1 phone, Family 4 and 4", async () => {
+  const { PLAN_RIDERS, PLAN_PHONES, validPlan, phoneLimitMessage } = await import("./premium");
+  assert.deepEqual(PLAN_RIDERS, { individual: 1, family: 4 });
+  assert.deepEqual(PLAN_PHONES, { none: 1, individual: 1, family: 4 });
+  assert.equal(validPlan("family"), "family");
+  assert.equal(validPlan("team"), null);
+  assert.match(phoneLimitMessage(1), /One phone/);
+  assert.match(phoneLimitMessage(4), /4 phones/);
+});
+
+test("phone limit keeps the signing-in phone, then the most recently used; website tokens aren't phones", async () => {
+  const { phonesToKeep } = await import("./premium");
+  const d = (h: number) => new Date(Date.UTC(2026, 10, 18, h));
+  const tokens = [
+    { token: "old-phone", lastUsedAt: d(1) },
+    { token: "web-login", lastUsedAt: null },
+    { token: "recent-phone", lastUsedAt: d(9) },
+    { token: "new-phone", lastUsedAt: null },
+  ];
+  assert.deepEqual([...phonesToKeep(tokens, 1, "new-phone")], ["new-phone"]);
+  assert.deepEqual([...phonesToKeep(tokens, 4, "new-phone")].sort(), ["new-phone", "old-phone", "recent-phone"]);
+  assert.deepEqual([...phonesToKeep(tokens, 1, null)], ["recent-phone"]);
+});

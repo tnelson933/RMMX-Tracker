@@ -3,8 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import {
   User, UserPlus, TrendingUp, Check, ChevronRight, ChevronDown, ChevronUp, Bike, Trash2, Plus, Loader2,
-  Users, Zap, Smartphone, Link2, Shield, LogOut, AlertCircle,
-} from "lucide-react";
+  Users, Zap, Smartphone, Link2, Shield, LogOut, AlertCircle, Crown } from "lucide-react";
 import { cardSummary, nextMaintenance, recentFinishes } from "@workspace/rider-insights/profileCard";
 import { FollowingFeed } from "@/pages/rider/RiderFollowing";
 import { NumberPlate } from "@/components/rider/ProfileSettings";
@@ -249,6 +248,13 @@ function SettingRow({ href, icon, label, sub, external }: { href: string; icon: 
 }
 
 export default function RiderPortal() {
+  // RM Roost Premium (off by default): the row shows only once it's on, or the account has it.
+  const { data: premiumInfo } = useQuery<{ enforced: boolean; active: boolean }>({
+    queryKey: ["rider-premium"],
+    queryFn: () => fetch("/api/rider/premium", { credentials: "include" }).then(r => (r.ok ? r.json() : null)).catch(() => null),
+    staleTime: 60_000,
+  });
+  const premiumShown = !!premiumInfo && (premiumInfo.enforced || premiumInfo.active);
   const { account } = useRiderAuth();
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
@@ -346,6 +352,7 @@ export default function RiderPortal() {
           <div className="divide-y divide-[#3A3A3A] overflow-hidden rounded-2xl border border-[#3A3A3A] bg-[#242424]">
             <SettingRow href="/rider/following" icon={<Users size={16} />} label="Following" sub="Find riders and follow their results" />
             <SettingRow href="/rider/rm-cash" icon={<Zap size={16} />} label="RM Cash" sub="Your Rocky Mountain ATV/MC balance" />
+            {premiumShown && <SettingRow href="/rider/premium" icon={<Crown size={16} />} label="RM Roost Premium" sub="Past stats, unlimited Rocky and live streams" />}
             <div>
               <button type="button" onClick={() => setShowLinkHelp(v => !v)} aria-expanded={showLinkHelp}
                 className="flex min-h-[56px] w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-[#2E2E2E]">

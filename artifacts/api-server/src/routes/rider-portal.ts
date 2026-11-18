@@ -22,7 +22,8 @@ type RiderMotoSectors = {
 import { rejectIfThrottled, recordFailedLogin, clearFailedLogins } from "../lib/loginThrottle";
 import { eventDateReached, scheduleShowsEvent } from "../lib/eventStatus";
 import { eventToday } from "@workspace/api-zod";
-import { premiumSummary, riderAccess, rockyQuestionAllowed, recordRockyQuestion, rockyLimitBody, isRecentPractice } from "../lib/premium";
+import { refreshWebPremiumIfDue } from "../lib/webPremium";
+import { premiumSummary, riderAccess, rockyQuestionAllowed, recordRockyQuestion, rockyLimitBody, isRecentPractice, enforcePhoneLimit, signedOutElsewhere, touchMobileToken } from "../lib/premium";
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { randomBytes, randomUUID } from "crypto";
@@ -258,9 +259,14 @@ export function requireRiderAuth(req: any, res: any, next: any) {
     db.select()
       .from(riderMobileTokensTable)
       .where(eq(riderMobileTokensTable.token, token))
-      .then(([row]) => {
-        if (!row) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
+      .then(async ([row]) => {
+        if (!row) {
+          // Signed out by the phone limit (Premium plans): say so.
+          const why = await signedOutElsewhere(token).catch(() => null);
+          return res.status(401).json(why ?? { error: "You're signed out. Sign in again, then try once more." });
+        }
         (req.session as any).riderAccountId = row.riderAccountId;
+        touchMobileToken(row);
         next();
       })
       .catch(() => res.status(500).json({ error: "Something went wrong on our end. Please try again in a minute." }));
@@ -311,6 +317,9 @@ router.post("/rider/auth/register", async (req, res) => {
 
   const mobileToken = generateMobileToken();
   await db.insert(riderMobileTokensTable).values({ riderAccountId: account.id, token: mobileToken });
+  // Premium plans (off by default): 1 phone signed in, 4 on Family; the others are signed out.
+  // Browsers send an Origin header; the website uses its session cookie, so it isn't a phone.
+  if (!req.headers.origin) await enforcePhoneLimit(account.id, mobileToken).catch(() => {});
 
   // How many rider profiles this email already links to. Zero usually means the
   // rider registered for races with a different email (or mistyped this one), so
@@ -355,6 +364,9 @@ router.post("/rider/auth/login", async (req, res) => {
 
   const mobileToken = generateMobileToken();
   await db.insert(riderMobileTokensTable).values({ riderAccountId: account.id, token: mobileToken });
+  // Premium plans (off by default): 1 phone signed in, 4 on Family; the others are signed out.
+  // Browsers send an Origin header; the website uses its session cookie, so it isn't a phone.
+  if (!req.headers.origin) await enforcePhoneLimit(account.id, mobileToken).catch(() => {});
 
   return res.json({ id: account.id, email: account.email, createdAt: account.createdAt.toISOString(), mobileToken });
 });
@@ -472,7 +484,7 @@ router.get("/rider/auth/me", async (req, res) => {
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
   if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
-  return res.json({ id: account.id, email: account.email, createdAt: account.createdAt.toISOString(), premium: await premiumSummary(account.id) });
+  return res.json({ id: account.id, email: account.email, createdAt: account.createdAt.toISOString(), premium: await refreshWebPremiumIfDue(account.id).then(() => premiumSummary(account.id)) });
 });
 
 // GET /rider/auth/mobile-me — Bearer token auth check for mobile app startup
@@ -480,7 +492,7 @@ router.get("/rider/auth/mobile-me", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
   if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
-  return res.json({ id: account.id, email: account.email, createdAt: account.createdAt.toISOString(), premium: await premiumSummary(account.id) });
+  return res.json({ id: account.id, email: account.email, createdAt: account.createdAt.toISOString(), premium: await refreshWebPremiumIfDue(account.id).then(() => premiumSummary(account.id)) });
 });
 
 // POST /rider/push-token — register Expo push token for the authenticated rider account
@@ -908,7 +920,7 @@ router.get("/rider/profiles/:riderId/history", requireRiderAuth, async (req, res
     .orderBy(desc(eventsTable.date), asc(motosTable.motoNumber));
   // Premium (switched off by default, see lib/premium.ts): once on, a free rider
   // sees only today's event here; past events are Premium.
-  const access = await riderAccess(riderAccountId);
+  const access = await riderAccess(riderAccountId, riderId);
   const rows = access.full ? allRows : allRows.filter(r => {
     if (!r.eventDate) return false;
     const today = eventToday({ state: r.eventState });
@@ -1745,7 +1757,7 @@ router.get("/rider/profiles/:riderId/practice", requireRiderAuth, async (req, re
   }
 
   // Premium (switched off by default): once on, a free rider sees only the last 24 hours of practice.
-  const practiceAccess = await riderAccess(riderAccountId);
+  const practiceAccess = await riderAccess(riderAccountId, riderId);
   if (!practiceAccess.full) res.setHeader("X-Premium-Limited", "practice");
   const sessions = Array.from(sessionMap.values())
     .filter(s => practiceAccess.full || isRecentPractice(s.startedAt))
@@ -2611,7 +2623,8 @@ router.post("/rider/mechanic-chat", requireRiderAuth, async (req, res) => {
     return res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
   }
   // Premium (switched off by default): once on, a free rider gets 1 Rocky question per 24 hours.
-  const chatAllowed = await rockyQuestionAllowed(riderAccountId);
+  const chatRiderId = riderContext?.riderId != null && Number.isInteger(Number(riderContext.riderId)) ? Number(riderContext.riderId) : null;
+  const chatAllowed = await rockyQuestionAllowed(riderAccountId, chatRiderId);
   if (!chatAllowed.allowed) return res.status(402).json(rockyLimitBody(chatAllowed.nextFreeAt));
 
   const bikeStr = [riderContext?.bikeYear, riderContext?.bikeMake, riderContext?.bikeModel]
@@ -3219,7 +3232,7 @@ router.post("/rider/maintenance/:riderId/ai-generate", requireRiderAuth, async (
   if (!rider || !(await canManageRider(account, rider))) {
     return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   }
-  const maintAllowed = await rockyQuestionAllowed(riderAccountId);
+  const maintAllowed = await rockyQuestionAllowed(riderAccountId, riderId);
   if (!maintAllowed.allowed) return res.status(402).json(rockyLimitBody(maintAllowed.nextFreeAt));
 
   // The bike on the profile, or the garage's default bike (the app's Profile tab

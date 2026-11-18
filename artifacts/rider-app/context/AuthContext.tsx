@@ -3,6 +3,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, AppState, Linking, Platform } from "react-native";
+import { router } from "expo-router";
+import { storeSignOut } from "@/lib/premium";
 import { NETWORK_ERROR_MESSAGE, postJson, serverErrorMessage } from "@/lib/friendlyErrors";
 
 const TOKEN_KEY = "rider_mobile_token";
@@ -236,12 +238,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAccount(acc);
   };
 
+  // RM Roost Premium plans (off by default): an account can be signed in on 1
+  // phone (4 on Family). Signing in on another phone signs this one out; the
+  // server says so with code "signed_in_elsewhere". Say why, then sign out here.
+  const signedOutElsewhereShown = useRef(false);
+  const handleSignedOutElsewhere = useCallback(async (res: Response): Promise<void> => {
+    if (res.status !== 401 || !tokenRef.current) return;
+    const body = await res.clone().json().catch(() => null) as { code?: string; error?: string } | null;
+    if (body?.code !== "signed_in_elsewhere") return;
+    tokenRef.current = null;
+    void storeSignOut();
+    await AsyncStorage.multiRemove([TOKEN_KEY, ACCOUNT_CACHE_KEY, SELECTED_IDS_KEY, PUSH_TOKEN_KEY]).catch(() => {});
+    applyAccount(null);
+    setProfiles([]);
+    setProfilesStatus("loading");
+    setSelectedProfileIdsState([]);
+    if (!signedOutElsewhereShown.current) {
+      signedOutElsewhereShown.current = true;
+      Alert.alert("Signed out", body.error ?? "Your account signed in on another phone.", [
+        { text: "OK", onPress: () => { signedOutElsewhereShown.current = false; } },
+      ]);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // RM Roost Premium (only once switched on): a locked feature answers 402
+  // "premium_required"; offer the Premium screen once per message.
+  const premiumPromptOpen = useRef(false);
+  const offerPremium = useCallback(async (res: Response): Promise<void> => {
+    const body = await res.clone().json().catch(() => null) as { code?: string; error?: string } | null;
+    if (body?.code !== "premium_required" || premiumPromptOpen.current) return;
+    premiumPromptOpen.current = true;
+    Alert.alert("RM Roost Premium", body.error ?? "This is part of RM Roost Premium.", [
+      { text: "Not now", style: "cancel", onPress: () => { premiumPromptOpen.current = false; } },
+      { text: "See Premium", onPress: () => { premiumPromptOpen.current = false; router.push("/premium" as any); } },
+    ]);
+  }, []);
+
   const riderFetch = useCallback(
     async (path: string, options: RequestInit = {}): Promise<Response> => {
       if (!restored.current!.done) await restored.current!.promise;
-      return authedFetch(path, tokenRef.current, options);
+      const res = await authedFetch(path, tokenRef.current, options);
+      if (res.status === 401) void handleSignedOutElsewhere(res);
+      if (res.status === 402) void offerPremium(res);
+      return res;
     },
-    [account?.mobileToken],
+    [account?.mobileToken, handleSignedOutElsewhere, offerPremium],
   );
 
   const activeProfiles = useMemo((): RiderProfile[] => {
@@ -299,6 +341,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function validateAndLoad(token: string): Promise<{ account: RiderAccount | null; unreachable: boolean }> {
     try {
       const res = await authedFetch("/api/rider/auth/mobile-me", token);
+      if (res.status === 401) {
+        // Signed out because the account signed in on another phone: say why.
+        const body = await res.clone().json().catch(() => null) as { code?: string; error?: string } | null;
+        if (body?.code === "signed_in_elsewhere") {
+          await AsyncStorage.multiRemove([TOKEN_KEY, ACCOUNT_CACHE_KEY]).catch(() => {});
+          Alert.alert("Signed out", body.error ?? "Your account signed in on another phone.");
+        }
+      }
       if (res.status === 401 || res.status === 403) return { account: null, unreachable: false };
       if (!res.ok) return { account: null, unreachable: true };
       const data = await res.json();
@@ -430,6 +480,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       await bestEffortFetch("/api/rider/auth/logout", token, { method: "POST" });
     }
+    void storeSignOut();
     const keysToRemove: string[] = [TOKEN_KEY, ACCOUNT_CACHE_KEY, SELECTED_IDS_KEY, PUSH_TOKEN_KEY];
     // The Train tab's saved plan (current key, and the one older builds used).
     if (account) keysToRemove.push(`workout_plan_v2_${account.id}`, `workout_plan_${account.id}`);

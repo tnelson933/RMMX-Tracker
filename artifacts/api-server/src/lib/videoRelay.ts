@@ -405,10 +405,14 @@ function handleBroadcaster(ws: WebSocket, eventId: number, cameraId: string, nam
   });
 }
 
+// Free-minute viewers watching now: several cameras (or tabs) at once count as
+// one stretch of time, from the first connection to the last one closing.
+const freeWatching = new Map<number, { connections: number; since: number }>();
+
 function handleViewer(ws: WebSocket, eventId: number, requestedCamera: string | null, grant: WatchGrant | null = null) {
   let cam: Camera | undefined;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
-  // RM Roost Premium (off by default): a free rider's hour runs out here.
+  // RM Roost Premium (off by default): a free rider's 30 minutes run out here.
   const connectedAt = Date.now();
   let freeTimer: ReturnType<typeof setTimeout> | null = null;
   if (grant && grant.allowUntil - connectedAt < 2_147_000_000) {
@@ -418,16 +422,25 @@ function handleViewer(ws: WebSocket, eventId: number, requestedCamera: string | 
     }, Math.max(0, grant.allowUntil - connectedAt));
   }
   let recorded = false;
+  if (grant?.free) {
+    const w = freeWatching.get(grant.riderAccountId);
+    if (w) w.connections++;
+    else freeWatching.set(grant.riderAccountId, { connections: 1, since: connectedAt });
+  }
 
   // Viewers send "hello" pings to keep proxies open; nothing else is expected.
   ws.on("message", () => {});
 
   const detach = () => {
     if (freeTimer) clearTimeout(freeTimer);
-    if (grant?.free && !recorded && cam) {
+    if (grant?.free && !recorded) {
       recorded = true;
-      recordStreamSeconds(grant.riderAccountId, eventId, (Math.min(Date.now(), grant.allowUntil) - connectedAt) / 1000)
-        .catch(err => logger.warn({ err, eventId }, "Couldn't record free stream time"));
+      const w = freeWatching.get(grant.riderAccountId);
+      if (w && --w.connections <= 0) {
+        freeWatching.delete(grant.riderAccountId);
+        recordStreamSeconds(grant.riderAccountId, eventId, (Math.min(Date.now(), grant.allowUntil) - w.since) / 1000)
+          .catch(err => logger.warn({ err, eventId }, "Couldn't record free stream time"));
+      }
     }
     if (heartbeat) clearInterval(heartbeat);
     cam?.viewers.delete(ws);

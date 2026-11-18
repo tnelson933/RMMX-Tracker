@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "@/lib/apiBase";
+import { usePremium } from "@/hooks/usePremium";
 import { StatusBarBackdrop } from "@/components/StatusBarBackdrop";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -140,6 +141,7 @@ function AuthForm() {
 // ─── Profile list (shown when logged in) ────────────────────────────────────
 
 function ProfileList() {
+  const { summary: premium } = usePremium();
   const colors = useColors();
   const { preference: themePref, setPreference: setThemePref } = useTheme();
   const insets = useSafeAreaInsets();
@@ -876,6 +878,19 @@ function ProfileList() {
       {/* ─── Settings ─────────────────────────────────── */}
       <Text style={[s.sectionLabel, { marginTop: 6 }]}>Settings</Text>
       <View style={s.listCard}>
+          {premium && (premium.enforced || premium.active) && (
+            <>
+              <Pressable onPress={() => router.push("/premium" as any)} style={({ pressed }) => [s.settingRow, { opacity: pressed ? 0.75 : 1 }]}>
+                <View style={s.settingIcon}><Feather name="star" size={15} color={colors.primaryText} /></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.settingLabel}>RM Roost Premium</Text>
+                  <Text style={s.settingSub}>{premium.active ? (premium.plan === "family" ? "Family plan" : "Premium") : "Past stats, unlimited Rocky and live streams"}</Text>
+                </View>
+                <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+              </Pressable>
+              <View style={s.settingDivider} />
+            </>
+          )}
           <Pressable onPress={() => router.push("/organizations" as any)} style={({ pressed }) => [s.settingRow, { opacity: pressed ? 0.75 : 1 }]}>
             <View style={s.settingIcon}><Feather name="flag" size={15} color={colors.primaryText} /></View>
             <View style={{ flex: 1 }}>

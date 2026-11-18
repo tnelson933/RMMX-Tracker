@@ -1310,6 +1310,7 @@ export default function WatchLive() {
                 <Radio size={52} className="text-white/20" />
                 <h2 className="font-heading text-2xl uppercase font-bold">RM Roost Premium</h2>
                 <p className="text-white/60 text-sm text-center max-w-sm px-4">{premiumMessage}</p>
+                <a href="/rider/premium" className="rounded-full bg-[#B30000] px-5 py-2.5 text-white font-bold text-sm">Sign in or see Premium</a>
                 <p className="text-white/40 text-xs text-center max-w-sm px-4">Live standings stay free beside the video.</p>
               </>
             )}

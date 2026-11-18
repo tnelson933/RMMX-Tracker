@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, numeric, integer, index, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, numeric, integer, index, primaryKey, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -15,8 +15,18 @@ export const riderAccountsTable = pgTable("rider_accounts", {
    * every rider gets everything.
    */
   premiumUntil: timestamp("premium_until"),
-  /** Where the current Premium came from: "admin", "stripe", "apple", "google". */
+  /** Where the current Premium came from: "admin", "apple", "google" (in-app purchase) or "stripe" (website). */
   premiumSource: text("premium_source"),
+  /** Website purchases: the Stripe customer and subscription on RM Roost's own Stripe account. */
+  premiumStripeCustomerId: text("premium_stripe_customer_id"),
+  premiumStripeSubscriptionId: text("premium_stripe_subscription_id"),
+  /**
+   * "individual": Premium for 1 rider profile on the account, 1 phone signed in.
+   * "family" ($79.99/year): up to 4 rider profiles, up to 4 phones signed in.
+   */
+  premiumPlan: text("premium_plan", { enum: ["individual", "family"] }),
+  /** The rider profiles Premium unlocks (1 on Individual, up to 4 on Family). */
+  premiumRiderIds: jsonb("premium_rider_ids").$type<number[]>().notNull().default([]),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
