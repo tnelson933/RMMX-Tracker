@@ -61,7 +61,8 @@ const useLastNotificationResponse: () => Notifications.NotificationResponse | nu
 
 /**
  * Open the screen a tapped push points at. Server payloads (api-server/src/lib):
- * `{ type: "quick_checkin" | "quick_checkin_arrival" | "follow-results", eventId }` and broadcast `{ url }`.
+ * `{ type: "quick_checkin" | "quick_checkin_arrival" | "follow-results", eventId }`,
+ * `{ type: "follow-race-start", eventId, motoId, riderId, streaming }` and broadcast `{ url }`.
  */
 function useNotificationNavigation(ready: boolean) {
   const router = useRouter();
@@ -82,6 +83,12 @@ function useNotificationNavigation(ready: boolean) {
       return;
     }
     const eventId = Number(data.eventId);
+    // A followed rider is about to race: the live stream (with live standings)
+    // if the event is streaming now, otherwise that race's live timing.
+    if (data.type === "follow-race-start" && Number.isInteger(eventId) && eventId > 0) {
+      void openRaceStart(router, eventId, Number(data.motoId));
+      return;
+    }
     if (Number.isInteger(eventId) && eventId > 0) {
       router.push(`/event/${eventId}` as any);
       return;
@@ -90,6 +97,29 @@ function useNotificationNavigation(ready: boolean) {
       void openInApp(data.url);
     }
   }, [ready, response]);
+}
+
+/** Is the event streaming right now? Checked at tap time: the push may be minutes old. */
+async function isStreamingNow(eventId: number): Promise<boolean> {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 4000);
+    const r = await fetch(`${API_BASE_URL}/api/video/status/${eventId}`, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!r.ok) return false;
+    return (await r.json() as { live?: boolean }).live === true;
+  } catch {
+    return false;
+  }
+}
+
+async function openRaceStart(router: ReturnType<typeof useRouter>, eventId: number, motoId: number): Promise<void> {
+  if (await isStreamingNow(eventId)) {
+    router.push(`/live/${eventId}` as any);
+    return;
+  }
+  const moto = Number.isInteger(motoId) && motoId > 0 ? `&motoId=${motoId}` : "";
+  router.push(`/(tabs)/results?eventId=${eventId}${moto}` as any);
 }
 
 function RootLayoutNav() {

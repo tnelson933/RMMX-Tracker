@@ -10,6 +10,7 @@ import { shouldPublishAnnouncerSnapshotForMotoPatch } from "../lib/announcerLife
 import { sendPushNotifications } from "../lib/push";
 import { sendConnectorCommand } from "../lib/connectorRelay";
 import { accountIdsForRiders } from "../lib/riderAccess";
+import { alertFollowersUpNext, alertFollowersMotoStarted } from "../lib/raceStartAlerts";
 import { callerOwnsClub } from "../middleware/accessControl";
 import { sendRaceDayStats } from "../lib/raceDayStats";
 import { queueRaceGasCredits } from "../lib/raceGasCredits";
@@ -441,6 +442,8 @@ router.patch("/motos/:motoId", async (req, res) => {
   // RM Connect: tell any connected tray apps to start/stop the reader
   if (req.body.status === "in_progress") {
     notifyConnectors(moto, "start_moto").catch(() => {});
+    // Followers not yet told this race was up next (e.g. the day's first race).
+    void alertFollowersMotoStarted(moto.id);
   } else if (req.body.status === "completed" && !alreadyCompleted) {
     afterMotoCompleted(moto).catch(() => {});
   }
@@ -466,6 +469,8 @@ export async function afterMotoCompleted(moto: typeof motosTable.$inferSelect): 
   // Points from the finishing order (live timing never runs the manual results save).
   import("./results").then(({ scoreMotoPoints }) => scoreMotoPoints(moto.id)).catch(() => {});
   sendRaceNotifications(moto.eventId).catch(() => {});
+  // "<Rider> is about to start their race" to followers of riders in the next race.
+  void alertFollowersUpNext(moto.eventId, moto.completedAt);
   // Race Gas: riders in this race earn their website credit now.
   if (moto.type !== "practice") void queueRaceGasCredits(moto.eventId);
   if (moto.type === "heat") {

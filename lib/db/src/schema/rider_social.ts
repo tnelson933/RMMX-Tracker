@@ -1,4 +1,5 @@
-import { integer, pgTable, serial, text, timestamp, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { boolean, integer, pgTable, primaryKey, serial, text, timestamp, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { motosTable } from "./motos";
 import { riderAccountsTable } from "./rider_accounts";
 import { ridersTable } from "./riders";
 
@@ -25,11 +26,23 @@ export const riderFollowsTable = pgTable("rider_follows", {
   id: serial("id").primaryKey(),
   riderAccountId: integer("rider_account_id").notNull().references(() => riderAccountsTable.id, { onDelete: "cascade" }),
   riderId: integer("rider_id").notNull().references(() => ridersTable.id, { onDelete: "cascade" }),
+  /** Push when this rider is about to start a race (deploy/migrations/0038). */
+  raceAlerts: boolean("race_alerts").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   uniqueIndex("rider_follows_account_rider_uq").on(t.riderAccountId, t.riderId),
   index("rider_follows_rider_idx").on(t.riderId),
 ]);
+
+/**
+ * Followers were alerted that this rider is about to start this moto: one row per
+ * rider per moto, so the push never goes out twice (deploy/migrations/0038).
+ */
+export const riderRaceStartNotificationsTable = pgTable("rider_race_start_notifications", {
+  motoId: integer("moto_id").notNull().references(() => motosTable.id, { onDelete: "cascade" }),
+  riderId: integer("rider_id").notNull().references(() => ridersTable.id, { onDelete: "cascade" }),
+  sentAt: timestamp("sent_at", { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [primaryKey({ columns: [t.motoId, t.riderId] })]);
 
 export type RiderProfileManager = typeof riderProfileManagersTable.$inferSelect;
 export type RiderFollow = typeof riderFollowsTable.$inferSelect;

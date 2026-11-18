@@ -731,6 +731,8 @@ On the Points Scoring Tables page, **Auto DNF — Club-wide Setting** gives ride
 
 **Automated notifications** — during an active race day the platform automatically alerts riders when they are **next up** and when they are **3 races away**. No action needed. These fire when a moto finishes and only reach riders in a lineup, so the first race of the day gets no "up next" alert and a moto with no lineup alerts nobody.
 
+**Followers' race alerts** — riders' fans (anyone following a rider in the rider app) automatically get "**[Rider name] is about to start their race**" when that rider's race is up next (the race before it finishes), or when the race starts if they weren't told yet (e.g. the first race of the day). Once per rider per race, never twice, even if the race is restarted. Tapping it opens the live stream with live standings when the event is streaming, otherwise that race's live timing. It covers races run from the website, the race clock, and the desktop app while the laptop is online; a race the desktop ran offline and synced more than 15 minutes later sends nothing. Riders in a race come from its lineup, else the checked-in riders of its class (else registered riders if nobody has checked in). Practice and enduro tests don't send it. Followers can turn it off per rider with the bell on Find riders, or by turning your club off in the app. It's free (not a Premium feature). Nothing for the organizer to set up.
+
 ---
 
 ## Practice Sessions

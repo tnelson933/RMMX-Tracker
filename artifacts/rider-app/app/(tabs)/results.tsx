@@ -863,11 +863,16 @@ function EventScheduleScreen({
   onBack,
   colors,
   bottomInset,
+  openMotoId,
+  onOpenedMoto,
 }: {
   event: BrowseEvent;
   onBack: () => void;
   colors: ReturnType<typeof useColors>;
   bottomInset: number;
+  /** Open this race's live timing once the schedule loads (a follower's race start push). */
+  openMotoId?: number | null;
+  onOpenedMoto?: () => void;
 }) {
   const { top: topInset } = useSafeAreaInsets();
   const [detail, setDetail]         = useState<PublicEventDetail | null>(null);
@@ -885,6 +890,15 @@ function EventScheduleScreen({
   }, [event.eventId]);
 
   useEffect(() => { void load(); }, [load]);
+
+  const openedMoto = useRef<number | null>(null);
+  useEffect(() => {
+    if (!openMotoId || !detail || openedMoto.current === openMotoId) return;
+    openedMoto.current = openMotoId;
+    const moto = detail.motos.find(m => m.motoId === openMotoId);
+    if (moto) setSelectedMoto(moto);
+    onOpenedMoto?.();
+  }, [detail, openMotoId, onOpenedMoto]);
 
   // Poll every 15s during live events
   useEffect(() => {
@@ -1503,10 +1517,14 @@ export default function ResultsScreen() {
   const [upcoming, setUpcoming] = useState<BrowseEvent[]>([]);
 
   // Opened on one race from elsewhere in the app (an event's "Full results").
-  const { eventId: openEventId } = useLocalSearchParams<{ eventId?: string }>();
+  // A follower's race start push also names the race (motoId) to open on live timing.
+  const { eventId: openEventId, motoId: openMotoParam } = useLocalSearchParams<{ eventId?: string; motoId?: string }>();
+  const [openMotoId, setOpenMotoId] = useState<number | null>(null);
   useEffect(() => {
     const id = Number(openEventId);
     if (!Number.isInteger(id) || id <= 0) return;
+    const motoId = Number(openMotoParam);
+    setOpenMotoId(Number.isInteger(motoId) && motoId > 0 ? motoId : null);
     let cancelled = false;
     (async () => {
       try {
@@ -1522,7 +1540,7 @@ export default function ResultsScreen() {
           status: String(r.status ?? ""), clubName: (r.clubName as string) ?? "",
         });
       } catch { /* stay on the list */ }
-      finally { router.setParams({ eventId: undefined } as never); }
+      finally { router.setParams({ eventId: undefined, motoId: undefined } as never); }
     })();
     return () => { cancelled = true; };
   }, [openEventId]);
@@ -1606,10 +1624,13 @@ export default function ResultsScreen() {
   if (selectedEvent) {
     return (
       <EventScheduleScreen
+        key={selectedEvent.eventId}
         event={selectedEvent}
-        onBack={() => setSelectedEvent(null)}
+        onBack={() => { setSelectedEvent(null); setOpenMotoId(null); }}
         colors={colors}
         bottomInset={insets.bottom}
+        openMotoId={openMotoId}
+        onOpenedMoto={() => setOpenMotoId(null)}
       />
     );
   }

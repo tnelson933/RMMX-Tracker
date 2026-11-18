@@ -197,6 +197,7 @@ router.get("/rider/follows", requireRiderAuth, async (req, res) => {
   if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const rows = await db.select({
     riderId: riderFollowsTable.riderId, firstName: ridersTable.firstName, lastName: ridersTable.lastName, since: riderFollowsTable.createdAt,
+    raceAlerts: riderFollowsTable.raceAlerts,
     dateOfBirth: ridersTable.dateOfBirth, profileVisibility: ridersTable.profileVisibility, avatarUrl: ridersTable.avatarUrl, coverUrl: ridersTable.coverUrl,
   })
     .from(riderFollowsTable).innerJoin(ridersTable, eq(ridersTable.id, riderFollowsTable.riderId))
@@ -204,7 +205,7 @@ router.get("/rider/follows", requireRiderAuth, async (req, res) => {
   const mine = new Set(await managedRiderIds(account));
   const today = new Date().toISOString().slice(0, 10);
   return res.json({ following: rows.map(r => ({
-    riderId: r.riderId, name: `${r.firstName} ${r.lastName}`.trim(), since: r.since.toISOString(),
+    riderId: r.riderId, name: `${r.firstName} ${r.lastName}`.trim(), since: r.since.toISOString(), raceAlerts: r.raceAlerts,
     avatarUrl: visiblePhotos(r, mine.has(r.riderId), today).avatarUrl,
   })) });
 });
@@ -216,6 +217,19 @@ router.post("/rider/follows/:riderId", requireRiderAuth, async (req, res) => {
   if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
   await db.insert(riderFollowsTable).values({ riderAccountId: account.id, riderId: rider.id }).onConflictDoNothing();
   return res.status(201).json({ ok: true, following: true });
+});
+
+// Turn "<rider> is about to start their race" pushes on or off for one followed rider.
+router.patch("/rider/follows/:riderId", requireRiderAuth, async (req, res) => {
+  const account = await currentAccount(req);
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
+  const { raceAlerts } = (req.body ?? {}) as { raceAlerts?: unknown };
+  if (typeof raceAlerts !== "boolean") return res.status(400).json({ error: "Something was missing from that request. Refresh the page and try again." });
+  const [row] = await db.update(riderFollowsTable).set({ raceAlerts })
+    .where(and(eq(riderFollowsTable.riderAccountId, account.id), eq(riderFollowsTable.riderId, Number(req.params.riderId))))
+    .returning({ raceAlerts: riderFollowsTable.raceAlerts });
+  if (!row) return res.status(404).json({ error: "You don't follow this rider anymore. Refresh the page and try again." });
+  return res.json({ ok: true, raceAlerts: row.raceAlerts });
 });
 
 router.delete("/rider/follows/:riderId", requireRiderAuth, async (req, res) => {

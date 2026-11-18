@@ -42,6 +42,7 @@ import { checkAcknowledgement, checkBrands, checkDefaultClasses, checkPdfUrl, ch
 import { recomputeEnduroPositionsForEvent } from "./enduro-scoring";
 import { syncEventPublication } from "../lib/resultsVisibility";
 import { notifyFollowersOfResults } from "../lib/riderCareer";
+import { alertFollowersUpNext, alertFollowersMotoStarted } from "../lib/raceStartAlerts";
 import { sendRaceDayStats } from "../lib/raceDayStats";
 import { queueRaceGasCredits } from "../lib/raceGasCredits";
 import { teamMemberRiderId } from "../lib/teams";
@@ -94,6 +95,9 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
   let total = 0;
   const affectedMotoIds = new Set<number>();
   const startedMotoIds = new Set<number>();
+  // Races the desktop finished in this push, by event (latest finish time): the
+  // next race is up next, so followers of its riders get a race start alert.
+  const finishedRaceByEvent = new Map<number, Date>();
   // Events whose motos were finalized or reopened on the desktop.
   const finalizeEventIds = new Set<number>();
   const eventIdRemaps: Array<{ localId: number; cloudId: number }> = [];
@@ -663,6 +667,11 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       if (existing) {
         if (existing.status !== "in_progress" && incomingStatus === "in_progress") {
           startedMotoIds.add(existing.id);
+        }
+        if (existing.status !== "completed" && incomingStatus === "completed") {
+          const finishedAt = rawCompletedAt != null ? toDate(rawCompletedAt) : new Date();
+          const prev = finishedRaceByEvent.get(eventId);
+          if (finishedAt && (!prev || finishedAt > prev)) finishedRaceByEvent.set(eventId, finishedAt);
         }
         let lineup: number[] | undefined;
         if (m.lineup !== undefined) {
@@ -1820,6 +1829,18 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
             req.log.warn({ err, eventId }, "desktop-push: results publication sync failed");
           }
         }
+      })();
+    });
+  }
+
+  // Follower "about to start their race" pushes. Each skips races finished or
+  // started too long ago (a late sync after the laptop was offline), and the
+  // per-rider-per-moto claim keeps re-syncs from sending twice.
+  if (finishedRaceByEvent.size > 0 || startedMotoIds.size > 0) {
+    setImmediate(() => {
+      void (async () => {
+        for (const [eventId, finishedAt] of finishedRaceByEvent) await alertFollowersUpNext(eventId, finishedAt);
+        for (const motoId of startedMotoIds) await alertFollowersMotoStarted(motoId);
       })();
     });
   }

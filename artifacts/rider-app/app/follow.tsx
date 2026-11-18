@@ -13,7 +13,7 @@ import { goBack } from "@/lib/navigation";
 import { displayDate } from "@/lib/format";
 
 interface FoundRider { id: number; name: string; avatarUrl?: string | null; lastRaced: string | null; clubName: string | null; following: boolean }
-interface Followed { riderId: number; name: string; avatarUrl?: string | null }
+interface Followed { riderId: number; name: string; avatarUrl?: string | null; raceAlerts?: boolean }
 
 /** Find riders by name and follow them. Following puts their results in your feed and sends a push when results are in. */
 export default function FollowScreen() {
@@ -99,6 +99,21 @@ export default function FollowScreen() {
     void loadFollowing();
   }, [following, loadFollowing, riderFetch]);
 
+  // "About to start their race" pushes for one followed rider. Optimistic, restored on failure.
+  const setRaceAlerts = useCallback(async (riderId: number, on: boolean) => {
+    const flip = (value: boolean) => setFollowing(prev => prev.map(f => (f.riderId === riderId ? { ...f, raceAlerts: value } : f)));
+    flip(on);
+    try {
+      const r = await riderFetch(`/api/rider/follows/${riderId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ raceAlerts: on }),
+      });
+      if (!r.ok) { flip(!on); Alert.alert("Couldn't change race alerts", `Try again (error ${r.status}).`); }
+    } catch {
+      flip(!on);
+      Alert.alert("Couldn't change race alerts", NETWORK_ERROR_MESSAGE);
+    }
+  }, [riderFetch]);
+
   const bottomSpace = useBottomSpace();
   const s = styles(colors, { bottom: bottomSpace });
   return (
@@ -116,7 +131,7 @@ export default function FollowScreen() {
             style={s.searchInput} autoCorrect={false} autoFocus returnKeyType="search" />
           {searching && <ActivityIndicator size="small" color={colors.mutedForeground} />}
         </View>
-        <Text style={s.muted}>Follow friends, teammates or rivals. Their results show on your home screen, and you get a notification when their results are official.</Text>
+        <Text style={s.muted}>Follow friends, teammates or rivals. Their results show on your home screen. You get a notification when they're about to start a race (turn it off with the bell) and when their results are official.</Text>
 
         {results.map(r => (
           <RiderRow key={r.id} title={r.name} avatarUrl={r.avatarUrl} subtitle={[r.clubName, r.lastRaced && `Last raced ${displayDate(r.lastRaced).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`].filter(Boolean).join(" · ")}
@@ -133,6 +148,7 @@ export default function FollowScreen() {
         )}
         {following.map(f => (
           <RiderRow key={f.riderId} title={f.name} avatarUrl={f.avatarUrl} following onToggle={() => { void unfollow(f.riderId); }}
+            raceAlerts={f.raceAlerts !== false} onRaceAlerts={on => { void setRaceAlerts(f.riderId, on); }}
             onOpen={() => router.push(`/racer/${f.riderId}` as any)} colors={colors} />
         ))}
       </ScrollView>
@@ -140,8 +156,9 @@ export default function FollowScreen() {
   );
 }
 
-function RiderRow({ title, subtitle, following, onToggle, onOpen, colors, avatarUrl }: {
+function RiderRow({ title, subtitle, following, onToggle, onOpen, colors, avatarUrl, raceAlerts, onRaceAlerts }: {
   title: string; subtitle?: string; following: boolean; onToggle: () => void; onOpen: () => void; colors: ReturnType<typeof useColors>; avatarUrl?: string | null;
+  raceAlerts?: boolean; onRaceAlerts?: (on: boolean) => void;
 }) {
   return (
     <Pressable onPress={onOpen} style={({ pressed }) => ({
@@ -153,6 +170,14 @@ function RiderRow({ title, subtitle, following, onToggle, onOpen, colors, avatar
         <Text style={{ fontSize: 15, color: colors.foreground, fontFamily: "Roboto_600SemiBold" }} numberOfLines={1}>{title}</Text>
         {!!subtitle && <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }} numberOfLines={1}>{subtitle}</Text>}
       </View>
+      {onRaceAlerts && (
+        <Pressable onPress={() => onRaceAlerts(!raceAlerts)} hitSlop={6} accessibilityRole="switch"
+          accessibilityState={{ checked: !!raceAlerts }}
+          accessibilityLabel={`Notify me when ${title} is about to race`}
+          style={({ pressed }) => ({ width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.6 : 1, backgroundColor: colors.muted })}>
+          <Feather name={raceAlerts ? "bell" : "bell-off"} size={16} color={raceAlerts ? colors.foreground : colors.mutedForeground} />
+        </Pressable>
+      )}
       <Pressable onPress={onToggle} hitSlop={6} style={({ pressed }) => ({
         paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, opacity: pressed ? 0.7 : 1,
         backgroundColor: following ? "transparent" : colors.primary, borderWidth: 1, borderColor: following ? colors.border : colors.primary,
