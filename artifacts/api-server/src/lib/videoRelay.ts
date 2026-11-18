@@ -3,7 +3,7 @@ import type { IncomingMessage, Server } from "http";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { logger } from "./logger";
 import { WebmStreamParser } from "./webmStream";
-import { premiumEnforced, verifyWatchTicket } from "./premium";
+import { premiumEnforced, recordStreamSeconds, verifyWatchTicket, type WatchGrant } from "./premium";
 
 /**
  * Live video relay: browsers record WebM with MediaRecorder and send it here
@@ -158,12 +158,13 @@ export function attachVideoWebSocket(httpServer: Server) {
       // Watching is public while RM Roost Premium is off (the default). Once it's
       // on, a viewer needs a ticket from GET /video/watch-access/:eventId.
       premiumEnforced().catch(() => false).then(enforced => {
-        if (enforced && !verifyWatchTicket(ticket, eventId)) {
+        const grant = enforced ? verifyWatchTicket(ticket, eventId) : null;
+        if (enforced && (!grant || grant.allowUntil <= Date.now())) {
           socket.write("HTTP/1.1 402 Payment Required\r\nConnection: close\r\n\r\n");
           socket.destroy();
           return;
         }
-        wss.handleUpgrade(req, socket as any, head, ws => handleViewer(ws, eventId, explicit ? cameraId : null));
+        wss.handleUpgrade(req, socket as any, head, ws => handleViewer(ws, eventId, explicit ? cameraId : null, grant));
       });
     }
   });
@@ -404,14 +405,30 @@ function handleBroadcaster(ws: WebSocket, eventId: number, cameraId: string, nam
   });
 }
 
-function handleViewer(ws: WebSocket, eventId: number, requestedCamera: string | null) {
+function handleViewer(ws: WebSocket, eventId: number, requestedCamera: string | null, grant: WatchGrant | null = null) {
   let cam: Camera | undefined;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
+  // RM Roost Premium (off by default): a free rider's hour runs out here.
+  const connectedAt = Date.now();
+  let freeTimer: ReturnType<typeof setTimeout> | null = null;
+  if (grant && grant.allowUntil - connectedAt < 2_147_000_000) {
+    freeTimer = setTimeout(() => {
+      sendJson(ws, { type: "free_time_over" });
+      ws.close(4402, "free time over");
+    }, Math.max(0, grant.allowUntil - connectedAt));
+  }
+  let recorded = false;
 
   // Viewers send "hello" pings to keep proxies open; nothing else is expected.
   ws.on("message", () => {});
 
   const detach = () => {
+    if (freeTimer) clearTimeout(freeTimer);
+    if (grant?.free && !recorded && cam) {
+      recorded = true;
+      recordStreamSeconds(grant.riderAccountId, eventId, (Math.min(Date.now(), grant.allowUntil) - connectedAt) / 1000)
+        .catch(err => logger.warn({ err, eventId }, "Couldn't record free stream time"));
+    }
     if (heartbeat) clearInterval(heartbeat);
     cam?.viewers.delete(ws);
     cam?.pendingViewers.delete(ws);

@@ -1,4 +1,5 @@
 import { QuickCheckinCard } from "@/components/QuickCheckinCard";
+import { LiveNowBanner } from "@/components/LiveNowBanner";
 import { StatusBarBackdrop } from "@/components/StatusBarBackdrop";
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -339,6 +340,9 @@ export default function HomeScreen() {
 
         {/* ── Race-day Quick Check-In ── */}
         <QuickCheckinCard />
+
+        {/* ── An event streaming right now ── */}
+        <LiveNowBanner />
 
         {/* ── No profile warning ── */}
         {!hasProfile && <NoProfileLinked variant="card" />}

@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { RmCashWidget } from "@/components/RmCashWidget";
+import { EventLiveButton } from "@/components/LiveNowBanner";
 import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 import { EmptyState } from "@/components/EmptyState";
 import { eventDay, placeLabel } from "@/lib/format";
@@ -437,6 +438,9 @@ export default function EventDetailScreen() {
           </Pressable>
           <RmCashWidget />
         </View>
+
+        {/* This event is streaming right now */}
+        <EventLiveButton eventId={Number(id)} />
 
         {/* Background refresh failed: keep showing the last data */}
         {error && (

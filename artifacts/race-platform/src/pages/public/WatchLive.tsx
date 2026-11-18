@@ -18,7 +18,7 @@ import {
 } from "@/lib/sharedAnnouncer";
 import { LiveRaceViews, type LeaderboardData } from "./LiveLeaderboard";
 import { isPlaybackStalled, isVideoQueueOverLimit } from "@/lib/videoPlaybackPolicy";
-import { SideCameraPlayer, getWatchWsUrl, prepareWatch, watchReady, type LiveCamera } from "@/components/SideCameraPlayer";
+import { SideCameraPlayer, getWatchWsUrl, prepareWatch, watchReady, resetWatchAccess, FREE_TIME_OVER_MESSAGE, type LiveCamera } from "@/components/SideCameraPlayer";
 
 // "reconnecting": the camera's connection dropped and it may come back.
 // "unsupported": this browser has no MediaSource (older iPhones).
@@ -684,6 +684,14 @@ export default function WatchLive() {
             setViewerCount(jsonMsg.viewers);
           }
           if (Array.isArray(jsonMsg.cameras)) setCameraList(jsonMsg.cameras as LiveCamera[]);
+        } else if (jsonMsg.type === "free_time_over") {
+          // RM Roost Premium (off by default): this free rider's hour is up.
+          cleaningUpRef.current = true;
+          resetWatchAccess();
+          teardownMSE();
+          setPremiumMessage(FREE_TIME_OVER_MESSAGE);
+          setViewerStateSynced("premium");
+          ws.close();
         } else if (jsonMsg.type === "reconnecting") {
           // The camera dropped; the relay keeps this viewer and resumes it on
           // the camera's next keyframe, which rebuilds the player.

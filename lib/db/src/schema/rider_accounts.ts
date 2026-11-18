@@ -1,4 +1,4 @@
-import { pgTable, serial, text, timestamp, numeric, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, numeric, integer, index, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -31,6 +31,17 @@ export const riderAiUsageTable = pgTable("rider_ai_usage", {
   kind: text("kind").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, t => [index("rider_ai_usage_account_time_idx").on(t.riderAccountId, t.createdAt)]);
+
+/**
+ * Live-stream time a rider watched for free, per event. Once Premium is on, a
+ * free rider gets FREE_STREAM_SECONDS (1 hour) per event before Premium is needed.
+ */
+export const riderStreamUsageTable = pgTable("rider_stream_usage", {
+  riderAccountId: integer("rider_account_id").notNull().references(() => riderAccountsTable.id, { onDelete: "cascade" }),
+  eventId: integer("event_id").notNull(),
+  seconds: integer("seconds").notNull().default(0),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, t => [primaryKey({ columns: [t.riderAccountId, t.eventId] })]);
 
 export const insertRiderAccountSchema = createInsertSchema(riderAccountsTable).omit({ id: true, createdAt: true });
 export type InsertRiderAccount = z.infer<typeof insertRiderAccountSchema>;

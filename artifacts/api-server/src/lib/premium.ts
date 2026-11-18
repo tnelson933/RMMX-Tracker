@@ -1,5 +1,5 @@
-import { db, riderAccountsTable, riderAiUsageTable, platformSettingsTable } from "@workspace/db";
-import { and, count, eq, gte, min } from "drizzle-orm";
+import { db, riderAccountsTable, riderAiUsageTable, riderStreamUsageTable, platformSettingsTable } from "@workspace/db";
+import { and, count, eq, gte, min, sql } from "drizzle-orm";
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 /**
@@ -14,7 +14,8 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
  * grant Premium to an account by email.
  *
  * Free riders keep everything for race day: today's live laps and standings,
- * registration, check-in, and 1 Rocky question every 24 hours.
+ * registration, check-in, 1 Rocky question every 24 hours, and 1 hour of each
+ * event's live stream. There is no free trial: Premium is paid.
  */
 
 export const PREMIUM_ENFORCED_KEY = "premium_enforced";
@@ -101,11 +102,18 @@ export function isRecentPractice(startedAt: string | null, now = new Date()): bo
   return !!startedAt && now.getTime() - Date.parse(startedAt) < DAY_MS;
 }
 
-// ── Live stream tickets ─────────────────────────────────────────────────────
+// ── Live streams: tickets and the free hour ─────────────────────────────────
 //
 // Once Premium is on, the video relay only accepts viewers carrying a ticket
-// from GET /video/watch-access/:eventId, which checks the rider's Premium.
-// While Premium is off, no ticket is needed.
+// from GET /video/watch-access/:eventId. A ticket says who is watching and
+// until when: Premium riders and the event's own club staff without limit, a
+// free rider until their free hour for that event runs out (the relay then
+// tells the player and closes). While Premium is off, no ticket is needed.
+
+/** Free live-stream time per rider account per event, once Premium is on. */
+export const FREE_STREAM_SECONDS = 60 * 60;
+/** "No limit" for Premium riders and club staff. */
+export const NO_LIMIT = 8_640_000_000_000_000;
 
 const ticketSecret = process.env.SESSION_SECRET || randomBytes(32).toString("hex");
 const WATCH_TICKET_TTL_MS = 5 * 60_000;
@@ -114,18 +122,46 @@ function sign(payload: string): string {
   return createHmac("sha256", ticketSecret).update(`video-watch:${payload}`).digest("base64url");
 }
 
-export function createWatchTicket(eventId: number, riderAccountId: number, now = Date.now()): string {
-  const payload = `${eventId}.${riderAccountId}.${now + WATCH_TICKET_TTL_MS}`;
+export interface WatchGrant {
+  riderAccountId: number;
+  /** Epoch ms when this viewer must stop (NO_LIMIT for Premium and staff). */
+  allowUntil: number;
+  /** Watching on the free hour: the relay records the time watched. */
+  free: boolean;
+}
+
+export function createWatchTicket(eventId: number, grant: WatchGrant, now = Date.now()): string {
+  const payload = `${eventId}.${grant.riderAccountId}.${now + WATCH_TICKET_TTL_MS}.${grant.allowUntil}.${grant.free ? 1 : 0}`;
   return `${payload}.${sign(payload)}`;
 }
 
-export function verifyWatchTicket(ticket: string | null | undefined, eventId: number, now = Date.now()): boolean {
-  if (!ticket) return false;
+/** The grant in a valid, unexpired ticket for this event, or null. */
+export function verifyWatchTicket(ticket: string | null | undefined, eventId: number, now = Date.now()): WatchGrant | null {
+  if (!ticket) return null;
   const parts = ticket.split(".");
-  if (parts.length !== 4) return false;
-  const [ev, acct, exp, sig] = parts;
-  const expected = sign(`${ev}.${acct}.${exp}`);
+  if (parts.length !== 6) return null;
+  const [ev, acct, exp, until, free, sig] = parts;
+  const expected = sign(`${ev}.${acct}.${exp}.${until}.${free}`);
   const a = Buffer.from(sig), b = Buffer.from(expected);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) return false;
-  return Number(ev) === eventId && Number(exp) > now;
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  if (Number(ev) !== eventId || Number(exp) <= now) return null;
+  return { riderAccountId: Number(acct), allowUntil: Number(until), free: free === "1" };
+}
+
+/** Free stream seconds this rider has left for an event. */
+export async function freeStreamSecondsLeft(riderAccountId: number, eventId: number): Promise<number> {
+  const [row] = await db.select({ seconds: riderStreamUsageTable.seconds }).from(riderStreamUsageTable)
+    .where(and(eq(riderStreamUsageTable.riderAccountId, riderAccountId), eq(riderStreamUsageTable.eventId, eventId)));
+  return Math.max(0, FREE_STREAM_SECONDS - (row?.seconds ?? 0));
+}
+
+/** Add watched seconds to a rider's free time for an event. */
+export async function recordStreamSeconds(riderAccountId: number, eventId: number, seconds: number): Promise<void> {
+  const s = Math.max(0, Math.round(seconds));
+  if (!riderAccountId || s === 0) return;
+  await db.insert(riderStreamUsageTable).values({ riderAccountId, eventId, seconds: s })
+    .onConflictDoUpdate({
+      target: [riderStreamUsageTable.riderAccountId, riderStreamUsageTable.eventId],
+      set: { seconds: sql`${riderStreamUsageTable.seconds} + ${s}`, updatedAt: new Date() },
+    });
 }
