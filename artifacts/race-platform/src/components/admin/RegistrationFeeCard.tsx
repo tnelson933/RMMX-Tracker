@@ -57,7 +57,6 @@ export function RegistrationFeeCard() {
   const [clubText, setClubText] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [showClubs, setShowClubs] = useState(false);
-  const [deadlineText, setDeadlineText] = useState<string | null>(null);
 
   if (isLoading || !data) return null;
   const max = money(data.maxCents);
@@ -84,22 +83,6 @@ export function RegistrationFeeCard() {
   }
 
   const defaultValue = defaultText ?? (data.defaultCents / 100).toFixed(2);
-  const deadlineValue = deadlineText ?? (data.switchDeadline ?? "");
-  const toSwitch = data.clubs.filter(c => c.mustSwitch);
-
-  async function saveDeadline() {
-    setSaving("deadline");
-    try {
-      await putJson("/api/admin/stripe-switch-deadline", { date: deadlineValue || null });
-      await qc.invalidateQueries({ queryKey: KEY });
-      setDeadlineText(null);
-      toast({ title: deadlineValue ? "Switch deadline saved" : "Switch deadline removed" });
-    } catch (err) {
-      toast({ title: (err as Error).message, variant: "destructive" });
-    } finally {
-      setSaving(null);
-    }
-  }
 
   return (
     <div className="mb-8 rounded-lg border bg-card p-5">
@@ -125,31 +108,6 @@ export function RegistrationFeeCard() {
           {saving === "default" ? "Saving…" : "Save"}
         </Button>
         <span className="text-xs text-muted-foreground pb-2">Up to {max}. $0.00 turns the fee off.</span>
-      </div>
-
-      <div className="mt-6 border-t pt-4">
-        <h3 className="font-heading font-bold uppercase tracking-wide text-sm mb-1">Own Stripe account required</h3>
-        <p className="text-sm text-muted-foreground mb-3">
-          Clubs on the older Stripe connection are paid through RM Roost's Stripe account, so RM Roost pays their
-          Stripe fees. Until the deadline they see a banner asking them to switch; after it, they can't turn on card
-          payments for an event until they switch on their Payments page. Events already taking card payments keep working.
-        </p>
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="text-sm font-medium">
-            Switch by
-            <Input type="date" className="mt-1 w-44" value={deadlineValue}
-              onChange={e => setDeadlineText(e.target.value)} aria-label="Switch deadline" />
-          </label>
-          <Button disabled={saving === "deadline" || deadlineText === null} onClick={saveDeadline}>
-            {saving === "deadline" ? "Saving…" : "Save"}
-          </Button>
-          <span className="text-xs text-muted-foreground pb-2">Clear the date and save to remove the deadline.</span>
-        </div>
-        <p className="text-sm mt-3">
-          {toSwitch.length === 0
-            ? "Every club with Stripe is on its own account."
-            : `Still to switch (${toSwitch.length}): ${toSwitch.map(c => c.name).join(", ")}`}
-        </p>
       </div>
 
       <button type="button" className="mt-4 text-sm text-primary underline-offset-2 hover:underline"
