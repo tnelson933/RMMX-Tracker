@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, clubsTable, usersTable, platformSettingsTable } from "@workspace/db";
-import { asc, eq, sql } from "drizzle-orm";
+import { db, clubsTable, usersTable, platformSettingsTable, registrationsTable, eventsTable } from "@workspace/db";
+import { and, asc, eq, gte, ne, sql } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import {
   REGISTRATION_FEE_KEY, MAX_REGISTRATION_FEE_CENTS, validFeeCents,
@@ -32,12 +32,27 @@ router.get("/admin/registration-fee", async (req, res) => {
     id: clubsTable.id, name: clubsTable.name, feeCents: clubsTable.registrationFeeCents,
     stripeAccountId: clubsTable.stripeAccountId, stripeDirectCharges: clubsTable.stripeDirectCharges,
   }).from(clubsTable).orderBy(asc(clubsTable.name));
+  // Each club's entries at events in the last 12 months (by event date), to
+  // judge which clubs need a higher fee to cover their hardware. Card-paid
+  // entries are the ones the fee applies to; void entries don't count.
+  const since = new Date(Date.now() - 365 * 24 * 60 * 60_000).toISOString().slice(0, 10);
+  const counts = await db.select({
+    clubId: eventsTable.clubId,
+    entries: sql<number>`count(*)::int`,
+    cardEntries: sql<number>`(count(*) filter (where ${registrationsTable.paymentMethod} = 'card' and ${registrationsTable.paymentStatus} in ('paid', 'refunded')))::int`,
+  }).from(registrationsTable)
+    .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
+    .where(and(ne(registrationsTable.status, "void"), gte(eventsTable.date, since)))
+    .groupBy(eventsTable.clubId);
+  const byClub = new Map(counts.map(c => [c.clubId, c]));
   res.json({
     defaultCents: await defaultRegistrationFeeCents(),
     maxCents: MAX_REGISTRATION_FEE_CENTS,
     switchDeadline: await stripeSwitchDeadline(),
     clubs: clubs.map(c => ({
       id: c.id, name: c.name, overrideCents: c.feeCents,
+      entries12mo: byClub.get(c.id)?.entries ?? 0,
+      cardEntries12mo: byClub.get(c.id)?.cardEntries ?? 0,
       // Still on an older Express connection: RM Roost pays its Stripe fees until it switches.
       mustSwitch: !!c.stripeAccountId && !c.stripeDirectCharges,
     })),

@@ -15,7 +15,7 @@ interface FeeData {
   defaultCents: number;
   maxCents: number;
   switchDeadline: string | null;
-  clubs: Array<{ id: number; name: string; overrideCents: number | null; mustSwitch: boolean }>;
+  clubs: Array<{ id: number; name: string; overrideCents: number | null; mustSwitch: boolean; entries12mo: number; cardEntries12mo: number }>;
 }
 
 const KEY = ["admin-registration-fee"];
@@ -105,7 +105,7 @@ export function RegistrationFeeCard() {
     <div className="mb-8 rounded-lg border bg-card p-5">
       <div className="flex items-center gap-2 mb-1">
         <DollarSign size={18} className="text-primary" />
-        <h2 className="font-heading font-bold uppercase tracking-wide">RM Roost registration fee</h2>
+        <h2 className="font-heading font-bold uppercase tracking-wide">RM Roost service fee</h2>
       </div>
       <p className="text-sm text-muted-foreground mb-4">
         Added to the rider's checkout as a "Service fee" line for each registration (class entry) paid by card.
@@ -154,16 +154,27 @@ export function RegistrationFeeCard() {
 
       <button type="button" className="mt-4 text-sm text-primary underline-offset-2 hover:underline"
         onClick={() => setShowClubs(s => !s)}>
-        {showClubs ? "Hide" : "Show"} per-club fees{overrides > 0 ? ` (${overrides} club${overrides === 1 ? "" : "s"} with their own fee)` : ""}
+        {showClubs ? "Hide per-club fees" : "Set a fee per club"}{overrides > 0 ? ` (${overrides} club${overrides === 1 ? "" : "s"} with their own fee)` : ""}
       </button>
       {showClubs && (
         <div className="mt-3 divide-y border rounded-md">
-          {data.clubs.map(c => {
+          <p className="px-3 py-2 text-xs text-muted-foreground bg-muted/40">
+            Give a club its own fee, for example a higher one for a small club whose entries don't cover its hardware.
+            Entries are the last 12 months, by event date; the fee only applies to card-paid entries. Fewest card entries first.
+          </p>
+          {[...data.clubs].sort((a, b) => a.cardEntries12mo - b.cardEntries12mo || a.name.localeCompare(b.name)).map(c => {
+            const feeCents = c.overrideCents ?? data.defaultCents;
             const text = clubText[c.id] ?? (c.overrideCents == null ? "" : (c.overrideCents / 100).toFixed(2));
             const dirty = clubText[c.id] !== undefined;
             return (
               <div key={c.id} className="flex flex-wrap items-center gap-2 px-3 py-2">
-                <span className="flex-1 min-w-[10rem] text-sm">{c.name}</span>
+                <span className="flex-1 min-w-[10rem] text-sm">
+                  {c.name}
+                  <span className="block text-xs text-muted-foreground">
+                    {c.cardEntries12mo.toLocaleString()} card {c.cardEntries12mo === 1 ? "entry" : "entries"} of {c.entries12mo.toLocaleString()} in 12 months
+                    {feeCents > 0 && c.cardEntries12mo > 0 ? ` · about ${money(c.cardEntries12mo * feeCents)} a year at ${money(feeCents)}` : ""}
+                  </span>
+                </span>
                 <div className="relative w-28">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">$</span>
                   <Input inputMode="decimal" className="pl-6 h-8" value={text}
