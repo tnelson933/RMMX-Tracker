@@ -17,6 +17,12 @@ import { WebmStreamParser } from "./webmStream";
  *
  * Broadcasting needs a short-lived ticket from POST /video/broadcast-ticket,
  * which checks the organizer's session. Watching is public.
+ *
+ * Rider streams (a rider going live from the rider app) use the same relay on a
+ * channel of their own: the rider's id negated in place of an event id, with one
+ * camera ("phone"). They never appear in event or "Live now" lists, and both
+ * broadcasting and watching need a ticket (routes/rider-live.ts), because a
+ * rider's profile may be private.
  */
 
 interface Camera {
@@ -52,6 +58,11 @@ export const MAX_CAMERAS_PER_EVENT = 8;
 const TICKET_TTL_MS = 2 * 60_000;
 const DEFAULT_CAMERA = "main";
 
+/** Rider streams: the relay channel for a rider, and its one camera. */
+export const RIDER_CAMERA = "phone";
+const RIDER_WATCH = "watch";
+export const riderChannel = (riderId: number) => -riderId;
+
 const cameras = new Map<string, Camera>();
 const keyOf = (eventId: number, cameraId: string) => `${eventId}:${cameraId}`;
 
@@ -79,9 +90,22 @@ function sign(payload: string): string {
 }
 
 /** A ticket letting its holder broadcast one camera of one event for 2 minutes. */
-export function createBroadcastTicket(eventId: number, cameraId: string, now = Date.now()): string {
-  const payload = `${eventId}.${cameraId}.${now + TICKET_TTL_MS}`;
+export function createBroadcastTicket(eventId: number, cameraId: string, now = Date.now(), ttlMs = TICKET_TTL_MS): string {
+  const payload = `${eventId}.${cameraId}.${now + ttlMs}`;
   return `${payload}.${sign(payload)}`;
+}
+
+/**
+ * Rider stream tickets. They last a race day, because the in-app pages that use
+ * them reconnect on their own over a track's patchy signal and have no website
+ * sign-in to fetch a fresh one. A watch ticket can't broadcast, and the other way round.
+ */
+export const RIDER_TICKET_TTL_MS = 12 * 60 * 60_000;
+export function createRiderBroadcastTicket(riderId: number, now = Date.now()): string {
+  return createBroadcastTicket(riderChannel(riderId), RIDER_CAMERA, now, RIDER_TICKET_TTL_MS);
+}
+export function createRiderWatchTicket(riderId: number, now = Date.now()): string {
+  return createBroadcastTicket(riderChannel(riderId), RIDER_WATCH, now, RIDER_TICKET_TTL_MS);
 }
 
 export function verifyBroadcastTicket(ticket: string, eventId: number, cameraId: string, now = Date.now()): boolean {
@@ -117,8 +141,25 @@ export function isEventLive(eventId: number): boolean {
   return getLiveCameras(eventId).length > 0;
 }
 
+/** Events streaming now (rider streams are not events and never listed here). */
 export function getLiveEvents(): number[] {
-  return Array.from(new Set(Array.from(cameras.values(), c => c.eventId)));
+  return Array.from(new Set(Array.from(cameras.values(), c => c.eventId).filter(id => id > 0)));
+}
+
+export type RiderLiveStatus = { live: boolean; since: string | null; viewers: number; reconnecting: boolean };
+
+/** Is this rider streaming from their phone right now? */
+export function riderLiveStatus(riderId: number): RiderLiveStatus {
+  const cam = cameras.get(keyOf(riderChannel(riderId), RIDER_CAMERA));
+  if (!cam) return { live: false, since: null, viewers: 0, reconnecting: false };
+  return { live: true, since: cam.startedAt.toISOString(), viewers: cam.viewers.size + cam.pendingViewers.size, reconnecting: cam.broadcasterWs === null };
+}
+
+// Called when a camera starts (not when a dropped one reconnects): rider streams alert followers.
+type StartListener = (eventId: number, cameraId: string) => void;
+const startListeners: StartListener[] = [];
+export function onCameraStarted(listener: StartListener): void {
+  startListeners.push(listener);
 }
 
 // ── WebSocket plumbing ──────────────────────────────────────────────────────
@@ -128,6 +169,22 @@ export function attachVideoWebSocket(httpServer: Server) {
 
   httpServer.on("upgrade", (req: IncomingMessage, socket, head) => {
     const url = new URL(req.url ?? "", "http://relay");
+    const rider = url.pathname.match(/^\/api\/video\/rider\/(\d+)\/(broadcast|watch)\/?$/);
+    if (rider) {
+      const channel = riderChannel(parseInt(rider[1], 10));
+      const isBroadcast = rider[2] === "broadcast";
+      const ticket = url.searchParams.get("ticket") ?? "";
+      if (!verifyBroadcastTicket(ticket, channel, isBroadcast ? RIDER_CAMERA : RIDER_WATCH)) {
+        socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      wss.handleUpgrade(req, socket as any, head, ws => isBroadcast
+        ? handleBroadcaster(ws, channel, RIDER_CAMERA, "Phone")
+        : handleViewer(ws, channel, RIDER_CAMERA));
+      return;
+    }
+
     const broadcast = url.pathname.match(/^\/api\/video\/broadcast\/(\d+)(?:\/([^/]+))?\/?$/);
     const watch = url.pathname.match(/^\/api\/video\/watch\/(\d+)(?:\/([^/]+))?\/?$/);
     if (!broadcast && !watch) return;
@@ -318,6 +375,11 @@ function handleBroadcaster(ws: WebSocket, eventId: number, cameraId: string, nam
       reconnectTimer: null,
     };
     cameras.set(key, cam);
+    for (const listener of startListeners) {
+      try { listener(eventId, cameraId); } catch (err) {
+        logger.warn({ eventId, cameraId, err: err instanceof Error ? err.message : String(err) }, "Camera start listener failed");
+      }
+    }
   }
   const state = cam;
 

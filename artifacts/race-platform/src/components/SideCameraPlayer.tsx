@@ -1,14 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useMemo, useRef } from "react";
 import { Maximize2, Radio, X } from "lucide-react";
 import { getPublicOrigin } from "@/lib/publicOrigin";
-import { isPlaybackStalled, isVideoQueueOverLimit } from "@/lib/videoPlaybackPolicy";
+import { useRelayVideo } from "@/lib/useRelayVideo";
 
 export type LiveCamera = { id: string; name: string; reconnecting?: boolean };
-
-// iPhones (iOS 17.1+) only offer ManagedMediaSource.
-const MediaSourceImpl: typeof MediaSource | undefined = typeof window === "undefined"
-  ? undefined
-  : (window.MediaSource ?? (window as unknown as { ManagedMediaSource?: typeof MediaSource }).ManagedMediaSource);
 
 /** The live video relay for an event; without a camera it picks the first live one. */
 export function getWatchWsUrl(eventId: number, cameraId: string | null): string {
@@ -18,13 +13,9 @@ export function getWatchWsUrl(eventId: number, cameraId: string | null): string 
   return `${proto}//${host}/api/video/watch/${eventId}${cameraId ? `/${encodeURIComponent(cameraId)}` : ""}`;
 }
 
-type State = "connecting" | "playing" | "reconnecting" | "offline" | "unsupported";
-
 /**
  * A second (third, fourth) camera watched beside the main one on Watch Live.
- * Muted, with the same relay protocol as the main player: JSON control frames
- * (heartbeat → pong, init → new format, reconnecting/offline/ended) and WebM
- * chunks fed to a MediaSource in "sequence" mode; reconnects on drops and stalls.
+ * Muted; plays through lib/useRelayVideo.ts, the same relay protocol as the main player.
  * 360° cameras show as the flat video here; make one the main view to split it.
  */
 export function SideCameraPlayer({ eventId, camera, onRemove, onMakeMain }: {
@@ -34,132 +25,8 @@ export function SideCameraPlayer({ eventId, camera, onRemove, onMakeMain }: {
   onMakeMain: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [state, setState] = useState<State>("connecting");
-
-  useEffect(() => {
-    if (!MediaSourceImpl) { setState("unsupported"); return; }
-    let stopped = false;
-    let ws: WebSocket | null = null;
-    let ms: MediaSource | null = null;
-    let sb: SourceBuffer | null = null;
-    let queue: ArrayBuffer[] = [];
-    let queuedBytes = 0;
-    let mime = 'video/webm; codecs="vp8,opus"';
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let lastTime = -1;
-    let playing = false;
-
-    const teardown = () => {
-      const had = ms !== null;
-      ms = null; sb = null; queue = []; queuedBytes = 0; playing = false;
-      const video = videoRef.current;
-      if (video && had) { video.removeAttribute("src"); video.load(); }
-    };
-    const restart = () => { teardown(); ws?.close(); };
-
-    const play = () => {
-      const video = videoRef.current;
-      if (!video) return;
-      if (video.buffered.length > 0) {
-        const edge = video.buffered.end(video.buffered.length - 1);
-        if (edge - video.currentTime > 3) video.currentTime = Math.max(0, edge - 0.5);
-      }
-      video.muted = true;
-      if (video.paused) video.play().catch(() => {});
-    };
-
-    const pump = () => {
-      if (!sb || sb.updating || ms?.readyState !== "open" || queue.length === 0) return;
-      const next = queue.shift()!;
-      queuedBytes -= next.byteLength;
-      try { sb.appendBuffer(next); } catch { restart(); }
-    };
-
-    const enqueue = (data: ArrayBuffer) => {
-      queue.push(data);
-      queuedBytes += data.byteLength;
-      if (isVideoQueueOverLimit(queue.length, queuedBytes)) restart();
-      else pump();
-    };
-
-    const startMedia = () => {
-      const video = videoRef.current;
-      if (!video || !MediaSourceImpl) return;
-      const source = new MediaSourceImpl();
-      ms = source;
-      (video as HTMLVideoElement & { disableRemotePlayback?: boolean }).disableRemotePlayback = true;
-      video.src = URL.createObjectURL(source);
-      source.addEventListener("sourceopen", () => {
-        if (ms !== source) return;
-        if (!MediaSourceImpl!.isTypeSupported(mime)) { stopped = true; setState("unsupported"); ws?.close(); return; }
-        try {
-          const buffer = source.addSourceBuffer(mime);
-          buffer.mode = "sequence"; // live joins start mid-stream: let MSE number the frames
-          sb = buffer;
-          buffer.addEventListener("updateend", () => { if (sb === buffer) { pump(); play(); } });
-          buffer.addEventListener("error", () => { if (sb === buffer) restart(); });
-          pump();
-          playing = true;
-          setState("playing");
-          play();
-        } catch { restart(); }
-      }, { once: true });
-      source.addEventListener("sourceclose", () => { if (ms === source) restart(); });
-    };
-
-    const connect = () => {
-      if (stopped) return;
-      setState(s => (s === "offline" ? s : "connecting"));
-      const socket = new WebSocket(getWatchWsUrl(eventId, camera.id));
-      ws = socket;
-      socket.binaryType = "arraybuffer";
-      const keepAlive = setInterval(() => { if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "hello" })); }, 1_500);
-      socket.onopen = () => socket.send(JSON.stringify({ type: "hello" }));
-      socket.onmessage = (e) => {
-        if (ws !== socket) return;
-        let msg: Record<string, unknown> | null = null;
-        if (typeof e.data === "string") {
-          try { msg = JSON.parse(e.data); } catch { /* not JSON */ }
-        } else if (new Uint8Array(e.data as ArrayBuffer)[0] === 0x7b) {
-          try { msg = JSON.parse(new TextDecoder().decode(e.data as ArrayBuffer)); } catch { /* video data */ }
-        }
-        if (msg) {
-          if (msg.type === "heartbeat") { if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "pong" })); }
-          else if (msg.type === "init") { mime = String(msg.mimeType ?? mime); teardown(); }
-          else if (msg.type === "reconnecting") { teardown(); setState("reconnecting"); }
-          else if (msg.type === "offline" || msg.type === "ended") { teardown(); setState("offline"); }
-          return;
-        }
-        if (!ms) startMedia();
-        enqueue(e.data as ArrayBuffer);
-      };
-      socket.onclose = () => {
-        clearInterval(keepAlive);
-        if (ws !== socket || stopped) return;
-        teardown();
-        reconnectTimer = setTimeout(connect, 3_000);
-      };
-    };
-
-    // A frozen picture: reconnect for a clean live edge.
-    const stallTimer = setInterval(() => {
-      const video = videoRef.current;
-      if (!video || !playing) return;
-      if (isPlaybackStalled("playing", video.paused, video.currentTime, lastTime)) restart();
-      else lastTime = video.currentTime;
-    }, 4_000);
-
-    connect();
-    return () => {
-      stopped = true;
-      clearInterval(stallTimer);
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      const socket = ws;
-      ws = null;
-      socket?.close();
-      teardown();
-    };
-  }, [eventId, camera.id]);
+  const wsUrl = useMemo(() => getWatchWsUrl(eventId, camera.id), [eventId, camera.id]);
+  const { state } = useRelayVideo(videoRef, wsUrl, true);
 
   return (
     <div className="relative flex min-h-[12rem] items-center justify-center bg-black" data-side-camera={camera.id}>

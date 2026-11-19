@@ -3,6 +3,7 @@ import { startRentalSweeper } from "./lib/rentalTransponders";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { attachVideoWebSocket } from "./lib/videoRelay";
+import { startRiderLiveAlerts } from "./lib/riderLiveAlerts";
 import { attachConnectorWebSocket } from "./lib/connectorRelay";
 import { normalizeEventStates } from "./normalizeStateMigration";
 import { startEventStatusSweeper } from "./lib/eventStatus";
@@ -30,6 +31,7 @@ if (Number.isNaN(port) || port <= 0) {
 
 const httpServer = http.createServer(app);
 attachVideoWebSocket(httpServer);
+startRiderLiveAlerts();
 attachConnectorWebSocket(httpServer);
 
 httpServer.listen(port, (err?: Error) => {

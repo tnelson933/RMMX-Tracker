@@ -62,7 +62,8 @@ const useLastNotificationResponse: () => Notifications.NotificationResponse | nu
 /**
  * Open the screen a tapped push points at. Server payloads (api-server/src/lib):
  * `{ type: "quick_checkin" | "quick_checkin_arrival" | "follow-results", eventId }`,
- * `{ type: "follow-race-start", eventId, motoId, riderId, streaming }` and broadcast `{ url }`.
+ * `{ type: "follow-race-start", eventId, motoId, riderId, streaming }`, `{ type: "rider-live", riderId }`
+ * and broadcast `{ url }`.
  */
 function useNotificationNavigation(ready: boolean) {
   const router = useRouter();
@@ -80,6 +81,12 @@ function useNotificationNavigation(ready: boolean) {
     // Quick Check-In pushes open Home, where the Check In card is.
     if (data.type === "quick_checkin" || data.type === "quick_checkin_arrival") {
       router.push("/(tabs)" as any);
+      return;
+    }
+    // A followed rider went live from their phone: their stream.
+    const liveRiderId = Number(data.riderId);
+    if (data.type === "rider-live" && Number.isInteger(liveRiderId) && liveRiderId > 0) {
+      router.push(`/live/rider/${liveRiderId}` as any);
       return;
     }
     const eventId = Number(data.eventId);
@@ -149,6 +156,8 @@ function RootLayoutNav() {
       <Stack.Screen name="event/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="live/index" options={{ headerShown: false }} />
       <Stack.Screen name="live/[eventId]" options={{ headerShown: false, animation: "slide_from_bottom" }} />
+      <Stack.Screen name="live/rider/[riderId]" options={{ headerShown: false, animation: "slide_from_bottom" }} />
+      <Stack.Screen name="go-live/[riderId]" options={{ headerShown: false, animation: "slide_from_bottom", gestureEnabled: false }} />
       <Stack.Screen name="register/[eventId]" options={{ headerShown: false, animation: "slide_from_bottom" }} />
       <Stack.Screen name="result/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="rider/[id]" options={{ headerShown: false }} />

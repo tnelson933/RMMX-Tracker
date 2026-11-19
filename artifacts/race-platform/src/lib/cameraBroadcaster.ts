@@ -11,6 +11,9 @@ import { responseErrorMessage } from "./friendlyErrors";
  *   new connection restarts the recorder so the relay gets a clean WebM file.
  * - The relay asks for a restart ("request-keyframe") when a viewer is waiting
  *   and the browser hasn't produced a keyframe recently.
+ * - A rider streaming from the rider app passes `socketUrl` (its own relay
+ *   channel and a ticket the app fetched), a camera by `facingMode`, and
+ *   `audio: false` on app builds without microphone access.
  */
 
 export type BroadcastState = "starting" | "live" | "reconnecting" | "error" | "stopped";
@@ -83,11 +86,20 @@ export class CameraBroadcaster {
   private rotating = false;
   private suppressData = false;
   private wakeLock: { release(): Promise<void> } | null = null;
+  private readonly socketUrl: string | null;
+  private readonly facingMode: "user" | "environment" | null;
+  private readonly withAudio: boolean;
 
   constructor(
-    opts: { eventId: number; cameraId: string; name: string; deviceId: string; is360?: boolean; isDualFisheye?: boolean },
+    opts: {
+      eventId: number; cameraId: string; name: string; deviceId: string; is360?: boolean; isDualFisheye?: boolean;
+      socketUrl?: string; facingMode?: "user" | "environment"; audio?: boolean;
+    },
     private readonly onChange: (snap: CameraSnapshot) => void,
   ) {
+    this.socketUrl = opts.socketUrl ?? null;
+    this.facingMode = opts.facingMode ?? null;
+    this.withAudio = opts.audio ?? true;
     this.key = `${opts.eventId}:${opts.cameraId}`;
     this.snap = {
       key: this.key,
@@ -130,8 +142,10 @@ export class CameraBroadcaster {
         // uplink can carry; 360° cameras can go up to 1920 wide (2:1).
         video: this.snap.deviceId
           ? { deviceId: { exact: this.snap.deviceId }, width: { ideal: 1280, max: 1920 } }
-          : { width: { ideal: 1280, max: 1920 } },
-        audio: true,
+          : this.facingMode
+            ? { facingMode: { ideal: this.facingMode }, width: { ideal: 1280, max: 1920 } }
+            : { width: { ideal: 1280, max: 1920 } },
+        audio: this.withAudio,
       });
     } catch (err) {
       const name = (err as { name?: string })?.name;
@@ -278,16 +292,19 @@ export class CameraBroadcaster {
 
   private async connect(isReconnect: boolean) {
     if (!this.active) return;
-    let ticket: string;
-    try {
-      ticket = await fetchTicket(this.snap.eventId, this.snap.cameraId);
-    } catch (err) {
-      if (err instanceof TicketError) return this.fail(err.message);
-      return this.scheduleRetry();
+    let url = this.socketUrl;
+    if (!url) {
+      try {
+        const ticket = await fetchTicket(this.snap.eventId, this.snap.cameraId);
+        url = wsUrl(this.snap.eventId, this.snap.cameraId, this.snap.name, ticket);
+      } catch (err) {
+        if (err instanceof TicketError) return this.fail(err.message);
+        return this.scheduleRetry();
+      }
     }
     if (!this.active) return;
 
-    const ws = new WebSocket(wsUrl(this.snap.eventId, this.snap.cameraId, this.snap.name, ticket));
+    const ws = new WebSocket(url);
     this.ws = ws;
 
     ws.onopen = () => {

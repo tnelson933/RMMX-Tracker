@@ -55,8 +55,8 @@
         "expo-image-picker",
         {
           "photosPermission": "RM Roost uses your photos so you can choose a profile photo and a background photo for your racer profile.",
-          "cameraPermission": "RM Roost uses the camera so you can take a profile photo or a background photo for your racer profile.",
-          "microphonePermission": false
+          "cameraPermission": "RM Roost uses the camera for your racer profile photos and to stream your races live when you tap Go Live.",
+          "microphonePermission": "RM Roost uses the microphone for the sound in live video you stream from Go Live."
         }
       ],
       [

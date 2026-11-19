@@ -19,6 +19,8 @@ import { useColors } from "@/hooks/useColors";
 import { displayDate } from "@/lib/format";
 import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 import { goBack } from "@/lib/navigation";
+import { RiderLiveBanner } from "@/components/GoLiveButton";
+import { useRiderLive } from "@/lib/riderLive";
 import { fmtLapShort } from "@/lib/raceReport";
 import { stateNameFromCode } from "@/lib/usStates";
 
@@ -63,6 +65,7 @@ export default function RacerScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { riderFetch } = useRiderAuth();
+  const live = useRiderLive(Number(id), riderFetch);
   const [data, setData] = useState<RacerProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -181,6 +184,8 @@ export default function RacerScreen() {
               </Pressable>
             )}
           </View>
+
+          {live ? <RiderLiveBanner riderId={data.riderId} live={live.live} canWatch={live.canWatch} viewers={live.viewers} /> : null}
 
           {data.isManager && data.visibility === "private" && (
             <View style={s.notice}>

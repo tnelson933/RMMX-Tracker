@@ -15,6 +15,8 @@ import NotFound from "@/pages/not-found";
 
 import Home from "@/pages/public/Home";
 import RiderAppLanding from "@/pages/public/RiderAppLanding";
+import PhoneLive from "@/pages/public/PhoneLive";
+import RiderLiveWatch from "@/pages/public/RiderLiveWatch";
 import Results from "@/pages/public/Results";
 import EventResults from "@/pages/public/EventResults";
 import Leaderboard from "@/pages/public/Leaderboard";
@@ -202,6 +204,13 @@ function Router() {
       </Route>
       <Route path="/rider-app">
         <RiderAppLanding />
+      </Route>
+      {/* Rider live video: the app's Go Live screen and the viewer (not linked from any public page). */}
+      <Route path="/phone-live/:riderId">
+        <PhoneLive />
+      </Route>
+      <Route path="/rider-live/:riderId">
+        <RiderLiveWatch />
       </Route>
       <Route path="/results">
         <PublicLayout><Results /></PublicLayout>

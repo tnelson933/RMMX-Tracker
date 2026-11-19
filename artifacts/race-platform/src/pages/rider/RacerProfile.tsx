@@ -6,6 +6,7 @@
 import { Link, useRoute } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ChevronRight, Lock } from "lucide-react";
+import { useEffect, useState } from "react";
 import { fmtLapShort } from "@workspace/rider-insights/raceReport";
 
 import { RiderLayout } from "@/components/layout/RiderLayout";
@@ -93,6 +94,8 @@ function RacerBody({ data, riderId, onToggle, pending }: { data: Racer; riderId:
           </Button>
         )}
       </div>
+
+      <RiderLiveLink riderId={riderId} />
 
       {data.isManager && data.visibility === "private" && (
         <p className="flex items-center gap-2 rounded-lg bg-[#2E2E2E] px-4 py-3 text-[14px] text-[#A8A8A8]">
@@ -191,5 +194,27 @@ function RacerBody({ data, riderId, onToggle, pending }: { data: Racer; riderId:
         )}
       </div>
     </div>
+  );
+}
+
+/** "Live now" while this rider is streaming from their phone (and this account may watch); checked every 20 s. */
+function RiderLiveLink({ riderId }: { riderId: number }) {
+  const [live, setLive] = useState<{ live: boolean; canWatch: boolean; viewers: number } | null>(null);
+  useEffect(() => {
+    let stopped = false;
+    const load = () => fetch(`/api/rider/live/${riderId}`, { credentials: "include" })
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (!stopped && j) setLive(j); })
+      .catch(() => {});
+    load();
+    const t = setInterval(load, 20_000);
+    return () => { stopped = true; clearInterval(t); };
+  }, [riderId]);
+  if (!live?.live || !live.canWatch) return null;
+  return (
+    <a href={`/rider-live/${riderId}`} target="_blank" rel="noopener"
+      className="flex items-center justify-center gap-2 rounded-full bg-[#B30000] px-5 py-3 font-heading text-[15px] font-extrabold uppercase text-white hover:bg-[#990000]">
+      <span className="h-2 w-2 rounded-full bg-white" /> Live now · Watch{live.viewers > 0 ? ` (${live.viewers})` : ""}
+    </a>
   );
 }
