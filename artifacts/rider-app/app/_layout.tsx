@@ -148,7 +148,6 @@ function RootLayoutNav() {
       <Stack.Screen name="mechanic" options={{ headerShown: false, animation: "slide_from_bottom" }} />
       <Stack.Screen name="event/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="live/index" options={{ headerShown: false }} />
-      <Stack.Screen name="premium" options={{ headerShown: false, animation: "slide_from_bottom" }} />
       <Stack.Screen name="live/[eventId]" options={{ headerShown: false, animation: "slide_from_bottom" }} />
       <Stack.Screen name="register/[eventId]" options={{ headerShown: false, animation: "slide_from_bottom" }} />
       <Stack.Screen name="result/[id]" options={{ headerShown: false }} />

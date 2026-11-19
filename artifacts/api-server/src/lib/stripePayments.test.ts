@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applicationFee, deadlinePassed, validDeadline, checkoutUiParams, paymentIntentAsPaid, registrationFeeFor, validFeeCents } from "./stripePayments";
+import { applicationFee, deadlinePassed, validDeadline, checkoutUiParams, paymentIntentAsPaid, registrationFeeFor, serviceFeeLineItem, validFeeCents } from "./stripePayments";
 import { checkStatesCode } from "./cardReaderInput";
 
 test("embedded checkout stays in our page; hosted keeps the return URLs", () => {
@@ -44,12 +44,14 @@ test("clubs on their own Stripe account are charged directly; older Express club
   await assert.rejects(onClubOrPlatform(own, async () => { throw Object.assign(new Error("boom"), { code: "api_error" }); }), /boom/);
 });
 
-test("registration fee: one per paid entry, never more than the charge", () => {
-  assert.equal(registrationFeeFor(1, 100, 4500), 100);
-  assert.equal(registrationFeeFor(3, 50, 9000), 150);
-  assert.equal(registrationFeeFor(2, 100, 150), 150);      // capped at the charge
-  assert.equal(registrationFeeFor(0, 100, 4500), 0);       // no paid entry (add-ons only, comp)
-  assert.equal(registrationFeeFor(2, 0, 4500), 0);         // fee off
+test("service fee: one per paid entry, added on top of the entry", () => {
+  assert.equal(registrationFeeFor(1, 100), 100);
+  assert.equal(registrationFeeFor(3, 50), 150);
+  assert.equal(registrationFeeFor(0, 100), 0);       // no paid entry (add-ons only, comp)
+  assert.equal(registrationFeeFor(2, 0), 0);         // fee off
+  assert.deepEqual(serviceFeeLineItem(125, 2), {
+    price_data: { currency: "usd", product_data: { name: "Service fee" }, unit_amount: 125 }, quantity: 2,
+  });
   assert.deepEqual(applicationFee(0), {});
   assert.deepEqual(applicationFee(75), { application_fee_amount: 75 });
 });

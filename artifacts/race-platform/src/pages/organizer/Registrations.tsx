@@ -137,6 +137,8 @@ interface PendingCard extends CardStarted {
   entryFee: number;
   rentalFee: number;
   purchaseOptionsTotal: number;
+  /** RM Roost's service fee, paid by the rider on top (0 when off). */
+  serviceFee: number;
 }
 
 interface PaymentDone {
@@ -639,6 +641,7 @@ export default function Registrations() {
       entryFee: json.entryFee ?? prev?.entryFee ?? 0,
       rentalFee: json.rentalFee ?? prev?.rentalFee ?? 0,
       purchaseOptionsTotal: json.purchaseOptionsTotal ?? prev?.purchaseOptionsTotal ?? 0,
+      serviceFee: json.serviceFee ?? prev?.serviceFee ?? 0,
     }));
   };
 
@@ -1532,15 +1535,21 @@ export default function Registrations() {
                 <span className="text-sm font-medium">${pendingCard.purchaseOptionsTotal.toFixed(2)}</span>
               </div>
             )}
+            {pendingCard.serviceFee > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Service fee (RM Roost)</span>
+                <span className="text-sm font-medium">${pendingCard.serviceFee.toFixed(2)}</span>
+              </div>
+            )}
             <div className="flex items-center justify-between border-t pt-1.5 mt-1">
               <span className="text-sm font-bold text-muted-foreground uppercase tracking-widest">Total Due</span>
-              <span className="font-heading font-bold text-lg">${(pendingCard.entryFee + pendingCard.rentalFee + pendingCard.purchaseOptionsTotal).toFixed(2)}</span>
+              <span className="font-heading font-bold text-lg">${(pendingCard.entryFee + pendingCard.rentalFee + pendingCard.purchaseOptionsTotal + pendingCard.serviceFee).toFixed(2)}</span>
             </div>
           </div>
 
           <CardPaymentPanel
             eventId={eventId}
-            amount={pendingCard.entryFee + pendingCard.rentalFee + pendingCard.purchaseOptionsTotal}
+            amount={pendingCard.entryFee + pendingCard.rentalFee + pendingCard.purchaseOptionsTotal + pendingCard.serviceFee}
             current={pendingCard}
             start={startCardPayment}
             onCancel={() => { setPaymentError(null); setStep("pay-method"); }}

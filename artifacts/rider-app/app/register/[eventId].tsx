@@ -520,7 +520,7 @@ export default function RegisterScreen() {
       if (typeof j.riderId === "number") setEntryRiderId(j.riderId);
       if (j.requiresPayment) {
         const p: PendingPayment = {
-          registrationId: j.registrationId, sessionId: j.sessionId, amountCents: Math.round((Number(j.entryFee) || 0) * 100),
+          registrationId: j.registrationId, sessionId: j.sessionId, amountCents: Math.round((Number(j.totalCharged ?? j.entryFee) || 0) * 100),
           sheet: j.paymentSheet?.clientSecret ? j.paymentSheet : null,
         };
         setPending(p);

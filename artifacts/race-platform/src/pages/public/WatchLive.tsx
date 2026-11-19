@@ -18,11 +18,11 @@ import {
 } from "@/lib/sharedAnnouncer";
 import { LiveRaceViews, type LeaderboardData } from "./LiveLeaderboard";
 import { isPlaybackStalled, isVideoQueueOverLimit } from "@/lib/videoPlaybackPolicy";
-import { SideCameraPlayer, getWatchWsUrl, prepareWatch, watchReady, resetWatchAccess, FREE_TIME_OVER_MESSAGE, type LiveCamera } from "@/components/SideCameraPlayer";
+import { SideCameraPlayer, getWatchWsUrl, type LiveCamera } from "@/components/SideCameraPlayer";
 
 // "reconnecting": the camera's connection dropped and it may come back.
 // "unsupported": this browser has no MediaSource (older iPhones).
-type ViewerState = "connecting" | "buffering" | "playing" | "reconnecting" | "offline" | "ended" | "error" | "unsupported" | "premium";
+type ViewerState = "connecting" | "buffering" | "playing" | "reconnecting" | "offline" | "ended" | "error" | "unsupported";
 
 // iPhones (iOS 17.1+) only offer ManagedMediaSource.
 const MediaSourceImpl: typeof MediaSource | undefined = typeof window === "undefined"
@@ -63,7 +63,6 @@ export default function WatchLive() {
 
   const [viewerState, setViewerState] = useState<ViewerState>("connecting");
   const setViewerStateSynced = (s: ViewerState) => { viewerStateRef.current = s; setViewerState(s); };
-  const [premiumMessage, setPremiumMessage] = useState("");
   // True when we've been in "connecting" for more than 8 s with no server response
   const [connectingSlow, setConnectingSlow] = useState(false);
 
@@ -599,16 +598,6 @@ export default function WatchLive() {
   function connect() {
     if (!MediaSourceImpl) { setViewerStateSynced("unsupported"); return; }
     cleaningUpRef.current = false;
-    // RM Roost Premium (off by default): ask once whether this viewer may watch.
-    if (!watchReady(eventId)) {
-      if (viewerStateRef.current !== "ended") setViewerStateSynced("connecting");
-      void prepareWatch(eventId).then(r => {
-        if (cleaningUpRef.current) return;
-        if (r.ok) connect();
-        else { setPremiumMessage(r.message); setViewerStateSynced("premium"); }
-      });
-      return;
-    }
     bytesRef.current = 0;
     eventLogRef.current = [];
     if (viewerStateRef.current !== "ended") setViewerStateSynced("connecting");
@@ -684,14 +673,6 @@ export default function WatchLive() {
             setViewerCount(jsonMsg.viewers);
           }
           if (Array.isArray(jsonMsg.cameras)) setCameraList(jsonMsg.cameras as LiveCamera[]);
-        } else if (jsonMsg.type === "free_time_over") {
-          // RM Roost Premium (off by default): this free rider's hour is up.
-          cleaningUpRef.current = true;
-          resetWatchAccess();
-          teardownMSE();
-          setPremiumMessage(FREE_TIME_OVER_MESSAGE);
-          setViewerStateSynced("premium");
-          ws.close();
         } else if (jsonMsg.type === "reconnecting") {
           // The camera dropped; the relay keeps this viewer and resumes it on
           // the camera's next keyframe, which rebuilds the player.
@@ -1305,15 +1286,6 @@ export default function WatchLive() {
 
         {viewerState !== "playing" && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-white gap-4">
-            {viewerState === "premium" && (
-              <>
-                <Radio size={52} className="text-white/20" />
-                <h2 className="font-heading text-2xl uppercase font-bold">RM Roost Premium</h2>
-                <p className="text-white/60 text-sm text-center max-w-sm px-4">{premiumMessage}</p>
-                <a href="/rider/premium" className="rounded-full bg-[#B30000] px-5 py-2.5 text-white font-bold text-sm">Sign in or see Premium</a>
-                <p className="text-white/40 text-xs text-center max-w-sm px-4">Live standings stay free beside the video.</p>
-              </>
-            )}
             {viewerState === "offline" && (
               <>
                 <Radio size={52} className="text-white/20" />

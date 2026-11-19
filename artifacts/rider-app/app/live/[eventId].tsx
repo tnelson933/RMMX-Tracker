@@ -5,7 +5,6 @@ import { ActivityIndicator, Linking, Platform, Pressable, StatusBar, StyleSheet,
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView, type WebViewNavigation } from "react-native-webview";
 
-import { useRiderAuth } from "@/context/AuthContext";
 import { goBack } from "@/lib/navigation";
 import { fonts } from "@/constants/fonts";
 import { API_BASE_URL } from "@/lib/apiBase";
@@ -13,16 +12,14 @@ import { useLiveStreams, watchPageUrl } from "@/lib/liveStreams";
 
 /**
  * The live stream player: the website's Watch Live page (video plus live
- * standings, multiple cameras, 360° views) shown inside the app. The rider's
- * sign-in is handed to the page so RM Roost Premium and the 30 free minutes (once
- * switched on) apply to their account. Links elsewhere open in the browser.
+ * standings, multiple cameras, 360° views) shown inside the app. Links
+ * elsewhere open in the browser.
  */
 export default function LivePlayerScreen() {
   const { eventId: raw } = useLocalSearchParams<{ eventId: string }>();
   const eventId = Number(raw);
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { account } = useRiderAuth();
   const { events } = useLiveStreams();
   const event = events.find(e => e.eventId === eventId);
   const [loading, setLoading] = useState(true);
@@ -31,9 +28,6 @@ export default function LivePlayerScreen() {
 
   const uri = watchPageUrl(eventId);
   const origin = useMemo(() => API_BASE_URL.replace(/\/+$/, ""), []);
-  const token = account?.mobileToken ?? null;
-  // Runs before the page's own scripts, only in our own page.
-  const injected = `window.__RM_RIDER_TOKEN = ${JSON.stringify(token)}; true;`;
 
   const allowNavigation = (req: WebViewNavigation) => {
     if (!origin || req.url.startsWith(origin)) return true;
@@ -70,10 +64,9 @@ export default function LivePlayerScreen() {
       ) : (
         <View style={{ flex: 1 }}>
           <WebView
-            key={`${reloadKey}-${token ?? "anon"}`}
+            key={reloadKey}
             source={{ uri }}
             style={{ flex: 1, backgroundColor: "#000" }}
-            injectedJavaScriptBeforeContentLoaded={injected}
             javaScriptEnabled
             domStorageEnabled
             allowsInlineMediaPlayback

@@ -6,9 +6,10 @@ import { useToast } from "@/hooks/use-toast";
 import { DollarSign } from "lucide-react";
 
 /**
- * Admin → Clubs: RM Roost's flat fee per registration paid by card. It comes
- * out of the club's payment (riders pay the listed price); cash, comp and free
- * entries have none, and refunds keep it.
+ * Admin → Clubs: RM Roost's flat service fee per registration paid by card.
+ * Riders pay it on top of the entry (a "Service fee" line at checkout); the
+ * club still gets the entry price. Cash, comp and free entries have none, and
+ * refunds keep it.
  */
 interface FeeData {
   defaultCents: number;
@@ -107,8 +108,8 @@ export function RegistrationFeeCard() {
         <h2 className="font-heading font-bold uppercase tracking-wide">RM Roost registration fee</h2>
       </div>
       <p className="text-sm text-muted-foreground mb-4">
-        Taken from the club's payment for each registration (class entry) paid by card. Riders pay the listed price.
-        Cash, comp and free entries have no fee, and refunds keep it. Tell clubs before you change it.
+        Added to the rider's checkout as a "Service fee" line for each registration (class entry) paid by card.
+        Clubs still get their full entry price. Cash, comp and free entries have no fee, and refunds keep it. Tell clubs before you change it.
       </p>
       <div className="flex flex-wrap items-end gap-2">
         <label className="text-sm font-medium">

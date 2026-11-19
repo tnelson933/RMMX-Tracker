@@ -39,9 +39,6 @@ export class WebhookHandlers {
         // Rentals and transponder or tag sales paid by card at check-in.
         if (await confirmAddonSession(session as any)) logger.info({ sessionId }, "Check-in add-on paid (Stripe webhook)");
       }
-      // RM Roost Premium bought on the website (subscriptions on RM Roost's own account).
-      const { handlePremiumStripeEvent } = await import("./lib/webPremium");
-      await handlePremiumStripeEvent(event as Parameters<typeof handlePremiumStripeEvent>[0]);
     } catch (err) {
       // The background payment check picks it up if this fails.
       logger.warn({ err: err instanceof Error ? err.message : String(err) }, "Couldn't record checkout from webhook");

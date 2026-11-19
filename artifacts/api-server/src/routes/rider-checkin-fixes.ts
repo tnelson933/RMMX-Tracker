@@ -20,7 +20,7 @@ import { getUncachableStripeClient } from "../stripeClient";
 import { confirmRegistrationSession } from "./registrations";
 import { riderCardError } from "../lib/stripeErrors";
 import type Stripe from "stripe";
-import { browserAccount, clubStripeOf, onClub, onClubOrPlatform, paymentIntentAsPaid, RIDER_APP_PAYMENT, transferTo, applicationFee, registrationFeeForCharge } from "../lib/stripePayments";
+import { browserAccount, clubStripeOf, onClub, onClubOrPlatform, paymentIntentAsPaid, RIDER_APP_PAYMENT, transferTo, applicationFee, serviceFeeForCharge, SERVICE_FEE_LABEL } from "../lib/stripePayments";
 import { acknowledgementSnapshot, liabilityWaiverSnapshot, waiverPdfOf } from "../lib/waiverSettings";
 import { sendLiabilityWaiverConfirmation } from "../lib/email";
 
@@ -111,9 +111,12 @@ router.post("/rider/registrations/:regId/checkout", requireRiderAuth, async (req
     const stripe = await getUncachableStripeClient();
     const appUrl = getAppUrl();
     const cs = clubStripeOf(club)!;
-    // RM Roost's registration fee: one per entry when the class fee is paid, from the club's payment.
-    const chargeTotalCents = lineItems.reduce((sum, li) => sum + Math.round(li.amount * 100), 0);
-    const feeCents = await registrationFeeForCharge(event.clubId, perClass > 0 ? pending.length : 0, chargeTotalCents);
+    // RM Roost's service fee: one per entry when the class fee is paid, added on top of the entries.
+    const fee = await serviceFeeForCharge(event.clubId, perClass > 0 ? pending.length : 0);
+    const feeCents = fee.totalCents;
+    // The club's share (entries and add-ons) and what the rider pays (plus the service fee).
+    const clubCents = lineItems.reduce((sum, li) => sum + Math.round(li.amount * 100), 0);
+    const chargeLines = feeCents > 0 ? [...lineItems, { name: SERVICE_FEE_LABEL, amount: fee.perEntryCents / 100, quantity: fee.entries }] : lineItems;
 
     // The rider app pays in its own Stripe payment sheet (a PaymentIntent),
     // never on a web page. Confirmed by verify-payment, webhooks and the sweeper.
@@ -121,7 +124,7 @@ router.post("/rider/registrations/:regId/checkout", requireRiderAuth, async (req
       const { getStripePublishableKey } = await import("../stripeClient");
       const publishableKey = await getStripePublishableKey().catch(() => "");
       if (!publishableKey) return res.status(503).json({ error: "Card payments aren't available in the app right now. Pay at the gate." });
-      const totalCents = lineItems.reduce((sum, li) => sum + Math.round(li.amount * 100), 0);
+      const totalCents = clubCents + feeCents;
       const sheet = (pi: Stripe.PaymentIntent) => res.json({
         paymentSheet: { clientSecret: pi.client_secret, publishableKey, stripeAccount: browserAccount(cs) },
         sessionId: pi.id, registrationId: first.id, total: totalCents / 100,
@@ -155,10 +158,10 @@ router.post("/rider/registrations/:regId/checkout", requireRiderAuth, async (req
         receipt_email: rider.email ?? undefined,
         ...transferTo(cs),
         ...applicationFee(feeCents),
-        metadata: { registrationId: String(first.id), registrationIds: pending.map(r => r.id).join(","), eventId: String(event.id), type: "registration", source: RIDER_APP_PAYMENT },
+        metadata: { registrationId: String(first.id), registrationIds: pending.map(r => r.id).join(","), eventId: String(event.id), type: "registration", source: RIDER_APP_PAYMENT, serviceFeeCents: String(feeCents) },
       }, onClub(cs));
       const classCents = perClass > 0 ? Math.round(perClass * 100) : 0;
-      const addOnCents = totalCents - classCents * pending.length;
+      const addOnCents = clubCents - classCents * pending.length;
       for (const [idx, r] of pending.entries()) {
         await db.update(registrationsTable)
           .set({ stripeSessionId: pi.id, amountDue: ((classCents + (idx === 0 ? addOnCents : 0)) / 100).toFixed(2) })
@@ -191,7 +194,7 @@ router.post("/rider/registrations/:regId/checkout", requireRiderAuth, async (req
         return res.status(409).json({ error: "Your payment went through. It can take a minute to show; pull down to refresh." });
       }
       if (own?.status === "open" && own.url) {
-        return res.json({ checkoutUrl: own.url, total: lineItems.reduce((sum, li) => sum + li.amount, 0) });
+        return res.json({ checkoutUrl: own.url, total: (clubCents + feeCents) / 100 });
       }
     }
     const regIds = new Set(pending.map(r => String(r.id)));
@@ -206,31 +209,30 @@ router.post("/rider/registrations/:regId/checkout", requireRiderAuth, async (req
       return res.status(409).json({ error: "Your payment went through. It can take a minute to show; pull down to refresh." });
     }
     const open = mine.find(s => s.status === "open" && s.url);
-    if (open) return res.json({ checkoutUrl: open.url, total: lineItems.reduce((s, li) => s + li.amount, 0) });
+    if (open) return res.json({ checkoutUrl: open.url, total: (clubCents + feeCents) / 100 });
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      line_items: lineItems.map(li => ({
+      line_items: chargeLines.map(li => ({
         price_data: { currency: "usd", product_data: { name: li.name }, unit_amount: Math.round(li.amount * 100) },
-        quantity: 1,
+        quantity: "quantity" in li && li.quantity ? li.quantity : 1,
       })),
       customer_email: rider.email ?? undefined,
       payment_intent_data: { ...transferTo(cs), ...applicationFee(feeCents) },
-      metadata: { registrationIds: pending.map(r => r.id).join(","), type: "registration" },
+      metadata: { registrationIds: pending.map(r => r.id).join(","), type: "registration", serviceFeeCents: String(feeCents) },
       success_url: `${appUrl}/register/${event.id}?reg_id=${first.id}&session_id={CHECKOUT_SESSION_ID}&payment_success=1`,
       cancel_url: `${appUrl}/register/${event.id}?payment_cancelled=1`,
     }, onClub(cs));
     // Remember the session on each entry, with its own share: class fee, and
     // add-ons on the first entry (same split as the line items above).
     const classCents = perClass > 0 ? Math.round(perClass * 100) : 0;
-    const totalCents = lineItems.reduce((sum, li) => sum + Math.round(li.amount * 100), 0);
-    const addOnCents = totalCents - classCents * pending.length;
+    const addOnCents = clubCents - classCents * pending.length;
     for (const [idx, r] of pending.entries()) {
       await db.update(registrationsTable)
         .set({ stripeSessionId: session.id, amountDue: ((classCents + (idx === 0 ? addOnCents : 0)) / 100).toFixed(2) })
         .where(eq(registrationsTable.id, r.id));
     }
-    return res.json({ checkoutUrl: session.url, total: lineItems.reduce((s, li) => s + li.amount, 0) });
+    return res.json({ checkoutUrl: session.url, total: (clubCents + feeCents) / 100 });
   } catch (err: any) {
     req.log?.error({ err: err?.message }, "[rider checkout] Stripe error");
     return res.status(502).json({ error: riderCardError(err, "Couldn't start the payment. Please try again, or pay at the gate.") });

@@ -1,6 +1,4 @@
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
-import { PREMIUM_EVENT, watchForPremiumRequired } from "@/lib/premiumPrompt";
 import { Link, useLocation } from "wouter";
 import { LogOut, ChevronLeft, Zap, Home, Trophy, Flag, Activity, UserCircle, Wrench } from "lucide-react";
 import { useRiderAuth } from "@/contexts/RiderAuthContext";
@@ -178,15 +176,6 @@ export function RiderLayout({
   const { isAuthenticated } = useRiderAuth();
   const queryClient = useQueryClient();
   const [location, navigate] = useLocation();
-  // RM Roost Premium (off by default): a locked feature on any rider page shows one bar here.
-  const [premiumNote, setPremiumNote] = useState<string | null>(null);
-  useEffect(() => {
-    watchForPremiumRequired();
-    const onNote = (e: Event) => setPremiumNote((e as CustomEvent<string>).detail);
-    window.addEventListener(PREMIUM_EVENT, onNote);
-    return () => window.removeEventListener(PREMIUM_EVENT, onNote);
-  }, []);
-  useEffect(() => { setPremiumNote(null); }, [location]);
   const current = activeTab(location);
 
   const handleLogout = async () => {
@@ -225,16 +214,6 @@ export function RiderLayout({
           )}
         </div>
       </header>
-
-      {premiumNote && location !== "/rider/premium" && (
-        <div role="status" className="bg-[#2E2E2E] border-b border-[#3A3A3A]">
-          <div className="mx-auto max-w-6xl px-4 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[14px] text-white">
-            <span className="flex-1 min-w-[14rem]">{premiumNote}</span>
-            <Link href="/rider/premium" className="font-bold underline underline-offset-2 min-h-[44px] inline-flex items-center">See Premium</Link>
-            <button type="button" onClick={() => setPremiumNote(null)} aria-label="Dismiss" className="text-[#A8A8A8] hover:text-white min-h-[44px] px-2">✕</button>
-          </div>
-        </div>
-      )}
 
       <main className={`flex-1 w-full pb-[110px] md:pb-16 ${wide ? "" : "mx-auto max-w-6xl px-4"}`}>
         {showBack && (

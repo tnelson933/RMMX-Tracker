@@ -25,7 +25,7 @@ import { isMasked, maskDateOfBirth, maskName, maskPhone, maskStreet, maskZip } f
 import { parseTeamInput, parseTeamGear, saveTeamRoster, saveTeamTags, listTeamMembers, teamRegistrationId, teamRegistrationHasRoster, teamTagConflict, teamGearCounts } from "../lib/teams";
 import { eventTrackrPrice } from "../lib/sellItems";
 import { addonIsPaid, confirmAddonPayment, parseCashTendered, recordCardAddonPending, recordCashAddon, type AddonItem } from "../lib/addonPayments";
-import { browserAccount, chargeOnReader, embeddedAllowed, checkoutUiParams, clubStripeOf, onClub, onClubOrPlatform, registrationClubStripe, retrievePayment, transferTo, RIDER_APP_PAYMENT, paymentIntentAsPaid, applicationFee, registrationFeeForCharge } from "../lib/stripePayments";
+import { browserAccount, chargeOnReader, embeddedAllowed, checkoutUiParams, clubStripeOf, onClub, onClubOrPlatform, registrationClubStripe, retrievePayment, transferTo, RIDER_APP_PAYMENT, paymentIntentAsPaid, applicationFee, serviceFeeForCharge, serviceFeeLineItem, clubRegistrationFeeCents } from "../lib/stripePayments";
 import { acknowledgementSnapshot, clubWaiverSettings, waiverPdfOf } from "../lib/waiverSettings";
 
 /** Payment-check failures: an unknown/invalid Stripe session is the caller's error (404), anything else a 500 without Stripe's internals. */
@@ -809,20 +809,23 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
 
     if (lineItems.length === 0) return res.status(409).json({ error: "Nothing is due on this entry. Mark it paid instead." });
     const chargeCents = lineItems.reduce((sum, li) => sum + li.price_data.unit_amount * li.quantity, 0);
-    const metadata = { registrationId: String(regId), registrationIds: String(regId), type: "registration", eventId: String(eventId) };
-    // RM Roost's registration fee, from the club's payment (only when the entry itself is paid).
-    const feeCents = await registrationFeeForCharge(event.clubId, entryAfterDiscount > 0 ? 1 : 0, chargeCents);
+    // RM Roost's service fee, added on top (only when the entry itself is paid). The club's share stays chargeCents.
+    const fee = await serviceFeeForCharge(event.clubId, entryAfterDiscount > 0 ? 1 : 0);
+    const feeCents = fee.totalCents;
+    const metadata = { registrationId: String(regId), registrationIds: String(regId), type: "registration", eventId: String(eventId), serviceFeeCents: String(feeCents) };
+    if (feeCents > 0) lineItems.push(serviceFeeLineItem(fee.perEntryCents, fee.entries));
+    const serviceFee = feeCents / 100;
 
     if (readerId) {
       const charged = await chargeOnReader(stripe, {
-        clubId: event.clubId, club: clubStripeOf(club)!, readerId, amountCents: chargeCents,
+        clubId: event.clubId, club: clubStripeOf(club)!, readerId, amountCents: chargeCents + feeCents,
         description: `${event.name}: entry`, metadata, applicationFeeCents: feeCents,
       });
       if (!charged.ok) return res.status(409).json({ error: charged.error });
       await db.update(registrationsTable)
         .set({ stripeSessionId: charged.paymentIntentId, amountDue: (chargeCents / 100).toFixed(2) })
         .where(eq(registrationsTable.id, regId));
-      return res.json({ sessionId: charged.paymentIntentId, paymentIntentId: charged.paymentIntentId, entryFee, rentalFee, purchaseOptionsTotal });
+      return res.json({ sessionId: charged.paymentIntentId, paymentIntentId: charged.paymentIntentId, entryFee, rentalFee, purchaseOptionsTotal, serviceFee, totalCharged: (chargeCents + feeCents) / 100 });
     }
 
     const session = await stripe.checkout.sessions.create({
@@ -843,7 +846,7 @@ router.post("/events/:eventId/registrations/:regId/charge", async (req, res) => 
       .set({ stripeSessionId: session.id, amountDue: (chargeCents / 100).toFixed(2) })
       .where(eq(registrationsTable.id, regId));
 
-    return res.json({ checkoutUrl: session.url, clientSecret: session.client_secret ?? null, stripeAccount: browserAccount(clubStripeOf(club)!), sessionId: session.id, entryFee, rentalFee, purchaseOptionsTotal });
+    return res.json({ checkoutUrl: session.url, clientSecret: session.client_secret ?? null, stripeAccount: browserAccount(clubStripeOf(club)!), sessionId: session.id, entryFee, rentalFee, purchaseOptionsTotal, serviceFee, totalCharged: (chargeCents + feeCents) / 100 });
   } catch (err: any) {
     req.log?.error({ err: err?.message }, "[charge] Error");
     return res.status(500).json({ error: organizerCardError(err) });
@@ -1483,10 +1486,14 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
   const earlyBirdActive = !!(e.earlyBirdEndsAt && eventToday(e) <= e.earlyBirdEndsAt && e.earlyBirdFee);
   const currentEntryFee = earlyBirdActive ? Number(e.earlyBirdFee) : (e.entryFee ? Number(e.entryFee) : null);
 
+  // RM Roost's service fee per paid entry, shown at checkout when the event takes card payments.
+  const serviceFeeCents = e.paymentEnabled ? (await clubRegistrationFeeCents(e.clubId)).cents : 0;
+
   return res.json({
     ...e,
     earlyBirdActive,
     currentEntryFee,
+    serviceFeeCents,
     // Which kinds of tag the event's readers use (RM TrackR, RFID or both).
     timingTags: await eventTimingTags(eventId),
     entryFee: e.entryFee ? Number(e.entryFee) : null,
@@ -2099,8 +2106,12 @@ router.post("/public/events/:eventId/register", async (req, res) => {
 
         const primaryRegId = insertedRegs[0].id;
         const allRegIds = insertedRegs.map(r => r.id).join(",");
-        // RM Roost's registration fee: one per entry with a paid class fee, from the club's payment.
-        const feeCents = await registrationFeeForCharge(events[0].clubId, classChargeCents.filter(c => c > 0).length, netCents);
+        // RM Roost's service fee: one per entry with a paid class fee, added on top of the entries
+        // (after the check above, which compares only what the entries record).
+        const fee = await serviceFeeForCharge(events[0].clubId, classChargeCents.filter(c => c > 0).length);
+        const feeCents = fee.totalCents;
+        if (feeCents > 0) lineItems.push(serviceFeeLineItem(fee.perEntryCents, fee.entries));
+        const serviceFee = feeCents / 100;
         // Each entry's own charge: its class fee; add-ons ride on the first entry.
         const recordCharge = async (paymentId: string) => {
           for (const [idx, reg] of insertedRegs.entries()) {
@@ -2124,7 +2135,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
         if (sheetKey) {
           const c = clubStripeOf(club)!;
           const pi = await stripe.paymentIntents.create({
-            amount: netCents,
+            amount: netCents + feeCents,
             currency: "usd",
             // Cards, Apple Pay and Google Pay: settled at once, nothing leaves the app.
             // (Bank debits take days, so the entry would sit unconfirmed; and "link"
@@ -2140,6 +2151,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
               eventId: String(eventId),
               type: "registration",
               source: RIDER_APP_PAYMENT,
+              serviceFeeCents: String(feeCents),
             },
           }, onClub(c));
           await recordCharge(pi.id);
@@ -2157,6 +2169,8 @@ router.post("/public/events/:eventId/register", async (req, res) => {
             entryFee: netFee,
             rentalFee: rentalFeeNum,
             purchaseOptionsTotal,
+            serviceFee,
+            totalCharged: (netCents + feeCents) / 100,
           });
         }
 
@@ -2176,6 +2190,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
             registrationId: String(primaryRegId),   // backward compat
             registrationIds: allRegIds,              // multi-class: comma-sep
             eventId: String(eventId),
+            serviceFeeCents: String(feeCents),
           },
           customer_email: email,
         }, onClub(clubStripeOf(club)!));
@@ -2196,6 +2211,8 @@ router.post("/public/events/:eventId/register", async (req, res) => {
             entryFee: netFee,
             rentalFee: rentalFeeNum,
             purchaseOptionsTotal,
+            serviceFee,
+            totalCharged: (netCents + feeCents) / 100,
           });
         }
       }
@@ -2574,7 +2591,9 @@ export async function confirmRegistrationSession(
   const regs = await db.select().from(registrationsTable).where(inArray(registrationsTable.id, regIds));
   // Each entry's own charge when it was stored at checkout; otherwise split the
   // total, with any leftover cent on the last entry so the parts add up.
-  const totalCents = session.amount_total ?? 0;
+  // RM Roost's service fee (in the metadata) isn't the club's money.
+  const feeCents = Math.max(0, Number(session.metadata?.serviceFeeCents ?? 0) || 0);
+  const totalCents = Math.max(0, (session.amount_total ?? 0) - feeCents);
   const evenCents = regIds.length ? Math.floor(totalCents / regIds.length) : 0;
   const amountFor = (regId: number) => {
     const reg = regs.find(r => r.id === regId);

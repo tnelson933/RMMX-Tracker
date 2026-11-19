@@ -298,6 +298,8 @@ interface EventInfo {
   earlyBirdFee?: number | null;
   earlyBirdEndsAt?: string | null;
   paymentEnabled: boolean;
+  /** RM Roost's service fee per paid entry, in cents (0 when off). */
+  serviceFeeCents?: number;
   requireAma: boolean;
   requireClubId: boolean;
   requireWaiver: boolean;
@@ -777,8 +779,18 @@ export default function Register() {
         : Math.round(appliedComp.amount * 100),
     ) / 100
     : 0;
+  // RM Roost's service fee: per entry still charged after the discount (same split as the server).
+  const classCount = Math.max(1, numSelectedClasses);
+  const discountCents = Math.round(compDiscountDollars * 100);
+  const entryCents = Math.round((effectiveEntryFee ?? 0) * 100);
+  const paidEntries = event?.paymentEnabled && entryCents > 0
+    ? Array.from({ length: classCount }, (_, i) =>
+      entryCents - (Math.floor(discountCents / classCount) + (i === 0 ? discountCents % classCount : 0))).filter(c => c > 0).length
+    : 0;
+  const serviceFeePerEntry = (event?.serviceFeeCents ?? 0) / 100;
+  const serviceFeeTotal = serviceFeePerEntry * paidEntries;
   const totalDue = event?.paymentEnabled && effectiveEntryFee
-    ? Math.max(0, (effectiveEntryFee * Math.max(1, numSelectedClasses)) + selectedPurchasesTotal + rentalTotal + rfidStickerTotal - compDiscountDollars)
+    ? Math.max(0, (effectiveEntryFee * classCount) + selectedPurchasesTotal + rentalTotal + rfidStickerTotal - compDiscountDollars) + serviceFeeTotal
     : 0;
 
   useEffect(() => {
@@ -2604,6 +2616,12 @@ export default function Register() {
                                   ? `${appliedComp.amount.toFixed(0)}% ($${compDiscountDollars.toFixed(2)})`
                                   : `$${compDiscountDollars.toFixed(2)}`
                                 }</dd>
+                              </div>
+                            )}
+                            {serviceFeeTotal > 0 && (
+                              <div className="flex justify-between gap-4">
+                                <dt>Service fee{paidEntries > 1 ? ` (${paidEntries} × $${serviceFeePerEntry.toFixed(2)})` : ""}</dt>
+                                <dd>${serviceFeeTotal.toFixed(2)}</dd>
                               </div>
                             )}
                           </dl>

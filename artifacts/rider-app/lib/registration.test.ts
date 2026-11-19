@@ -15,6 +15,14 @@ const sel = (p: Partial<Selection> = {}): Selection => ({ classes: ["A"], trackr
 
 test("uses today's fee from the server, per class", () => {
   assert.equal(quote(base, sel({ classes: ["A", "B"] })).totalCents, 7000);
+  // Service fee: one per paid entry, on top; none on a fully comped entry or at the gate.
+  const fee = { ...base, serviceFeeCents: 125 };
+  const two = quote(fee, sel({ classes: ["A", "B"] }));
+  assert.equal(two.serviceCents, 250);
+  assert.equal(two.totalCents, 7250);
+  assert.equal(two.lines.at(-1)?.label, "Service fee ×2");
+  assert.equal(quote(fee, sel({ comp: { amount: 100, discountType: "percentage" } })).serviceCents, 0);
+  assert.equal(quote({ ...fee, paymentEnabled: false }, sel()).serviceCents, 0);
 });
 
 test("codes discount entry fees only, capped at the entry total", () => {

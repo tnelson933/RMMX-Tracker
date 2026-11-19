@@ -65,7 +65,6 @@ import RiderResults from "@/pages/rider/RiderResults";
 import RiderTrain from "@/pages/rider/RiderTrain";
 import RiderMechanic from "@/pages/rider/RiderMechanic";
 import WatchLive from "@/pages/public/WatchLive";
-import RiderPremium from "@/pages/rider/RiderPremium";
 import HandScanner from "@/pages/public/HandScanner";
 import EventWidget from "@/pages/public/EventWidget";
 import SeriesWidget from "@/pages/public/SeriesWidget";
@@ -287,9 +286,6 @@ function Router() {
       </Route>
       <Route path="/rider/rm-cash">
         <RiderProtectedRoute><RmCash /></RiderProtectedRoute>
-      </Route>
-      <Route path="/rider/premium">
-        <RiderProtectedRoute><RiderPremium /></RiderProtectedRoute>
       </Route>
 
       {/* ── Gate Schedule — public shareable link, no login required ── */}

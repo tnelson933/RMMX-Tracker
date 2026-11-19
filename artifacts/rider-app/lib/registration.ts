@@ -24,6 +24,8 @@ export interface RegisterInfo {
   earlyBirdFee: number | null;
   earlyBirdEndsAt: string | null;
   paymentEnabled: boolean | null;
+  /** RM Roost's service fee per paid entry, in cents (0 or missing when off). */
+  serviceFeeCents?: number | null;
   requireAma: boolean | null;
   requireClubId: boolean | null;
   requireWaiver: boolean | null;
@@ -108,6 +110,8 @@ export interface Quote {
   rfidCents: number;
   trackrCents: number;
   optionsCents: number;
+  /** RM Roost's service fee: per entry still charged after the discount, card payments only. */
+  serviceCents: number;
   totalCents: number;
   /** True when the rider pays online now; false = nothing due, or pay at the gate. */
   payOnline: boolean;
@@ -138,7 +142,13 @@ export function quote(info: RegisterInfo, sel: Selection): Quote {
   const trackr = trackrOption(info);
   const trackrCents = trackr ? cents(trackr.amount) * trackrs : 0;
   const optionsCents = addOnOptions(info).filter(o => sel.options.includes(o.id)).reduce((s, o) => s + Math.max(0, cents(o.amount)), 0);
-  const totalCents = entryCents - discountCents + rentalCents + rfidCents + trackrCents + optionsCents;
+  // Same split as the server: each entry carries its share of the discount (leftover cents on the first).
+  const paidEntries = info.paymentEnabled && perClass > 0
+    ? sel.classes.filter((_, i) => perClass - (Math.floor(discountCents / n) + (i === 0 ? discountCents % n : 0)) > 0).length
+    : 0;
+  const feePerEntry = Math.max(0, Math.round(Number(info.serviceFeeCents ?? 0)) || 0);
+  const serviceCents = feePerEntry * paidEntries;
+  const totalCents = entryCents - discountCents + rentalCents + rfidCents + trackrCents + optionsCents + serviceCents;
 
   const lines: Quote["lines"] = [];
   if (entryCents) lines.push({ label: n > 1 ? `Entry (${n} classes)` : "Entry", cents: entryCents });
@@ -147,8 +157,9 @@ export function quote(info: RegisterInfo, sel: Selection): Quote {
   if (trackrCents) lines.push({ label: trackrs > 1 ? `${trackr!.name} ×${trackrs}` : trackr!.name, cents: trackrCents });
   if (rfidCents) lines.push({ label: rfids > 1 ? `RFID sticker ×${rfids}` : "RFID sticker", cents: rfidCents });
   for (const o of addOnOptions(info).filter(o => sel.options.includes(o.id) && cents(o.amount) > 0)) lines.push({ label: o.name, cents: cents(o.amount) });
+  if (serviceCents) lines.push({ label: paidEntries > 1 ? `Service fee ×${paidEntries}` : "Service fee", cents: serviceCents });
 
-  return { entryCents, discountCents, rentalCents, rfidCents, trackrCents, optionsCents, totalCents, payOnline: !!info.paymentEnabled && totalCents > 0, lines };
+  return { entryCents, discountCents, rentalCents, rfidCents, trackrCents, optionsCents, serviceCents, totalCents, payOnline: !!info.paymentEnabled && totalCents > 0, lines };
 }
 
 export const dollars = (c: number) => `${c < 0 ? "-" : ""}$${(Math.abs(c) / 100).toFixed(2)}`;

@@ -10,56 +10,12 @@ const MediaSourceImpl: typeof MediaSource | undefined = typeof window === "undef
   ? undefined
   : (window.MediaSource ?? (window as unknown as { ManagedMediaSource?: typeof MediaSource }).ManagedMediaSource);
 
-// RM Roost Premium (switched off by default, see api-server lib/premium.ts):
-// once on, watching needs a short-lived ticket from /api/video/watch-access.
-// While it's off the server answers "not required" and nothing changes.
-let watchAccess: { eventId: number; ticket: string | null; at: number } | null = null;
-const WATCH_ACCESS_TTL_MS = 4 * 60_000;
-
-/** True when this viewer may connect now without asking the server again. */
-export function watchReady(eventId: number): boolean {
-  return !!watchAccess && watchAccess.eventId === eventId && Date.now() - watchAccess.at < WATCH_ACCESS_TTL_MS;
-}
-
-/** The rider app's sign-in, when this page runs inside the app's player (set by the app). */
-function appRiderToken(): string | null {
-  const t = (window as unknown as { __RM_RIDER_TOKEN?: unknown }).__RM_RIDER_TOKEN;
-  return typeof t === "string" && t ? t : null;
-}
-
-/** Message shown when a free rider's hour of this event's stream is used up. */
-export const FREE_TIME_OVER_MESSAGE = "You've used your 30 free minutes of live streaming. RM Roost Premium unlocks unlimited live streams.";
-
-/** Forget this event's access so the next connect asks the server again. */
-export function resetWatchAccess(): void {
-  watchAccess = null;
-}
-
-/** Ask whether this viewer may watch (and get a ticket if one is needed). */
-export async function prepareWatch(eventId: number): Promise<{ ok: true } | { ok: false; message: string }> {
-  try {
-    const token = appRiderToken();
-    const res = await fetch(`/api/video/watch-access/${eventId}`, {
-      credentials: "include",
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    });
-    const body = await res.json().catch(() => ({}));
-    if (res.status === 402) return { ok: false, message: body?.error ?? "Watching live races is part of RM Roost Premium." };
-    watchAccess = { eventId, ticket: res.ok ? (body?.ticket ?? null) : null, at: Date.now() };
-  } catch {
-    // Can't reach the check: try the stream anyway (the relay decides), and ask again soon.
-    watchAccess = { eventId, ticket: null, at: Date.now() - WATCH_ACCESS_TTL_MS + 30_000 };
-  }
-  return { ok: true };
-}
-
 /** The live video relay for an event; without a camera it picks the first live one. */
 export function getWatchWsUrl(eventId: number, cameraId: string | null): string {
   const origin = getPublicOrigin();
   const proto = origin.startsWith("https:") ? "wss:" : "ws:";
   const host = origin.replace(/^https?:\/\//, "");
-  const ticket = watchAccess?.eventId === eventId ? watchAccess.ticket : null;
-  return `${proto}//${host}/api/video/watch/${eventId}${cameraId ? `/${encodeURIComponent(cameraId)}` : ""}${ticket ? `?ticket=${encodeURIComponent(ticket)}` : ""}`;
+  return `${proto}//${host}/api/video/watch/${eventId}${cameraId ? `/${encodeURIComponent(cameraId)}` : ""}`;
 }
 
 type State = "connecting" | "playing" | "reconnecting" | "offline" | "unsupported";
@@ -153,13 +109,6 @@ export function SideCameraPlayer({ eventId, camera, onRemove, onMakeMain }: {
 
     const connect = () => {
       if (stopped) return;
-      if (!watchReady(eventId)) {
-        void prepareWatch(eventId).then(r => {
-          if (stopped) return;
-          if (r.ok) connect(); else { stopped = true; setState("offline"); }
-        });
-        return;
-      }
       setState(s => (s === "offline" ? s : "connecting"));
       const socket = new WebSocket(getWatchWsUrl(eventId, camera.id));
       ws = socket;
@@ -179,7 +128,6 @@ export function SideCameraPlayer({ eventId, camera, onRemove, onMakeMain }: {
           else if (msg.type === "init") { mime = String(msg.mimeType ?? mime); teardown(); }
           else if (msg.type === "reconnecting") { teardown(); setState("reconnecting"); }
           else if (msg.type === "offline" || msg.type === "ended") { teardown(); setState("offline"); }
-          else if (msg.type === "free_time_over") { stopped = true; teardown(); setState("offline"); }
           return;
         }
         if (!ms) startMedia();

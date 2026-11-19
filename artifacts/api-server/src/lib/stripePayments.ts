@@ -61,11 +61,11 @@ export function transferTo(c: ClubStripe): { transfer_data?: { destination: stri
 
 // ── RM Roost's registration fee ─────────────────────────────────────────────
 //
-// A flat fee per registration (class entry) paid by card, taken from the
-// club's payment as a Stripe application fee: the rider pays the listed price
-// and the club receives it less this fee (and Stripe's own fee). Refunds keep
-// it (Stripe only returns an application fee when asked to). Cash, comp and
-// free entries have no card charge, so no fee.
+// A flat "Service fee" per registration (class entry) paid by card, added to
+// the rider's checkout on top of the entry and sent to RM Roost as a Stripe
+// application fee. The club receives the entry (less Stripe's processing fee,
+// as before). Refunds keep it (Stripe only returns an application fee when
+// asked to). Cash, comp and free entries have no card charge, so no fee.
 
 export const REGISTRATION_FEE_KEY = "registration_fee_cents";
 /** Highest fee a super admin can set, so a typo can't take a club's whole entry. */
@@ -92,12 +92,24 @@ export async function clubRegistrationFeeCents(clubId: number): Promise<{ cents:
 }
 
 /**
- * The fee on one card charge: per registration paid in it, never more than the
- * charge itself (Stripe refuses that). 0 when nothing in it is a paid entry.
+ * The service fee on one card charge: per registration (class entry) paid in
+ * it. Added on top of the entry, so the rider pays it and the club's share is
+ * unchanged. 0 when nothing in it is a paid entry.
  */
-export function registrationFeeFor(paidRegistrations: number, perRegistrationCents: number, chargeCents: number): number {
-  if (paidRegistrations <= 0 || perRegistrationCents <= 0 || chargeCents <= 0) return 0;
-  return Math.min(paidRegistrations * perRegistrationCents, chargeCents);
+export function registrationFeeFor(paidRegistrations: number, perRegistrationCents: number): number {
+  if (paidRegistrations <= 0 || perRegistrationCents <= 0) return 0;
+  return paidRegistrations * perRegistrationCents;
+}
+
+/** Name of the checkout line riders see for RM Roost's fee. */
+export const SERVICE_FEE_LABEL = "Service fee";
+
+/** The Stripe Checkout line item for the service fee (one per paid entry). */
+export function serviceFeeLineItem(perRegistrationCents: number, paidRegistrations: number) {
+  return {
+    price_data: { currency: "usd", product_data: { name: SERVICE_FEE_LABEL }, unit_amount: perRegistrationCents },
+    quantity: paidRegistrations,
+  };
 }
 
 /** Stripe params for the fee on a PaymentIntent (or a Checkout Session's payment_intent_data). */
@@ -105,11 +117,11 @@ export function applicationFee(cents: number): { application_fee_amount?: number
   return cents > 0 ? { application_fee_amount: cents } : {};
 }
 
-/** The fee for a charge covering `paidRegistrations` entries of a club's event. */
-export async function registrationFeeForCharge(clubId: number, paidRegistrations: number, chargeCents: number): Promise<number> {
-  if (paidRegistrations <= 0) return 0;
+/** The service fee for a charge covering `paidRegistrations` entries of a club's event: per entry and total. */
+export async function serviceFeeForCharge(clubId: number, paidRegistrations: number): Promise<{ perEntryCents: number; totalCents: number; entries: number }> {
+  if (paidRegistrations <= 0) return { perEntryCents: 0, totalCents: 0, entries: 0 };
   const { cents } = await clubRegistrationFeeCents(clubId);
-  return registrationFeeFor(paidRegistrations, cents, chargeCents);
+  return { perEntryCents: cents, totalCents: registrationFeeFor(paidRegistrations, cents), entries: cents > 0 ? paidRegistrations : 0 };
 }
 
 // ── Required switch to the club's own Stripe account ────────────────────────
