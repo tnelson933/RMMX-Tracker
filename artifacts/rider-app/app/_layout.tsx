@@ -16,7 +16,7 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import * as Notifications from "expo-notifications";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect, useRef } from "react";
-import { Platform } from "react-native";
+import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -129,10 +129,21 @@ async function openRaceStart(router: ReturnType<typeof useRouter>, eventId: numb
   router.push(`/(tabs)/results?eventId=${eventId}${moto}` as any);
 }
 
+/** The launch screen stays up until the saved sign-in is back, but never longer than this. */
+const LAUNCH_SCREEN_MAX_MS = 3_000;
+
 function RootLayoutNav() {
   const { isAuthenticated, isLoading } = useRiderAuth();
   const router = useRouter();
   const segments = useSegments();
+
+  // Keep the launch screen until the account is restored (usually at once, from
+  // this phone), so the app never flashes its signed-out screen first.
+  useEffect(() => {
+    if (!isLoading) { void SplashScreen.hideAsync(); return; }
+    const t = setTimeout(() => { void SplashScreen.hideAsync(); }, LAUNCH_SCREEN_MAX_MS);
+    return () => clearTimeout(t);
+  }, [isLoading]);
 
   useNotificationNavigation(!isLoading && isAuthenticated);
   useOtaUpdates();
@@ -168,6 +179,12 @@ function RootLayoutNav() {
     </Stack>
     {/* Rocky, minimized, on every signed-in screen */}
     {isAuthenticated && !isLoading && <RockyLauncher />}
+    {/* A slow restore (no remembered account, weak signal): a quiet loading cover, not the signed-out screen. */}
+    {isLoading && (
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: "#0a0a0a", alignItems: "center", justifyContent: "center" }]}>
+        <ActivityIndicator color="#ffffff" />
+      </View>
+    )}
     </>
   );
 }
@@ -182,12 +199,6 @@ export default function RootLayout() {
     Barlow_800ExtraBold,
     Barlow_800ExtraBold_Italic,
   });
-
-  useEffect(() => {
-    if (fontsLoaded || fontError) {
-      SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded, fontError]);
 
   if (!fontsLoaded && !fontError) return null;
 

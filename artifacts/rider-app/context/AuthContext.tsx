@@ -15,6 +15,8 @@ const PUSH_TOKEN_KEY = "rider_expo_push_token";
 const PUSH_DENIED_PROMPTED_KEY = "rider_push_denied_prompted";
 /** Who the saved token belongs to ({ id, email }), so a launch with no signal stays signed in. */
 const ACCOUNT_CACHE_KEY = "rider_account_cache";
+/** The account's rider profiles from the last successful load ({ accountId, profiles }), shown at once on launch. */
+const PROFILES_CACHE_KEY = "rider_profiles_cache";
 
 /** "loading" until the first profile list arrives; "failed" when it couldn't be fetched. */
 export type ProfilesStatus = "loading" | "loaded" | "failed";
@@ -261,6 +263,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (tokenRef.current !== token) return;
       setProfiles(loaded);
       setProfilesStatus("loaded");
+      const cachedAcc = await AsyncStorage.getItem(ACCOUNT_CACHE_KEY).then(v => (v ? JSON.parse(v) : null)).catch(() => null);
+      if (cachedAcc && typeof cachedAcc.id === "number") {
+        void AsyncStorage.setItem(PROFILES_CACHE_KEY, JSON.stringify({ accountId: cachedAcc.id, profiles: loaded })).catch(() => {});
+      }
 
       setBikeInfoMapState(prev => {
         const merged = { ...prev };
@@ -328,6 +334,51 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         void secureDelete(BIOMETRIC_EMAIL_SKEY);
         void secureDelete(BIOMETRIC_PASS_SKEY);
       }
+      // Fast path: this phone remembers the account (and its riders), so open
+      // signed in straight away and confirm with the server in the background.
+      // Without this, launch waits on the network and briefly shows the app
+      // signed out. The server still decides: a revoked sign-in signs out below.
+      const cached = token
+        ? await AsyncStorage.getItem(ACCOUNT_CACHE_KEY).then(v => (v ? JSON.parse(v) : null)).catch(() => null)
+        : null;
+      if (token && cached && typeof cached.id === "number" && typeof cached.email === "string") {
+        applyAccount({ id: cached.id, email: cached.email, mobileToken: token });
+        const [profRaw, selRaw] = await Promise.all([
+          AsyncStorage.getItem(PROFILES_CACHE_KEY).catch(() => null),
+          AsyncStorage.getItem(SELECTED_IDS_KEY).catch(() => null),
+        ]);
+        try {
+          const prof = profRaw ? JSON.parse(profRaw) : null;
+          if (prof && prof.accountId === cached.id && Array.isArray(prof.profiles)) {
+            setProfiles(prof.profiles);
+            setProfilesStatus("loaded");
+            const sel: number[] = selRaw ? JSON.parse(selRaw) : [];
+            const valid = sel.filter(id => prof.profiles.some((p: RiderProfile) => p.id === id));
+            if (valid.length) setSelectedProfileIdsState(valid);
+          }
+        } catch { /* a bad cache just means profiles load from the server */ }
+        setIsLoading(false);
+        markRestored();
+
+        const { account: acc, unreachable } = await validateAndLoad(token);
+        if (tokenRef.current !== token) return; // signed out or switched meanwhile
+        if (acc) {
+          applyAccount(acc);
+          void rememberAccount(acc);
+          await loadProfiles(token);
+          void tryRegisterPushToken(token);
+        } else if (unreachable) {
+          setProfilesStatus(prev => (prev === "loaded" ? prev : "failed"));
+        } else {
+          // The server no longer accepts this sign-in: sign out.
+          await AsyncStorage.multiRemove([TOKEN_KEY, ACCOUNT_CACHE_KEY, PROFILES_CACHE_KEY]);
+          applyAccount(null);
+          setProfiles([]);
+          setProfilesStatus("loading");
+        }
+        return;
+      }
+
       if (token) {
         const { account: acc, unreachable } = await validateAndLoad(token);
         if (acc) {
@@ -346,7 +397,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setProfilesStatus("failed");
           }
         } else {
-          await AsyncStorage.multiRemove([TOKEN_KEY, ACCOUNT_CACHE_KEY]);
+          await AsyncStorage.multiRemove([TOKEN_KEY, ACCOUNT_CACHE_KEY, PROFILES_CACHE_KEY]);
         }
       }
       setIsLoading(false);
@@ -430,7 +481,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       await bestEffortFetch("/api/rider/auth/logout", token, { method: "POST" });
     }
-    const keysToRemove: string[] = [TOKEN_KEY, ACCOUNT_CACHE_KEY, SELECTED_IDS_KEY, PUSH_TOKEN_KEY];
+    const keysToRemove: string[] = [TOKEN_KEY, ACCOUNT_CACHE_KEY, PROFILES_CACHE_KEY, SELECTED_IDS_KEY, PUSH_TOKEN_KEY];
     // The Train tab's saved plan (current key, and the one older builds used).
     if (account) keysToRemove.push(`workout_plan_v2_${account.id}`, `workout_plan_${account.id}`);
     await AsyncStorage.multiRemove(keysToRemove);
