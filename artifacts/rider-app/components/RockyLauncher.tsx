@@ -31,8 +31,10 @@ export function RockyLauncher() {
   const [hint, setHint] = useState(false);
   const pulse = useRef(new Animated.Value(0)).current;
 
-  // Registration has its own pay button where the launcher would sit.
-  const hidden = HIDDEN_ROUTES.has(pathname) || pathname.startsWith("/register/");
+  // Registration has its own pay button where the launcher would sit; live
+  // video (going live and watching) is full screen, with its own controls there.
+  const hidden = HIDDEN_ROUTES.has(pathname) || pathname.startsWith("/register/")
+    || pathname.startsWith("/go-live/") || pathname.startsWith("/live/");
   const onTabs = segments[0] === "(tabs)";
   // Sit above the tab bar on tab screens; near the bottom edge elsewhere
   const bottom = onTabs ? insets.bottom + (Platform.OS === "ios" ? 62 : 70) : insets.bottom + 20;

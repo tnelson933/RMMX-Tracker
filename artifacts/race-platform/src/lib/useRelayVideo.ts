@@ -126,7 +126,12 @@ export function useRelayVideo(videoRef: RefObject<HTMLVideoElement | null>, wsUr
           }
           else if (msg.type === "init") { mime = String(msg.mimeType ?? mime); teardown(); }
           else if (msg.type === "reconnecting") { teardown(); setState("reconnecting"); }
-          else if (msg.type === "offline" || msg.type === "ended") { teardown(); setState("offline"); }
+          else if (msg.type === "offline" || msg.type === "ended") {
+            // Not live (yet, or any more): ask again shortly, so a viewer who opened
+            // the page early, or stayed after a stream ended, joins when it starts.
+            teardown(); setState("offline");
+            socket.close();
+          }
           return;
         }
         if (!ms) startMedia();

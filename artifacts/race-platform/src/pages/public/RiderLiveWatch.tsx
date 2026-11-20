@@ -3,6 +3,7 @@ import { useParams } from "wouter";
 import { Eye, Radio, Volume2, VolumeX } from "lucide-react";
 import { getPublicOrigin } from "@/lib/publicOrigin";
 import { useRelayVideo } from "@/lib/useRelayVideo";
+import { RiderLapTimes, RiderRaceHeader, useRiderRace } from "@/components/RiderRaceOverlay";
 
 /**
  * Watching a rider's live phone video. Reached only from the rider's profile
@@ -41,6 +42,7 @@ export default function RiderLiveWatch() {
     return `${proto}//${origin.replace(/^https?:\/\//, "")}/api/video/rider/${riderId}/watch?${new URLSearchParams({ ticket })}`;
   }, [riderId, ticket]);
   const { state, viewers } = useRelayVideo(videoRef, wsUrl, muted);
+  const race = useRiderRace(riderId, ticket);
 
   const overlay = problem
     || (state === "offline" ? `${name || "This rider"} isn't live right now.`
@@ -62,10 +64,16 @@ export default function RiderLiveWatch() {
           <span className="flex items-center gap-1 rounded-full bg-black/60 px-3 py-1 text-xs"><Eye size={12} /> {viewers}</span>
         )}
       </div>
+      {state === "playing" && <RiderRaceHeader race={race} />}
       {overlay && (
         <div className="relative z-10 m-auto flex max-w-xs flex-col items-center gap-3 px-6 text-center text-sm text-white/80">
           <Radio size={30} className={state === "connecting" || state === "reconnecting" ? "animate-pulse" : ""} />
           <p>{overlay}</p>
+        </div>
+      )}
+      {state === "playing" && (
+        <div className="absolute bottom-6 left-4" style={{ marginBottom: "env(safe-area-inset-bottom)" }}>
+          <RiderLapTimes race={race} />
         </div>
       )}
       {state === "playing" && (

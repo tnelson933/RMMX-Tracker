@@ -26,7 +26,7 @@ import {
 } from "./raceStartAlertsCore";
 
 /** Riders in a race: its lineup, else the checked-in (or, without check-in, registered) riders of its classes. */
-async function motoEntrantIds(moto: typeof motosTable.$inferSelect): Promise<number[]> {
+export async function motoEntrantIds(moto: typeof motosTable.$inferSelect): Promise<number[]> {
   const fromLineup = lineupRiderIds(moto.lineup);
   if (fromLineup.length) return fromLineup;
   const classes = (moto.raceClasses?.length ? moto.raceClasses : [moto.raceClass]).filter(Boolean);

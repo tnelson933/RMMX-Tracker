@@ -25,3 +25,14 @@ test("rider tickets: broadcast and watch tickets are not interchangeable, and ri
   assert.equal(verifyBroadcastTicket(b, 7, RIDER_CAMERA), false); // not an event's camera
   assert.deepEqual(getLiveEvents(), []);
 });
+
+import { pickRiderRace, SHOW_FINISHED_MS } from "./riderRace";
+test("overlay race: running first, then just finished, then next up, then last finished", () => {
+  const now = 1_000_000_000;
+  const m = (id: number, status: string, motoNumber: number, doneAgo?: number) => ({ id, status, motoNumber, completedAt: doneAgo == null ? null : new Date(now - doneAgo) });
+  assert.equal(pickRiderRace([m(1, "completed", 1, 60_000), m(2, "in_progress", 2), m(3, "scheduled", 3)], now)?.id, 2);
+  assert.equal(pickRiderRace([m(1, "completed", 1, 60_000), m(3, "scheduled", 3)], now)?.id, 1);
+  assert.equal(pickRiderRace([m(1, "completed", 1, SHOW_FINISHED_MS + 1), m(4, "scheduled", 5), m(3, "scheduled", 3)], now)?.id, 3);
+  assert.equal(pickRiderRace([m(1, "completed", 1, SHOW_FINISHED_MS * 3), m(5, "completed", 2, SHOW_FINISHED_MS * 2)], now)?.id, 5);
+  assert.equal(pickRiderRace([], now), null);
+});

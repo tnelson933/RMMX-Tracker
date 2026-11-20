@@ -3,6 +3,7 @@ import { useParams } from "wouter";
 import { RefreshCw, Radio, Square } from "lucide-react";
 import { getPublicOrigin } from "@/lib/publicOrigin";
 import { CameraBroadcaster, supportedBroadcastMime, type CameraSnapshot } from "@/lib/cameraBroadcaster";
+import { RiderLapTimes, RiderRaceHeader, useRiderRace } from "@/components/RiderRaceOverlay";
 
 /**
  * A rider going live from their phone. Shown only inside the rider app (its
@@ -46,7 +47,8 @@ export default function PhoneLive() {
   const [previewError, setPreviewError] = useState("");
   const [now, setNow] = useState(Date.now());
 
-  const supported = !!supportedBroadcastMime();
+  const supported = !!supportedBroadcastMime(false);
+  const race = useRiderRace(riderId, ticket || null);
   const live = snap && (snap.state === "live" || snap.state === "reconnecting" || snap.state === "starting");
 
   const socketUrl = useMemo(() => {
@@ -127,8 +129,10 @@ export default function PhoneLive() {
         {!audio && <span className="rounded-full bg-black/60 px-3 py-1 text-xs">No sound</span>}
       </div>
 
+      <RiderRaceHeader race={race} />
+
       {message && (
-        <div className="relative z-10 mx-4 rounded-xl bg-black/75 p-4 text-center text-sm">{message}</div>
+        <div className="relative z-10 mx-4 mt-3 rounded-xl bg-black/75 p-4 text-center text-sm">{message}</div>
       )}
       {snap?.state === "reconnecting" && (
         <div className="relative z-10 mx-4 rounded-xl bg-black/75 p-3 text-center text-sm">
@@ -136,7 +140,8 @@ export default function PhoneLive() {
         </div>
       )}
 
-      <div className="relative z-10 mt-auto flex items-center justify-center gap-6 p-6" style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}>
+      <RiderLapTimes race={race} className="relative mt-auto ml-4 self-start" />
+      <div className={`relative z-10 ${race?.bestLap || race?.lastLaps.length ? "" : "mt-auto "}flex items-center justify-center gap-6 p-6`} style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}>
         {!live && (
           <button type="button" aria-label="Switch camera" disabled={!supported}
             onClick={() => setFacing(f => (f === "environment" ? "user" : "environment"))}

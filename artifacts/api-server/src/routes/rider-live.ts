@@ -4,7 +4,9 @@ import { and, eq } from "drizzle-orm";
 import { requireRiderAuth } from "./rider-portal";
 import { canManageRider } from "../lib/riderAccess";
 import { effectiveVisibility } from "../lib/riderResume";
-import { createRiderBroadcastTicket, createRiderWatchTicket, riderLiveStatus } from "../lib/videoRelay";
+import { createRiderBroadcastTicket, createRiderWatchTicket, riderLiveStatus, riderChannel, RIDER_CAMERA, verifyBroadcastTicket } from "../lib/videoRelay";
+import { loadRiderRace, type RiderRaceInfo } from "../lib/riderRace";
+import { buildLeaderboard } from "./timing";
 
 /**
  * Rider live video: a rider (or a parent managing the profile) goes live from
@@ -73,6 +75,29 @@ router.get("/rider/live/:riderId", requireRiderAuth, async (req, res) => {
     canWatch,
     watchTicket: canWatch ? createRiderWatchTicket(rider.id) : null,
   });
+});
+
+// GET /rider/live/:riderId/race?ticket=…: the rider's class, race and place for
+// the overlay on their live video. Takes the stream's own watch or broadcast
+// ticket (the in-app pages have no website sign-in). Cached briefly per rider,
+// since every viewer polls it.
+const raceCache = new Map<number, { at: number; data: RiderRaceInfo | null }>();
+const RACE_CACHE_MS = 3_000;
+
+router.get("/rider/live/:riderId/race", async (req, res) => {
+  const riderId = Number(req.params.riderId);
+  const ticket = String(req.query.ticket ?? "");
+  if (!Number.isInteger(riderId) || riderId <= 0) return res.status(404).json({ error: NOT_FOUND });
+  const channel = riderChannel(riderId);
+  if (!verifyBroadcastTicket(ticket, channel, "watch") && !verifyBroadcastTicket(ticket, channel, RIDER_CAMERA)) {
+    return res.status(401).json({ error: "This live video link has expired. Open it again from the rider's profile." });
+  }
+  const cached = raceCache.get(riderId);
+  if (cached && Date.now() - cached.at < RACE_CACHE_MS) return res.json({ race: cached.data });
+  const data = await loadRiderRace(riderId, buildLeaderboard);
+  raceCache.set(riderId, { at: Date.now(), data });
+  if (raceCache.size > 500) raceCache.delete(raceCache.keys().next().value!);
+  return res.json({ race: data });
 });
 
 export default router;

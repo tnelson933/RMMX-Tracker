@@ -35,11 +35,14 @@ export type CameraSnapshot = {
 
 const MAX_RECONNECT_DELAY_MS = 15_000;
 const MIME_TYPES = ['video/webm; codecs="vp9,opus"', 'video/webm; codecs="vp8,opus"', "video/webm"];
+// Without a microphone the recording has no audio track: naming opus in the
+// type then makes viewers' players reject the stream, so name video only.
+const VIDEO_ONLY_MIME_TYPES = ['video/webm; codecs="vp9"', 'video/webm; codecs="vp8"', "video/webm"];
 
-/** The WebM type this browser can record, or null (e.g. Safari on iPhone). */
-export function supportedBroadcastMime(): string | null {
+/** The WebM type this browser can record, or null (e.g. Safari on iPhone before iOS 18.4). */
+export function supportedBroadcastMime(withAudio = true): string | null {
   if (typeof MediaRecorder === "undefined") return null;
-  return MIME_TYPES.find(m => MediaRecorder.isTypeSupported(m)) ?? null;
+  return (withAudio ? MIME_TYPES : VIDEO_ONLY_MIME_TYPES).find(m => MediaRecorder.isTypeSupported(m)) ?? null;
 }
 
 export const UNSUPPORTED_BROWSER_MESSAGE =
@@ -131,7 +134,7 @@ export class CameraBroadcaster {
   }
 
   async start(): Promise<void> {
-    const mime = supportedBroadcastMime();
+    const mime = supportedBroadcastMime(this.withAudio);
     if (!mime) return this.fail(UNSUPPORTED_BROWSER_MESSAGE);
     this.mime = mime;
     this.update({ state: "starting", errorMsg: "" });
