@@ -18,6 +18,8 @@ export type RelayVideoState = "connecting" | "playing" | "reconnecting" | "offli
 export function useRelayVideo(videoRef: RefObject<HTMLVideoElement | null>, wsUrl: string | null, muted: boolean) {
   const [state, setState] = useState<RelayVideoState>("connecting");
   const [viewers, setViewers] = useState(0);
+  // Why the stream ended, when the relay says (e.g. "The race has ended…"); cleared when video plays again.
+  const [endedMessage, setEndedMessage] = useState<string | null>(null);
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
 
@@ -97,6 +99,7 @@ export function useRelayVideo(videoRef: RefObject<HTMLVideoElement | null>, wsUr
           pump();
           playing = true;
           setState("playing");
+          setEndedMessage(null);
           play();
         } catch { restart(); }
       }, { once: true });
@@ -130,6 +133,7 @@ export function useRelayVideo(videoRef: RefObject<HTMLVideoElement | null>, wsUr
             // Not live (yet, or any more): ask again shortly, so a viewer who opened
             // the page early, or stayed after a stream ended, joins when it starts.
             teardown(); setState("offline");
+            if (msg.type === "ended" && typeof msg.message === "string") setEndedMessage(msg.message);
             socket.close();
           }
           return;
@@ -165,5 +169,5 @@ export function useRelayVideo(videoRef: RefObject<HTMLVideoElement | null>, wsUr
     };
   }, [wsUrl, videoRef]);
 
-  return { state, viewers };
+  return { state, viewers, endedMessage };
 }

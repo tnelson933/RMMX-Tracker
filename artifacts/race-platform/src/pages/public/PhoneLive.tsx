@@ -3,7 +3,7 @@ import { useParams } from "wouter";
 import { RefreshCw, Radio, Square } from "lucide-react";
 import { getPublicOrigin } from "@/lib/publicOrigin";
 import { CameraBroadcaster, supportedBroadcastMime, type CameraSnapshot } from "@/lib/cameraBroadcaster";
-import { RiderLapTimes, RiderRaceHeader, useRiderRace } from "@/components/RiderRaceOverlay";
+import { RiderLapTimes, RiderLiveEnding, RiderRaceHeader, useRiderRace } from "@/components/RiderRaceOverlay";
 
 /**
  * A rider going live from their phone. Shown only inside the rider app (its
@@ -130,6 +130,7 @@ export default function PhoneLive() {
       </div>
 
       <RiderRaceHeader race={race} />
+      {live && <RiderLiveEnding race={race} />}
 
       {message && (
         <div className="relative z-10 mx-4 mt-3 rounded-xl bg-black/75 p-4 text-center text-sm">{message}</div>

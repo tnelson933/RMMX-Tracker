@@ -9,7 +9,26 @@ import { and, eq, inArray } from "drizzle-orm";
 import { logger } from "./logger";
 import { sendPushNotifications } from "./push";
 import { accountIdsForRiders } from "./riderAccess";
-import { onCameraStarted, riderLiveStatus } from "./videoRelay";
+import { getLiveRiderIds, onCameraStarted, riderLiveStatus, stopRiderStream } from "./videoRelay";
+import { loadGoLiveWindow } from "./riderRace";
+
+export const RACE_ENDED_MESSAGE = "The race has ended. Live video is over for now.";
+const WINDOW_CHECK_MS = 30_000;
+
+/** Stops any rider stream whose window has closed (race finalized 5+ minutes ago, or no race soon). */
+export async function enforceRiderLiveWindows(): Promise<number[]> {
+  const stopped: number[] = [];
+  for (const riderId of getLiveRiderIds()) {
+    try {
+      const w = await loadGoLiveWindow(riderId);
+      if (!w.allowed && stopRiderStream(riderId, RACE_ENDED_MESSAGE)) stopped.push(riderId);
+    } catch (err) {
+      logger.warn({ err, riderId }, "Rider live window check failed");
+    }
+  }
+  if (stopped.length) logger.info({ riderIds: stopped }, "Stopped rider streams after their race ended");
+  return stopped;
+}
 
 export const ALERT_GAP_MS = 20 * 60_000;
 const lastAlertAt = new Map<number, number>();
@@ -48,8 +67,9 @@ export async function alertFollowersRiderLive(riderId: number): Promise<number> 
   return result.accepted;
 }
 
-/** Hooks rider streams up to follower alerts. Called once at startup. */
+/** Hooks rider streams up to follower alerts and the race-day window. Called once at startup. */
 export function startRiderLiveAlerts(): void {
+  setInterval(() => { void enforceRiderLiveWindows(); }, WINDOW_CHECK_MS).unref?.();
   onCameraStarted((channel) => {
     if (channel >= 0) return; // an event camera
     const riderId = -channel;

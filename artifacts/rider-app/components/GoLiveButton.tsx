@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import React, { useCallback, useState } from "react";
 import { Modal, Pressable, Text, View } from "react-native";
 
 import { RiderAvatar } from "@/components/RiderPhoto";
@@ -8,14 +8,41 @@ import { fonts } from "@/constants/fonts";
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 
+interface Eligible { riderId: number; allowed: boolean }
+
+/** Which of this account's riders may go live now (race day, within 2 races of racing). Checked every 30 s. */
+function useGoLiveRiders(): Set<number> {
+  const { riderFetch, profiles } = useRiderAuth();
+  const [allowed, setAllowed] = useState<Set<number>>(new Set());
+  useFocusEffect(useCallback(() => {
+    if (profiles.length === 0) return;
+    let stopped = false;
+    const load = async () => {
+      try {
+        const r = await riderFetch("/api/rider/live/eligible");
+        if (!r.ok || stopped) return;
+        const j = await r.json() as { riders: Eligible[] };
+        setAllowed(new Set(j.riders.filter(x => x.allowed).map(x => x.riderId)));
+      } catch { /* offline: keep what we had */ }
+    };
+    void load();
+    const t = setInterval(load, 30_000);
+    return () => { stopped = true; clearInterval(t); };
+  }, [riderFetch, profiles.length]));
+  return allowed;
+}
+
 /**
- * Home screen: go live from this phone as a rider on this account. With several
- * riders, pick which one is racing first; followers of that rider get the push.
+ * Home screen: go live from this phone as a rider on this account. Shown only on
+ * race day when a rider here is within 2 races of racing (the server decides,
+ * lib/riderRace.ts goLiveWindow), and only those riders can be picked.
  */
 export function GoLiveButton() {
   const router = useRouter();
   const colors = useColors();
-  const { profiles } = useRiderAuth();
+  const { profiles: allProfiles } = useRiderAuth();
+  const allowed = useGoLiveRiders();
+  const profiles = allProfiles.filter(p => allowed.has(p.id));
   const [picking, setPicking] = useState(false);
   if (profiles.length === 0) return null;
 

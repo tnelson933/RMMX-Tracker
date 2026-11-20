@@ -1,11 +1,11 @@
 import { Router } from "express";
 import { db, riderAccountsTable, ridersTable, riderFollowsTable } from "@workspace/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { requireRiderAuth } from "./rider-portal";
-import { canManageRider } from "../lib/riderAccess";
+import { canManageRider, managedRiderIds } from "../lib/riderAccess";
 import { effectiveVisibility } from "../lib/riderResume";
 import { createRiderBroadcastTicket, createRiderWatchTicket, riderLiveStatus, riderChannel, RIDER_CAMERA, verifyBroadcastTicket } from "../lib/videoRelay";
-import { loadRiderRace, type RiderRaceInfo } from "../lib/riderRace";
+import { goLiveMessage, loadGoLiveWindow, loadRiderRace, type RiderRaceInfo } from "../lib/riderRace";
 import { buildLeaderboard } from "./timing";
 
 /**
@@ -47,12 +47,32 @@ router.post("/rider/live/start", requireRiderAuth, async (req, res) => {
   if (!(await canManageRider(account, rider))) {
     return res.status(403).json({ error: "You can only go live as a rider on your own account." });
   }
+  // Race day only, within 2 races of racing (or until 5 minutes after their race is finalized).
+  const window = await loadGoLiveWindow(rider.id);
+  if (!window.allowed) return res.status(409).json({ error: goLiveMessage(window), reason: window.reason });
   return res.json({
     riderId: rider.id,
     name: `${rider.firstName} ${rider.lastName}`.trim(),
     ticket: createRiderBroadcastTicket(rider.id),
     status: riderLiveStatus(rider.id),
   });
+});
+
+// GET /rider/live/eligible: which of this account's riders may go live right now
+// (the app shows Go Live only when one may, and lists only those riders).
+router.get("/rider/live/eligible", requireRiderAuth, async (req, res) => {
+  const account = await currentAccount(req);
+  if (!account) return res.status(401).json({ error: SIGNED_OUT });
+  const ids = await managedRiderIds(account);
+  if (!ids.length) return res.json({ riders: [] });
+  const riders = await db.select({ id: ridersTable.id, firstName: ridersTable.firstName, lastName: ridersTable.lastName })
+    .from(ridersTable).where(inArray(ridersTable.id, ids));
+  const out = [];
+  for (const r of riders) {
+    const w = await loadGoLiveWindow(r.id);
+    out.push({ riderId: r.id, name: `${r.firstName} ${r.lastName}`.trim(), allowed: w.allowed, reason: w.reason, racesAhead: w.racesAhead, message: goLiveMessage(w) });
+  }
+  return res.json({ riders: out });
 });
 
 // GET /rider/live/:riderId: is the rider live now, and a ticket to watch if this account may.

@@ -3,7 +3,7 @@ import { useParams } from "wouter";
 import { Eye, Radio, Volume2, VolumeX } from "lucide-react";
 import { getPublicOrigin } from "@/lib/publicOrigin";
 import { useRelayVideo } from "@/lib/useRelayVideo";
-import { RiderLapTimes, RiderRaceHeader, useRiderRace } from "@/components/RiderRaceOverlay";
+import { RiderLapTimes, RiderLiveEnding, RiderRaceHeader, useRiderRace } from "@/components/RiderRaceOverlay";
 
 /**
  * Watching a rider's live phone video. Reached only from the rider's profile
@@ -41,11 +41,11 @@ export default function RiderLiveWatch() {
     const proto = origin.startsWith("https:") ? "wss:" : "ws:";
     return `${proto}//${origin.replace(/^https?:\/\//, "")}/api/video/rider/${riderId}/watch?${new URLSearchParams({ ticket })}`;
   }, [riderId, ticket]);
-  const { state, viewers } = useRelayVideo(videoRef, wsUrl, muted);
+  const { state, viewers, endedMessage } = useRelayVideo(videoRef, wsUrl, muted);
   const race = useRiderRace(riderId, ticket);
 
   const overlay = problem
-    || (state === "offline" ? `${name || "This rider"} isn't live right now.`
+    || (state === "offline" ? endedMessage ?? (race?.status === "completed" ? `${name || "This rider"}'s race has ended.` : `${name || "This rider"} isn't live right now.`)
       : state === "reconnecting" ? "Weak signal at the track. Waiting for the video to come back…"
         : state === "unsupported" ? "This browser can't play live video. Update it, or watch in the RM Roost app."
           : state === "connecting" ? "Connecting…" : "");
@@ -65,6 +65,7 @@ export default function RiderLiveWatch() {
         )}
       </div>
       {state === "playing" && <RiderRaceHeader race={race} />}
+      {state === "playing" && <RiderLiveEnding race={race} />}
       {overlay && (
         <div className="relative z-10 m-auto flex max-w-xs flex-col items-center gap-3 px-6 text-center text-sm text-white/80">
           <Radio size={30} className={state === "connecting" || state === "reconnecting" ? "animate-pulse" : ""} />

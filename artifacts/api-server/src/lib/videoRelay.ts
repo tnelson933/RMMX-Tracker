@@ -155,6 +155,28 @@ export function riderLiveStatus(riderId: number): RiderLiveStatus {
   return { live: true, since: cam.startedAt.toISOString(), viewers: cam.viewers.size + cam.pendingViewers.size, reconnecting: cam.broadcasterWs === null };
 }
 
+/** Riders streaming from their phones right now. */
+export function getLiveRiderIds(): number[] {
+  return Array.from(cameras.values(), c => c.eventId).filter(id => id < 0).map(id => -id);
+}
+
+/**
+ * Ends a rider's stream (their race is over): the phone shows `message` and
+ * doesn't reconnect, viewers see it ended with the same message.
+ */
+export function stopRiderStream(riderId: number, message: string): boolean {
+  const cam = cameras.get(keyOf(riderChannel(riderId), RIDER_CAMERA));
+  if (!cam) return false;
+  const phone = cam.broadcasterWs;
+  cam.broadcasterWs = null;
+  endCamera(cam, "rider stream window closed", message);
+  if (phone) {
+    sendJson(phone, { type: "error", message });
+    try { phone.close(4003, "Stream window closed"); } catch {}
+  }
+  return true;
+}
+
 // Called when a camera starts (not when a dropped one reconnects): rider streams alert followers.
 type StartListener = (eventId: number, cameraId: string) => void;
 const startListeners: StartListener[] = [];
@@ -270,10 +292,10 @@ function resetMedia(cam: Camera) {
   cam.keyframeRequested = false;
 }
 
-function endCamera(cam: Camera, reason: string) {
+function endCamera(cam: Camera, reason: string, message?: string) {
   if (cam.reconnectTimer) clearTimeout(cam.reconnectTimer);
   cameras.delete(keyOf(cam.eventId, cam.cameraId));
-  const msg = { type: "ended", cameras: cameraList(cam.eventId) };
+  const msg = { type: "ended", cameras: cameraList(cam.eventId), ...(message ? { message } : {}) };
   for (const v of [...cam.viewers, ...cam.pendingViewers]) sendJson(v, msg);
   cam.viewers.clear();
   cam.pendingViewers.clear();

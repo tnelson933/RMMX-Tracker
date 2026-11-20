@@ -12,12 +12,15 @@ export interface RiderRace {
   className: string;
   raceName: string;
   status: "scheduled" | "in_progress" | "completed";
+  finalized: boolean;
   position: number | null;
   riders: number;
   laps: number;
   gap: string | null;
   bestLap: string | null;
   lastLaps: string[];
+  /** When the live video stops because the race is over (ISO), else null. */
+  liveEndsAt: string | null;
 }
 
 export function useRiderRace(riderId: number, ticket: string | null): RiderRace | null {
@@ -43,6 +46,23 @@ const ordinal = (n: number) => {
 
 const STATUS: Record<RiderRace["status"], string> = { scheduled: "Up next", in_progress: "Racing", completed: "Finished" };
 
+/** "Race over · live video ends in 4:32" while a finished race's stream winds down. */
+export function RiderLiveEnding({ race }: { race: RiderRace | null }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!race?.liveEndsAt) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [race?.liveEndsAt]);
+  if (!race?.liveEndsAt) return null;
+  const left = Math.max(0, Math.round((new Date(race.liveEndsAt).getTime() - now) / 1000));
+  return (
+    <div role="status" className="relative z-10 mx-4 mt-2 rounded-xl bg-amber-500/90 px-3 py-2 text-center text-[13px] font-semibold text-black">
+      {race.finalized ? "Race over, results are final." : "Race over."} Live video ends in {Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}
+    </div>
+  );
+}
+
 /** Class, race and place: sits under the stream's name pills at the top. */
 export function RiderRaceHeader({ race }: { race: RiderRace | null }) {
   if (!race) return null;
@@ -53,7 +73,7 @@ export function RiderRaceHeader({ race }: { race: RiderRace | null }) {
           {race.className}{race.raceName ? <span className="font-semibold text-white/80"> · {race.raceName}</span> : null}
         </div>
         <div className="text-[11px] uppercase tracking-wider text-white/70">
-          {STATUS[race.status]}{race.status !== "scheduled" && race.laps > 0 ? ` · Lap ${race.laps}` : ""}{race.gap && race.position !== 1 ? ` · ${race.gap}` : ""}
+          {race.status === "completed" && race.finalized ? "Final" : STATUS[race.status]}{race.status !== "scheduled" && race.laps > 0 ? ` · Lap ${race.laps}` : ""}{race.gap && race.gap !== "Leader" && race.position !== 1 ? ` · ${race.gap}` : ""}
         </div>
       </div>
       {race.position != null && (
