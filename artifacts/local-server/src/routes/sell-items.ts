@@ -4,6 +4,7 @@ import { getDb } from "../db";
 import { clubSellItems, ensureBuiltInSellItems, eventAddonSales, eventSellPrices } from "../lib/addons";
 import { newDesktopId } from "../lib/desktop-ids";
 import { cloudReachable } from "../lib/cloud-proxy";
+import { riderIdForTransponder } from "../lib/rider-transponders";
 
 /**
  * Sell Items and add-on sales that must answer offline. Prices come from the
@@ -173,11 +174,11 @@ router.get("/readers/recent-tags", (req, res) => {
   const tags = getRecentTags();
   if (tags.length === 0) return res.json([]);
   const db = getDb();
-  const find = db.prepare(
-    "SELECT id, first_name, last_name FROM riders WHERE rfid_number = ? COLLATE NOCASE OR mylaps_transponder_id = ? COLLATE NOCASE LIMIT 1",
-  );
+  const byId = db.prepare("SELECT id, first_name, last_name FROM riders WHERE id = ?");
   return res.json(tags.map((t) => {
-    const rider = find.get(t.rfidNumber, t.rfidNumber) as { id: number; first_name: string | null; last_name: string | null } | undefined;
+    // Any transponder on a rider's profile (they may own several).
+    const ownerId = riderIdForTransponder(db, t.rfidNumber);
+    const rider = (ownerId == null ? undefined : byId.get(ownerId)) as { id: number; first_name: string | null; last_name: string | null } | undefined;
     return {
       rfidNumber: t.rfidNumber,
       count: t.count,

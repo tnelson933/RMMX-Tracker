@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { compareStandings } from "../lib/lapScoring";
-import { eq, gt, and, inArray, isNull, or, sql } from "drizzle-orm";
+import { asc, eq, gt, and, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { buildLeaderboard, formatLapTime, publishTimingSnapshot, startSharedAnnouncer } from "./timing";
 import {
@@ -10,6 +10,7 @@ import {
   rfidAssignmentsTable,
   registrationsTable,
   ridersTable,
+  riderTranspondersTable,
   lapCrossingsTable,
   splitCrossingsTable,
   raceResultsTable,
@@ -2164,7 +2165,7 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
       enduroTimeChecks: [],
       enduroCheckpointArrivals: [],
       eventReaderAssignments: [],
-      registrations: [], checkins: [], riders: [],
+      registrations: [], checkins: [], riders: [], riderTransponders: [],
       rfidAssignments: [], events: [], motos: [],
       lapCrossings: [], raceResults: [], users: clubUsers,
       clubs: clubRow ? [clubRow] : [],
@@ -2276,6 +2277,20 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
       : [];
 
   const riders = ridersWithEmail;
+  // Every transponder these riders own (several RM TrackRs / stickers per rider),
+  // so the offline server times any of them. The desktop replaces each pulled
+  // rider's list with this one unless it has an unpushed edit of its own.
+  const riderTransponders = regRiderIds.length > 0
+    ? await db.select({
+        riderId: riderTranspondersTable.riderId,
+        transponderNumber: riderTranspondersTable.transponderNumber,
+        kind: riderTranspondersTable.kind,
+        label: riderTranspondersTable.label,
+        createdAt: riderTranspondersTable.createdAt,
+      }).from(riderTranspondersTable)
+        .where(inArray(riderTranspondersTable.riderId, regRiderIds))
+        .orderBy(asc(riderTranspondersTable.id))
+    : [];
 
   // Push tokens: resolve rider emails → rider_accounts → rider_push_tokens
   // so the desktop can send notifications without round-tripping to the cloud.
@@ -2316,7 +2331,7 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
       : [];
 
   return res.json({
-    registrations, checkins, rfidAssignments, riders, events,
+    registrations, checkins, rfidAssignments, riders, riderTransponders, events,
     motos, lapCrossings, raceResults, users: clubUsers,
     clubs: clubRow ? [clubRow] : [],
     pointsTables,

@@ -20,6 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AddRiderTransponderInput,
   AdvanceToMainInput,
   AiSuggestPointsTableInput,
   AiSuggestPointsTableOutput,
@@ -129,6 +130,7 @@ import type {
   RiderNotificationPrefResult,
   RiderOrganization,
   RiderSeriesEntry,
+  RiderTransponder,
   RiderUpdate,
   Series,
   SeriesInput,
@@ -3207,7 +3209,7 @@ export const updateRider = async (riderId: number,
 
 
 
-export const getUpdateRiderMutationOptions = <TError = ErrorType<unknown>,
+export const getUpdateRiderMutationOptions = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateRider>>, TError,{riderId: number;data: BodyType<RiderUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updateRider>>, TError,{riderId: number;data: BodyType<RiderUpdate>}, TContext> => {
 
@@ -3236,12 +3238,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type UpdateRiderMutationResult = NonNullable<Awaited<ReturnType<typeof updateRider>>>
     export type UpdateRiderMutationBody = BodyType<RiderUpdate>
-    export type UpdateRiderMutationError = ErrorType<unknown>
+    export type UpdateRiderMutationError = ErrorType<void>
 
     /**
  * @summary Update rider
  */
-export const useUpdateRider = <TError = ErrorType<unknown>,
+export const useUpdateRider = <TError = ErrorType<void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateRider>>, TError,{riderId: number;data: BodyType<RiderUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof updateRider>>,
@@ -3250,6 +3252,227 @@ export const useUpdateRider = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getUpdateRiderMutationOptions(options));
+    }
+
+export const getListRiderTranspondersUrl = (riderId: number,) => {
+
+
+
+
+  return `/api/riders/${riderId}/transponders`
+}
+
+/**
+ * @summary Every RM TrackR / RFID sticker the rider owns (any of them times the rider)
+ */
+export const listRiderTransponders = async (riderId: number, options?: RequestInit): Promise<RiderTransponder[]> => {
+
+  return customFetch<RiderTransponder[]>(getListRiderTranspondersUrl(riderId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListRiderTranspondersQueryKey = (riderId: number,) => {
+    return [
+    `/api/riders/${riderId}/transponders`
+    ] as const;
+    }
+
+
+export const getListRiderTranspondersQueryOptions = <TData = Awaited<ReturnType<typeof listRiderTransponders>>, TError = ErrorType<unknown>>(riderId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRiderTransponders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListRiderTranspondersQueryKey(riderId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listRiderTransponders>>> = ({ signal }) => listRiderTransponders(riderId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(riderId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listRiderTransponders>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListRiderTranspondersQueryResult = NonNullable<Awaited<ReturnType<typeof listRiderTransponders>>>
+export type ListRiderTranspondersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Every RM TrackR / RFID sticker the rider owns (any of them times the rider)
+ */
+
+export function useListRiderTransponders<TData = Awaited<ReturnType<typeof listRiderTransponders>>, TError = ErrorType<unknown>>(
+ riderId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRiderTransponders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListRiderTranspondersQueryOptions(riderId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getAddRiderTransponderUrl = (riderId: number,) => {
+
+
+
+
+  return `/api/riders/${riderId}/transponders`
+}
+
+/**
+ * @summary Add a transponder to the rider (a number belongs to one rider at a time)
+ */
+export const addRiderTransponder = async (riderId: number,
+    addRiderTransponderInput: AddRiderTransponderInput, options?: RequestInit): Promise<RiderTransponder[]> => {
+
+  return customFetch<RiderTransponder[]>(getAddRiderTransponderUrl(riderId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      addRiderTransponderInput,)
+  }
+);}
+
+
+
+
+export const getAddRiderTransponderMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addRiderTransponder>>, TError,{riderId: number;data: BodyType<AddRiderTransponderInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof addRiderTransponder>>, TError,{riderId: number;data: BodyType<AddRiderTransponderInput>}, TContext> => {
+
+const mutationKey = ['addRiderTransponder'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addRiderTransponder>>, {riderId: number;data: BodyType<AddRiderTransponderInput>}> = (props) => {
+          const {riderId,data} = props ?? {};
+
+          return  addRiderTransponder(riderId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AddRiderTransponderMutationResult = NonNullable<Awaited<ReturnType<typeof addRiderTransponder>>>
+    export type AddRiderTransponderMutationBody = BodyType<AddRiderTransponderInput>
+    export type AddRiderTransponderMutationError = ErrorType<void>
+
+    /**
+ * @summary Add a transponder to the rider (a number belongs to one rider at a time)
+ */
+export const useAddRiderTransponder = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addRiderTransponder>>, TError,{riderId: number;data: BodyType<AddRiderTransponderInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof addRiderTransponder>>,
+        TError,
+        {riderId: number;data: BodyType<AddRiderTransponderInput>},
+        TContext
+      > => {
+      return useMutation(getAddRiderTransponderMutationOptions(options));
+    }
+
+export const getRemoveRiderTransponderUrl = (riderId: number,
+    transponderId: number,) => {
+
+
+
+
+  return `/api/riders/${riderId}/transponders/${transponderId}`
+}
+
+/**
+ * @summary Remove one of the rider's transponders
+ */
+export const removeRiderTransponder = async (riderId: number,
+    transponderId: number, options?: RequestInit): Promise<RiderTransponder[]> => {
+
+  return customFetch<RiderTransponder[]>(getRemoveRiderTransponderUrl(riderId,transponderId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getRemoveRiderTransponderMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeRiderTransponder>>, TError,{riderId: number;transponderId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeRiderTransponder>>, TError,{riderId: number;transponderId: number}, TContext> => {
+
+const mutationKey = ['removeRiderTransponder'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeRiderTransponder>>, {riderId: number;transponderId: number}> = (props) => {
+          const {riderId,transponderId} = props ?? {};
+
+          return  removeRiderTransponder(riderId,transponderId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveRiderTransponderMutationResult = NonNullable<Awaited<ReturnType<typeof removeRiderTransponder>>>
+
+    export type RemoveRiderTransponderMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Remove one of the rider's transponders
+ */
+export const useRemoveRiderTransponder = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeRiderTransponder>>, TError,{riderId: number;transponderId: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof removeRiderTransponder>>,
+        TError,
+        {riderId: number;transponderId: number},
+        TContext
+      > => {
+      return useMutation(getRemoveRiderTransponderMutationOptions(options));
     }
 
 export const getGetRiderDiscountCodeUrl = (clubId: number,

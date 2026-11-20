@@ -3,6 +3,16 @@ import { db } from "@workspace/db";
 import { ridersTable, raceResultsTable, motosTable, eventsTable, registrationsTable } from "@workspace/db";
 import { eq, ilike, or, desc, and, inArray, sql } from "drizzle-orm";
 import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
+import {
+  addRiderTransponder,
+  listRiderTransponders,
+  listTranspondersForRiders,
+  parseTransponderInput,
+  removeRiderTransponder,
+  riderIdForTransponder,
+  TRANSPONDER_KIND_NAMES,
+  type TransponderKind,
+} from "../lib/riderTransponders";
 
 const router = Router();
 
@@ -87,8 +97,24 @@ router.get("/riders", async (req, res) => {
     riders = await db.select().from(ridersTable).orderBy(ridersTable.lastName);
   }
 
-  return res.json(riders.map(r => ({ ...r, createdAt: r.createdAt.toISOString() })));
+  // Every transponder each rider owns (several RM TrackRs / stickers per rider).
+  const transponders = await listTranspondersForRiders(riders.map(r => r.id));
+  return res.json(riders.map(r => ({ ...r, createdAt: r.createdAt.toISOString(), transponders: transponders.get(r.id) ?? [] })));
 });
+
+/**
+ * A profile number (single-field API) that another rider already owns: the
+ * organizer is told whose it is. Returns the message, or null when free.
+ */
+async function profileNumberTaken(riderId: number | null, number: string | null | undefined, kind: TransponderKind): Promise<string | null> {
+  const n = typeof number === "string" ? number.trim().toLowerCase() : "";
+  if (!n) return null;
+  const owner = await riderIdForTransponder(n);
+  if (owner == null || owner === riderId) return null;
+  const [o] = await db.select({ firstName: ridersTable.firstName, lastName: ridersTable.lastName }).from(ridersTable).where(eq(ridersTable.id, owner));
+  const name = o ? `${o.firstName} ${o.lastName}`.trim() : "another rider";
+  return `${TRANSPONDER_KIND_NAMES[kind]} ${n.toUpperCase()} is already assigned to ${name} (rider #${owner}). Remove it from their profile first if it changed hands.`;
+}
 
 router.post("/riders", async (req, res) => {
   const { firstName, lastName, email, phone, bibNumber, dateOfBirth, emergencyContact, emergencyPhone, rfidNumber, bikeManufacturer, bikeModel, bikeYear, sponsors, amaNumber, mylapsTransponderId, streetAddress, city, homeState, zip } = req.body;
@@ -104,6 +130,11 @@ router.post("/riders", async (req, res) => {
     });
   }
 
+  const takenTrackr = await profileNumberTaken(null, normalizedTransponderId, "trackr");
+  if (takenTrackr) return res.status(409).json({ error: takenTrackr });
+  const takenRfid = await profileNumberTaken(null, rfidNumber, "rfid");
+  if (takenRfid) return res.status(409).json({ error: takenRfid });
+
   // Tag the rider with the organizer's club so they remain visible in that club's rider list
   const orgCId = getStaffClubId(res); // set for club organizers and staff
 
@@ -113,7 +144,7 @@ router.post("/riders", async (req, res) => {
     amaNumber, mylapsTransponderId: normalizedTransponderId, streetAddress, city, homeState, zip,
     ...(orgCId != null ? { clubId: orgCId } : {}),
   }).returning();
-  return res.status(201).json({ ...rider, createdAt: rider.createdAt.toISOString() });
+  return res.status(201).json({ ...rider, createdAt: rider.createdAt.toISOString(), transponders: await listRiderTransponders(rider.id) });
 });
 
 router.get("/riders/:riderId", async (req, res) => {
@@ -192,6 +223,7 @@ router.get("/riders/:riderId", async (req, res) => {
       official: resultsFinalizedAt != null || motoType === "practice",
     })),
     totalEvents: Number(eventCount?.count ?? 0),
+    transponders: await listRiderTransponders(id),
   });
 });
 
@@ -239,10 +271,60 @@ router.patch("/riders/:riderId", async (req, res) => {
       });
     }
     updates.mylapsTransponderId = normalizedTransponderId;
+    const taken = await profileNumberTaken(id, normalizedTransponderId, "trackr");
+    if (taken) return res.status(409).json({ error: taken });
+  }
+  if (typeof req.body.rfidNumber === "string") {
+    const taken = await profileNumberTaken(id, req.body.rfidNumber, "rfid");
+    if (taken) return res.status(409).json({ error: taken });
   }
   const [rider] = await db.update(ridersTable).set(updates as any).where(eq(ridersTable.id, id)).returning();
   if (!rider) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
-  return res.json({ ...rider, createdAt: rider.createdAt.toISOString() });
+  return res.json({ ...rider, createdAt: rider.createdAt.toISOString(), transponders: await listRiderTransponders(id) });
+});
+
+/** Organizer access to one rider (club-scoped like PATCH); answers the error itself. */
+async function organizerCanEditRider(res: any, id: number): Promise<boolean> {
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
+    return false;
+  }
+  const [rider] = await db.select({ id: ridersTable.id }).from(ridersTable).where(eq(ridersTable.id, id));
+  if (!rider) {
+    res.status(404).json({ error: "That rider couldn't be found. They may have been deleted. Refresh the page and try again." });
+    return false;
+  }
+  const scopedClubId = getStaffClubId(res);
+  if (scopedClubId !== null && !(await getClubRiderIds(scopedClubId)).includes(id)) {
+    res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
+    return false;
+  }
+  return true;
+}
+
+// ── A rider's transponders (several RM TrackRs / RFID stickers, e.g. one per bike) ──
+router.get("/riders/:riderId/transponders", async (req, res) => {
+  const id = Number(req.params.riderId);
+  if (!await organizerCanEditRider(res, id)) return;
+  return res.json(await listRiderTransponders(id));
+});
+
+router.post("/riders/:riderId/transponders", async (req, res) => {
+  const id = Number(req.params.riderId);
+  if (!await organizerCanEditRider(res, id)) return;
+  const input = parseTransponderInput(req.body ?? {});
+  if (!input.ok) return res.status(400).json({ error: input.error });
+  const result = await addRiderTransponder(id, input, "organizer");
+  if (!result.ok) return res.status(409).json({ error: result.error, ownerRiderId: result.ownerRiderId });
+  return res.status(result.created ? 201 : 200).json(result.transponders);
+});
+
+router.delete("/riders/:riderId/transponders/:transponderId", async (req, res) => {
+  const id = Number(req.params.riderId);
+  if (!await organizerCanEditRider(res, id)) return;
+  const remaining = await removeRiderTransponder(id, Number(req.params.transponderId));
+  if (!remaining) return res.status(404).json({ error: "That transponder isn't on this rider's profile any more. Refresh the page." });
+  return res.json(remaining);
 });
 
 export default router;

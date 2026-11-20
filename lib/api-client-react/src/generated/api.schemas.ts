@@ -807,6 +807,36 @@ export interface QuickCheckinEvent {
   numbersFlagged?: boolean;
 }
 
+/**
+ * trackr = RM TrackR (active transponder); rfid = RFID sticker
+ */
+export type RiderTransponderKind = typeof RiderTransponderKind[keyof typeof RiderTransponderKind];
+
+
+export const RiderTransponderKind = {
+  trackr: 'trackr',
+  rfid: 'rfid',
+} as const;
+
+export interface RiderTransponder {
+  id: number;
+  /** As printed (upper-case). Matched case-insensitively. */
+  number: string;
+  /** trackr = RM TrackR (active transponder); rfid = RFID sticker */
+  kind: RiderTransponderKind;
+  /** RM TrackR or RFID sticker */
+  kindName: string;
+  /**
+     * Optional note, e.g. the bike it's on
+     * @nullable
+     */
+  label?: string | null;
+  /** The oldest of its kind, shown in the single-number fields */
+  primary: boolean;
+  /** @nullable */
+  createdAt?: string | null;
+}
+
 export interface Rider {
   id: number;
   firstName: string;
@@ -850,7 +880,28 @@ export interface Rider {
   skillLevel?: string | null;
   /** Race disciplines the rider competes in (e.g. Motocross, Supercross, Desert) */
   raceTypes?: string[];
+  /** Every RM TrackR / RFID sticker the rider owns, oldest first. mylapsTransponderId / rfidNumber are each kind's primary (oldest) one. */
+  transponders?: RiderTransponder[];
   createdAt?: string;
+}
+
+/**
+ * Defaults to trackr (RM TrackR)
+ */
+export type AddRiderTransponderInputKind = typeof AddRiderTransponderInputKind[keyof typeof AddRiderTransponderInputKind];
+
+
+export const AddRiderTransponderInputKind = {
+  trackr: 'trackr',
+  rfid: 'rfid',
+} as const;
+
+export interface AddRiderTransponderInput {
+  number: string;
+  /** Defaults to trackr (RM TrackR) */
+  kind?: AddRiderTransponderInputKind;
+  /** @nullable */
+  label?: string | null;
 }
 
 export interface RiderRecentResult {
@@ -924,6 +975,8 @@ export interface RiderDetail {
      * @nullable
      */
   clubIdNumber?: string | null;
+  /** Every RM TrackR / RFID sticker the rider owns, oldest first. */
+  transponders?: RiderTransponder[];
   createdAt?: string;
 }
 

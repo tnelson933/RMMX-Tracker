@@ -60,6 +60,8 @@ export interface RiderPrefill {
   bibNumber: string; amaNumber: string; clubIdNumber: string;
   bikeBrand: string; bikeModel: string; bikeYear: string; sponsors: string;
   transponderNumber: string; rfidNumber: string; statsEmailOptIn: boolean;
+  /** All the rider's own RM TrackRs (one per bike), lower-case. Older servers omit it. */
+  transponderOptions?: string[];
   isMinor: boolean; avatarUrl: string | null;
   usualClasses: string[]; registeredClasses: string[]; hasRaced: boolean;
 }

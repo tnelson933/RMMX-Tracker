@@ -1,5 +1,6 @@
 import { getDb } from "./db";
 import { DESKTOP_ID_FLOOR, ORG_TABLES, newDesktopId } from "./lib/desktop-ids";
+import { ensureRiderTranspondersSchema } from "./lib/rider-transponders";
 
 export function initDb() {
   const db = getDb();
@@ -1278,6 +1279,8 @@ export function initDb() {
     END;
   `);
   queueLegacyClubSetup(db);
+  // Every transponder a rider owns (several RM TrackRs / stickers), after the riders columns exist.
+  ensureRiderTranspondersSchema(db);
 
   // Seed autoincrement sequences so desktop-created rows start at a high ID range
   // and never collide with cloud-assigned sequential IDs (1, 2, 3...).

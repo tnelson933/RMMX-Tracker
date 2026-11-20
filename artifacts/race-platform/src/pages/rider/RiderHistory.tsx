@@ -32,6 +32,7 @@ import { CareerStatsPanel } from "@/components/rider/CareerStatsPanel";
 import { SessionLapChart, TrackProgressChart } from "@/components/rider/PracticeCharts";
 import { ProfileManagers, RacerProfileSettings } from "@/components/rider/ProfileSettings";
 import { BikeBrandChips } from "@/components/BikeBrandChips";
+import { RiderTranspondersCard, useRiderTransponders } from "@/components/rider/RiderTransponders";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -124,7 +125,11 @@ function isLapEligible(lapNumber: number, raceStyle?: string | null): boolean {
 // Sits under the dark page title, so text and icons use white/gray, never red.
 // Riders see their numbers here but can't change them: only the organizer can
 // (the API refuses rider changes too). RM TrackR always comes first.
-function TimingNumbers({ rmTrackr, rfid }: { rmTrackr: string | null; rfid: string | null }) {
+function TimingNumbers({ riderId, rmTrackr, rfid }: { riderId: number; rmTrackr: string | null; rfid: string | null }) {
+  // Every number the rider owns (one per bike); the single fields until the list loads.
+  const { data: owned } = useRiderTransponders(riderId);
+  const all = (kind: "trackr" | "rfid", fallback: string | null) =>
+    owned ? owned.filter((t) => t.kind === kind).map((t) => t.number).join(", ") || null : fallback;
   const row = (label: string, value: string | null) => (
     <span className="flex items-center gap-1.5 text-[15px]">
       <Wifi size={15} className="text-white/70 shrink-0" />
@@ -136,11 +141,8 @@ function TimingNumbers({ rmTrackr, rfid }: { rmTrackr: string | null; rfid: stri
   );
   return (
     <span className="flex flex-col gap-1 mt-2" data-testid="rider-timing-numbers">
-      {row("RM TrackR transponder", rmTrackr)}
-      {row("RFID sticker", rfid)}
-      <span className="flex items-center gap-1.5 text-[13px] text-white/70">
-        <Lock size={12} className="shrink-0" /> Only the organizer can change these. If one is wrong, see the check-in booth.
-      </span>
+      {row("RM TrackR", all("trackr", rmTrackr))}
+      {row("RFID sticker", all("rfid", rfid))}
     </span>
   );
 }
@@ -308,19 +310,7 @@ function ProfileEditor({ rider }: { rider: RiderFull }) {
         <CardContent className="px-5 pb-5 grid grid-cols-2 gap-4">
           {field("#", "bibNumber", "e.g. 42")}
           {field("AMA Number", "amaNumber", "AMA membership #")}
-          {/* Read only: organizers change timing numbers (shown under the page title too). */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1"><Lock size={11} /> RM TrackR Transponder #</Label>
-            <p className="text-sm py-1.5 min-h-[2rem] font-mono">
-              {rider.myLapsTransponderNumber || <span className="text-muted-foreground italic font-sans">None on file</span>}
-            </p>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1"><Lock size={11} /> RFID Sticker #</Label>
-            <p className="text-sm py-1.5 min-h-[2rem] font-mono">
-              {rider.rfidNumber || <span className="text-muted-foreground italic font-sans">None on file</span>}
-            </p>
-          </div>
+          {/* Timing numbers: the My Transponders list below the garage. */}
           <div className="col-span-2 space-y-1.5">
             <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sponsors</Label>
             {editing ? (
@@ -2490,7 +2480,7 @@ export default function RiderHistory({ riderId: riderIdProp, riderSwitcher }: { 
               )}
             </span>
           )}
-          <TimingNumbers rmTrackr={rider.myLapsTransponderNumber ?? null} rfid={rider.rfidNumber ?? null} />
+          <TimingNumbers riderId={rider.id} rmTrackr={rider.myLapsTransponderNumber ?? null} rfid={rider.rfidNumber ?? null} />
         </span>
       ) : undefined}
     >
@@ -2971,6 +2961,7 @@ export default function RiderHistory({ riderId: riderIdProp, riderSwitcher }: { 
               <ProfileManagers riderId={rider.id} />
               <ProfileEditor rider={rider} />
               <GarageCard riderId={rider.id} />
+              <RiderTranspondersCard riderId={rider.id} />
             </>
           )}
         </div>

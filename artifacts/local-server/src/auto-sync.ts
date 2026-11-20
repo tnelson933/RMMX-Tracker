@@ -2,6 +2,7 @@ import { getDb } from "./db";
 import fs from "fs/promises";
 import path from "path";
 import { RIDER_PROFILE_FIELDS } from "./rider-profile-dirty";
+import { applyPulledRiderTransponders, transpondersForSync } from "./lib/rider-transponders";
 import { CLOUD_URL as RESOLVED_CLOUD_URL } from "./lib/cloud-url";
 import { getCloudAuthHeader } from "./lib/cloud-session";
 
@@ -215,6 +216,8 @@ export async function runSync(): Promise<SyncResult> {
     for (const dirty of dirtyByRider.get(localId) ?? []) {
       const definition = RIDER_PROFILE_FIELDS.find(([field]) => field === dirty.field);
       if (definition) sparse[dirty.field] = rider[definition[1]];
+      // The rider's whole transponder list after offline edits.
+      if (dirty.field === "transponders") sparse.transponders = transpondersForSync(db, localId);
     }
     return {
       ...sparse,
@@ -599,6 +602,10 @@ export async function runPull(): Promise<{ ok: boolean; rows: Record<string, num
         has("mylapsTransponderId") ? 1 : 0,
       );
       rows.ridersPulled++;
+    }
+    // Every transponder each pulled rider owns (several RM TrackRs / stickers).
+    if (Array.isArray((data as any).riderTransponders)) {
+      applyPulledRiderTransponders(db, pulledRiderIds, (data as any).riderTransponders);
     }
 
     // ── Events ─────────────────────────────────────────────────────────────────

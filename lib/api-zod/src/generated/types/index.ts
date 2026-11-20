@@ -7,6 +7,8 @@
  */
 
 export * from './activityItem';
+export * from './addRiderTransponderInput';
+export * from './addRiderTransponderInputKind';
 export * from './advanceToMainInput';
 export * from './aiSuggestPointsTableInput';
 export * from './aiSuggestPointsTableOutput';
@@ -190,6 +192,8 @@ export * from './riderOrganization';
 export * from './riderRecentResult';
 export * from './riderResultInput';
 export * from './riderSeriesEntry';
+export * from './riderTransponder';
+export * from './riderTransponderKind';
 export * from './riderUpdate';
 export * from './series';
 export * from './seriesEventBreakdown';

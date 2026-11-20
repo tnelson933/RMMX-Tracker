@@ -34,6 +34,8 @@ export interface PrefillRider {
   mylapsTransponderId: string | null;
   rfidNumber: string | null;
   avatarUrl?: string | null;
+  /** Every RM TrackR the rider owns (rider_transponders, oldest first), lower-case. */
+  trackrNumbers?: string[];
 }
 
 export interface PrefillEntry {
@@ -84,6 +86,8 @@ export interface RegistrationPrefill {
   sponsors: string;
   /** The rider's own RM TrackR (never a rental), as stored (lower-case). */
   transponderNumber: string;
+  /** All the rider's own RM TrackRs to choose from (they may own one per bike), lower-case; includes transponderNumber. */
+  transponderOptions: string[];
   rfidNumber: string;
   statsEmailOptIn: boolean;
   isMinor: boolean;
@@ -170,6 +174,7 @@ export function buildRegistrationPrefill(
     bikeYear: first(rider.bikeYear, latest("bikeYear")),
     sponsors: first(rider.sponsors, latest("sponsors")),
     transponderNumber: ownTx,
+    transponderOptions: [...new Set([ownTx, ...(rider.trackrNumbers ?? []).map(n => s(n).toLowerCase())].filter(Boolean))],
     rfidNumber: first(rider.rfidNumber, teamGear.map(t => t.rfidNumber).find(v => s(v))),
     statsEmailOptIn: live[0]?.statsEmailOptIn ?? false,
     isMinor: age != null && age < 18,

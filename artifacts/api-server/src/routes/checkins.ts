@@ -5,6 +5,7 @@ import { eq, and, ne, asc, isNull } from "drizzle-orm";
 import { fulfillRmTrackr } from "../lib/rmTrackr";
 import { splitRegistrationTag } from "../lib/eventTimingTags";
 import { paidAddonsByRegistration } from "../lib/addonPayments";
+import { addRiderTransponderIfFree, listTranspondersForRiders } from "../lib/riderTransponders";
 
 const router = Router();
 
@@ -120,6 +121,8 @@ router.get("/events/:eventId/checkins", async (req, res) => {
     teamByRider.set(riderId, entry);
   }
 
+  // Every RM TrackR / sticker each rider owns (any of them times them), offered at check-in.
+  const ownedByRider = await listTranspondersForRiders([...new Set(regs.map(r => r.riderId))]);
   return res.json(regs.map(r => {
     const c = checkinByRider.get(r.riderId);
     const riderEmail = r.email?.toLowerCase() ?? null;
@@ -161,6 +164,7 @@ router.get("/events/:eventId/checkins", async (req, res) => {
       transponderNumber,
       rfidTag,
       numbersFlaggedAt: flaggedByRider.get(r.riderId)?.toISOString() ?? null,
+      ownedTransponders: (ownedByRider.get(r.riderId) ?? []).map(t => ({ number: t.number, kind: t.kind, label: t.label })),
       waiverSigned: signedRiders.has(r.riderId)
         || (!!riderEmail && signedEmails.has(riderEmail))
         || signedMinors.has(normName(`${r.firstName ?? ""} ${r.lastName ?? ""}`)),
@@ -250,7 +254,7 @@ router.post("/events/:eventId/checkins", async (req, res) => {
     // transponder: only a sticker goes on the profile's RFID field.
     const isTransponder = regs.some(r => r.myLapsTransponderNumber?.trim().toLowerCase() === String(rfidNumber).trim().toLowerCase());
     if (isTransponder) await fulfillRmTrackr(eventId, checkin.riderId, rfidNumber);
-    else await db.update(ridersTable).set({ rfidNumber }).where(eq(ridersTable.id, checkin.riderId));
+    else await addRiderTransponderIfFree(checkin.riderId, String(rfidNumber), "rfid");
   }
 
   // Auto-slot rider into pre-generated lineup slots (created via useRegistrations).

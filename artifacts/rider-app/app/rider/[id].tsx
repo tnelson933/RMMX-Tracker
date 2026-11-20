@@ -1,6 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { RacerProfileSettings } from "@/components/RacerProfileSettings";
 import { ProfileManagers } from "@/components/ProfileManagers";
+import { RiderTransponders } from "@/components/RiderTransponders";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
@@ -948,6 +949,8 @@ export default function RiderDetailScreen() {
           </View>
 
           {/* ── Who can manage this profile (moved from Career stats) ───── */}
+          {/* Timing numbers: every RM TrackR / sticker the rider owns (one per bike). */}
+          {!editing && <RiderTransponders riderId={rider.id} riderFetch={riderFetch} fallback={{ trackr: rider.myLapsTransponderNumber ?? null, rfid: rider.rfidNumber ?? null }} />}
           {!editing && <ProfileManagers riderId={rider.id} riderFetch={riderFetch} />}
 
           {/* ── Personal Info ─────────────────────────────────────────────── */}
@@ -1205,34 +1208,6 @@ export default function RiderDetailScreen() {
                 />
               }
             />
-
-            {/* Timing numbers: read only. Organizers change them (the API refuses rider changes). RM TrackR first. */}
-            <View style={s.fieldRow}>
-              <Text style={s.fieldLabel}>RM TrackR Transponder #</Text>
-              {rider.myLapsTransponderNumber ? (
-                <Text style={[s.fieldValue, { fontVariant: ["tabular-nums"] }]} testID="rmtrackr-number">
-                  {rider.myLapsTransponderNumber}
-                </Text>
-              ) : (
-                <Text style={s.fieldEmpty}>None on file</Text>
-              )}
-            </View>
-            <View style={s.fieldRow}>
-              <Text style={s.fieldLabel}>RFID Sticker #</Text>
-              {rider.rfidNumber ? (
-                <Text style={[s.fieldValue, { fontVariant: ["tabular-nums"] }]} testID="rfid-number">
-                  {rider.rfidNumber}
-                </Text>
-              ) : (
-                <Text style={s.fieldEmpty}>None on file</Text>
-              )}
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 }}>
-                <Feather name="lock" size={12} color={colors.mutedForeground} />
-                <Text style={{ flex: 1, fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
-                  Only the organizer can change these. If one is wrong, see the check-in booth.
-                </Text>
-              </View>
-            </View>
 
             {/* Sponsors */}
             <View style={s.fieldRowLast}>

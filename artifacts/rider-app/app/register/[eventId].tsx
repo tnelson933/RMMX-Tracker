@@ -888,6 +888,11 @@ export default function RegisterScreen() {
     </>
   );
 
+  // The rider's own RM TrackRs (they may own one per bike), from the prefill.
+  // (Plain value, not a hook: this runs after the screen's early returns.)
+  const ownTransponders = [...new Set((choices?.find(c => c.riderId === activeRiderId)?.transponderOptions ?? [])
+    .map(n => (normalizeTransponder(n) ?? "").toUpperCase()).filter(Boolean))];
+
   const gearStep = () => {
     const rfidFee = Number(info.rfidStickerFee ?? 0);
     return (
@@ -896,6 +901,22 @@ export default function RegisterScreen() {
           <Card colors={colors} title="Transponder">
             {info.requireTransponder ? <Text style={[s.note, { marginBottom: 10 }]}>This event needs a transponder.</Text> : null}
             {gearChoices(f.trackrChoice, c => set("trackrChoice", c), f.transponder, v => set("transponder", v), "My")}
+            {f.trackrChoice === "own" && ownTransponders.length > 1 ? (
+              <View style={{ gap: 6, marginTop: 4 }} accessibilityLabel="Your RM TrackRs">
+                <Text style={s.note}>Your RM TrackRs: tap the one on this bike.</Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                  {ownTransponders.map(n => {
+                    const on = f.transponder.trim().toUpperCase() === n;
+                    return (
+                      <Pressable key={n} onPress={() => set("transponder", n)} accessibilityRole="button" accessibilityState={{ selected: on }}
+                        style={{ borderRadius: 999, borderWidth: 2, borderColor: on ? colors.primary : colors.border, backgroundColor: on ? colors.primary : "transparent", paddingHorizontal: 14, paddingVertical: 6 }}>
+                        <Text style={{ color: on ? "#FFFFFF" : colors.foreground, fontVariant: ["tabular-nums"], fontSize: 14 }}>{n}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
           </Card>
         ) : null}
         {info.groupRace ? f.gear.map((g, i) => {

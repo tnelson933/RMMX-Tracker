@@ -28,6 +28,7 @@ import { eventTrackrPrice } from "../lib/sellItems";
 import { addonIsPaid, confirmAddonPayment, parseCashTendered, recordCardAddonPending, recordCashAddon, type AddonItem } from "../lib/addonPayments";
 import { browserAccount, chargeOnReader, embeddedAllowed, checkoutUiParams, clubStripeOf, onClub, onClubOrPlatform, registrationClubStripe, retrievePayment, transferTo, RIDER_APP_PAYMENT, paymentIntentAsPaid, applicationFee, serviceFeeForCharge, serviceFeeLineItem, clubRegistrationFeeCents } from "../lib/stripePayments";
 import { acknowledgementSnapshot, clubWaiverSettings, waiverPdfOf } from "../lib/waiverSettings";
+import { addRiderTransponderIfFree, riderIdForTransponder, TRANSPONDER_TAKEN_FOR_RIDER } from "../lib/riderTransponders";
 
 /** Payment-check failures: an unknown/invalid Stripe session is the caller's error (404), anything else a 500 without Stripe's internals. */
 function sendPaymentCheckError(res: any, err: any) {
@@ -50,15 +51,11 @@ async function autoLinkTransponder(riderId: number, eventId: number, transponder
     throw new Error("Cannot auto-link an invalid active transponder identifier");
   }
 
-  // 1. Store on the rider's permanent profile so it pre-fills next time — only when the
-  //    profile has none. A registration (often anonymous) never replaces a saved
-  //    transponder; profile owners/managers change it through their own profile edit.
-  await db.update(ridersTable)
-    .set({ mylapsTransponderId: normalized })
-    .where(and(
-      eq(ridersTable.id, riderId),
-      or(isNull(ridersTable.mylapsTransponderId), eq(ridersTable.mylapsTransponderId, "")),
-    ));
+  // 1. Add it to the rider's transponders (a rider may own several, one per bike)
+  //    so it pre-fills and times them next time. A registration (often anonymous)
+  //    never removes or replaces a saved transponder, and never takes a number
+  //    another rider owns: the registration still times this rider at this event.
+  await addRiderTransponderIfFree(riderId, normalized, "trackr");
 
   // 2. Mark the check-in row as transponder-linked
   await db.update(checkinsTable)
@@ -500,15 +497,20 @@ router.post("/events/:eventId/registrations", async (req, res) => {
     if ("error" in resolution) return res.status(resolution.status).json({ error: resolution.error });
     const profileFields = submittedRiderProfile(req.body, normalizedTransponderNumber);
     if (resolution.rider) {
-      if (Object.keys(profileFields).length > 0) {
+      // A rider may own several transponders: a new number joins their list
+      // instead of replacing the saved one.
+      const fieldsToSave = keepSavedTimingNumbers(resolution.rider, profileFields);
+      if (Object.keys(fieldsToSave).length > 0) {
         const [updated] = await db.update(ridersTable)
-          .set(profileFields)
+          .set(fieldsToSave)
           .where(eq(ridersTable.id, resolution.rider.id))
           .returning();
         rider = updated;
       } else {
         rider = resolution.rider;
       }
+      if (profileFields.mylapsTransponderId) await addRiderTransponderIfFree(rider.id, profileFields.mylapsTransponderId, "trackr");
+      if (profileFields.rfidNumber) await addRiderTransponderIfFree(rider.id, profileFields.rfidNumber, "rfid");
       resolvedRiderId = rider.id;
     } else {
       if (!firstName || !lastName) {
@@ -1680,6 +1682,15 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     return res.status(riderResolution.status).json({ error: riderResolution.error });
   }
   const resolvedExistingRider = riderResolution.rider;
+
+  // A transponder is assigned to one rider at a time: a rider registering with
+  // their own number can't use one that's on someone else's profile.
+  if (normalizedTransponderNumber && !rentTransponder) {
+    const owner = await riderIdForTransponder(normalizedTransponderNumber);
+    if (owner != null && owner !== resolvedExistingRider?.id) {
+      return res.status(409).json({ error: TRANSPONDER_TAKEN_FOR_RIDER });
+    }
+  }
 
   // One entry per rider per class. An earlier checkout the rider never finished
   // is cleared so they can register again, unless Stripe says it was paid.

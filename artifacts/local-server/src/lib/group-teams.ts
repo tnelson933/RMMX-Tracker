@@ -71,8 +71,10 @@ export function teamTagRider(tag: string, eventId: number): number | null {
   const row = getDb().prepare(`SELECT r.rider_id FROM team_members tm
       JOIN registrations r ON r.id = tm.registration_id
      WHERE tm.event_id = ? AND r.status != 'void'
-       AND (tm.rfid_number = ? COLLATE NOCASE OR tm.trackr_number = ? COLLATE NOCASE)
-     LIMIT 1`).get(eventId, t, t) as { rider_id: number } | undefined;
+       AND (tm.rfid_number = ? COLLATE NOCASE OR tm.trackr_number = ? COLLATE NOCASE
+            -- Any other transponder on a linked member's own profile (one per bike).
+            OR tm.rider_id IN (SELECT rider_id FROM rider_transponders WHERE transponder_number = lower(?)))
+     LIMIT 1`).get(eventId, t, t, t) as { rider_id: number } | undefined;
   return row?.rider_id ?? null;
 }
 

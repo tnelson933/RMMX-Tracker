@@ -1009,6 +1009,15 @@ export const ListRidersResponseItem = zod.object({
   "clubIdNumber": zod.string().nullish().describe('Most recent club membership ID from the rider\'s registrations'),
   "skillLevel": zod.string().nullish(),
   "raceTypes": zod.array(zod.string()).optional().describe('Race disciplines the rider competes in (e.g. Motocross, Supercross, Desert)'),
+  "transponders": zod.array(zod.object({
+  "id": zod.number(),
+  "number": zod.string().describe('As printed (upper-case). Matched case-insensitively.'),
+  "kind": zod.enum(['trackr', 'rfid']).describe('trackr = RM TrackR (active transponder); rfid = RFID sticker'),
+  "kindName": zod.string().describe('RM TrackR or RFID sticker'),
+  "label": zod.string().nullish().describe('Optional note, e.g. the bike it\'s on'),
+  "primary": zod.boolean().describe('The oldest of its kind, shown in the single-number fields'),
+  "createdAt": zod.string().nullish()
+})).optional().describe('Every RM TrackR \/ RFID sticker the rider owns, oldest first. mylapsTransponderId \/ rfidNumber are each kind\'s primary (oldest) one.'),
   "createdAt": zod.string().optional()
 })
 export const ListRidersResponse = zod.array(ListRidersResponseItem)
@@ -1086,6 +1095,15 @@ export const GetRiderResponse = zod.object({
 })).optional().describe('Completed motos from the caller\'s club events (all clubs for super admins), newest event first.'),
   "totalEvents": zod.number().optional().describe('Distinct events the rider registered for (caller\'s club only).'),
   "clubIdNumber": zod.string().nullish().describe('Club ID'),
+  "transponders": zod.array(zod.object({
+  "id": zod.number(),
+  "number": zod.string().describe('As printed (upper-case). Matched case-insensitively.'),
+  "kind": zod.enum(['trackr', 'rfid']).describe('trackr = RM TrackR (active transponder); rfid = RFID sticker'),
+  "kindName": zod.string().describe('RM TrackR or RFID sticker'),
+  "label": zod.string().nullish().describe('Optional note, e.g. the bike it\'s on'),
+  "primary": zod.boolean().describe('The oldest of its kind, shown in the single-number fields'),
+  "createdAt": zod.string().nullish()
+})).optional().describe('Every RM TrackR \/ RFID sticker the rider owns, oldest first.'),
   "createdAt": zod.string().optional()
 })
 
@@ -1141,8 +1159,81 @@ export const UpdateRiderResponse = zod.object({
   "clubIdNumber": zod.string().nullish().describe('Most recent club membership ID from the rider\'s registrations'),
   "skillLevel": zod.string().nullish(),
   "raceTypes": zod.array(zod.string()).optional().describe('Race disciplines the rider competes in (e.g. Motocross, Supercross, Desert)'),
+  "transponders": zod.array(zod.object({
+  "id": zod.number(),
+  "number": zod.string().describe('As printed (upper-case). Matched case-insensitively.'),
+  "kind": zod.enum(['trackr', 'rfid']).describe('trackr = RM TrackR (active transponder); rfid = RFID sticker'),
+  "kindName": zod.string().describe('RM TrackR or RFID sticker'),
+  "label": zod.string().nullish().describe('Optional note, e.g. the bike it\'s on'),
+  "primary": zod.boolean().describe('The oldest of its kind, shown in the single-number fields'),
+  "createdAt": zod.string().nullish()
+})).optional().describe('Every RM TrackR \/ RFID sticker the rider owns, oldest first. mylapsTransponderId \/ rfidNumber are each kind\'s primary (oldest) one.'),
   "createdAt": zod.string().optional()
 })
+
+
+/**
+ * @summary Every RM TrackR / RFID sticker the rider owns (any of them times the rider)
+ */
+export const ListRiderTranspondersParams = zod.object({
+  "riderId": zod.coerce.number()
+})
+
+export const ListRiderTranspondersResponseItem = zod.object({
+  "id": zod.number(),
+  "number": zod.string().describe('As printed (upper-case). Matched case-insensitively.'),
+  "kind": zod.enum(['trackr', 'rfid']).describe('trackr = RM TrackR (active transponder); rfid = RFID sticker'),
+  "kindName": zod.string().describe('RM TrackR or RFID sticker'),
+  "label": zod.string().nullish().describe('Optional note, e.g. the bike it\'s on'),
+  "primary": zod.boolean().describe('The oldest of its kind, shown in the single-number fields'),
+  "createdAt": zod.string().nullish()
+})
+export const ListRiderTranspondersResponse = zod.array(ListRiderTranspondersResponseItem)
+
+
+/**
+ * @summary Add a transponder to the rider (a number belongs to one rider at a time)
+ */
+export const AddRiderTransponderParams = zod.object({
+  "riderId": zod.coerce.number()
+})
+
+export const AddRiderTransponderBody = zod.object({
+  "number": zod.string(),
+  "kind": zod.enum(['trackr', 'rfid']).optional().describe('Defaults to trackr (RM TrackR)'),
+  "label": zod.string().nullish()
+})
+
+export const AddRiderTransponderResponseItem = zod.object({
+  "id": zod.number(),
+  "number": zod.string().describe('As printed (upper-case). Matched case-insensitively.'),
+  "kind": zod.enum(['trackr', 'rfid']).describe('trackr = RM TrackR (active transponder); rfid = RFID sticker'),
+  "kindName": zod.string().describe('RM TrackR or RFID sticker'),
+  "label": zod.string().nullish().describe('Optional note, e.g. the bike it\'s on'),
+  "primary": zod.boolean().describe('The oldest of its kind, shown in the single-number fields'),
+  "createdAt": zod.string().nullish()
+})
+export const AddRiderTransponderResponse = zod.array(AddRiderTransponderResponseItem)
+
+
+/**
+ * @summary Remove one of the rider's transponders
+ */
+export const RemoveRiderTransponderParams = zod.object({
+  "riderId": zod.coerce.number(),
+  "transponderId": zod.coerce.number()
+})
+
+export const RemoveRiderTransponderResponseItem = zod.object({
+  "id": zod.number(),
+  "number": zod.string().describe('As printed (upper-case). Matched case-insensitively.'),
+  "kind": zod.enum(['trackr', 'rfid']).describe('trackr = RM TrackR (active transponder); rfid = RFID sticker'),
+  "kindName": zod.string().describe('RM TrackR or RFID sticker'),
+  "label": zod.string().nullish().describe('Optional note, e.g. the bike it\'s on'),
+  "primary": zod.boolean().describe('The oldest of its kind, shown in the single-number fields'),
+  "createdAt": zod.string().nullish()
+})
+export const RemoveRiderTransponderResponse = zod.array(RemoveRiderTransponderResponseItem)
 
 
 /**

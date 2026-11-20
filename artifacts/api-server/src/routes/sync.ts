@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { eq, and, sql } from "drizzle-orm";
+import { replaceRiderTransponders, type SyncedTransponder } from "../lib/riderTransponders";
 import { db } from "@workspace/db";
 import { resolveSyncUser } from "../lib/offlineSyncAccess";
 import {
@@ -69,6 +70,8 @@ interface SyncRider {
   bikeYear?: string | null;
   sponsors?: string | null;
   mylapsTransponderId?: string | null;
+  /** The rider's whole transponder list after offline edits (desktop 1.0.129+). */
+  transponders?: SyncedTransponder[];
 }
 
 interface SyncWatermarks {
@@ -121,6 +124,8 @@ router.post("/clubs/:clubId/sync", async (req, res) => {
     registrationsInserted: 0,
     ridersUpdated:         0,
     skipped:               0,
+    /** Transponders the desktop added that another rider already owns (left with them). */
+    transponderConflicts:  [] as Array<{ riderId: number; number: string; ownerRiderId: number }>,
   };
   const riderIdMap: Record<string, number> = {};
 
@@ -183,6 +188,14 @@ router.post("/clubs/:clubId/sync", async (req, res) => {
             .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
             .where(and(eq(registrationsTable.riderId, assertedCloudId), eq(eventsTable.clubId, clubId)));
           cloudId = roster?.id;
+          if (!cloudId) {
+            // A rider the club added itself (Riders tab) who hasn't entered an
+            // event yet is on its roster too (the desktop pulls them); without
+            // this an offline edit made a blank duplicate rider.
+            const [own] = await tx.select({ id: ridersTable.id }).from(ridersTable)
+              .where(and(eq(ridersTable.id, assertedCloudId), eq(ridersTable.clubId, clubId)));
+            cloudId = own?.id;
+          }
         }
       }
 
@@ -208,6 +221,10 @@ router.post("/clubs/:clubId/sync", async (req, res) => {
           ...Object.fromEntries(Object.entries(supplied).filter(([key]) => key !== "firstName" && key !== "lastName")),
         }).returning({ id: ridersTable.id });
         cloudId = created.id;
+      }
+      if (Array.isArray(r.transponders)) {
+        const conflicts = await replaceRiderTransponders(tx as unknown as typeof db, cloudId, r.transponders);
+        for (const c of conflicts) results.transponderConflicts.push({ riderId: cloudId, ...c });
       }
       await tx.insert(offlineRiderIdentitiesTable).values({
         clubId, clientIdentity: r.clientIdentity, riderId: cloudId,

@@ -49,6 +49,8 @@ type ExportRider = {
   amaNumber?: string | null;
   rfidNumber?: string | null;
   mylapsTransponderId?: string | null;
+  /** Every RM TrackR / sticker the rider owns (several per rider). */
+  transponders?: Array<{ number: string; kind: string }>;
   sponsors?: string | null;
   dateOfBirth?: string | null;
   emergencyContact?: string | null;
@@ -57,6 +59,12 @@ type ExportRider = {
 
 type SortKey = "name" | "bib" | "cityState" | "bike" | "ama" | "rfid" | "transponder";
 type SortDir = "asc" | "desc";
+
+/** All of a rider's numbers of one kind (they may own one per bike), falling back to the single field. */
+function numbersOf(r: { transponders?: Array<{ number: string; kind: string }> }, kind: "trackr" | "rfid", fallback: string | null | undefined): string[] {
+  const listed = (r.transponders ?? []).filter((t) => t.kind === kind).map((t) => t.number);
+  return listed.length ? listed : fallback ? [fallback] : [];
+}
 
 function toExportRows(riders: ExportRider[]) {
   return riders.map((r) => ({
@@ -70,8 +78,8 @@ function toExportRows(riders: ExportRider[]) {
     ZIP: r.zip ?? "",
     "Bike Manufacturer": r.bikeManufacturer ?? "",
     "AMA #": r.amaNumber ?? "",
-    "RFID Sticker #": r.rfidNumber ?? "",
-    "RM TrackR Transponder #": r.mylapsTransponderId ?? "",
+    "RFID Sticker #": numbersOf(r, "rfid", r.rfidNumber).join("; "),
+    "RM TrackR Transponder #": numbersOf(r, "trackr", r.mylapsTransponderId).join("; "),
     Sponsors: r.sponsors ?? "",
     Email: r.email ?? "",
     Phone: r.phone ?? "",
@@ -541,7 +549,8 @@ export default function RidersList() {
                       )}
                     </TableCell>
                     <TableCell className="text-center font-mono text-sm">
-                      {(rider as any).mylapsTransponderId || <span className="text-muted-foreground/40">—</span>}
+                      {numbersOf(rider as any, "trackr", (rider as any).mylapsTransponderId).map((n) => <div key={n}>{n}</div>)}
+                      {numbersOf(rider as any, "trackr", (rider as any).mylapsTransponderId).length === 0 && <span className="text-muted-foreground/40">—</span>}
                     </TableCell>
                     <TableCell>
                       <ChevronRight className="text-muted-foreground group-hover:text-primary transition-colors" size={16} />

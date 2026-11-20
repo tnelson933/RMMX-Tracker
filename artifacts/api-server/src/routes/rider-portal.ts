@@ -77,7 +77,8 @@ import { EXPO_PUSH_TOKEN_RE } from "../lib/push";
 import { eventsTimingTags, type TimingTags } from "../lib/eventTimingTags";
 import { ageOn, BIO_MAX, effectiveVisibility, PLATE_COLORS } from "../lib/riderResume";
 import { buildRegistrationPrefill } from "../lib/registrationPrefill";
-import { teamMembersTable } from "@workspace/db";
+import { teamMembersTable, riderTranspondersTable } from "@workspace/db";
+import { addRiderTransponder, listRiderTransponders, listTranspondersForRiders, parseTransponderInput, removeRiderTransponder } from "../lib/riderTransponders";
 
 const router = Router();
 
@@ -164,7 +165,7 @@ async function loadTimingIdentityResolver(
       .orderBy(asc(ridersTable.id))
     : [];
 
-  return buildTimingIdentityResolver(assignmentRows, registrationRows, directRiderRows);
+  return buildTimingIdentityResolver(assignmentRows, registrationRows, directRiderRows, await listedTransponderRows(normalizedIdentifiers));
 }
 
 async function loadClubTimingIdentityResolver(
@@ -247,7 +248,23 @@ async function loadClubTimingIdentityResolver(
       .orderBy(asc(ridersTable.id))
     : [];
 
-  return buildTimingIdentityResolver(assignmentRows, registrationRows, directRiderRows);
+  return buildTimingIdentityResolver(assignmentRows, registrationRows, directRiderRows, await listedTransponderRows(normalizedIdentifiers));
+}
+
+/** Owners of these (normalized) numbers in riders' transponder lists. */
+async function listedTransponderRows(normalizedIdentifiers: string[]) {
+  if (normalizedIdentifiers.length === 0) return [];
+  return db
+    .select({
+      riderId: riderTranspondersTable.riderId,
+      firstName: ridersTable.firstName,
+      lastName: ridersTable.lastName,
+      bibNumber: ridersTable.bibNumber,
+      transponderNumber: riderTranspondersTable.transponderNumber,
+    })
+    .from(riderTranspondersTable)
+    .innerJoin(ridersTable, eq(riderTranspondersTable.riderId, ridersTable.id))
+    .where(inArray(riderTranspondersTable.transponderNumber, normalizedIdentifiers));
 }
 
 export function requireRiderAuth(req: any, res: any, next: any) {
@@ -896,8 +913,9 @@ router.get("/rider/registration-prefill", requireRiderAuth, async (req, res) => 
     .orderBy(desc(teamMembersTable.updatedAt), desc(teamMembersTable.id));
 
   const today = new Date().toISOString().slice(0, 10);
+  const owned = await listTranspondersForRiders(riders.map(r => r.id));
   const list = riders.map(r => buildRegistrationPrefill(
-    r,
+    { ...r, trackrNumbers: (owned.get(r.id) ?? []).filter(t => t.kind === "trackr").map(t => t.number.toLowerCase()) },
     entries.filter(e => e.riderId === r.id),
     team.filter(t => t.riderId === r.id),
     { id: event.id, raceClasses: event.raceClasses ?? null },
@@ -1294,6 +1312,8 @@ router.get("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
     coverUrl: rider.coverUrl ?? null,
     effectiveVisibility: effectiveVisibility(rider, new Date().toISOString().slice(0, 10)),
     isMinor: (() => { const a = ageOn(rider.dateOfBirth, new Date().toISOString().slice(0, 10)); return a != null && a < 18; })(),
+    // Every RM TrackR / RFID sticker this rider owns (e.g. one per bike).
+    transponders: await listRiderTransponders(rider.id),
   });
 });
 
@@ -1435,6 +1455,44 @@ router.patch("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
     // Same as GET: the app replaces its copy of the profile with this reply.
     isMinor: (() => { const a = ageOn(updated.dateOfBirth, new Date().toISOString().slice(0, 10)); return a != null && a < 18; })(),
   });
+});
+
+// ── The rider's transponders (several RM TrackRs / stickers, e.g. one per bike) ──
+// Riders add numbers nobody owns yet and delete their own; a number already on
+// another rider's profile is refused with TRANSPONDER_TAKEN_FOR_RIDER (that user
+// deletes it from their account first).
+// A number on an event entry still times the rider at that event even after
+// it's removed here.
+async function riderTransponderAccess(req: any, res: any): Promise<{ account: any; riderId: number } | null> {
+  const riderId = parseInt(req.params.riderId, 10);
+  if (isNaN(riderId)) { res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." }); return null; }
+  const ownership = await verifyRiderOwnership((req.session as any).riderAccountId, riderId);
+  if (!ownership) { res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." }); return null; }
+  return { account: ownership.account, riderId };
+}
+
+router.get("/rider/profiles/:riderId/transponders", requireRiderAuth, async (req, res) => {
+  const access = await riderTransponderAccess(req, res);
+  if (!access) return;
+  return res.json(await listRiderTransponders(access.riderId));
+});
+
+router.post("/rider/profiles/:riderId/transponders", requireRiderAuth, async (req, res) => {
+  const access = await riderTransponderAccess(req, res);
+  if (!access) return;
+  const input = parseTransponderInput(req.body ?? {});
+  if (!input.ok) return res.status(400).json({ error: input.error });
+  const result = await addRiderTransponder(access.riderId, input, "rider");
+  if (!result.ok) return res.status(409).json({ error: result.error });
+  return res.status(result.created ? 201 : 200).json(result.transponders);
+});
+
+router.delete("/rider/profiles/:riderId/transponders/:transponderId", requireRiderAuth, async (req, res) => {
+  const access = await riderTransponderAccess(req, res);
+  if (!access) return;
+  const remaining = await removeRiderTransponder(access.riderId, Number(req.params.transponderId));
+  if (!remaining) return res.status(404).json({ error: "That transponder isn't on this profile any more. Pull down to refresh." });
+  return res.json(remaining);
 });
 
 // ── Bike garage CRUD ───────────────────────────────────────────────────────

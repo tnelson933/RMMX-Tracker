@@ -3,6 +3,7 @@ import type { Response } from "express";
 import { getDb } from "../db";
 import { rejectForeignBrowserIngest } from "../lib/request-origin";
 import { listPracticeSplits, practiceCourseOf, practiceSectors } from "../lib/sectors";
+import { riderIdForTransponder } from "../lib/rider-transponders";
 
 const router = Router();
 
@@ -232,13 +233,11 @@ export function resolvePracticeRider(
     .get(clubId, tag) as any;
   if (registration) return { riderId: registration.rider_id, riderName: name(registration), bibNumber: registration.bib_number ?? registration.rider_bib ?? null };
 
-  const direct = db
-    .prepare(
-      `SELECT id, first_name, last_name, bib_number FROM riders
-       WHERE rfid_number = ? COLLATE NOCASE OR mylaps_transponder_id = ? COLLATE NOCASE
-       LIMIT 1`,
-    )
-    .get(tag, tag) as any;
+  // Any transponder the rider owns (several RM TrackRs, one per bike), then the old single fields.
+  const ownerId = riderIdForTransponder(db, tag);
+  const direct = ownerId == null ? undefined : db
+    .prepare("SELECT id, first_name, last_name, bib_number FROM riders WHERE id = ?")
+    .get(ownerId) as any;
   if (direct) return { riderId: direct.id, riderName: name(direct), bibNumber: direct.bib_number ?? null };
   return null;
 }

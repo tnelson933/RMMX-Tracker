@@ -5,6 +5,7 @@ import { eq, and, inArray, isNull, isNotNull, asc, or, gt, sql } from "drizzle-o
 import { formatLapTime } from "./timing";
 import { normalizeActiveTransponderIdentifier } from "../lib/riderTimingIdentity";
 import { fulfillRmTrackr } from "../lib/rmTrackr";
+import { addRiderTransponder, addRiderTransponderIfFree } from "../lib/riderTransponders";
 
 const router = Router();
 
@@ -172,10 +173,12 @@ router.post("/rfid", async (req, res) => {
       }
     }
 
-    const [rider] = await db.update(ridersTable)
-      .set({ mylapsTransponderId: activeTransponderNumber })
-      .where(eq(ridersTable.id, numRiderId))
-      .returning();
+    // The rider's own RM TrackRs (they may own several): this one is added to
+    // them. One on another rider's profile stays theirs; for an event the
+    // registration below still times this rider, without an event it's refused.
+    const taken = await addRiderTransponder(numRiderId, { number: activeTransponderNumber, kind: "trackr", label: null }, "organizer");
+    if (!taken.ok && !numEventId) return res.status(409).json({ error: taken.error });
+    const [rider] = await db.select().from(ridersTable).where(eq(ridersTable.id, numRiderId));
 
     if (numEventId) {
       await db.update(registrationsTable)
@@ -250,8 +253,9 @@ router.post("/rfid", async (req, res) => {
     [assignment] = await db.insert(rfidAssignmentsTable).values({ riderId: numRiderId, rfidNumber, eventId: null }).returning();
   }
 
-  // Legacy callers omit assignmentType and retain the passive RFID behavior.
-  await db.update(ridersTable).set({ rfidNumber }).where(eq(ridersTable.id, numRiderId));
+  // Legacy callers omit assignmentType and retain the passive RFID behavior:
+  // the sticker joins the rider's transponders unless another rider owns it.
+  await addRiderTransponderIfFree(numRiderId, String(rfidNumber), "rfid");
 
   // Keep the event's check-in row in step. A sticker never touches the
   // registration's transponder number or an RM TrackR purchase: an event can use

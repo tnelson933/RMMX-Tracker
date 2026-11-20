@@ -50,7 +50,8 @@ export function markRiderFieldsDirty(
   ensureIdentity.run(riderId);
   for (const field of fields) {
     const apiField = apiFieldForColumn.get(field) ?? field;
-    if (RIDER_PROFILE_FIELDS.some(([candidate]) => candidate === apiField)) {
+    // "transponders": the rider's whole transponder list changed (pushed as a list).
+    if (apiField === "transponders" || RIDER_PROFILE_FIELDS.some(([candidate]) => candidate === apiField)) {
       mark.run(riderId, apiField);
     }
   }
@@ -60,6 +61,6 @@ export function markNewRiderDirty(db: Database.Database, riderId: number): void 
   markRiderFieldsDirty(
     db,
     riderId,
-    RIDER_PROFILE_FIELDS.map(([apiField]) => apiField),
+    [...RIDER_PROFILE_FIELDS.map(([apiField]) => apiField), "transponders"],
   );
 }

@@ -10,6 +10,7 @@ import { eventsTimingTags, isoTime, parseJson, quickCheckinRequirements } from "
 import { registrationJson, resolvePurchaseOptions } from "../lib/registration-json";
 import { SCORING_STYLE_MISMATCH, eventMismatchesSeries, seriesIdsInMap, seriesOfEvent } from "../lib/scoringStyle";
 import { rescoreEvents } from "./results";
+import { addRiderTransponderIfFree } from "../lib/rider-transponders";
 
 const router = Router();
 
@@ -725,10 +726,9 @@ router.post("/events/:eventId/registrations", (req, res) => {
     }
   }
   if (normalizedTransponderNumber) {
-    db.prepare(
-      "UPDATE riders SET mylaps_transponder_id = ? WHERE id = ?",
-    ).run(normalizedTransponderNumber, riderId);
-    markRiderFieldsDirty(db, riderId, ["mylapsTransponderId"]);
+    // Joins the rider's transponders (they may own several); never replaces a saved one
+    // or takes one another rider owns (the event entry still times them here).
+    if (addRiderTransponderIfFree(db, Number(riderId), normalizedTransponderNumber, "trackr")) markRiderFieldsDirty(db, riderId, ["transponders"]);
   }
   const rider = db.prepare("SELECT first_name, last_name FROM riders WHERE id = ?").get(riderId) as any;
   const riderName = rider ? `${rider.first_name} ${rider.last_name}` : "";
