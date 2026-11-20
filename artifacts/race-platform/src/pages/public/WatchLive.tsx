@@ -17,6 +17,7 @@ import {
   type SharedAnnouncement,
 } from "@/lib/sharedAnnouncer";
 import { LiveRaceViews, type LeaderboardData } from "./LiveLeaderboard";
+import { RiderLookupHost, RiderLookupName } from "@/components/RiderLookup";
 import { isPlaybackStalled, isVideoQueueOverLimit } from "@/lib/videoPlaybackPolicy";
 import { SideCameraPlayer, getWatchWsUrl, type LiveCamera } from "@/components/SideCameraPlayer";
 
@@ -867,6 +868,7 @@ export default function WatchLive() {
 
   return (
     <div className="min-h-screen bg-black flex flex-col">
+      <RiderLookupHost />
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
         <Link href={resultsUrl} className="flex items-center gap-1.5 text-white/50 hover:text-white text-sm transition-colors">
@@ -914,7 +916,7 @@ export default function WatchLive() {
       <div className="flex flex-1 flex-col overflow-y-auto md:min-h-0 md:flex-row md:overflow-hidden">
 
         {/* ── Left sidebar: current moto + leaderboard ── */}
-        <div className="h-44 w-full shrink-0 border-b border-white/10 flex flex-col overflow-hidden md:h-auto md:w-64 md:border-b-0 md:border-r">
+        <div className="max-h-[50vh] w-full shrink-0 border-b border-white/10 flex flex-col overflow-hidden md:max-h-none md:h-auto md:w-64 md:border-b-0 md:border-r">
           {activeMoto ? (
             <>
               {/* Moto header */}
@@ -997,7 +999,7 @@ export default function WatchLive() {
               )}
 
               {/* Rider rows */}
-              <div className="flex-1 overflow-y-auto">
+              <div className="min-h-0 flex-1 overflow-y-auto">
                 {sseLeaderboard && activeMoto.status === "in_progress" ? (
                   sseLeaderboard.length === 0 ? (
                     <div className="px-3 py-10 text-white/20 text-xs text-center">Waiting for first crossing…</div>
@@ -1016,7 +1018,7 @@ export default function WatchLive() {
                         }`}>
                           {entry.dnf ? "D" : entry.dns ? "—" : entry.position}
                         </span>
-                        <span className="text-white/90 text-xs flex-1 truncate">{entry.riderName}</span>
+                        <span className="text-white/90 text-xs flex-1 truncate"><RiderLookupName riderId={entry.riderId} name={entry.riderName} /></span>
                         <span className="text-white/40 text-[10px] font-mono text-right w-8 shrink-0">{entry.laps}</span>
                         <span className="text-white/20 text-[10px] font-mono text-right w-12 ml-1 shrink-0 tabular-nums">{entry.lastLap ?? "—"}</span>
                       </div>
@@ -1042,7 +1044,7 @@ export default function WatchLive() {
                       }`}>
                         {rider.position}
                       </span>
-                      <span className="text-white/90 text-xs flex-1 truncate">{rider.riderName}</span>
+                      <span className="text-white/90 text-xs flex-1 truncate"><RiderLookupName riderId={rider.riderId} name={rider.riderName} /></span>
                       {rider.bibNumber ? (
                         <span className="text-white/20 text-[10px] shrink-0">#{rider.bibNumber}</span>
                       ) : (

@@ -49,7 +49,7 @@ export function RiderLookupHost() {
           <div className="flex items-center gap-3">
             <RiderAvatar url={data?.avatarUrl} name={target?.name ?? ""} size={56} />
             <div className="min-w-0 text-left">
-              <DialogTitle className="truncate font-heading text-2xl font-extrabold uppercase italic text-white">
+              <DialogTitle className="break-words pr-6 font-heading text-2xl font-extrabold uppercase italic leading-tight text-white">
                 {data?.number ? <span className="mr-2 text-[#A8A8A8]">#{data.number}</span> : null}{data?.name ?? target?.name}
               </DialogTitle>
               <DialogDescription className="text-[14px] text-[#A8A8A8]">{sub || (isLoading ? "Loading…" : "Rider details")}</DialogDescription>
