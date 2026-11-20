@@ -784,6 +784,8 @@ export class SyncEngine {
       for (const { field } of fields) {
         const column = definitions[field];
         if (column) payload[field] = row[column];
+        // The rider's whole transponder list (several RM TrackRs / stickers) after offline edits.
+        if (field === "transponders") payload.transponders = this.localTransponders(localId);
       }
       riders.push(payload);
     }
@@ -1189,6 +1191,7 @@ export class SyncEngine {
       registrations?: Record<string, unknown>[];
       checkins?: Record<string, unknown>[];
       riders?: Record<string, unknown>[];
+      riderTransponders?: Record<string, unknown>[];
       rfidAssignments?: Record<string, unknown>[];
       events?: Record<string, unknown>[];
       motos?: Record<string, unknown>[];
@@ -1270,6 +1273,10 @@ export class SyncEngine {
                      updated_at     = excluded.updated_at`,
             )
             .run(table, now);
+        }
+        // After riders: every transponder each pulled rider owns (cloud 1.0.129+ sends them).
+        if (Array.isArray(data.riderTransponders)) {
+          totalChanged += this.applyPulledTransponders(data.riders ?? [], data.riderTransponders);
         }
         this.pruneEnduroRows(data);
         // Club setup removed on the website (a cloud that sends the rental inventory sends all of it).
@@ -1839,6 +1846,71 @@ export class SyncEngine {
       changed += result.changes;
     }
 
+    return changed;
+  }
+
+  /** A rider's transponder list as the cloud sync takes it. */
+  private localTransponders(localRiderId: number): Array<{ number: string; kind: string; label: string | null }> {
+    if (this.localColumns("rider_transponders").size === 0) return [];
+    return (this.db
+      .prepare("SELECT transponder_number, kind, label FROM rider_transponders WHERE rider_id = ? ORDER BY id")
+      .all(localRiderId) as Array<{ transponder_number: string; kind: string; label: string | null }>)
+      .map((t) => ({ number: t.transponder_number, kind: t.kind, label: t.label ?? null }));
+  }
+
+  /**
+   * Make each pulled rider's transponder list match the cloud's. A rider with
+   * unpushed profile edits keeps its local list until they reach the cloud
+   * (same rule as the riders upsert). A number the cloud now gives this rider
+   * is taken from another local rider only when that rider has no unpushed edits.
+   */
+  private applyPulledTransponders(pulledRiders: Record<string, unknown>[], rows: Record<string, unknown>[]): number {
+    if (this.localColumns("rider_transponders").size === 0) return 0;
+    const norm = (v: unknown) => (typeof v === "string" ? v.trim().toLowerCase() : "");
+    const dirty = new Set(
+      (this.db.prepare("SELECT DISTINCT rider_id FROM _rider_profile_dirty").all() as Array<{ rider_id: number }>).map((r) => r.rider_id),
+    );
+    const localFor = this.db.prepare(
+      "SELECT local_rider_id FROM _rider_cloud_map WHERE cloud_rider_id = ? ORDER BY local_rider_id LIMIT 1",
+    );
+    const exists = this.db.prepare("SELECT 1 FROM riders WHERE id = ?");
+    const current = this.db.prepare("SELECT id, transponder_number, kind, label FROM rider_transponders WHERE rider_id = ?");
+    const remove = this.db.prepare("DELETE FROM rider_transponders WHERE id = ?");
+    const owner = this.db.prepare("SELECT id, rider_id FROM rider_transponders WHERE transponder_number = ?");
+    const insert = this.db.prepare("INSERT OR IGNORE INTO rider_transponders (rider_id, transponder_number, kind, label) VALUES (?, ?, ?, ?)");
+    const relabel = this.db.prepare("UPDATE rider_transponders SET label = ?, kind = ?, updated_at = datetime('now') WHERE id = ?");
+    const byCloudRider = new Map<number, Array<{ number: string; kind: string; label: string | null }>>();
+    for (const r of rows) {
+      const number = norm(r["transponderNumber"]);
+      if (!number) continue;
+      const list = byCloudRider.get(Number(r["riderId"])) ?? [];
+      list.push({ number, kind: r["kind"] === "rfid" ? "rfid" : "trackr", label: typeof r["label"] === "string" ? r["label"] : null });
+      byCloudRider.set(Number(r["riderId"]), list);
+    }
+    let changed = 0;
+    for (const pulled of pulledRiders) {
+      const cloudId = Number(pulled["id"]);
+      if (!cloudId) continue;
+      const localId = (localFor.get(cloudId) as { local_rider_id: number } | undefined)?.local_rider_id ?? cloudId;
+      if (dirty.has(localId) || !exists.get(localId)) continue;
+      const wanted = new Map((byCloudRider.get(cloudId) ?? []).map((t) => [t.number, t]));
+      const have = current.all(localId) as Array<{ id: number; transponder_number: string; kind: string; label: string | null }>;
+      for (const h of have) {
+        const w = wanted.get(h.transponder_number);
+        if (!w) changed += remove.run(h.id).changes;
+        else if (w.label !== h.label || w.kind !== h.kind) changed += relabel.run(w.label, w.kind, h.id).changes;
+      }
+      const haveNumbers = new Set(have.map((h) => h.transponder_number));
+      for (const w of wanted.values()) {
+        if (haveNumbers.has(w.number)) continue;
+        const taken = owner.get(w.number) as { id: number; rider_id: number } | undefined;
+        if (taken && taken.rider_id !== localId) {
+          if (dirty.has(taken.rider_id)) continue;
+          remove.run(taken.id);
+        }
+        changed += insert.run(localId, w.number, w.kind, w.label).changes;
+      }
+    }
     return changed;
   }
 

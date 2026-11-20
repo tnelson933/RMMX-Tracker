@@ -41,6 +41,15 @@ export interface TimingRiderIdentityRow {
   profileActiveTransponderNumber: string | null;
 }
 
+/** One of the transponders a rider owns (rider_transponders). */
+export interface TimingRiderTransponderRow {
+  riderId: number;
+  firstName: string;
+  lastName: string;
+  bibNumber: string | null;
+  transponderNumber: string;
+}
+
 export type TimingIdentityResolver = (
   eventId: number,
   timingIdentifier: string | null | undefined,
@@ -79,6 +88,7 @@ export function buildTimingIdentityResolver(
   assignmentRows: TimingAssignmentIdentityRow[],
   registrationRows: TimingRegistrationIdentityRow[],
   riderRows: TimingRiderIdentityRow[],
+  transponderRows: TimingRiderTransponderRow[] = [],
 ): TimingIdentityResolver {
   const eventAssignmentMaps = new Map<number, Map<string, TimingIdentity>>();
   const eventRegistrationMaps = new Map<number, Map<string, TimingIdentity>>();
@@ -112,6 +122,11 @@ export function buildTimingIdentityResolver(
     );
   }
 
+  // A rider's transponder list (several per rider) is the owner of record for
+  // a number; the single profile fields only fill in numbers nobody lists.
+  for (const row of transponderRows) {
+    setFirst(globalProfileMap, row.transponderNumber, toIdentity(row));
+  }
   for (const row of [...riderRows].sort((a, b) => a.riderId - b.riderId)) {
     const identity = toIdentity(row);
     setFirst(globalProfileMap, row.profileRfidNumber, identity);

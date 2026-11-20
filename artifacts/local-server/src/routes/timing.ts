@@ -9,6 +9,7 @@ import { rejectForeignBrowserIngest } from "../lib/request-origin";
 import { afterMotoCompleted } from "./results";
 import { buildRaceAnalytics, normalizeLapMs, parseTimeToMs, raceTimeRemainingMs } from "../lib/leaderboard-shape";
 import { LIVE_WINDOW_MS, broadcastPracticeBoard, claimUnassignedPracticeReads, resolvePracticeRider } from "./practice";
+import { riderIdForTransponder } from "../lib/rider-transponders";
 import {
   computeMotoSectors,
   isSplitReader,
@@ -375,7 +376,7 @@ function scoringMotoOf(moto: any): ScoringMoto {
 }
 
 /** The rider a tag belongs to for this event (tags compare case-insensitively). */
-function resolveRider(tagNumber: string, eventId: number): number | null {
+export function resolveRider(tagNumber: string, eventId: number): number | null {
   const db = getDb();
   // Group race: any team member's tag is a lap for the team (its captain).
   const teamRider = teamTagRider(tagNumber, eventId);
@@ -388,10 +389,9 @@ function resolveRider(tagNumber: string, eventId: number): number | null {
     .prepare("SELECT rider_id FROM registrations WHERE event_id = ? AND mylaps_transponder_number = ? COLLATE NOCASE ORDER BY id LIMIT 1")
     .get(eventId, tagNumber) as any;
   if (registration?.rider_id) return registration.rider_id;
-  const profile = db
-    .prepare("SELECT id FROM riders WHERE mylaps_transponder_id = ? COLLATE NOCASE OR rfid_number = ? COLLATE NOCASE LIMIT 1")
-    .get(tagNumber, tagNumber) as any;
-  if (profile?.id) return profile.id;
+  // Any transponder the rider owns (several RM TrackRs, one per bike), then the old single fields.
+  const profile = riderIdForTransponder(db, tagNumber);
+  if (profile) return profile;
   // Scanners that send bib numbers instead of tag IDs.
   const bib = db
     .prepare("SELECT rider_id FROM checkins WHERE event_id = ? AND bib_number = ? AND checked_in = 1 LIMIT 1")

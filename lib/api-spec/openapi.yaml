@@ -937,6 +937,89 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Rider"
+        "409":
+          description: The RM TrackR or RFID number is already assigned to another rider (the error names them).
+
+  /riders/{riderId}/transponders:
+    get:
+      operationId: listRiderTransponders
+      tags: [riders]
+      summary: Every RM TrackR / RFID sticker the rider owns (any of them times the rider)
+      parameters:
+        - name: riderId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: The rider's transponders, oldest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RiderTransponder"
+    post:
+      operationId: addRiderTransponder
+      tags: [riders]
+      summary: Add a transponder to the rider (a number belongs to one rider at a time)
+      parameters:
+        - name: riderId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddRiderTransponderInput"
+      responses:
+        "200":
+          description: Already the rider's (label updated); the rider's transponders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RiderTransponder"
+        "201":
+          description: Added; the rider's transponders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RiderTransponder"
+        "409":
+          description: Already assigned to another rider; the error says who
+  /riders/{riderId}/transponders/{transponderId}:
+    delete:
+      operationId: removeRiderTransponder
+      tags: [riders]
+      summary: Remove one of the rider's transponders
+      parameters:
+        - name: riderId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: transponderId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: The rider's remaining transponders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RiderTransponder"
 
   # RIDER DISCOUNT CODES
   /clubs/{clubId}/riders/{riderId}/discount-code:
@@ -4148,8 +4231,51 @@ components:
           items:
             type: string
           description: Race disciplines the rider competes in (e.g. Motocross, Supercross, Desert)
+        transponders:
+          type: array
+          description: Every RM TrackR / RFID sticker the rider owns, oldest first. mylapsTransponderId / rfidNumber are each kind's primary (oldest) one.
+          items:
+            $ref: "#/components/schemas/RiderTransponder"
         createdAt:
           type: string
+
+    RiderTransponder:
+      type: object
+      required: [id, number, kind, kindName, primary]
+      properties:
+        id:
+          type: integer
+        number:
+          type: string
+          description: As printed (upper-case). Matched case-insensitively.
+        kind:
+          type: string
+          enum: [trackr, rfid]
+          description: trackr = RM TrackR (active transponder); rfid = RFID sticker
+        kindName:
+          type: string
+          description: RM TrackR or RFID sticker
+        label:
+          type: ["string", "null"]
+          description: Optional note, e.g. the bike it's on
+        primary:
+          type: boolean
+          description: The oldest of its kind, shown in the single-number fields
+        createdAt:
+          type: ["string", "null"]
+
+    AddRiderTransponderInput:
+      type: object
+      required: [number]
+      properties:
+        number:
+          type: string
+        kind:
+          type: string
+          enum: [trackr, rfid]
+          description: Defaults to trackr (RM TrackR)
+        label:
+          type: ["string", "null"]
 
     RiderDetail:
       type: object
@@ -4209,6 +4335,11 @@ components:
         clubIdNumber:
           type: ["string", "null"]
           description: Club ID # from the rider's latest registration at the caller's club.
+        transponders:
+          type: array
+          description: Every RM TrackR / RFID sticker the rider owns, oldest first.
+          items:
+            $ref: "#/components/schemas/RiderTransponder"
         createdAt:
           type: string
 

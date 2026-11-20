@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { RiderRecentResult } from './riderRecentResult';
+import type { RiderTransponder } from './riderTransponder';
 
 export interface RiderDetail {
   id: number;
@@ -54,5 +55,7 @@ export interface RiderDetail {
      * @nullable
      */
   clubIdNumber?: string | null;
+  /** Every RM TrackR / RFID sticker the rider owns, oldest first. */
+  transponders?: RiderTransponder[];
   createdAt?: string;
 }

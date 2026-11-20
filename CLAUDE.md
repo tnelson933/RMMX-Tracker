@@ -109,5 +109,7 @@ development only. All commands run from the repo root (`RM-Tracker/`).
   `./node_modules/.bin/tsx --test ../artifacts/api-server/src/lib/*.test.ts ../artifacts/race-platform/src/lib/*.test.ts`.
   59/61 pass on Windows. The two `videoRelay` timing tests fail, and the run doesn't exit
   on its own (open handles). Connector tests (`node test.mjs`) pass.
+  Set `DATABASE_URL` to the local database first: several lib tests import `@workspace/db`.
+  Offline server tests (SQLite, run under Electron as Node): `node scripts/test-local-server.mjs`.
 - The package `dev`/`start`/`test:browser` scripts are POSIX/Replit-specific. Use the
   root `dev:*` scripts here and leave the originals as they are for Replit.

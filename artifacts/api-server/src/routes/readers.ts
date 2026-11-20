@@ -6,6 +6,7 @@ import { randomUUID } from "crypto";
 import { disconnectReaderConnectors, getConnectorStatus, sendConnectorCommand, sendReaderConnectorCommand } from "../lib/connectorRelay";
 import { forgetReaderToken } from "../lib/ingestAuth";
 import { getRecentTags, clearRecentTags } from "../lib/recentTags";
+import { riderIdsForTransponders } from "../lib/riderTransponders";
 
 const router = Router();
 export const normalizeReaderType = (type: unknown) =>
@@ -54,28 +55,22 @@ router.get("/readers/recent-tags", async (req, res) => {
   const tags = getRecentTags(clubId);
   if (tags.length === 0) return res.json([]);
 
-  // Match passive RFID and F2000 active-transponder identifiers. Scope riders
-  // through registrations for this club because riders themselves are global.
-  const tagMatches = tags.flatMap((tag) => [
-    ilike(ridersTable.rfidNumber, tag.rfidNumber),
-    ilike(ridersTable.mylapsTransponderId, tag.rfidNumber),
-  ]);
-  const riders = await db
-    .select({
-      id: ridersTable.id,
-      firstName: ridersTable.firstName,
-      lastName: ridersTable.lastName,
-      rfidNumber: ridersTable.rfidNumber,
-      mylapsTransponderId: ridersTable.mylapsTransponderId,
-    })
+  // Owners of the tags: any transponder on a rider's profile (several RM TrackRs
+  // or stickers per rider), then the old single fields. Scope riders through
+  // registrations for this club because riders themselves are global.
+  const owners = await riderIdsForTransponders(tags.map((t) => t.rfidNumber));
+  const ownerIds = [...new Set(owners.values())];
+  const riders = ownerIds.length === 0 ? [] : await db
+    .selectDistinct({ id: ridersTable.id, firstName: ridersTable.firstName, lastName: ridersTable.lastName })
     .from(ridersTable)
     .innerJoin(registrationsTable, eq(registrationsTable.riderId, ridersTable.id))
     .innerJoin(eventsTable, eq(eventsTable.id, registrationsTable.eventId))
-    .where(and(eq(eventsTable.clubId, clubId), or(...tagMatches)));
+    .where(and(eq(eventsTable.clubId, clubId), inArray(ridersTable.id, ownerIds)));
+  const riderById = new Map(riders.map((r) => [r.id, r]));
   const byTag = new Map<string, (typeof riders)[number]>();
-  for (const rider of riders) {
-    if (rider.rfidNumber) byTag.set(rider.rfidNumber.toUpperCase(), rider);
-    if (rider.mylapsTransponderId) byTag.set(rider.mylapsTransponderId.toUpperCase(), rider);
+  for (const [number, riderId] of owners) {
+    const rider = riderById.get(riderId);
+    if (rider) byTag.set(number.toUpperCase(), rider);
   }
 
   return res.json(tags.map((t) => {

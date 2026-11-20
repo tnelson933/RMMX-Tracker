@@ -5,6 +5,7 @@ import { resolveRegistrationRider } from "../registration-rider";
 import { markRiderFieldsDirty } from "../rider-profile-dirty";
 import { registrationJson } from "../lib/registration-json";
 import { maskDateOfBirth, maskName, maskPhone, maskStreet, maskZip } from "../lib/privacyMask";
+import { addRiderTransponderIfFree } from "../lib/rider-transponders";
 
 const router = Router();
 
@@ -149,10 +150,9 @@ router.post("/events/:eventId/registrations", (req, res) => {
 
   const regId = regResult.lastInsertRowid as number;
   if (normalizedTransponderNumber) {
-    db.prepare(
-      "UPDATE riders SET mylaps_transponder_id = ? WHERE id = ?",
-    ).run(normalizedTransponderNumber, riderId);
-    markRiderFieldsDirty(db, riderId, ["mylapsTransponderId"]);
+    // Joins the rider's transponders (they may own several); never replaces a saved one
+    // or takes one another rider owns (the event entry still times them here).
+    if (addRiderTransponderIfFree(db, Number(riderId), normalizedTransponderNumber, "trackr")) markRiderFieldsDirty(db, riderId, ["transponders"]);
   }
 
   // Auto-create checkin for confirmed registrations
@@ -298,10 +298,9 @@ router.patch("/registrations/:registrationId", (req, res) => {
       .run(raceClass, before.event_id, cascadeRiderId, before.race_class);
   }
   if (normalizedTransponderNumber) {
-    db.prepare(
-      "UPDATE riders SET mylaps_transponder_id = ? WHERE id = ?",
-    ).run(normalizedTransponderNumber, updated.rider_id);
-    markRiderFieldsDirty(db, Number(updated.rider_id), ["mylapsTransponderId"]);
+    // Joins the rider's transponders (they may own several); never replaces a saved one
+    // or takes one another rider owns (the event entry still times them here).
+    if (addRiderTransponderIfFree(db, Number(updated.rider_id), normalizedTransponderNumber, "trackr")) markRiderFieldsDirty(db, Number(updated.rider_id), ["transponders"]);
   }
 
   // Create a checkin record if the registration is now confirmed and one doesn't exist yet

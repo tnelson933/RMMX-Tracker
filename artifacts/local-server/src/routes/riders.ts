@@ -3,11 +3,34 @@ import { normalizeActiveTransponderIdentifier } from "@workspace/api-zod";
 import { getDb } from "../db";
 import { isoTime, parseJson } from "../lib/cloud-shape";
 import { markNewRiderDirty, markRiderFieldsDirty } from "../rider-profile-dirty";
+import {
+  addRiderTransponder,
+  listRiderTransponders,
+  listTranspondersForRiders,
+  parseTransponderInput,
+  removeRiderTransponder,
+  riderIdForTransponder,
+  TRANSPONDER_KIND_NAMES,
+  type TransponderKind,
+} from "../lib/rider-transponders";
 
 const router = Router();
 
-function serializeRider(r: any) {
+/** A profile number another rider already owns, as the message to show; null when free. */
+function profileNumberTaken(db: ReturnType<typeof getDb>, riderId: number | null, number: unknown, kind: TransponderKind): string | null {
+  const n = typeof number === "string" ? number.trim().toLowerCase() : "";
+  if (!n) return null;
+  const owner = riderIdForTransponder(db, n);
+  if (owner == null || owner === riderId) return null;
+  const o = db.prepare("SELECT first_name, last_name FROM riders WHERE id = ?").get(owner) as { first_name: string | null; last_name: string | null } | undefined;
+  const name = o ? [o.first_name, o.last_name].filter(Boolean).join(" ") : "another rider";
+  return `${TRANSPONDER_KIND_NAMES[kind]} ${n.toUpperCase()} is already assigned to ${name} (rider #${owner}). Remove it from their profile first if it changed hands.`;
+}
+
+function serializeRider(r: any, transponders?: unknown[]) {
   return {
+    // Every RM TrackR / sticker the rider owns (several per rider), as the cloud returns it.
+    transponders: transponders ?? listRiderTransponders(getDb(), r.id),
     // Profile fields the website returns, as last pulled from the cloud.
     clubId: r.club_id ?? null,
     skillLevel: r.skill_level ?? null,
@@ -69,7 +92,8 @@ router.get("/riders", (req, res) => {
       .prepare("SELECT * FROM riders ORDER BY last_name ASC, first_name ASC")
       .all() as any[];
   }
-  return res.json(riders.map(serializeRider));
+  const owned = listTranspondersForRiders(db, riders.map((r) => r.id));
+  return res.json(riders.map((r) => serializeRider(r, owned.get(r.id) ?? [])));
 });
 
 // GET /riders/:riderId
@@ -166,6 +190,11 @@ router.post("/riders", (req, res) => {
     });
   }
 
+  const takenTrackr = profileNumberTaken(db, null, normalizedTransponderId, "trackr");
+  if (takenTrackr) return res.status(409).json({ error: takenTrackr });
+  const takenRfid = profileNumberTaken(db, null, rfidNumber, "rfid");
+  if (takenRfid) return res.status(409).json({ error: takenRfid });
+
   const result = db
     .prepare(
       `INSERT INTO riders
@@ -261,6 +290,10 @@ router.patch("/riders/:riderId", (req, res) => {
   if (fields.length === 0) {
     return res.status(400).json({ error: "No fields to update" });
   }
+  const takenTrackr = hasTransponderUpdate ? profileNumberTaken(db, id, normalizedTransponderId, "trackr") : null;
+  if (takenTrackr) return res.status(409).json({ error: takenTrackr });
+  const takenRfid = profileNumberTaken(db, id, req.body.rfidNumber, "rfid");
+  if (takenRfid) return res.status(409).json({ error: takenRfid });
 
   values.push(id);
   db.prepare(`UPDATE riders SET ${fields.join(", ")} WHERE id = ?`).run(
@@ -271,6 +304,47 @@ router.patch("/riders/:riderId", (req, res) => {
   if (!rider) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   markRiderFieldsDirty(db, id, fields.map((field) => field.split(" ")[0]));
   return res.json(serializeRider(rider));
+});
+
+// ── A rider's transponders (several RM TrackRs / RFID stickers, e.g. one per bike) ──
+// Same paths and replies as the cloud. Edits go to the cloud with the next sync.
+function riderForTransponders(req: any, res: any): number | null {
+  if (!req.session?.userId) { res.status(401).json({ error: "You're signed out. Sign in again, then try once more." }); return null; }
+  const id = Number(req.params.riderId);
+  if (!Number.isInteger(id) || id <= 0) { res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." }); return null; }
+  if (!getDb().prepare("SELECT 1 FROM riders WHERE id = ?").get(id)) {
+    res.status(404).json({ error: "That rider couldn't be found. They may have been deleted. Refresh the page and try again." });
+    return null;
+  }
+  return id;
+}
+
+router.get("/riders/:riderId/transponders", (req, res) => {
+  const id = riderForTransponders(req, res);
+  if (id == null) return;
+  return res.json(listRiderTransponders(getDb(), id));
+});
+
+router.post("/riders/:riderId/transponders", (req, res) => {
+  const id = riderForTransponders(req, res);
+  if (id == null) return;
+  const input = parseTransponderInput(req.body ?? {});
+  if (!input.ok) return res.status(400).json({ error: input.error });
+  const db = getDb();
+  const result = addRiderTransponder(db, id, input);
+  if (!result.ok) return res.status(409).json({ error: result.error, ownerRiderId: result.ownerRiderId });
+  markRiderFieldsDirty(db, id, ["transponders"]);
+  return res.status(result.created ? 201 : 200).json(result.transponders);
+});
+
+router.delete("/riders/:riderId/transponders/:transponderId", (req, res) => {
+  const id = riderForTransponders(req, res);
+  if (id == null) return;
+  const db = getDb();
+  const remaining = removeRiderTransponder(db, id, Number(req.params.transponderId));
+  if (!remaining) return res.status(404).json({ error: "That transponder isn't on this rider's profile any more. Refresh the page." });
+  markRiderFieldsDirty(db, id, ["transponders"]);
+  return res.json(remaining);
 });
 
 export default router;

@@ -393,6 +393,8 @@ interface RiderPrefill {
   bibNumber: string; amaNumber: string; clubIdNumber: string;
   bikeBrand: string; bikeModel: string; bikeYear: string; sponsors: string;
   transponderNumber: string; rfidNumber: string; statsEmailOptIn: boolean;
+  /** All the rider's own RM TrackRs (one per bike), lower-case. Older servers omit it. */
+  transponderOptions?: string[];
   isMinor: boolean; usualClasses: string[]; registeredClasses: string[]; hasRaced: boolean;
 }
 
@@ -444,6 +446,8 @@ export default function Register() {
   const { account: riderAccount, isLoading: riderAuthLoading } = useRiderAuth();
   const [myRiders, setMyRiders] = useState<RiderPrefill[] | null>(null);
   const [prefillRiderId, setPrefillRiderId] = useState<number | null>(null);
+  // The signed-in rider's own RM TrackRs, to pick the one on today's bike.
+  const [ownTransponders, setOwnTransponders] = useState<string[]>([]);
   // Landed past finished steps: the review says where the details came from.
   const [jumpedAhead, setJumpedAhead] = useState(false);
   // After "You're in" on the website: a nudge to get the app for quicker registration next time.
@@ -1086,6 +1090,7 @@ export default function Register() {
     lookupRequestRef.current++;
     riderClassesRequestRef.current++;
     const tx = (normalizeActiveTransponderIdentifier(p.transponderNumber) ?? "").toUpperCase();
+    setOwnTransponders((p.transponderOptions ?? []).map(n => (normalizeActiveTransponderIdentifier(n) ?? "").toUpperCase()).filter(Boolean));
     const offered = new Set(event.raceClasses ?? []);
     const classes = p.usualClasses.filter(c => offered.has(c) && !p.registeredClasses.includes(c));
     const values: Partial<RegisterForm> = {
@@ -2259,7 +2264,20 @@ export default function Register() {
                                     }}
                                   />
                                 </FormControl>
-                                <p className="text-xs text-muted-foreground">Enter the number printed on your personal active transponder.</p>
+                                {ownTransponders.length > 1 && !gettingTransponder ? (
+                                  <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Your RM TrackRs">
+                                    <span className="text-xs text-muted-foreground">Your RM TrackRs — pick the one on this bike:</span>
+                                    {ownTransponders.map(n => (
+                                      <Button key={n} type="button" size="sm" variant={(field.value ?? "").toUpperCase() === n ? "default" : "outline"}
+                                        className="h-7 font-mono text-xs" aria-pressed={(field.value ?? "").toUpperCase() === n}
+                                        onClick={() => form.setValue("myLapsTransponderNumber", n, { shouldDirty: true })}>
+                                        {n}
+                                      </Button>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-muted-foreground">Enter the number printed on your personal active transponder.</p>
+                                )}
                                 <FormMessage />
                               </FormItem>
                             )}

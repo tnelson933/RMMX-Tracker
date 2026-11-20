@@ -147,3 +147,23 @@ test("treats SQL wildcard characters as literal identifier content", () => {
   assert.equal(resolve(10, "%"), null);
   assert.equal(resolve(10, "_"), null);
 });
+test("every transponder a rider owns resolves to them, and the list beats a stale profile field", () => {
+  const resolve = buildTimingIdentityResolver(
+    assignments,
+    registrations,
+    riders,
+    [
+      // Rider 11 owns a second and third RM TrackR (one per bike).
+      { riderId: 11, firstName: "Profile", lastName: "Owner", bibNumber: "11", transponderNumber: "b1ke2" },
+      { riderId: 11, firstName: "Profile", lastName: "Owner", bibNumber: "11", transponderNumber: "b1ke3" },
+      // profile-22 moved to rider 33 (rider 22's single field still says it).
+      { riderId: 33, firstName: "New", lastName: "Owner", bibNumber: "33", transponderNumber: "profile-22" },
+    ],
+  );
+  assert.equal(resolve(10, "1A42006F")?.riderId, 11, "the profile field still times them");
+  assert.equal(resolve(10, "B1KE2")?.riderId, 11);
+  assert.equal(resolve(99, "b1ke3")?.riderId, 11, "at any event");
+  assert.equal(resolve(10, "profile-22")?.riderId, 33);
+  // Event-level matches still come first.
+  assert.equal(resolve(10, "registration-conflict")?.riderId, 22);
+});

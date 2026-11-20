@@ -43,3 +43,4 @@ export * from "./race_gas_credits";
 export * from "./results_notifications";
 export * from "./team_members";
 export * from "./platform_settings";
+export * from "./rider_transponders";

@@ -328,7 +328,27 @@ export interface RiderScheduleResponse {
   events: ScheduleEvent[];
 }
 
+/** One of the RM TrackRs / RFID stickers a rider owns (any of them times them). */
+export interface RiderTransponder {
+  id: number;
+  number: string;
+  kind: "trackr" | "rfid";
+  kindName: string;
+  label: string | null;
+  primary: boolean;
+  createdAt: string | null;
+}
+
 export const riderApi = {
+  transponders: (riderId: number): Promise<RiderTransponder[]> =>
+    apiFetch(`/rider/profiles/${riderId}/transponders`),
+
+  addTransponder: (riderId: number, data: { number: string; kind: "trackr" | "rfid"; label?: string | null }): Promise<RiderTransponder[]> =>
+    apiFetch(`/rider/profiles/${riderId}/transponders`, { method: "POST", body: JSON.stringify(data) }),
+
+  removeTransponder: (riderId: number, transponderId: number): Promise<RiderTransponder[]> =>
+    apiFetch(`/rider/profiles/${riderId}/transponders/${transponderId}`, { method: "DELETE" }),
+
   register: (email: string, password: string): Promise<RiderAccount> =>
     apiFetch("/rider/auth/register", { method: "POST", body: JSON.stringify({ email, password }) }),
 

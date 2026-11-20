@@ -1,4 +1,5 @@
 import { teamTagRider, teamNamesByRider } from "../lib/teams";
+import { riderIdForTransponder } from "../lib/riderTransponders";
 import { Router } from "express";
 import { activePracticeForClub, liveMotoForClub } from "../lib/liveSession";
 import { db } from "@workspace/db";
@@ -905,7 +906,8 @@ export async function completeTimedMotoIfFinished(motoId: number, nowMs = Date.n
 /**
  * The rider a tag belongs to for this event: the event's tag assignment, then
  * (practice motos) any event's assignment, the transponder on this event's
- * registration, then the rider profile. Tags compare case-insensitively.
+ * registration, then any transponder on the rider's profile. Tags compare
+ * case-insensitively.
  */
 export async function resolveCrossingRider(rfidNumber: string, eventId: number, motoType: string): Promise<number | null> {
   const tag = rfidNumber.trim();
@@ -938,12 +940,8 @@ export async function resolveCrossingRider(rfidNumber: string, eventId: number, 
     .limit(1);
   if (registration?.riderId) return registration.riderId;
 
-  const [direct] = await db
-    .select({ id: ridersTable.id })
-    .from(ridersTable)
-    .where(or(ilike(ridersTable.rfidNumber, tag), ilike(ridersTable.mylapsTransponderId, tag)))
-    .limit(1);
-  return direct?.id ?? null;
+  // Any transponder the rider owns (several RM TrackRs, one per bike), then the old single fields.
+  return riderIdForTransponder(tag);
 }
 
 /**

@@ -133,7 +133,9 @@ function RentalTransponderInput({ registrationId, eventId, onDone, currentNumber
   );
 }
 
-function RfidInput({ riderId, eventId, onDone, isActiveTransponder, currentTag }: { riderId: number; eventId: number; onDone: () => void; isActiveTransponder?: boolean; currentTag?: string }) {
+function RfidInput({ riderId, eventId, onDone, isActiveTransponder, currentTag, owned = [] }: { riderId: number; eventId: number; onDone: () => void; isActiveTransponder?: boolean; currentTag?: string; owned?: Array<{ number: string; kind: string; label?: string | null }> }) {
+  // The rider's own numbers of this kind (they may own one per bike), one tap to use at this event.
+  const ownedOfKind = owned.filter((t) => t.kind === (isActiveTransponder ? "trackr" : "rfid"));
   const [value, setValue] = useState(() =>
     isActiveTransponder
       ? normalizeActiveTransponderIdentifier(currentTag) ?? ""
@@ -192,7 +194,13 @@ function RfidInput({ riderId, eventId, onDone, isActiveTransponder, currentTag }
         placeholder={isActiveTransponder ? "Enter transponder number…" : "Scan or type RFID tag…"}
         className="h-9 text-sm font-mono flex-1"
         disabled={assignMutation.isPending}
+        list={ownedOfKind.length ? `owned-${riderId}-${isActiveTransponder ? "trackr" : "rfid"}` : undefined}
       />
+      {ownedOfKind.length > 0 && (
+        <datalist id={`owned-${riderId}-${isActiveTransponder ? "trackr" : "rfid"}`}>
+          {ownedOfKind.map((t) => <option key={t.number} value={t.number}>{t.label ? `On file: ${t.label}` : "On file"}</option>)}
+        </datalist>
+      )}
       <Button size="sm" className="h-9 font-heading uppercase px-3" onClick={submit} disabled={!value.trim() || assignMutation.isPending}>
         Assign
       </Button>
@@ -1238,6 +1246,7 @@ export default function Checkin() {
                           onDone={() => setTagInput(null)}
                           isActiveTransponder={tagInput.kind === "transponder"}
                           currentTag={(tagInput.kind === "transponder" ? held.transponder : held.rfid) ?? undefined}
+                          owned={(checkin as any).ownedTransponders ?? []}
                         />
                       )}
                       {/* Inline rental transponder assignment */}

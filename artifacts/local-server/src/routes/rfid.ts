@@ -4,6 +4,7 @@ import { getDb, parseJsonArr } from "../db";
 import { formatLapTime } from "./timing";
 import { markRiderFieldsDirty } from "../rider-profile-dirty";
 import { fulfillRmTrackr } from "../lib/rm-trackr";
+import { addRiderTransponder, addRiderTransponderIfFree } from "../lib/rider-transponders";
 
 const router = Router();
 
@@ -136,10 +137,16 @@ router.post("/rfid", (req, res) => {
       }
     }
 
-    db.prepare(
-      "UPDATE riders SET mylaps_transponder_id = ? WHERE id = ?",
-    ).run(activeTransponderNumber, numRiderId);
-    markRiderFieldsDirty(db, numRiderId, ["mylapsTransponderId"]);
+    // Joins the rider's transponders (they may own several); never replaces a saved one
+    // or takes one another rider owns (the event entry still times them here).
+    if (!numEventId) {
+      // Straight onto the profile: a number another rider owns is refused, saying whose.
+      const taken = addRiderTransponder(db, numRiderId, { number: activeTransponderNumber, kind: "trackr", label: null });
+      if (!taken.ok) return res.status(409).json({ error: taken.error });
+      if (taken.created) markRiderFieldsDirty(db, numRiderId, ["transponders"]);
+    } else if (addRiderTransponderIfFree(db, Number(numRiderId), activeTransponderNumber, "trackr")) {
+      markRiderFieldsDirty(db, numRiderId, ["transponders"]);
+    }
 
     if (numEventId) {
       db.prepare(
@@ -199,8 +206,9 @@ router.post("/rfid", (req, res) => {
     }
   }
 
-  db.prepare("UPDATE riders SET rfid_number = ? WHERE id = ?").run(rfidNumber, numRiderId);
-  markRiderFieldsDirty(db, numRiderId, ["rfidNumber"]);
+  // Joins the rider's transponders (they may own several); never replaces a saved one
+  // or takes one another rider owns (the event entry still times them here).
+  if (addRiderTransponderIfFree(db, Number(numRiderId), rfidNumber, "rfid")) markRiderFieldsDirty(db, numRiderId, ["transponders"]);
 
   if (numEventId) {
     db.prepare(
@@ -371,8 +379,9 @@ router.post("/rfid/assign", (req, res) => {
     }
   }
 
-  db.prepare("UPDATE riders SET rfid_number = ? WHERE id = ?").run(rfidNumber, numRiderId);
-  markRiderFieldsDirty(db, numRiderId, ["rfidNumber"]);
+  // Joins the rider's transponders (they may own several); never replaces a saved one
+  // or takes one another rider owns (the event entry still times them here).
+  if (addRiderTransponderIfFree(db, Number(numRiderId), rfidNumber, "rfid")) markRiderFieldsDirty(db, numRiderId, ["transponders"]);
   return res.json({ ok: true, riderId: numRiderId, rfidNumber, eventId: numEventId });
 });
 

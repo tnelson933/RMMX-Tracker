@@ -76,3 +76,11 @@ test("a first-time rider gets the profile only", () => {
   assert.equal(p.isMinor, true);
   assert.equal(p.firstName, "Kai");
 });
+
+test("a rider with several RM TrackRs gets them all to pick from, the primary first", () => {
+  const p = buildRegistrationPrefill(rider({ mylapsTransponderId: "AAA1", trackrNumbers: ["aaa1", "bbb2", "ccc3"] }), [], [], event, today);
+  assert.equal(p.transponderNumber, "aaa1");
+  assert.deepEqual(p.transponderOptions, ["aaa1", "bbb2", "ccc3"]);
+  const none = buildRegistrationPrefill(rider(), [], [], event, today);
+  assert.deepEqual(none.transponderOptions, []);
+});

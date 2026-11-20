@@ -23,6 +23,7 @@ import type Stripe from "stripe";
 import { browserAccount, clubStripeOf, onClub, onClubOrPlatform, paymentIntentAsPaid, RIDER_APP_PAYMENT, transferTo, applicationFee, serviceFeeForCharge, SERVICE_FEE_LABEL } from "../lib/stripePayments";
 import { acknowledgementSnapshot, liabilityWaiverSnapshot, waiverPdfOf } from "../lib/waiverSettings";
 import { sendLiabilityWaiverConfirmation } from "../lib/email";
+import { addRiderTransponderIfFree, transponderOnAnotherRider } from "../lib/riderTransponders";
 
 // Lets a rider fix what keeps them from Quick Check-In without staff:
 // pay an unfinished registration, sign the waiver, or add the transponder or
@@ -346,11 +347,7 @@ router.post("/rider/registrations/:regId/waiver", requireRiderAuth, async (req, 
 
 /** True when another rider's profile already carries this transponder/sticker number. */
 async function numberOnAnotherProfile(number: string, riderId: number): Promise<boolean> {
-  const [hit] = await db.select({ id: ridersTable.id }).from(ridersTable).where(and(
-    ne(ridersTable.id, riderId),
-    or(ilike(ridersTable.mylapsTransponderId, number), ilike(ridersTable.rfidNumber, number)),
-  )).limit(1);
-  return !!hit;
+  return transponderOnAnotherRider(number, riderId);
 }
 
 // ── Active timing transponder number ─────────────────────────────────────────
@@ -381,9 +378,8 @@ router.post("/rider/registrations/:regId/transponder", requireRiderAuth, async (
   await db.update(registrationsTable)
     .set({ myLapsTransponderNumber: number })
     .where(and(eq(registrationsTable.riderId, rider.id), eq(registrationsTable.eventId, event.id), ne(registrationsTable.status, "void")));
-  // Fills the profile only when it has none: a saved number is changed by organizers.
-  await db.update(ridersTable).set({ mylapsTransponderId: number })
-    .where(and(eq(ridersTable.id, rider.id), or(isNull(ridersTable.mylapsTransponderId), eq(ridersTable.mylapsTransponderId, ""))));
+  // Added to the rider's transponders (they may own several); saved ones are never replaced here.
+  await addRiderTransponderIfFree(rider.id, number, "trackr");
   return res.json({ ok: true, transponderNumber: number });
 });
 
@@ -414,8 +410,7 @@ router.post("/rider/registrations/:regId/rfid", requireRiderAuth, async (req, re
   }
   if (existing) await db.update(rfidAssignmentsTable).set({ rfidNumber: number }).where(eq(rfidAssignmentsTable.id, existing.id));
   else await db.insert(rfidAssignmentsTable).values({ riderId: rider.id, eventId: event.id, rfidNumber: number });
-  await db.update(ridersTable).set({ rfidNumber: number })
-    .where(and(eq(ridersTable.id, rider.id), or(isNull(ridersTable.rfidNumber), eq(ridersTable.rfidNumber, ""))));
+  await addRiderTransponderIfFree(rider.id, number, "rfid");
   return res.json({ ok: true, rfidNumber: number });
 });
 

@@ -15,6 +15,7 @@ import {
 } from "@workspace/db";
 import { eq, and, desc, asc, ilike, or, inArray, ne, isNull, gt } from "drizzle-orm";
 import { managedRiderIds } from "../lib/riderAccess";
+import { riderIdForTransponder } from "../lib/riderTransponders";
 import type { Response } from "express";
 import { sendConnectorCommand } from "../lib/connectorRelay";
 import { authorizeIngest } from "../lib/ingestAuth";
@@ -262,12 +263,9 @@ export async function resolvePracticeTagRider(
   // rider profile. F2000 values are hexadecimal and may arrive in a different
   // case than organizers entered them, so both identifiers are case-insensitive.
   if (!riderId) {
-    const [directRider] = await db.select().from(ridersTable)
-      .where(or(
-        ilike(ridersTable.rfidNumber, tagNumber),
-        ilike(ridersTable.mylapsTransponderId, tagNumber),
-      ))
-      .limit(1);
+    // Any transponder the rider owns (several RM TrackRs, one per bike).
+    const ownerId = await riderIdForTransponder(tagNumber);
+    const [directRider] = ownerId == null ? [] : await db.select().from(ridersTable).where(eq(ridersTable.id, ownerId));
     if (directRider) {
       riderId = directRider.id;
       riderName = `${directRider.firstName} ${directRider.lastName}`.trim();

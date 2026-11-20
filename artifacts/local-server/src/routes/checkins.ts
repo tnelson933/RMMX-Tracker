@@ -5,6 +5,7 @@ import { isValidActiveTransponderIdentifier } from "@workspace/api-zod";
 import { markRiderFieldsDirty } from "../rider-profile-dirty";
 import { fulfillRmTrackr } from "../lib/rm-trackr";
 import { signedWaiverEmails } from "./waivers";
+import { addRiderTransponderIfFree, listTranspondersForRiders } from "../lib/rider-transponders";
 
 const router = Router();
 
@@ -78,6 +79,8 @@ router.get("/events/:eventId/checkins", (req, res) => {
     stickerByRider.set(a.rider_id, a.rfid_number);
   }
 
+  // Every RM TrackR / sticker each rider owns (any of them times them), offered at check-in.
+  const ownedByRider = listTranspondersForRiders(db, [...new Set(regs.map((r) => Number(r.riderId)))]);
   return res.json(
     regs.map((r) => {
       const c = checkinByRider.get(r.riderId as number);
@@ -121,6 +124,7 @@ router.get("/events/:eventId/checkins", (req, res) => {
         rfidNumber: timingNumber,
         rfidLinked: parseBool(c?.rfid_linked as number) || !!timingNumber,
         numbersFlaggedAt: flaggedByRider.get(r.riderId as number) ?? null,
+        ownedTransponders: (ownedByRider.get(Number(r.riderId)) ?? []).map((t) => ({ number: t.number, kind: t.kind, label: t.label })),
         waiverSigned: riderEmail ? signedEmails.has(riderEmail) : false,
       };
     }),
@@ -224,11 +228,13 @@ router.post("/events/:eventId/checkins", (req, res) => {
   }
 
   if (rfidNumber) {
-    db.prepare("UPDATE riders SET rfid_number = ? WHERE id = ?").run(
-      rfidNumber,
-      Number(riderId),
-    );
-    markRiderFieldsDirty(db, Number(riderId), ["rfidNumber"]);
+    // Joins the rider's transponders (they may own several) unless another rider owns it.
+    const isTransponder = !!db.prepare(
+      "SELECT 1 FROM registrations WHERE event_id = ? AND rider_id = ? AND lower(trim(mylaps_transponder_number)) = lower(trim(?)) LIMIT 1",
+    ).get(eventId, Number(riderId), String(rfidNumber));
+    if (addRiderTransponderIfFree(db, Number(riderId), String(rfidNumber), isTransponder ? "trackr" : "rfid")) {
+      markRiderFieldsDirty(db, Number(riderId), ["transponders"]);
+    }
     fulfillRmTrackr(db, eventId, Number(riderId), rfidNumber);
   }
 

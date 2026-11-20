@@ -5,6 +5,7 @@
  * RM Roost API
  * OpenAPI spec version: 0.1.0
  */
+import type { RiderTransponder } from './riderTransponder';
 
 export interface Rider {
   id: number;
@@ -49,5 +50,7 @@ export interface Rider {
   skillLevel?: string | null;
   /** Race disciplines the rider competes in (e.g. Motocross, Supercross, Desert) */
   raceTypes?: string[];
+  /** Every RM TrackR / RFID sticker the rider owns, oldest first. mylapsTransponderId / rfidNumber are each kind's primary (oldest) one. */
+  transponders?: RiderTransponder[];
   createdAt?: string;
 }

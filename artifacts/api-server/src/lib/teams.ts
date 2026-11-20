@@ -1,5 +1,6 @@
 import { db, teamMembersTable, registrationsTable, rfidAssignmentsTable, ridersTable, lapCrossingsTable } from "@workspace/db";
 import { and, asc, eq, ilike, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
+import { addRiderTransponderIfFree } from "./riderTransponders";
 import { MIN_RIDERS_PER_GROUP } from "./groupRaceSettings";
 import { normalizeActiveTransponderIdentifier } from "./riderTimingIdentity";
 
@@ -220,7 +221,12 @@ export async function teamTagRider(tag: string, eventId: number): Promise<number
     .where(and(
       eq(teamMembersTable.eventId, eventId),
       ne(registrationsTable.status, "void"),
-      or(ilike(teamMembersTable.rfidNumber, t), ilike(teamMembersTable.trackrNumber, t)),
+      or(
+        ilike(teamMembersTable.rfidNumber, t),
+        ilike(teamMembersTable.trackrNumber, t),
+        // Any other transponder on a linked member's own profile (one per bike).
+        sql`${teamMembersTable.riderId} IN (SELECT rider_id FROM rider_transponders WHERE transponder_number = ${t.toLowerCase()})`,
+      ),
     ))
     .limit(1);
   return row?.riderId ?? null;
@@ -307,10 +313,10 @@ export async function saveTeamTags(eventId: number, registrationId: number, capt
 
 /** Save a team member's numbers on their rider profile (only the ones they have). */
 export async function rememberMemberNumbers(riderId: number, rfidNumber: string | null, trackrNumber: string | null): Promise<void> {
-  const set: { rfidNumber?: string; mylapsTransponderId?: string } = {};
-  if (rfidNumber) set.rfidNumber = rfidNumber;
-  if (trackrNumber) set.mylapsTransponderId = trackrNumber;
-  if (Object.keys(set).length) await db.update(ridersTable).set(set).where(eq(ridersTable.id, riderId));
+  // Added to the rider's transponders (they may own several); a number another
+  // rider owns stays theirs, the team entry still times this rider at the event.
+  if (rfidNumber) await addRiderTransponderIfFree(riderId, rfidNumber, "rfid");
+  if (trackrNumber) await addRiderTransponderIfFree(riderId, trackrNumber, "trackr");
 }
 
 export interface TeamLink { eventId: number; captainRiderId: number; registrationId: number; teamName: string | null; memberRiderId: number }

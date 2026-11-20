@@ -17,6 +17,7 @@
  *   time_check     → records an arrival note (split time) against the check
  */
 import { teamTagRider } from "../lib/teams";
+import { riderIdForTransponder } from "../lib/riderTransponders";
 import express, { Router } from "express";
 import { db } from "@workspace/db";
 import {
@@ -95,14 +96,8 @@ async function resolveRider(
 
   // Fall back to permanent RFID sticker or active-transponder identifiers.
   // F2000 hexadecimal values may use a different letter case than the stored ID.
-  const [rider] = await db
-    .select({ id: ridersTable.id })
-    .from(ridersTable)
-    .where(or(
-      ilike(ridersTable.rfidNumber, tagNumber),
-      ilike(ridersTable.mylapsTransponderId, tagNumber),
-    ));
-  return rider?.id ?? null;
+  // A rider may own several (one per bike); any of them times them.
+  return riderIdForTransponder(tagNumber);
 }
 
 /**
