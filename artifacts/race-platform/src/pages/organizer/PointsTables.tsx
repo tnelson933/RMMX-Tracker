@@ -433,7 +433,9 @@ function AiAssistPanel({
 
       setMotoNotes(result.motoNotes ?? null);
       onApply(result);
-      toast({ title: "Form filled from your description ✓", description: "Review and adjust anything below." });
+      // The form switches to "Refine" right away, so the AI's note (a rule that's
+      // automatic or set elsewhere, e.g. Auto DNF) goes in the confirmation.
+      toast({ title: "Form filled from your description ✓", description: result.motoNotes ? `${result.motoNotes} Review and adjust anything below.` : "Review and adjust anything below." });
     } catch (err) {
       toast({ title: "AI couldn't parse that description", description: unavailableMessage(err) ?? "Try adding more detail.", variant: "destructive" });
     }
