@@ -61,7 +61,7 @@ export function RiderTranspondersCard({ riderId }: { riderId: number }) {
       save(await riderApi.removeTransponder(riderId, t.id));
       setConfirmId(null);
     } catch (err) {
-      setError(err instanceof Error && err.message ? err.message : "Couldn't remove it. Please try again.");
+      setError(err instanceof Error && err.message ? err.message : "Couldn't delete it. Please try again.");
     } finally {
       setRemovingId(null);
     }
@@ -74,7 +74,7 @@ export function RiderTranspondersCard({ riderId }: { riderId: number }) {
           <Wifi size={18} /> My Transponders
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Your RM TrackRs and RFID stickers, e.g. one per bike. Any of them times you at races and practice.
+          Your RM TrackRs and RFID stickers, e.g. one per bike. Any of them times you at races and practice. Delete one you no longer have so someone else can add it.
         </p>
       </div>
 
@@ -95,12 +95,12 @@ export function RiderTranspondersCard({ riderId }: { riderId: number }) {
             {confirmId === t.id ? (
               <span className="flex gap-1">
                 <Button size="sm" variant="destructive" disabled={removingId !== null} onClick={() => remove(t)}>
-                  {removingId === t.id ? <Loader2 size={14} className="animate-spin" /> : "Remove"}
+                  {removingId === t.id ? <Loader2 size={14} className="animate-spin" /> : "Delete"}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setConfirmId(null)}>Keep</Button>
               </span>
             ) : (
-              <Button size="icon" variant="ghost" aria-label={`Remove ${t.kindName} ${t.number}`} onClick={() => setConfirmId(t.id)}>
+              <Button size="icon" variant="ghost" aria-label={`Delete ${t.kindName} ${t.number}`} onClick={() => setConfirmId(t.id)}>
                 <Trash2 size={15} />
               </Button>
             )}

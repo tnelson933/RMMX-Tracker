@@ -121,20 +121,18 @@ export type AddTransponderResult =
 
 /**
  * Give a rider a transponder. Adding one they already have only updates its
- * label. A number on another rider's profile is refused with a message that
- * says whose it is (as much as `viewer` may see; see transponderTakenMessage).
+ * label. A number on another rider's profile is refused: organizers are told
+ * whose it is, riders get TRANSPONDER_TAKEN_FOR_RIDER.
  */
 export async function addRiderTransponder(
   riderId: number,
   input: { number: string; kind: TransponderKind; label: string | null },
-  viewer: "organizer" | "manager" | "rider",
-  canSeeOwner?: (ownerRiderId: number) => Promise<boolean>,
+  viewer: "organizer" | "rider",
 ): Promise<AddTransponderResult> {
   const number = normalizeTransponderNumber(input.number)!;
   const owner = await ownerOf(number);
   if (owner && owner.riderId !== riderId) {
-    const level = viewer === "rider" && canSeeOwner && await canSeeOwner(owner.riderId) ? "manager" : viewer;
-    return { ok: false, status: 409, error: transponderTakenMessage(number, input.kind, owner, level), ownerRiderId: owner.riderId };
+    return { ok: false, status: 409, error: transponderTakenMessage(number, input.kind, owner, viewer), ownerRiderId: owner.riderId };
   }
   let created = false;
   if (owner) {

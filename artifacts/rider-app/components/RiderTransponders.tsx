@@ -77,16 +77,16 @@ export function RiderTransponders({
   }, [riderId, riderFetch, number, label, kind, saving]);
 
   const remove = useCallback((t: RiderTransponder) => {
-    Alert.alert(`Remove ${t.kindName} ${t.number}?`, "It won't time you any more. You can add it back later.", [
+    Alert.alert(`Delete ${t.kindName} ${t.number}?`, "It won't time you any more, and someone else can add it. You can add it back later.", [
       { text: "Keep", style: "cancel" },
-      { text: "Remove", style: "destructive", onPress: async () => {
+      { text: "Delete", style: "destructive", onPress: async () => {
         try {
           const r = await riderFetch(`/api/rider/profiles/${riderId}/transponders/${t.id}`, { method: "DELETE" });
           const j = await r.json().catch(() => ({}));
-          if (!r.ok) { Alert.alert("Couldn't remove it", (j as { error?: string }).error ?? `Error ${r.status}`); return; }
+          if (!r.ok) { Alert.alert("Couldn't delete it", (j as { error?: string }).error ?? `Error ${r.status}`); return; }
           setList(j as RiderTransponder[]);
         } catch {
-          Alert.alert("Couldn't remove it", NETWORK_ERROR_MESSAGE);
+          Alert.alert("Couldn't delete it", NETWORK_ERROR_MESSAGE);
         }
       } },
     ]);
@@ -112,7 +112,7 @@ export function RiderTransponders({
   return (
     <View style={card} testID="rider-transponders">
       {title}
-      <Text style={muted}>Your RM TrackRs and RFID stickers, e.g. one per bike. Any of them times you at races and practice.</Text>
+      <Text style={muted}>Your RM TrackRs and RFID stickers, e.g. one per bike. Any of them times you at races and practice. Delete one you no longer have so someone else can add it.</Text>
       {list == null && !loadFailed && <ActivityIndicator color={colors.mutedForeground} />}
       {loadFailed && (
         <Pressable onPress={() => void load()} accessibilityRole="button" hitSlop={8}>
@@ -129,8 +129,8 @@ export function RiderTransponders({
               {t.kindName}{t.label ? ` · ${t.label}` : ""}
             </Text>
           </View>
-          <Pressable onPress={() => remove(t)} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Remove ${t.kindName} ${t.number}`}>
-            <Feather name="x-circle" size={18} color={colors.mutedForeground} />
+          <Pressable onPress={() => remove(t)} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Delete ${t.kindName} ${t.number}`}>
+            <Feather name="trash-2" size={18} color={colors.mutedForeground} />
           </Pressable>
         </View>
       ))}

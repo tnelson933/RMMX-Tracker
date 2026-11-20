@@ -28,7 +28,7 @@ import { eventTrackrPrice } from "../lib/sellItems";
 import { addonIsPaid, confirmAddonPayment, parseCashTendered, recordCardAddonPending, recordCashAddon, type AddonItem } from "../lib/addonPayments";
 import { browserAccount, chargeOnReader, embeddedAllowed, checkoutUiParams, clubStripeOf, onClub, onClubOrPlatform, registrationClubStripe, retrievePayment, transferTo, RIDER_APP_PAYMENT, paymentIntentAsPaid, applicationFee, serviceFeeForCharge, serviceFeeLineItem, clubRegistrationFeeCents } from "../lib/stripePayments";
 import { acknowledgementSnapshot, clubWaiverSettings, waiverPdfOf } from "../lib/waiverSettings";
-import { addRiderTransponderIfFree } from "../lib/riderTransponders";
+import { addRiderTransponderIfFree, riderIdForTransponder, TRANSPONDER_TAKEN_FOR_RIDER } from "../lib/riderTransponders";
 
 /** Payment-check failures: an unknown/invalid Stripe session is the caller's error (404), anything else a 500 without Stripe's internals. */
 function sendPaymentCheckError(res: any, err: any) {
@@ -1682,6 +1682,15 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     return res.status(riderResolution.status).json({ error: riderResolution.error });
   }
   const resolvedExistingRider = riderResolution.rider;
+
+  // A transponder is assigned to one rider at a time: a rider registering with
+  // their own number can't use one that's on someone else's profile.
+  if (normalizedTransponderNumber && !rentTransponder) {
+    const owner = await riderIdForTransponder(normalizedTransponderNumber);
+    if (owner != null && owner !== resolvedExistingRider?.id) {
+      return res.status(409).json({ error: TRANSPONDER_TAKEN_FOR_RIDER });
+    }
+  }
 
   // One entry per rider per class. An earlier checkout the rider never finished
   // is cleared so they can register again, unless Stripe says it was paid.

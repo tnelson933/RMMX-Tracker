@@ -1458,8 +1458,9 @@ router.patch("/rider/profiles/:riderId", requireRiderAuth, async (req, res) => {
 });
 
 // ── The rider's transponders (several RM TrackRs / stickers, e.g. one per bike) ──
-// Riders add numbers nobody owns yet and remove their own; a number already on
-// another rider's profile is refused (only organizers move numbers between riders).
+// Riders add numbers nobody owns yet and delete their own; a number already on
+// another rider's profile is refused with TRANSPONDER_TAKEN_FOR_RIDER (that user
+// deletes it from their account first).
 // A number on an event entry still times the rider at that event even after
 // it's removed here.
 async function riderTransponderAccess(req: any, res: any): Promise<{ account: any; riderId: number } | null> {
@@ -1481,8 +1482,7 @@ router.post("/rider/profiles/:riderId/transponders", requireRiderAuth, async (re
   if (!access) return;
   const input = parseTransponderInput(req.body ?? {});
   if (!input.ok) return res.status(400).json({ error: input.error });
-  const mine = await managedRiderIds(access.account);
-  const result = await addRiderTransponder(access.riderId, input, "rider", async (owner) => mine.includes(owner));
+  const result = await addRiderTransponder(access.riderId, input, "rider");
   if (!result.ok) return res.status(409).json({ error: result.error });
   return res.status(result.created ? 201 : 200).json(result.transponders);
 });

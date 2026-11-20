@@ -23,7 +23,7 @@ import type Stripe from "stripe";
 import { browserAccount, clubStripeOf, onClub, onClubOrPlatform, paymentIntentAsPaid, RIDER_APP_PAYMENT, transferTo, applicationFee, serviceFeeForCharge, SERVICE_FEE_LABEL } from "../lib/stripePayments";
 import { acknowledgementSnapshot, liabilityWaiverSnapshot, waiverPdfOf } from "../lib/waiverSettings";
 import { sendLiabilityWaiverConfirmation } from "../lib/email";
-import { addRiderTransponderIfFree, transponderOnAnotherRider } from "../lib/riderTransponders";
+import { addRiderTransponderIfFree, transponderOnAnotherRider, TRANSPONDER_TAKEN_FOR_RIDER } from "../lib/riderTransponders";
 
 // Lets a rider fix what keeps them from Quick Check-In without staff:
 // pay an unfinished registration, sign the waiver, or add the transponder or
@@ -367,7 +367,7 @@ router.post("/rider/registrations/:regId/transponder", requireRiderAuth, async (
   if (others.length) return res.status(409).json({ error: "That transponder number is already used by another rider at this event. Check the number, or see the organizer." });
   // A number on another rider's profile is theirs at every event.
   if (await numberOnAnotherProfile(number, rider.id)) {
-    return res.status(409).json({ error: "That transponder number belongs to another rider. Check the number, or see the organizer." });
+    return res.status(409).json({ error: TRANSPONDER_TAKEN_FOR_RIDER });
   }
   // This screen only fills in a missing number; changing one goes through the organizer.
   const regs = await riderRegsForEvent(rider.id, event.id);
@@ -399,7 +399,7 @@ router.post("/rider/registrations/:regId/rfid", requireRiderAuth, async (req, re
     return res.status(409).json({ error: "That sticker number is already assigned to another rider at this event. Check the number, or see the organizer." });
   }
   if (await numberOnAnotherProfile(number, rider.id)) {
-    return res.status(409).json({ error: "That sticker number belongs to another rider. Check the number, or see the organizer." });
+    return res.status(409).json({ error: TRANSPONDER_TAKEN_FOR_RIDER });
   }
 
   const [existing] = await db.select({ id: rfidAssignmentsTable.id, rfidNumber: rfidAssignmentsTable.rfidNumber }).from(rfidAssignmentsTable)

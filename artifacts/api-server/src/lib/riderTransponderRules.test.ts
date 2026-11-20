@@ -5,6 +5,7 @@ import {
   parseTransponderInput,
   toTransponderViews,
   transponderTakenMessage,
+  TRANSPONDER_TAKEN_FOR_RIDER,
 } from "./riderTransponderRules";
 
 test("numbers are stored trimmed and lower-case", () => {
@@ -42,17 +43,12 @@ test("organizers are told exactly who has a taken number", () => {
   assert.match(msg, /RM TrackR 1A2B is already assigned to Jane Doe \(rider #12\)/);
 });
 
-test("a rider's own account manager sees the full name", () => {
-  assert.match(transponderTakenMessage("1a2b", "trackr", owner, "manager"), /Jane Doe's profile/);
-});
-
-test("another rider sees a public profile's first name and initial only, and nothing for a private one", () => {
-  const pub = transponderTakenMessage("e200", "rfid", owner, "rider");
-  assert.match(pub, /RFID sticker E200 is already assigned to Jane D\. Check the number/);
-  assert.doesNotMatch(pub, /Doe|#12/);
-  const priv = transponderTakenMessage("e200", "rfid", { ...owner, isPublic: false }, "rider");
-  assert.match(priv, /assigned to another rider/);
-  assert.doesNotMatch(priv, /Jane/);
+test("a rider is told to have the other user delete it, and never who has it", () => {
+  for (const o of [owner, { ...owner, isPublic: false }]) {
+    const msg = transponderTakenMessage("e200", "rfid", o, "rider");
+    assert.equal(msg, "This transponder is already assigned to another user. Please have that user delete this transponder from their account, then it can be assigned to you.");
+    assert.equal(msg, TRANSPONDER_TAKEN_FOR_RIDER);
+  }
 });
 
 test("views are oldest first, upper-case, with the oldest of each kind as primary", () => {

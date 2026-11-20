@@ -46,6 +46,14 @@ export function parseTransponderInput(body: { number?: unknown; transponderNumbe
   return { ok: true, number, kind, label: labelText || null };
 }
 
+/**
+ * What a rider (or their account) is told when they try to give themselves a
+ * transponder that's on someone else's profile (owner's wording, 2026-11-20).
+ * Riders never see whose it is.
+ */
+export const TRANSPONDER_TAKEN_FOR_RIDER =
+  "This transponder is already assigned to another user. Please have that user delete this transponder from their account, then it can be assigned to you.";
+
 export interface TransponderOwner {
   riderId: number;
   firstName: string;
@@ -56,27 +64,21 @@ export interface TransponderOwner {
 
 /**
  * Who a taken number belongs to, for the person trying to add it. Organizers
- * and the owner's own account managers see the full name; another rider sees a
- * public profile's first name and last initial, and nothing for a private
- * profile (under-18 profiles are private by default).
+ * see the full name (they move numbers between riders); riders get
+ * TRANSPONDER_TAKEN_FOR_RIDER and never see who has it.
  */
 export function transponderTakenMessage(
   number: string,
   kind: TransponderKind,
   owner: TransponderOwner,
-  viewer: "organizer" | "manager" | "rider",
+  viewer: "organizer" | "rider",
 ): string {
   const what = `${TRANSPONDER_KIND_NAMES[kind]} ${number.toUpperCase()}`;
-  if (viewer === "organizer" || viewer === "manager") {
+  if (viewer === "organizer") {
     const name = `${owner.firstName} ${owner.lastName}`.trim() || `rider #${owner.riderId}`;
-    return viewer === "organizer"
-      ? `${what} is already assigned to ${name} (rider #${owner.riderId}). Remove it from their profile first if it changed hands.`
-      : `${what} is already on ${name}'s profile. Remove it there first.`;
+    return `${what} is already assigned to ${name} (rider #${owner.riderId}). Remove it from their profile first if it changed hands.`;
   }
-  const who = owner.isPublic && owner.firstName
-    ? `${owner.firstName} ${owner.lastName ? `${owner.lastName.trim()[0]}.` : ""}`.trim()
-    : "another rider";
-  return `${what} is already assigned to ${who}${who.endsWith(".") ? "" : "."} Check the number, or ask the race organizer to move it to you.`;
+  return TRANSPONDER_TAKEN_FOR_RIDER;
 }
 
 export interface RiderTransponderView {
