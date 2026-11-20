@@ -67,7 +67,8 @@ export function GoLiveButton() {
         </View>
         <View style={{ flex: 1 }}>
           <Text style={{ color: "#fff", fontFamily: fonts.display, fontSize: 16, letterSpacing: 0.5 }}>GO LIVE</Text>
-          <Text style={{ color: "rgba(255,255,255,0.85)", fontFamily: fonts.regular, fontSize: 12 }} numberOfLines={1}>
+          {/* Wraps onto a second line on narrow phones instead of cutting off "notification". */}
+          <Text style={{ color: "rgba(255,255,255,0.85)", fontFamily: fonts.regular, fontSize: 12, lineHeight: 16 }}>
             {profiles.length === 1
               ? `Stream ${profiles[0].firstName}'s race. Followers get a notification.`
               : "Stream a race from this phone. Followers get a notification."}
