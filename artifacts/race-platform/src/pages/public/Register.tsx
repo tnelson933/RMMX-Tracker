@@ -25,6 +25,9 @@ import { formatEventDatesFull } from "@/lib/eventDates";
 import { PdfSignedViewer } from "@/components/PdfSignedViewer";
 import { responseErrorMessage } from "@/lib/friendlyErrors";
 import { EmbeddedCardForm } from "@/components/payments/EmbeddedCardForm";
+import { useRiderAuth } from "@/contexts/RiderAuthContext";
+import { GetTheAppCard, GetTheAppDialog } from "@/components/GetTheApp";
+import { shouldShowAppPromo } from "@/lib/appStores";
 
 // ─── PDF Scroll Viewer ───────────────────────────────────────────────────────
 // Renders each PDF page as a canvas inside a scrollable div so scroll-to-bottom
@@ -377,6 +380,22 @@ interface RiderOption {
   detailsHidden?: boolean;
 }
 
+/**
+ * One of the signed-in account's rider profiles with what its form starts with
+ * (GET /api/rider/registration-prefill): the profile, then the rider's latest
+ * entries, and the classes they usually race. Never card details or waiver answers.
+ */
+interface RiderPrefill {
+  riderId: number;
+  firstName: string; lastName: string; email: string; phone: string; dateOfBirth: string;
+  emergencyContact: string; emergencyPhone: string;
+  streetAddress: string; city: string; homeState: string; zip: string;
+  bibNumber: string; amaNumber: string; clubIdNumber: string;
+  bikeBrand: string; bikeModel: string; bikeYear: string; sponsors: string;
+  transponderNumber: string; rfidNumber: string; statsEmailOptIn: boolean;
+  isMinor: boolean; usualClasses: string[]; registeredClasses: string[]; hasRaced: boolean;
+}
+
 /** A partly hidden detail from the lookup: tapping it selects it, so typing replaces it. */
 const selectIfHidden = (e: React.FocusEvent<HTMLInputElement>) => {
   if (e.target.value.includes("*")) e.target.select();
@@ -421,6 +440,14 @@ export default function Register() {
   const lookupRequestRef = useRef(0);
   const riderClassesRequestRef = useRef(0);
   const [alreadyRegisteredClasses, setAlreadyRegisteredClasses] = useState<Set<string>>(new Set());
+  // Signed-in rider: the account's rider profiles, each with its form filled in (null until loaded).
+  const { account: riderAccount, isLoading: riderAuthLoading } = useRiderAuth();
+  const [myRiders, setMyRiders] = useState<RiderPrefill[] | null>(null);
+  const [prefillRiderId, setPrefillRiderId] = useState<number | null>(null);
+  // Landed past finished steps: the review says where the details came from.
+  const [jumpedAhead, setJumpedAhead] = useState(false);
+  // After "You're in" on the website: a nudge to get the app for quicker registration next time.
+  const [appPromoOpen, setAppPromoOpen] = useState(false);
 
   const [compCodeInput, setCompCodeInput] = useState("");
   const [appliedComp, setAppliedComp] = useState<{ code: string; amount: number; discountType: "fixed" | "percentage" } | null>(null);
@@ -662,17 +689,42 @@ export default function Register() {
     return () => sub.unsubscribe();
   }, [form]);
 
-  // Auto-populate form when arriving from the rider app or web portal with ?email=
+  // Arriving from the rider portal with ?email= (a rider on this account): pick that
+  // rider. Signed out, nothing is looked up: riders' details are only filled in for
+  // the account that owns or manages them.
   useEffect(() => {
-    if (autoLookupFiredRef.current || loading || !event) return;
-    const urlParams = new URLSearchParams(window.location.search);
-    const prefillEmail = urlParams.get("email");
-    if (!prefillEmail) return;
+    if (autoLookupFiredRef.current || loading || !event || !riderAccount || !myRiders) return;
+    const urlEmail = new URLSearchParams(window.location.search).get("email")?.trim().toLowerCase();
+    if (!urlEmail) return;
     autoLookupFiredRef.current = true;
-    form.setValue("email", prefillEmail);
-    void lookupByEmail(prefillEmail);
+    const mine = myRiders.filter(r => r.email.trim().toLowerCase() === urlEmail);
+    if (mine.length === 1) applyPrefill(mine[0]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, event]);
+  }, [loading, event, riderAccount, myRiders]);
+
+  // Signed in: load the account's own rider profiles (never anyone else's by email).
+  useEffect(() => {
+    if (!eventId || riderAuthLoading) return;
+    if (!riderAccount) { setMyRiders(null); return; }
+    let cancelled = false;
+    fetch(`/api/rider/registration-prefill?eventId=${eventId}`, { credentials: "include" })
+      .then(r => (r.ok ? r.json() : null))
+      .then((d: { riders?: RiderPrefill[] } | null) => { if (!cancelled) setMyRiders(d?.riders ?? []); })
+      .catch(() => { if (!cancelled) setMyRiders([]); });
+    return () => { cancelled = true; };
+  }, [eventId, riderAccount?.id, riderAuthLoading]);
+
+  // One rider on the account: theirs, straight away.
+  useEffect(() => {
+    if (!event || !myRiders || prefillRiderId != null || lookupState !== "idle") return;
+    if (myRiders.length === 1 && !form.getValues("firstName").trim()) applyPrefill(myRiders[0]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event, myRiders]);
+
+  // "You're in": suggest the app (quicker registration next time), unless dismissed lately.
+  useEffect(() => {
+    if (success && shouldShowAppPromo()) setAppPromoOpen(true);
+  }, [success]);
 
   useEffect(() => {
     if (!eventId) return;
@@ -707,6 +759,22 @@ export default function Register() {
   const showTransponderSection = !!event && (eventTimingTags(event).transponder || event.requireTransponder
     || offersRental || !!trackrOption);
   const addOnOptions = (event?.purchaseOptions ?? []).filter(o => !(o.id === RM_TRACKR_OPTION_ID && showTransponderSection));
+  // Steps this event needs: add-ons and waivers only show when the event has them.
+  const stepList = (ev: EventInfo): StepId[] => {
+    const hasLiability = ev.requireLiabilityWaiver && !!ev.liabilityWaiverPdfUrl;
+    const hasAck = ev.requireWaiver && !!(ev.waiverText || ev.waiverPdfUrl);
+    return [
+      "rider",
+      "contact",
+      ...(ev.groupRace ? ["team" as const] : []),
+      "classes",
+      ...(showTransponderSection || ev.rfidStickerFee != null || addOnOptions.length > 0
+        || (ev.groupRace && eventTimingTags(ev).rfid) ? ["addons" as const] : []),
+      "bike",
+      ...(hasLiability || hasAck ? ["waiver" as const] : []),
+      "review",
+    ];
+  };
   const buyingTrackr = (watchedPurchaseOptions ?? []).includes(RM_TRACKR_OPTION_ID);
   const gettingTransponder = !!watchedRentTransponder || buyingTrackr;
   const chooseTransponder = (choice: "rent" | "buy" | null) => {
@@ -1007,6 +1075,62 @@ export default function Register() {
     }
   };
 
+  /**
+   * Fill the form from one of the signed-in account's own riders (full details:
+   * riderAccess allows it), tick their usual classes, and for a returning rider
+   * open the first step that still needs them. Team and waiver steps always do
+   * (waivers are signed for every event), and so does anything with a choice to buy.
+   */
+  const applyPrefill = (p: RiderPrefill) => {
+    if (!event) return;
+    lookupRequestRef.current++;
+    riderClassesRequestRef.current++;
+    const tx = (normalizeActiveTransponderIdentifier(p.transponderNumber) ?? "").toUpperCase();
+    const offered = new Set(event.raceClasses ?? []);
+    const classes = p.usualClasses.filter(c => offered.has(c) && !p.registeredClasses.includes(c));
+    const values: Partial<RegisterForm> = {
+      // A managed rider may have no email of their own: the account's gets the receipt.
+      email: p.email || riderAccount?.email || "", firstName: p.firstName, lastName: p.lastName, phone: p.phone, dateOfBirth: p.dateOfBirth,
+      emergencyContact: p.emergencyContact, emergencyPhone: p.emergencyPhone,
+      streetAddress: p.streetAddress, city: p.city, homeState: p.homeState, zip: p.zip,
+      amaNumber: p.amaNumber, clubIdNumber: p.clubIdNumber, bibNumber: p.bibNumber,
+      bikeBrand: p.bikeBrand, bikeModel: p.bikeModel, bikeYear: p.bikeYear, sponsors: p.sponsors,
+      myLapsTransponderNumber: tx, statsEmailOptIn: p.statsEmailOptIn,
+      rentTransponder: false, purchaseRfidSticker: false, selectedPurchaseOptions: [],
+      selectedClasses: classes,
+    };
+    for (const [name, value] of Object.entries(values) as Array<[keyof RegisterForm, RegisterForm[keyof RegisterForm]]>) {
+      form.setValue(name, value, { shouldDirty: false });
+    }
+    form.clearErrors();
+    setCaptainRfid(p.rfidNumber);
+    setTeamGear([]);
+    setDetailsHidden(false);
+    setSelectedRiderId(p.riderId);
+    setPrefillRiderId(p.riderId);
+    setRiderOptions(null);
+    setLookedUpName(`${p.firstName} ${p.lastName}`.trim());
+    setLookupState("found");
+    setAlreadyRegisteredClasses(new Set(p.registeredClasses));
+    // Where a returning rider starts.
+    let start: StepId = "rider";
+    if (p.hasRaced) {
+      for (const id of stepList(event)) {
+        start = id;
+        if (id === "review" || id === "team" || id === "waiver") break;
+        if (id === "rider" && (!p.firstName || !p.lastName || !p.email || (event.requireAma && !p.amaNumber) || (event.requireClubId && !p.clubIdNumber))) break;
+        if (id === "classes" && classes.length === 0) break;
+        if (id === "addons" && !((!showTransponderSection || !!tx) && addOnOptions.length === 0 && (event.rfidStickerFee == null || !!p.rfidNumber))) break;
+        if (id === "bike" && !p.bikeBrand) break;
+      }
+    }
+    setReturnToReview(false);
+    setJumpedAhead(start !== "rider");
+    if (start === "review") reviewOpenedAtRef.current = Date.now();
+    setStepError(null);
+    setStep(start);
+  };
+
   // Register someone else on this email: a new profile, with the other rider's
   // personal details cleared (shared ones like address and emergency contact stay).
   const startNewRiderOnEmail = () => {
@@ -1228,8 +1352,10 @@ export default function Register() {
               )}
             </CardContent>
           </Card>
+          <GetTheAppCard />
           <Link href="/"><Button variant="outline" className="w-full font-heading uppercase">Back to Home</Button></Link>
         </div>
+        <GetTheAppDialog open={appPromoOpen} onOpenChange={setAppPromoOpen} />
       </div>
     );
   }
@@ -1344,20 +1470,9 @@ export default function Register() {
   const pastClose = closeDate && now > closeDate;
   const isOpen = event.status === "registration_open" && !notYetOpen && !pastClose;
 
-  // Steps this event needs: add-ons and waivers only show when the event has them.
   const hasLiabilityWaiver = event.requireLiabilityWaiver && !!event.liabilityWaiverPdfUrl;
   const hasAcknowledgement = event.requireWaiver && !!(event.waiverText || event.waiverPdfUrl);
-  const steps: StepId[] = [
-    "rider",
-    "contact",
-    ...(event.groupRace ? ["team" as const] : []),
-    "classes",
-    ...(showTransponderSection || event.rfidStickerFee != null || addOnOptions.length > 0
-      || (event.groupRace && eventTimingTags(event).rfid) ? ["addons" as const] : []),
-    "bike",
-    ...(hasLiabilityWaiver || hasAcknowledgement ? ["waiver" as const] : []),
-    "review",
-  ];
+  const steps = stepList(event);
   const stepIndex = Math.max(0, steps.indexOf(step));
   // Drives the "* Required" note; must match what validateStep enforces.
   const stepHasRequired = step === "rider" || step === "team" || step === "classes" || step === "waiver"
@@ -1594,6 +1709,32 @@ export default function Register() {
 
                 {step === "rider" && (
                   <>
+                    {/* Signed in: who's racing, from the account's own rider profiles */}
+                    {myRiders && myRiders.length > 0 && (
+                      <Card>
+                        <SectionHeader>Who's Racing?</SectionHeader>
+                        <CardContent className="p-6 space-y-2">
+                          <p className="text-sm text-muted-foreground">Pick a rider on your account. Their details, numbers and usual classes are filled in for you.</p>
+                          {myRiders.map(r => {
+                            const on = prefillRiderId === r.riderId && lookupState === "found";
+                            const sub = r.registeredClasses.length ? `Registered: ${r.registeredClasses.join(", ")}`
+                              : r.usualClasses.length ? `Usually races ${r.usualClasses.join(", ")}` : r.bibNumber ? `#${r.bibNumber}` : "";
+                            return (
+                              <button key={r.riderId} type="button" onClick={() => applyPrefill(r)} aria-pressed={on}
+                                className={`w-full text-left rounded-lg border px-4 py-3 transition-colors focus:outline-none focus:ring-2 focus:ring-ring ${on ? "border-primary bg-primary/5" : "border-border bg-background hover:border-primary hover:bg-primary/5"}`}>
+                                <div className="font-semibold text-sm flex items-center gap-2">{on && <CheckCircle2 size={15} className="text-primary" />}{`${r.firstName} ${r.lastName}`.trim() || "Unnamed rider"}</div>
+                                {sub && <div className="text-xs text-muted-foreground mt-0.5">{sub}</div>}
+                              </button>
+                            );
+                          })}
+                          <button type="button" onClick={() => { setPrefillRiderId(null); setJumpedAhead(false); if (riderAccount) form.setValue("email", riderAccount.email, { shouldDirty: false }); startNewRiderOnEmail(); }}
+                            className={`w-full text-left rounded-lg border border-dashed px-4 py-3 text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring ${lookupState === "new_rider" && prefillRiderId == null ? "border-primary bg-primary/5" : "border-border bg-background hover:border-primary hover:bg-primary/5"}`}>
+                            + Someone else (a new rider)
+                          </button>
+                        </CardContent>
+                      </Card>
+                    )}
+
                     {/* Email — first question, drives rider lookup */}
                     <Card>
                       <SectionHeader>Your Email</SectionHeader>
@@ -1604,6 +1745,7 @@ export default function Register() {
                             <FormControl>
                               <Input
                                 type="email"
+                                autoComplete="email"
                                 placeholder="rider@example.com"
                                 {...field}
                                 onChange={e => {
@@ -1614,14 +1756,23 @@ export default function Register() {
                                   setRiderOptions(null);
                                   setLookedUpName("");
                                   setLookupState("idle");
+                                  setPrefillRiderId(null);
                                   field.onChange(e);
                                 }}
-                                onBlur={e => { field.onBlur(); lookupByEmail(e.target.value); }}
+                                // A rider picked from the account above stays picked (their email may be the account's).
+                                onBlur={e => { field.onBlur(); if (riderAccount && prefillRiderId == null) lookupByEmail(e.target.value); }}
                               />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
                         )} />
+                        {!riderAccount && !riderAuthLoading && (
+                          <p className="text-xs text-muted-foreground">
+                            Raced with us before?{" "}
+                            <Link href={`/rider/login?next=${encodeURIComponent(`/register/${eventId}`)}`} className="underline font-semibold text-foreground">Sign in</Link>
+                            {" "}and your details fill in for you. Not signed in, enter every detail below: to protect riders' information, we don't fill anything in from an email alone.
+                          </p>
+                        )}
                         {lookupState === "loading" && (
                           <div className="flex items-center gap-2 text-sm text-muted-foreground">
                             <Loader2 size={14} className="animate-spin" />
@@ -1676,8 +1827,8 @@ export default function Register() {
                             </div>
                           </div>
                         )}
-                        {lookupState === "not_found" && (
-                          <p className="text-xs text-muted-foreground">No existing profile found — fill in your details below and we'll create one for you.</p>
+                        {lookupState === "not_found" && riderAccount && (
+                          <p className="text-xs text-muted-foreground">No rider on your account uses this email. Fill in their details below.</p>
                         )}
                       </CardContent>
                     </Card>
@@ -1691,6 +1842,7 @@ export default function Register() {
                               <FormLabel>First Name <span className="text-destructive">*</span></FormLabel>
                               <FormControl>
                                 <Input
+                                  autoComplete="given-name"
                                   placeholder="Jake"
                                   {...field}
                                   onChange={field.onChange}
@@ -1704,6 +1856,7 @@ export default function Register() {
                               <FormLabel>Last Name <span className="text-destructive">*</span></FormLabel>
                               <FormControl>
                                 <Input
+                                  autoComplete="family-name"
                                   placeholder="Morrison"
                                   {...field}
                                   onChange={field.onChange}
@@ -1717,14 +1870,14 @@ export default function Register() {
                           <FormField control={form.control} name="phone" render={({ field }) => (
                             <FormItem>
                               <FormLabel>Phone <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
-                              <FormControl><Input placeholder="602-555-0100" {...field} onFocus={selectIfHidden} /></FormControl>
+                              <FormControl><Input type="tel" autoComplete="tel" placeholder="602-555-0100" {...field} onFocus={selectIfHidden} /></FormControl>
                               <FormMessage />
                             </FormItem>
                           )} />
                           <FormField control={form.control} name="dateOfBirth" render={({ field }) => (
                             <FormItem>
                               <FormLabel>Date of Birth <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
-                              <FormControl><Input type="text" inputMode="numeric" placeholder="MM/DD/YYYY" {...field} onFocus={selectIfHidden} /></FormControl>
+                              <FormControl><Input type="text" inputMode="numeric" autoComplete="bday" placeholder="MM/DD/YYYY" {...field} onFocus={selectIfHidden} /></FormControl>
                               <FormMessage />
                             </FormItem>
                           )} />
@@ -1736,7 +1889,7 @@ export default function Register() {
                             </FormLabel>
                             <FormControl>
                               <div className="relative">
-                                <Input placeholder="101" {...field} className={bibCheckState === "taken" ? "border-destructive pr-8" : bibCheckState === "available" ? "border-green-500 pr-8" : ""} />
+                                <Input autoComplete="off" inputMode="numeric" placeholder="101" {...field} className={bibCheckState === "taken" ? "border-destructive pr-8" : bibCheckState === "available" ? "border-green-500 pr-8" : ""} />
                                 {bibCheckState === "checking" && <Loader2 size={14} className="absolute right-2 top-1/2 -translate-y-1/2 animate-spin text-muted-foreground" />}
                                 {bibCheckState === "taken" && <AlertCircle size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-destructive" />}
                                 {bibCheckState === "available" && <CheckCircle2 size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-green-500" />}
@@ -1780,7 +1933,7 @@ export default function Register() {
                         <FormField control={form.control} name="streetAddress" render={({ field }) => (
                           <FormItem>
                             <FormLabel>Street Address <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
-                            <FormControl><Input placeholder="123 Dirt Track Rd" {...field} onFocus={selectIfHidden} /></FormControl>
+                            <FormControl><Input autoComplete="street-address" placeholder="123 Dirt Track Rd" {...field} onFocus={selectIfHidden} /></FormControl>
                             <p className="text-xs text-muted-foreground">Saved to your profile for next time.</p>
                             <FormMessage />
                           </FormItem>
@@ -1789,7 +1942,7 @@ export default function Register() {
                           <FormField control={form.control} name="city" render={({ field }) => (
                             <FormItem className="col-span-2 sm:col-span-1">
                               <FormLabel>City <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
-                              <FormControl><Input placeholder="Tucson" {...field} /></FormControl>
+                              <FormControl><Input autoComplete="address-level2" placeholder="Tucson" {...field} /></FormControl>
                               <FormMessage />
                             </FormItem>
                           )} />
@@ -1803,7 +1956,7 @@ export default function Register() {
                           <FormField control={form.control} name="zip" render={({ field }) => (
                             <FormItem>
                               <FormLabel>ZIP <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
-                              <FormControl><Input placeholder="85701" maxLength={10} {...field} onFocus={selectIfHidden} /></FormControl>
+                              <FormControl><Input autoComplete="postal-code" inputMode="numeric" placeholder="85701" maxLength={10} {...field} onFocus={selectIfHidden} /></FormControl>
                               <FormMessage />
                             </FormItem>
                           )} />
@@ -1818,14 +1971,14 @@ export default function Register() {
                           <FormField control={form.control} name="emergencyContact" render={({ field }) => (
                             <FormItem>
                               <FormLabel>Contact Name <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
-                              <FormControl><Input placeholder="Jane Morrison" {...field} onFocus={selectIfHidden} /></FormControl>
+                              <FormControl><Input autoComplete="off" placeholder="Jane Morrison" {...field} onFocus={selectIfHidden} /></FormControl>
                               <FormMessage />
                             </FormItem>
                           )} />
                           <FormField control={form.control} name="emergencyPhone" render={({ field }) => (
                             <FormItem>
                               <FormLabel>Contact Phone <span className="text-muted-foreground font-normal text-xs">(optional)</span></FormLabel>
-                              <FormControl><Input placeholder="602-555-0200" {...field} onFocus={selectIfHidden} /></FormControl>
+                              <FormControl><Input type="tel" autoComplete="off" placeholder="602-555-0200" {...field} onFocus={selectIfHidden} /></FormControl>
                               <FormMessage />
                             </FormItem>
                           )} />
@@ -2473,6 +2626,12 @@ export default function Register() {
 
                 {step === "review" && (
                   <>
+                    {jumpedAhead && (
+                      <div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 text-green-800 px-4 py-3 text-sm">
+                        <CheckCircle2 size={16} className="shrink-0 text-green-600" />
+                        <span>Filled in from {v.firstName ? `${v.firstName}'s` : "your"} profile and last race. Check it over, then {event.paymentEnabled && totalDue > 0 ? "pay" : "register"}. Use Edit to change anything.</span>
+                      </div>
+                    )}
                     <ReviewSection title="Rider" onEdit={() => editStep("rider")}>
                       <ReviewRow label="Name" value={`${v.firstName} ${v.lastName}`.trim()} />
                       <ReviewRow label="Email" value={v.email} />

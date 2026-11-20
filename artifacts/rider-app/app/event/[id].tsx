@@ -91,11 +91,12 @@ function fmtStartTime(t: string | null | undefined): string {
 
 /**
  * Registration always happens on the app's own screen (every build from 1.0.23
- * has the in-app payment form). It used to fall back to the website's form in a
- * browser, with the rider's email in the link.
+ * has the in-app payment form). That screen loads the account's rider profiles
+ * itself and asks who's racing (automatic with one profile), so this screen's
+ * profile list still loading can never start a blank "new rider" form.
  */
-function startRegistration(router: ReturnType<typeof useRouter>, eventId: number, query: string) {
-  router.push(`/register/${eventId}?${query}` as any);
+function startRegistration(router: ReturnType<typeof useRouter>, eventId: number) {
+  router.push(`/register/${eventId}` as any);
 }
 
 export default function EventDetailScreen() {
@@ -114,7 +115,6 @@ export default function EventDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error,   setError]   = useState<string | null>(null);
-  const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [registeredClasses, setRegisteredClasses] = useState<Set<string>>(new Set());
   const [myRegistrations, setMyRegistrations] = useState<MyRegistration[]>([]);
   const [showChangeClassModal, setShowChangeClassModal] = useState(false);
@@ -735,7 +735,7 @@ export default function EventDetailScreen() {
             )}
 
             {isAuthenticated ? (
-              <Pressable style={s.primaryBtn} onPress={() => setShowRegisterModal(true)}>
+              <Pressable style={s.primaryBtn} onPress={() => startRegistration(router, event.id)}>
                 <Text style={s.btnText}>{myRegistrations.length > 0 ? "Add another class" : "Register now"}</Text>
                 <Feather name="arrow-right" size={18} color="#fff" />
               </Pressable>
@@ -780,100 +780,6 @@ export default function EventDetailScreen() {
           />
         )}
       </ScrollView>
-
-      {/* Register modal */}
-      <Modal visible={showRegisterModal} transparent animationType="slide" onRequestClose={() => setShowRegisterModal(false)}>
-        <Pressable style={s.modalOverlay} onPress={() => setShowRegisterModal(false)}>
-          <Pressable style={s.modalBox} onPress={() => {}}>
-            <Text style={{ fontSize: 18, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold", marginBottom: 4 }}>
-              Register for {event.name}
-            </Text>
-            <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginBottom: 16, lineHeight: 18 }}>
-              {fmtDate(event.date)}
-            </Text>
-            {/* Already-registered class badges */}
-            {registeredClasses.size > 0 && (
-              <View style={{ marginBottom: 14, padding: 10, borderRadius: 8, backgroundColor: "#16a34a18", borderWidth: 1, borderColor: "#16a34a40" }}>
-                <Text style={{ fontSize: 13, fontWeight: "700", color: "#16a34a", fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>
-                  Already registered
-                </Text>
-                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-                  {Array.from(registeredClasses).map(cls => (
-                    <View key={cls} style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12, backgroundColor: "#16a34a22" }}>
-                      <Text style={{ fontSize: 12, color: "#16a34a", fontFamily: "Roboto_500Medium" }}>{cls}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            )}
-
-            {(profiles ?? []).length === 0 ? (
-              <>
-                <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", lineHeight: 20, marginBottom: 16 }}>
-                  No rider profile on your account yet. Fill in your details once and they're saved for next time.
-                </Text>
-                <Pressable
-                  style={[s.primaryBtn, { marginTop: 4 }]}
-                  onPress={() => { setShowRegisterModal(false); startRegistration(router, event.id, "newRider=1"); }}
-                >
-                  <Text style={s.btnText}>Start registration</Text>
-                </Pressable>
-              </>
-            ) : (event.raceClasses ?? []).length > 0 && (event.raceClasses ?? []).every(cls => registeredClasses.has(cls)) ? (
-              <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", lineHeight: 20 }}>
-                You're already registered for all available classes at this event.
-              </Text>
-            ) : (
-              <>
-                <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginBottom: 10 }}>
-                  {registeredClasses.size > 0
-                    ? "Tap a profile to register for additional classes."
-                    : "Pick who's racing. We'll fill in their details from their profile."}
-                </Text>
-                {(profiles ?? []).map(p => (
-                  <Pressable
-                    key={p.id}
-                    onPress={() => { setShowRegisterModal(false); startRegistration(router, event.id, `riderId=${p.id}`); }}
-                    style={({ pressed }) => ({
-                      marginBottom: 10,
-                      padding: 12,
-                      borderRadius: 10,
-                      backgroundColor: pressed ? colors.primary + "18" : colors.background,
-                      borderWidth: 1,
-                      borderColor: pressed ? colors.primary : colors.border,
-                      flexDirection: "row",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                    })}
-                  >
-                    <View>
-                      <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
-                        {p.firstName} {p.lastName}
-                      </Text>
-                      {p.bibNumber && (
-                        <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
-                          #{p.bibNumber}
-                        </Text>
-                      )}
-                    </View>
-                    <Text style={{ fontSize: 18, color: colors.primaryText }}>›</Text>
-                  </Pressable>
-                ))}
-                <Pressable
-                  onPress={() => { setShowRegisterModal(false); startRegistration(router, event.id, "newRider=1"); }}
-                  style={({ pressed }) => ({ marginBottom: 10, padding: 12, borderRadius: 10, borderWidth: 1, borderStyle: "dashed", borderColor: pressed ? colors.primary : colors.border, flexDirection: "row", alignItems: "center", gap: 8 })}
-                >
-                  <Feather name="user-plus" size={16} color={colors.primaryText} />
-                  <Text style={{ fontSize: 15, color: colors.primaryText, fontFamily: "Roboto_600SemiBold" }}>Someone else (new rider)</Text>
-                </Pressable>
-              </>
-            )}
-            <Pressable style={[s.mutedBtn, { marginTop: 4 }]} onPress={() => setShowRegisterModal(false)}>
-              <Text style={[s.btnText, { color: colors.mutedForeground }]}>Close</Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
 
       {/* ── Change Class modal ── */}
       <Modal visible={showChangeClassModal} transparent animationType="slide" onRequestClose={() => setShowChangeClassModal(false)}>

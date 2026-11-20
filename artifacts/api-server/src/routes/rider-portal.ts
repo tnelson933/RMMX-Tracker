@@ -74,6 +74,8 @@ import { canManageRider, managedRiderIds, managedRiderWhere, ownsRider } from ".
 import { EXPO_PUSH_TOKEN_RE } from "../lib/push";
 import { eventsTimingTags, type TimingTags } from "../lib/eventTimingTags";
 import { ageOn, BIO_MAX, effectiveVisibility, PLATE_COLORS } from "../lib/riderResume";
+import { buildRegistrationPrefill } from "../lib/registrationPrefill";
+import { teamMembersTable } from "@workspace/db";
 
 const router = Router();
 
@@ -844,6 +846,66 @@ router.get("/rider/profiles", requireRiderAuth, async (req, res) => {
     bikesMap.set(bike.riderId, arr);
   }
   return res.json(profilesWithStats.map(p => ({ ...p, bikes: bikesMap.get(p.id) ?? [] })));
+});
+
+// GET /rider/registration-prefill?eventId= — every rider profile this account
+// owns or manages, each with what its registration form for this event starts
+// with (profile, then latest entries, usual classes). Signed-in app and website
+// registration use it so a returning rider has next to nothing to type. Only
+// this account's own riders (riderAccess) — never anyone found by email.
+router.get("/rider/registration-prefill", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const eventId = Number(req.query.eventId);
+  if (!Number.isInteger(eventId) || eventId <= 0) return res.status(400).json({ error: "This link looks broken. Go back and open the event again." });
+  const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
+  const [event] = await db.select({ id: eventsTable.id, raceClasses: eventsTable.raceClasses }).from(eventsTable).where(eq(eventsTable.id, eventId));
+  if (!event) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
+
+  const ids = await managedRiderIds(account);
+  if (ids.length === 0) return res.json({ accountEmail: account.email, riders: [] });
+  const riders = await db.select().from(ridersTable).where(inArray(ridersTable.id, ids)).orderBy(asc(ridersTable.id));
+  const entries = await db.select({
+    riderId: registrationsTable.riderId,
+    eventId: registrationsTable.eventId,
+    raceClass: registrationsTable.raceClass,
+    status: registrationsTable.status,
+    paymentStatus: registrationsTable.paymentStatus,
+    createdAt: registrationsTable.createdAt,
+    id: registrationsTable.id,
+    bibNumber: registrationsTable.bibNumber,
+    amaNumber: registrationsTable.amaNumber,
+    clubIdNumber: registrationsTable.clubIdNumber,
+    bikeBrand: registrationsTable.bikeBrand,
+    bikeModel: registrationsTable.bikeModel,
+    bikeYear: registrationsTable.bikeYear,
+    sponsors: registrationsTable.sponsors,
+    statsEmailOptIn: registrationsTable.statsEmailOptIn,
+    transponderRental: registrationsTable.transponderRental,
+    myLapsTransponderNumber: registrationsTable.myLapsTransponderNumber,
+    rmTrackrTransponder: registrationsTable.rmTrackrTransponder,
+  }).from(registrationsTable)
+    .where(inArray(registrationsTable.riderId, ids))
+    .orderBy(desc(registrationsTable.createdAt), desc(registrationsTable.id))
+    .limit(500);
+  const team = await db.select({ riderId: teamMembersTable.riderId, rfidNumber: teamMembersTable.rfidNumber, trackrNumber: teamMembersTable.trackrNumber, trackrChoice: teamMembersTable.trackrChoice })
+    .from(teamMembersTable)
+    .where(inArray(teamMembersTable.riderId, ids))
+    .orderBy(desc(teamMembersTable.updatedAt), desc(teamMembersTable.id));
+
+  const today = new Date().toISOString().slice(0, 10);
+  const list = riders.map(r => buildRegistrationPrefill(
+    r,
+    entries.filter(e => e.riderId === r.id),
+    team.filter(t => t.riderId === r.id),
+    { id: event.id, raceClasses: event.raceClasses ?? null },
+    today,
+  ));
+  // Most recently raced first, so the usual rider is the first choice.
+  const lastAt = new Map<number, number>();
+  for (const e of entries) if (!lastAt.has(e.riderId) && e.status !== "void") lastAt.set(e.riderId, new Date(e.createdAt).getTime());
+  list.sort((a, b) => (lastAt.get(b.riderId) ?? 0) - (lastAt.get(a.riderId) ?? 0));
+  return res.json({ accountEmail: account.email, riders: list });
 });
 
 // GET /rider/profiles/:riderId/history

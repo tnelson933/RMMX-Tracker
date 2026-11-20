@@ -48,6 +48,36 @@ export interface RegisterInfo {
   liabilityWaiverPdfUrl: string | null;
 }
 
+/**
+ * One of the account's rider profiles with what its form starts with
+ * (GET /api/rider/registration-prefill). Never card details or waiver answers.
+ */
+export interface RiderPrefill {
+  riderId: number;
+  firstName: string; lastName: string; email: string; phone: string; dateOfBirth: string;
+  emergencyContact: string; emergencyPhone: string;
+  streetAddress: string; city: string; homeState: string; zip: string;
+  bibNumber: string; amaNumber: string; clubIdNumber: string;
+  bikeBrand: string; bikeModel: string; bikeYear: string; sponsors: string;
+  transponderNumber: string; rfidNumber: string; statsEmailOptIn: boolean;
+  isMinor: boolean; avatarUrl: string | null;
+  usualClasses: string[]; registeredClasses: string[]; hasRaced: boolean;
+}
+
+/** The saved profile (GET /api/rider/profiles/:id) in prefill form, for servers without the prefill route. */
+export function prefillFromProfile(p: any, registeredClasses: string[]): RiderPrefill {
+  const str = (v: unknown) => (v == null ? "" : String(v));
+  return {
+    riderId: Number(p.id), firstName: str(p.firstName), lastName: str(p.lastName), email: str(p.email), phone: str(p.phone),
+    dateOfBirth: str(p.dateOfBirth), emergencyContact: str(p.emergencyContact), emergencyPhone: str(p.emergencyPhone),
+    streetAddress: str(p.streetAddress), city: str(p.city), homeState: str(p.homeState), zip: str(p.zip),
+    bibNumber: str(p.bibNumber), amaNumber: str(p.amaNumber), clubIdNumber: str(p.lastClubIdNumber),
+    bikeBrand: str(p.bikeManufacturer), bikeModel: str(p.bikeModel), bikeYear: str(p.bikeYear), sponsors: str(p.sponsors),
+    transponderNumber: str(p.myLapsTransponderNumber), rfidNumber: str(p.rfidNumber), statsEmailOptIn: !!p.lastStatsEmailOptIn,
+    isMinor: !!p.isMinor, avatarUrl: p.avatarUrl ?? null, usualClasses: [], registeredClasses, hasRaced: false,
+  };
+}
+
 export type TrackrChoice = "" | "own" | "rent" | "buy";
 
 export interface TeamMember { firstName: string; lastName: string; email: string }

@@ -13,14 +13,17 @@ import { goBack } from "@/lib/navigation";
 import { nativePaymentSheetAvailable, payWithSheet } from "@/lib/payments";
 import {
   EMAIL_RE, EMPTY_GEAR, RM_TRACKR_OPTION_ID, addOnOptions, dollars, entryFeeToday, hasGearStep, normalizeTransponder,
-  quote, registrationIsOpen, showsTransponder, soloGearProblem, teamGearProblem, teamProblem, teamSize, trackrOption,
-  type RegisterInfo, type TeamGear, type TeamMember, type TrackrChoice,
+  prefillFromProfile, quote, registrationIsOpen, showsTransponder, soloGearProblem, teamGearProblem, teamProblem, teamSize, trackrOption,
+  type RegisterInfo, type RiderPrefill, type TeamGear, type TeamMember, type TrackrChoice,
 } from "@/lib/registration";
 
-// Registration without leaving the app. The rider's saved profile fills the
-// form; whatever they add or change is saved back to it by the server, so
-// next time there's even less to type. Card payments use Stripe's payment
-// sheet inside the app; riders never leave it to pay.
+// Registration without leaving the app. The account's rider profiles (and
+// each one's latest entries) fill the form: pick who's racing (automatic with
+// one profile), and a returning rider lands on Review with everything filled
+// in, their usual classes ticked, to check and pay. Waivers are still signed
+// for every event. Whatever they add or change is saved back to the profile by
+// the server. Card payments use Stripe's payment sheet inside the app; card
+// details never touch RM Roost.
 
 type Colors = ReturnType<typeof useColors>;
 type StepId = "rider" | "team" | "classes" | "gear" | "bike" | "waiver" | "review";
@@ -45,6 +48,47 @@ const EMPTY_FORM: Form = {
 };
 
 const BIKE_BRANDS = ["KTM", "Honda", "Gas Gas", "Husqvarna", "Yamaha", "Kawasaki", "Suzuki", "Beta"];
+
+function stepsFor(info: RegisterInfo): StepId[] {
+  const list: StepId[] = ["rider"];
+  if (info.groupRace) list.push("team");
+  list.push("classes");
+  if (hasGearStep(info)) list.push("gear");
+  list.push("bike");
+  if (info.requireWaiver || info.requireLiabilityWaiver) list.push("waiver");
+  list.push("review");
+  return list;
+}
+
+/** A blank form for this event: the account email, empty team slots. */
+function blankForm(info: RegisterInfo, accountEmail: string): Form {
+  const size = info.groupRace ? teamSize(info.ridersPerGroup) : 0;
+  return {
+    ...EMPTY_FORM, email: accountEmail,
+    members: Array.from({ length: Math.max(0, size - 1) }, () => ({ firstName: "", lastName: "", email: "" })),
+    gear: Array.from({ length: size }, () => ({ ...EMPTY_GEAR })),
+  };
+}
+
+/** The form filled from a rider's profile and latest entries; their usual classes ticked when offered. */
+function formFromPrefill(info: RegisterInfo, base: Form, p: RiderPrefill): Form {
+  // Shown as printed on the device; sent lower-case (normalizeTransponder).
+  const tx = (normalizeTransponder(p.transponderNumber) ?? "").toUpperCase();
+  const offered = new Set(info.raceClasses ?? []);
+  const next: Form = {
+    ...base,
+    email: p.email || base.email,
+    firstName: p.firstName, lastName: p.lastName, phone: p.phone, dateOfBirth: p.dateOfBirth,
+    bibNumber: p.bibNumber, amaNumber: p.amaNumber, clubIdNumber: p.clubIdNumber, statsEmailOptIn: p.statsEmailOptIn,
+    streetAddress: p.streetAddress, city: p.city, homeState: p.homeState, zip: p.zip,
+    emergencyContact: p.emergencyContact, emergencyPhone: p.emergencyPhone,
+    bikeBrand: p.bikeBrand, bikeModel: p.bikeModel, bikeYear: p.bikeYear, sponsors: p.sponsors,
+    transponder: tx, trackrChoice: tx ? "own" : "",
+    classes: p.usualClasses.filter(c => offered.has(c) && !p.registeredClasses.includes(c)),
+  };
+  if (next.gear.length > 0) next.gear = [{ ...EMPTY_GEAR, trackrChoice: tx ? "own" : "", trackrNumber: tx, rfidNumber: p.rfidNumber }, ...next.gear.slice(1)];
+  return next;
+}
 
 interface PendingPayment {
   registrationId: number;
@@ -180,8 +224,16 @@ export default function RegisterScreen() {
   const [info, setInfo] = useState<RegisterInfo | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
   const [f, setF] = useState<Form>(EMPTY_FORM);
   const [prefilled, setPrefilled] = useState(false);
+  // Who's racing: the account's rider profiles (null while loading or on an older server).
+  const [choices, setChoices] = useState<RiderPrefill[] | null>(null);
+  const [activeRiderId, setActiveRiderId] = useState<number | null>(riderId && !newRiderParam ? riderId : null);
+  const [isNewRider, setIsNewRider] = useState(newRider);
+  const [picking, setPicking] = useState(false);
+  // Landed past finished steps (returning rider): show where the details came from.
+  const [jumped, setJumped] = useState(false);
   const [isMinor, setIsMinor] = useState(false);
   const [editInfo, setEditInfo] = useState(false);
   const [registeredClasses, setRegisteredClasses] = useState<string[]>([]);
@@ -219,7 +271,56 @@ export default function RegisterScreen() {
     setStepError(null);
   }, []);
 
-  // ── Load the event and the rider's profile ──
+  // ── Start the form for one rider (or a new one), past any steps already complete ──
+  const startWith = (ev: RegisterInfo, p: RiderPrefill | null) => {
+    const next = p ? formFromPrefill(ev, blankForm(ev, account?.email ?? ""), p) : blankForm(ev, account?.email ?? "");
+    setActiveRiderId(p?.riderId ?? null);
+    setIsNewRider(!p);
+    setPicking(false);
+    setPrefilled(!!p);
+    setIsMinor(!!p?.isMinor);
+    setAsGuardian(!!p?.isMinor);
+    setRegisteredClasses(p?.registeredClasses ?? []);
+    setFieldErrors({});
+    setStepError(null);
+    setSubmitError(null);
+    // A different rider: nothing from another rider's unfinished checkout carries over.
+    setPending(null);
+    setEntryRiderId(null);
+    setSignatureId(null);
+    setF(next);
+    // A minor's waiver is signed by a parent or guardian, so don't offer the child's name as the signature.
+    setSignerName(p?.isMinor || (ageOf(next.dateOfBirth) ?? 99) < 18 ? "" : `${next.firstName} ${next.lastName}`.trim());
+    setEditInfo(!next.firstName || !next.lastName);
+    const startAt = p?.hasRaced ? firstOpenStep(ev, next, p) : 0;
+    setStepIdx(startAt);
+    setJumped(startAt > 0);
+  };
+
+  /**
+   * Where a returning rider starts: the first step that still needs them. Team
+   * and waiver steps always need them (teammates change; waivers are signed for
+   * every event), and so does anything with a choice to buy.
+   */
+  const firstOpenStep = (ev: RegisterInfo, form: Form, p: RiderPrefill): number => {
+    const list = stepsFor(ev);
+    for (let i = 0; i < list.length; i++) {
+      const id = list[i];
+      if (id === "review" || id === "team" || id === "waiver") return i;
+      if (validate(id, form, ev).error) return i;
+      if (id === "gear") {
+        const hasOwn = ev.groupRace ? form.gear[0]?.trackrChoice === "own" : form.trackrChoice === "own";
+        const settled = (!showsTransponder(ev) || hasOwn)
+          && addOnOptions(ev).length === 0
+          && (!(Number(ev.rfidStickerFee ?? 0) > 0) || !!p.rfidNumber.trim());
+        if (!settled) return i;
+      }
+      if (id === "bike" && !form.bikeBrand.trim()) return i;
+    }
+    return 0;
+  };
+
+  // ── Load the event and the account's riders ──
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -228,45 +329,37 @@ export default function RegisterScreen() {
         if (!res.ok) throw new Error(res.status === 404 ? "This event couldn't be found." : await errorOf(res, `Couldn't load this event (error ${res.status}).`));
         const ev = (await res.json()) as RegisterInfo;
         if (cancelled) return;
+        // Every rider profile on this account, each with its form filled in.
+        const pr = await riderFetch(`/api/rider/registration-prefill?eventId=${eventId}`);
+        let list: RiderPrefill[] | null = null;
+        if (pr.ok) list = ((await pr.json().catch(() => null))?.riders as RiderPrefill[] | undefined) ?? [];
+        // Never fall back to a blank "new rider" form on a failed load: that made a second profile.
+        else if (pr.status !== 404) throw new Error(await errorOf(pr, "Couldn't load your rider profiles. Check your connection and try again."));
+        if (cancelled) return;
         setInfo(ev);
-        const size = ev.groupRace ? teamSize(ev.ridersPerGroup) : 0;
-        let next: Form = { ...EMPTY_FORM, email: account?.email ?? "", members: Array.from({ length: Math.max(0, size - 1) }, () => ({ firstName: "", lastName: "", email: "" })), gear: Array.from({ length: size }, () => ({ ...EMPTY_GEAR })) };
-        if (riderId && !newRiderParam) {
-          const [pr, rc] = await Promise.all([
+        setChoices(list);
+        if (newRiderParam === "1") {
+          startWith(ev, null);
+        } else if (list) {
+          const wanted = riderId ? list.find(r => r.riderId === riderId) : undefined;
+          if (wanted) startWith(ev, wanted);
+          else if (list.length === 1) startWith(ev, list[0]);
+          else if (list.length === 0) startWith(ev, null);
+          else { setF(blankForm(ev, account?.email ?? "")); setPicking(true); }
+        } else if (riderId) {
+          // A server without the prefill route: the saved profile alone.
+          const [p, rc] = await Promise.all([
             riderFetch(`/api/rider/profiles/${riderId}`),
             fetch(`${API_BASE_URL}/api/public/events/${eventId}/rider-classes?riderId=${riderId}`),
           ]);
-          if (pr.ok) {
-            const p = await pr.json();
-            const str = (v: unknown) => (v == null ? "" : String(v));
-            // Shown as printed on the device; sent lower-case (normalizeTransponder).
-            const tx = (normalizeTransponder(p.myLapsTransponderNumber) ?? "").toUpperCase();
-            next = {
-              ...next,
-              email: str(p.email) || next.email,
-              firstName: str(p.firstName), lastName: str(p.lastName), phone: str(p.phone), dateOfBirth: str(p.dateOfBirth),
-              bibNumber: str(p.bibNumber), amaNumber: str(p.amaNumber), clubIdNumber: str(p.lastClubIdNumber),
-              statsEmailOptIn: !!p.lastStatsEmailOptIn,
-              streetAddress: str(p.streetAddress), city: str(p.city), homeState: str(p.homeState), zip: str(p.zip),
-              emergencyContact: str(p.emergencyContact), emergencyPhone: str(p.emergencyPhone),
-              bikeBrand: str(p.bikeManufacturer), bikeModel: str(p.bikeModel), bikeYear: str(p.bikeYear), sponsors: str(p.sponsors),
-              transponder: tx, trackrChoice: tx ? "own" : "",
-            };
-            if (size > 0) next.gear[0] = { ...EMPTY_GEAR, trackrChoice: tx ? "own" : "", trackrNumber: tx, rfidNumber: str(p.rfidNumber) };
-            setIsMinor(!!p.isMinor);
-            setAsGuardian(!!p.isMinor);
-            setPrefilled(true);
-          }
-          if (rc.ok) {
-            const j = await rc.json().catch(() => null);
-            setRegisteredClasses(j?.registeredClasses ?? []);
-          }
+          if (!p.ok) throw new Error(await errorOf(p, "Couldn't load this rider's details. Try again."));
+          const classes = rc.ok ? ((await rc.json().catch(() => null))?.registeredClasses ?? []) : [];
+          if (cancelled) return;
+          setInfo(ev);
+          startWith(ev, prefillFromProfile(await p.json(), classes));
+        } else {
+          startWith(ev, null);
         }
-        if (cancelled) return;
-        setF(next);
-        // A minor's waiver is signed by a parent or guardian, so don't offer the child's name as the signature.
-        setSignerName((ageOf(next.dateOfBirth) ?? 99) < 18 ? "" : `${next.firstName} ${next.lastName}`.trim());
-        setEditInfo(!next.firstName || !next.lastName);
         setLoadError(null);
       } catch (e: any) {
         if (!cancelled) setLoadError(e instanceof TypeError ? NETWORK_ERROR_MESSAGE : (e?.message ?? "Couldn't load this event."));
@@ -275,7 +368,8 @@ export default function RegisterScreen() {
       }
     })();
     return () => { cancelled = true; };
-  }, [eventId, riderId, newRiderParam, account?.email, riderFetch]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventId, riderId, newRiderParam, account?.email, riderFetch, reloadKey]);
 
   // ── Live check that the plate number is free (events with unique numbers) ──
   useEffect(() => {
@@ -284,26 +378,16 @@ export default function RegisterScreen() {
     setBibState("checking");
     const ctrl = new AbortController();
     const t = setTimeout(() => {
-      const exclude = riderId && !newRiderParam ? `&excludeRiderId=${riderId}` : "";
+      const exclude = activeRiderId ? `&excludeRiderId=${activeRiderId}` : "";
       fetch(`${API_BASE_URL}/api/public/events/${eventId}/check-bib?bib=${encodeURIComponent(bib)}${exclude}`, { signal: ctrl.signal })
         .then(r => (r.ok ? r.json() : Promise.reject(new Error("check failed"))))
         .then(j => setBibState(j?.taken ? "taken" : "available"))
         .catch(() => { if (!ctrl.signal.aborted) setBibState("idle"); });
     }, 400);
     return () => { clearTimeout(t); ctrl.abort(); };
-  }, [f.bibNumber, info?.noDuplicateBibs, eventId, riderId, newRiderParam]);
+  }, [f.bibNumber, info?.noDuplicateBibs, eventId, activeRiderId]);
 
-  const steps = useMemo<StepId[]>(() => {
-    if (!info) return ["rider"];
-    const list: StepId[] = ["rider"];
-    if (info.groupRace) list.push("team");
-    list.push("classes");
-    if (hasGearStep(info)) list.push("gear");
-    list.push("bike");
-    if (info.requireWaiver || info.requireLiabilityWaiver) list.push("waiver");
-    list.push("review");
-    return list;
-  }, [info]);
+  const steps = useMemo<StepId[]>(() => (info ? stepsFor(info) : ["rider"]), [info]);
   const step = steps[Math.min(stepIdx, steps.length - 1)];
 
   const q = useMemo(() => info ? quote(info, {
@@ -320,27 +404,27 @@ export default function RegisterScreen() {
   }, [minorNow]);
 
   // ── Validation per step ──
-  const validate = (id: StepId): { error: string | null; fields: Record<string, string> } => {
+  const validate = (id: StepId, form: Form = f, ev: RegisterInfo | null = info): { error: string | null; fields: Record<string, string> } => {
     const fields: Record<string, string> = {};
-    if (!info) return { error: null, fields };
+    if (!ev) return { error: null, fields };
     if (id === "rider") {
-      if (!f.firstName.trim()) fields.firstName = "Enter a first name.";
-      if (!f.lastName.trim()) fields.lastName = "Enter a last name.";
-      if (!EMAIL_RE.test(f.email.trim())) fields.email = "Enter a valid email.";
-      if (info.requireAma && !f.amaNumber.trim()) fields.amaNumber = "This event needs an AMA number.";
-      if (info.requireClubId && !f.clubIdNumber.trim()) fields.clubIdNumber = "This event needs a club ID number.";
+      if (!form.firstName.trim()) fields.firstName = "Enter a first name.";
+      if (!form.lastName.trim()) fields.lastName = "Enter a last name.";
+      if (!EMAIL_RE.test(form.email.trim())) fields.email = "Enter a valid email.";
+      if (ev.requireAma && !form.amaNumber.trim()) fields.amaNumber = "This event needs an AMA number.";
+      if (ev.requireClubId && !form.clubIdNumber.trim()) fields.clubIdNumber = "This event needs a club ID number.";
       if (bibState === "taken") fields.bibNumber = "That number is taken at this event. Pick another.";
       if (Object.keys(fields).length) return { error: "Fill in the highlighted fields.", fields };
     }
-    if (id === "team") return { error: teamProblem(f.teamName, f.members, info.ridersPerGroup), fields };
-    if (id === "classes" && f.classes.length === 0) return { error: "Pick at least one class.", fields };
+    if (id === "team") return { error: teamProblem(form.teamName, form.members, ev.ridersPerGroup), fields };
+    if (id === "classes" && form.classes.length === 0) return { error: "Pick at least one class.", fields };
     if (id === "gear") {
-      const problem = info.groupRace ? teamGearProblem(info, f.gear) : (showsTransponder(info) ? soloGearProblem(info, f.trackrChoice, f.transponder) : null);
+      const problem = ev.groupRace ? teamGearProblem(ev, form.gear) : (showsTransponder(ev) ? soloGearProblem(ev, form.trackrChoice, form.transponder) : null);
       if (problem) return { error: problem, fields };
     }
     if (id === "waiver") {
-      if (info.requireWaiver && !ackAccepted) return { error: "Read and accept the rider acknowledgement to continue.", fields };
-      if (info.requireLiabilityWaiver && !signatureId) {
+      if (ev.requireWaiver && !ackAccepted) return { error: "Read and accept the rider acknowledgement to continue.", fields };
+      if (ev.requireLiabilityWaiver && !signatureId) {
         if (!signerName.trim()) return { error: "Type your full legal name to sign the waiver.", fields };
         if (!esignConsent) return { error: "Agree to sign the waiver electronically to continue.", fields };
       }
@@ -499,8 +583,8 @@ export default function RegisterScreen() {
         waiverSnapshot: info.requireWaiver && ackAccepted ? (info.waiverText ?? null) : null,
         liabilityWaiverSignatureId: sigId,
         // Trying again after an unfinished payment: the same profile, never a second new rider.
-        ...(entryRiderId ? { riderId: entryRiderId } : riderId && !newRiderParam ? { riderId } : {}),
-        ...(newRider && !entryRiderId ? { newRider: true } : {}),
+        ...(entryRiderId ? { riderId: entryRiderId } : activeRiderId ? { riderId: activeRiderId } : {}),
+        ...(isNewRider && !entryRiderId ? { newRider: true } : {}),
         ...(group ? {
           teamName: f.teamName.trim(),
           teamMembers: f.members.slice(0, size - 1).map(m => ({ firstName: m.firstName.trim(), lastName: m.lastName.trim(), email: m.email.trim() })),
@@ -591,7 +675,8 @@ export default function RegisterScreen() {
     </View>
   );
   if (!isAuthenticated) return centered("user", "Sign in to register", "Sign in or create a free rider account first.", <Pressable onPress={() => router.push("/login" as any)}><Text style={s.link}>Sign in</Text></Pressable>);
-  if (!info) return centered("alert-circle", "Couldn't load event", loadError ?? "Try again in a minute.");
+  if (!info) return centered("alert-circle", "Couldn't load registration", loadError ?? "Try again in a minute.",
+    <Pressable onPress={() => { setLoading(true); setLoadError(null); setReloadKey(k => k + 1); }}><Text style={s.link}>Try again</Text></Pressable>);
   if (!registrationIsOpen(info) && !done) return centered("clock", "Registration isn't open", "Entries for this race aren't being taken right now.");
 
   if (done) {
@@ -621,6 +706,45 @@ export default function RegisterScreen() {
     );
   }
 
+  // ── Who's racing (an account with more than one rider profile) ──
+  const canSwitchRider = (choices?.length ?? 0) > 0;
+  if (picking) {
+    return (
+      <View style={s.root}>
+        <View style={s.header}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <Pressable style={s.backBtn} onPress={() => (f.firstName ? setPicking(false) : goBack(router))} hitSlop={8} accessibilityLabel="Back">
+              <Feather name="x" size={18} color={colors.foreground} />
+            </Pressable>
+            <View style={{ flex: 1 }}>
+              <Text style={s.title} numberOfLines={1}>{info.name}</Text>
+              <Text style={s.sub} numberOfLines={1}>Who's racing?</Text>
+            </View>
+          </View>
+        </View>
+        <KeyboardAwareScrollViewCompat style={{ flex: 1 }} contentContainerStyle={s.body}>
+          <Text style={[s.note, { marginBottom: 12 }]}>Pick a rider. Their details, numbers and usual classes are filled in for you.</Text>
+          {(choices ?? []).map(c => {
+            const all = (info.raceClasses ?? []).length > 0 && (info.raceClasses ?? []).every(cls => c.registeredClasses.includes(cls));
+            const sub = all ? "Already registered for every class"
+              : c.registeredClasses.length ? `Registered: ${c.registeredClasses.join(", ")}`
+              : c.usualClasses.length ? `Usually races ${c.usualClasses.join(", ")}` : c.bibNumber ? `#${c.bibNumber}` : undefined;
+            return (
+              <Radio key={c.riderId} colors={colors} selected={activeRiderId === c.riderId && !isNewRider}
+                onPress={() => startWith(info, c)}
+                label={`${c.firstName} ${c.lastName}`.trim() || "Unnamed rider"} sub={sub} />
+            );
+          })}
+          <Pressable onPress={() => startWith(info, null)} style={({ pressed }) => ({ marginTop: 4, padding: 12, borderRadius: 12, borderWidth: 1, borderStyle: "dashed", borderColor: pressed ? colors.primary : colors.border, flexDirection: "row", alignItems: "center", gap: 8 })}>
+            <Feather name="user-plus" size={16} color={colors.primaryText} />
+            <Text style={{ fontSize: 15, color: colors.primaryText, fontFamily: "Roboto_600SemiBold" }}>Someone else (new rider)</Text>
+          </Pressable>
+        </KeyboardAwareScrollViewCompat>
+      </View>
+    );
+  }
+  const switchRider = canSwitchRider ? <Pressable onPress={() => { dropPending(); setPicking(true); }} hitSlop={10}><Text style={s.link}>Change rider</Text></Pressable> : null;
+
   const fee = entryFeeToday(info);
   const tOpt = trackrOption(info);
   const options = addOnOptions(info);
@@ -647,7 +771,12 @@ export default function RegisterScreen() {
     return (
       <>
         {prefilled && !editInfo ? (
-          <Card colors={colors} title="Your info" action={<Pressable onPress={() => setEditInfo(true)} hitSlop={10}><Text style={s.link}>Edit</Text></Pressable>}>
+          <Card colors={colors} title={f.firstName ? `${f.firstName}'s info` : "Your info"} action={
+            <View style={{ flexDirection: "row", gap: 16 }}>
+              {switchRider}
+              <Pressable onPress={() => setEditInfo(true)} hitSlop={10}><Text style={s.link}>Edit</Text></Pressable>
+            </View>
+          }>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
               <Feather name="zap" size={14} color={colors.success} />
               <Text style={[s.note, { flex: 1 }]}>Filled in from your profile. Tap Edit to change anything.</Text>
@@ -670,12 +799,12 @@ export default function RegisterScreen() {
             {prefilled ? null : (
               <Text style={[s.note, { marginBottom: 12 }]}>Anything you enter is saved to this rider's profile, so next time it's filled in for you.</Text>
             )}
-            <Card colors={colors} title="Rider">
+            <Card colors={colors} title={isNewRider ? "New rider" : "Rider"} action={switchRider}>
               <View style={{ flexDirection: "row", gap: 10 }}>
                 {field("firstName", "First name", { required: true, half: true })}
                 {field("lastName", "Last name", { required: true, half: true })}
               </View>
-              {field("email", "Email", { required: true, keyboardType: "email-address", autoCapitalize: "none", editable: newRider, hint: newRider ? "Use your account email so this rider shows up in your app." : undefined })}
+              {field("email", "Email", { required: true, keyboardType: "email-address", autoCapitalize: "none", editable: isNewRider, hint: isNewRider ? "Use your account email so this rider shows up in your app." : undefined })}
               {field("phone", "Phone", { keyboardType: "phone-pad" })}
               {field("dateOfBirth", "Birth date", { placeholder: "MM/DD/YYYY", keyboardType: "numbers-and-punctuation" })}
               <View style={{ flexDirection: "row", gap: 10 }}>
@@ -871,10 +1000,27 @@ export default function RegisterScreen() {
 
   const reviewStep = () => (
     <>
-      <Card colors={colors} title="Rider" action={<Pressable onPress={() => goTo(steps.indexOf("rider"))} hitSlop={10}><Text style={s.link}>Edit</Text></Pressable>}>
+      {jumped ? (
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12, padding: 12, borderRadius: 12, backgroundColor: colors.successTint }}>
+          <Feather name="zap" size={16} color={colors.success} />
+          <Text style={[s.note, { flex: 1, color: colors.foreground }]}>Filled in from {f.firstName ? `${f.firstName}'s` : "your"} profile and last race. Check it over, then {q?.payOnline ? "pay" : "register"}.</Text>
+        </View>
+      ) : null}
+      <Card colors={colors} title="Rider" action={
+        <View style={{ flexDirection: "row", gap: 16 }}>
+          {switchRider}
+          <Pressable onPress={() => { setEditInfo(true); goTo(steps.indexOf("rider")); }} hitSlop={10}><Text style={s.link}>Edit</Text></Pressable>
+        </View>
+      }>
         <Row colors={colors} label="Name" value={`${f.firstName} ${f.lastName}`} />
         <Row colors={colors} label="Number" value={f.bibNumber ? `#${f.bibNumber}` : ""} />
         <Row colors={colors} label="Email" value={f.email} />
+        <Row colors={colors} label="Phone" value={f.phone} />
+        <Row colors={colors} label="Birth date" value={f.dateOfBirth} />
+        {info.requireAma || f.amaNumber ? <Row colors={colors} label="AMA #" value={f.amaNumber} /> : null}
+        {info.requireClubId || f.clubIdNumber ? <Row colors={colors} label="Club ID #" value={f.clubIdNumber} /> : null}
+        <Row colors={colors} label="Address" value={[f.streetAddress, f.city, [f.homeState, f.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ")} />
+        <Row colors={colors} label="Emergency" value={[f.emergencyContact, f.emergencyPhone].filter(Boolean).join(" · ")} />
       </Card>
       {info.groupRace ? (
         <Card colors={colors} title="Team" action={<Pressable onPress={() => goTo(steps.indexOf("team"))} hitSlop={10}><Text style={s.link}>Edit</Text></Pressable>}>
@@ -892,6 +1038,10 @@ export default function RegisterScreen() {
           </Text>
         </Card>
       ) : null}
+      <Card colors={colors} title="Bike" action={<Pressable onPress={() => goTo(steps.indexOf("bike"))} hitSlop={10}><Text style={s.link}>Edit</Text></Pressable>}>
+        <Row colors={colors} label="Bike" value={[f.bikeYear, f.bikeBrand, f.bikeModel].filter(Boolean).join(" ")} />
+        {f.sponsors ? <Row colors={colors} label="Sponsors" value={f.sponsors} /> : null}
+      </Card>
       {q && q.entryCents > 0 && info.paymentEnabled ? (
         <Card colors={colors} title="Discount code">
           {comp ? (

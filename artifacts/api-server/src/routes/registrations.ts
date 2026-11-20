@@ -18,10 +18,11 @@ import { ORGANIZER_NO_STRIPE, organizerCardError, riderCardError } from "../lib/
 import { checkinSellPrices, listClubSellItems } from "../lib/sellItems";
 import { RM_TRACKR_NAME, RM_TRACKR_OPTION_ID } from "@workspace/db";
 import { canManageRider } from "../lib/riderAccess";
+import { profileMatchingName } from "../lib/registrationIdentity";
 import { riderMobileTokensTable } from "@workspace/db";
 import { reminderAvailability, reminderStatusText, rentalReplacementCharge, sendRentalReminders, unreturnedRentals, type ReminderStatus } from "../lib/rentalReminders";
 import { teamMembersTable } from "@workspace/db";
-import { isMasked, maskDateOfBirth, maskName, maskPhone, maskStreet, maskZip } from "../lib/privacyMask";
+import { isMasked } from "../lib/privacyMask";
 import { parseTeamInput, parseTeamGear, saveTeamRoster, saveTeamTags, listTeamMembers, teamRegistrationId, teamRegistrationHasRoster, teamTagConflict, teamGearCounts } from "../lib/teams";
 import { eventTrackrPrice } from "../lib/sellItems";
 import { addonIsPaid, confirmAddonPayment, parseCashTendered, recordCardAddonPending, recordCashAddon, type AddonItem } from "../lib/addonPayments";
@@ -105,6 +106,14 @@ type RiderResolution =
 async function resolveRegistrationRider(
   email: string | null,
   riderId: unknown,
+  /** The signed-in rider account, if any: it may pick a profile it manages whatever email it gives. */
+  caller: { id: number; email: string } | null = null,
+  /**
+   * Public registration: the typed name. When the caller can't manage the
+   * profiles on this email (signed out, or another account), only a profile
+   * with this name is reused; otherwise a new one is made (profileMatchingName).
+   */
+  typedName: { firstName: unknown; lastName: unknown } | null = null,
 ): Promise<RiderResolution> {
   const normalizedEmail = email?.trim().toLowerCase() || null;
 
@@ -120,7 +129,10 @@ async function resolveRegistrationRider(
     if (!selected) {
       return { status: 404, error: "This rider profile couldn't be found. It may have been deleted. Refresh the page and try again." };
     }
-    if ((selected.email ?? "").trim().toLowerCase() !== normalizedEmail) {
+    // A managed profile (a child or a rider coached) may have no email of its own,
+    // or a different one: its owner or manager registers it from their account.
+    if ((selected.email ?? "").trim().toLowerCase() !== normalizedEmail
+      && !(caller && await canManageRider(caller, selected))) {
       return { status: 409, error: "The selected rider profile does not match the supplied email" };
     }
     return { rider: selected };
@@ -133,6 +145,11 @@ async function resolveRegistrationRider(
     .where(sql`lower(${ridersTable.email}) = ${normalizedEmail}`)
     .orderBy(asc(ridersTable.id));
   if (emailMatches.length === 0) return { rider: null };
+  if (typedName) {
+    let callerManages = false;
+    if (caller) for (const m of emailMatches) if (await canManageRider(caller, m)) { callerManages = true; break; }
+    if (!callerManages) return { rider: profileMatchingName(emailMatches, typedName.firstName, typedName.lastName) };
+  }
   if (emailMatches.length === 1) return { rider: emailMatches[0] };
 
   return {
@@ -240,23 +257,23 @@ router.get("/public/riders/lookup", async (req, res) => {
   const email = ((req.query.email as string) || "").trim().toLowerCase();
   if (!email) return res.status(400).json({ error: "Enter an email address." });
 
-  const riders = await db.select().from(ridersTable)
+  const sameEmail = await db.select().from(ridersTable)
     .where(sql`lower(${ridersTable.email}) = ${email}`)
     .orderBy(asc(ridersTable.id));
 
-  if (!riders.length) return res.json({ found: false, count: 0, riders: [] });
-
-  // Contact, DOB, address and emergency details only go in full to a signed-in
-  // organizer or the rider account that owns this email. Anyone else gets them
-  // partly hidden: enough to recognize their own details, not to learn someone else's.
-  let canSeePrivate = !!(req.session as any)?.userId;
-  const riderAccountId = (req.session as any)?.riderAccountId as number | undefined;
-  if (!canSeePrivate && riderAccountId) {
-    const [account] = await db.select({ email: riderAccountsTable.email })
-      .from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
-    canSeePrivate = account?.email?.trim().toLowerCase() === email;
+  // Riders' details only go to a signed-in organizer or a rider account that owns
+  // or manages the profile (riderAccess). Anyone else (not signed in, or another
+  // account) learns nothing, not even whether the email has a profile: they type
+  // every detail, and the server only fills what a profile doesn't have yet.
+  const isOrganizer = !!(req.session as any)?.userId;
+  const callerAccount = isOrganizer ? null : await requestRiderAccount(req);
+  const managed = new Set<number>();
+  if (callerAccount) {
+    for (const r of sameEmail) if (await canManageRider(callerAccount, r)) managed.add(r.id);
   }
-  const priv = (v: string | null | undefined, mask: (v: string | null | undefined) => string) => (canSeePrivate ? v ?? "" : mask(v));
+  const canSee = (riderId: number) => isOrganizer || managed.has(riderId);
+  const riders = sameEmail.filter(r => canSee(r.id));
+  if (!riders.length) return res.json({ found: false, count: 0, riders: [] });
 
   const riderIds = riders.map(r => r.id);
 
@@ -270,10 +287,11 @@ router.get("/public/riders/lookup", async (req, res) => {
     bibNumber: registrationsTable.bibNumber,
     sponsors: registrationsTable.sponsors,
     myLapsTransponderNumber: registrationsTable.myLapsTransponderNumber,
+    transponderRental: registrationsTable.transponderRental,
     createdAt: registrationsTable.createdAt,
     id: registrationsTable.id,
   }).from(registrationsTable)
-    .where(inArray(registrationsTable.riderId, riderIds))
+    .where(and(inArray(registrationsTable.riderId, riderIds), ne(registrationsTable.status, "void")))
     .orderBy(desc(registrationsTable.createdAt), desc(registrationsTable.id));
 
   // Numbers a rider used on a group race team (filed on the team, not their entry).
@@ -296,6 +314,14 @@ router.get("/public/riders/lookup", async (req, res) => {
     }
   }
 
+  // A rented transponder's number (assigned at check-in) went back to the club.
+  const lastOwnTx = new Map<number, string>();
+  for (const reg of allLastRegs) {
+    if (reg.riderId != null && !reg.transponderRental && reg.myLapsTransponderNumber?.trim() && !lastOwnTx.has(reg.riderId)) {
+      lastOwnTx.set(reg.riderId, reg.myLapsTransponderNumber.trim());
+    }
+  }
+
   const result = riders.map(rider => {
     const lastReg = lastRegByRider.get(rider.id) ?? null;
     return {
@@ -303,16 +329,16 @@ router.get("/public/riders/lookup", async (req, res) => {
       firstName: rider.firstName ?? "",
       lastName: rider.lastName ?? "",
       email: rider.email ?? "",
-      phone: priv(rider.phone, maskPhone),
-      dateOfBirth: priv(rider.dateOfBirth, maskDateOfBirth),
-      emergencyContact: priv(rider.emergencyContact, maskName),
-      emergencyPhone: priv(rider.emergencyPhone, maskPhone),
-      streetAddress: priv(rider.streetAddress, maskStreet),
+      phone: rider.phone ?? "",
+      dateOfBirth: rider.dateOfBirth ?? "",
+      emergencyContact: rider.emergencyContact ?? "",
+      emergencyPhone: rider.emergencyPhone ?? "",
+      streetAddress: rider.streetAddress ?? "",
       city: rider.city ?? "",
       homeState: rider.homeState ?? "",
-      zip: priv(rider.zip, maskZip),
-      /** Some details are partly hidden ("*"); sending them back keeps what's on file. */
-      detailsHidden: !canSeePrivate,
+      zip: rider.zip ?? "",
+      /** Older pages masked details for strangers; only fully visible profiles are returned now. */
+      detailsHidden: false,
       amaNumber: lastReg?.amaNumber ?? rider.amaNumber ?? "",
       clubIdNumber: lastReg?.clubIdNumber ?? "",
       bikeBrand: lastReg?.bikeBrand ?? rider.bikeManufacturer ?? "",
@@ -320,7 +346,7 @@ router.get("/public/riders/lookup", async (req, res) => {
       bikeYear: lastReg?.bikeYear ?? rider.bikeYear ?? "",
       bibNumber: lastReg?.bibNumber?.toString() ?? rider.bibNumber ?? "",
       sponsors: lastReg?.sponsors ?? rider.sponsors ?? "",
-      myLapsTransponderNumber: lastReg?.myLapsTransponderNumber || rider.mylapsTransponderId || lastTeamByRider.get(rider.id)?.trackrNumber || "",
+      myLapsTransponderNumber: rider.mylapsTransponderId || lastOwnTx.get(rider.id) || lastTeamByRider.get(rider.id)?.trackrNumber || "",
       rfidNumber: rider.rfidNumber || lastTeamByRider.get(rider.id)?.rfidNumber || "",
     };
   });
@@ -1649,7 +1675,7 @@ router.post("/public/events/:eventId/register", async (req, res) => {
   // new profile, so the entry never lands on the profile already on that email.
   const riderResolution: RiderResolution = req.body.newRider === true && !hintedRiderId
     ? { rider: null }
-    : await resolveRegistrationRider(String(email), hintedRiderId);
+    : await resolveRegistrationRider(String(email), hintedRiderId, await requestRiderAccount(req), { firstName, lastName });
   if ("error" in riderResolution) {
     return res.status(riderResolution.status).json({ error: riderResolution.error });
   }
@@ -1854,6 +1880,10 @@ router.post("/public/events/:eventId/register", async (req, res) => {
     const fieldsToSave = callerManages
       ? keepSavedTimingNumbers(resolvedExistingRider, profileFields)
       : fillOnlyEmptyProfileFields(resolvedExistingRider, profileFields);
+    // The profile's email decides who owns it (riderAccess), so registering never
+    // changes it: a parent registering a child from their account gets the receipt,
+    // and the child's profile keeps its own email (or none).
+    delete fieldsToSave.email;
     if (Object.keys(fieldsToSave).length > 0) {
       const [updated] = await db.update(ridersTable)
         .set(fieldsToSave)

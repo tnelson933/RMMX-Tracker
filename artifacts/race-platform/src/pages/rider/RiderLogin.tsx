@@ -59,9 +59,10 @@ export default function RiderLogin() {
   // true after a successful registration: open the new rider's profile to fill in.
   const [fromRegister, setFromRegister] = useState(false);
 
-  // The page a signed-out rider was trying to open (only rider pages).
+  // The page a signed-out rider was trying to open (only rider pages, or an event's registration form).
   const nextParam = new URLSearchParams(search).get("next");
-  const next = nextParam && nextParam.startsWith("/rider/") && !nextParam.startsWith("//") && !nextParam.startsWith("/rider/login") ? nextParam : null;
+  const next = nextParam && ((nextParam.startsWith("/rider/") && !nextParam.startsWith("//") && !nextParam.startsWith("/rider/login"))
+    || /^\/register\/\d+$/.test(nextParam)) ? nextParam : null;
 
   useEffect(() => {
     if (!isAuthenticated) return;
