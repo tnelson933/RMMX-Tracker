@@ -73,9 +73,9 @@ development only. All commands run from the repo root (`RM-Tracker/`).
   Stripe (Standard, "full dashboard") account and are charged **directly** on it
   (`stripeAccount` request option, `clubs.stripe_direct_charges`): the club gets the money
   and pays Stripe's fees and losses; the platform account isn't in the flow. Clubs on older
-  Express accounts stay on destination charges (platform pays fees) until they switch on the
-  Payments page. See `artifacts/api-server/src/lib/stripePayments.ts`. Dev Club #1000 is still
-  an Express test account. Both are launched by `scripts/dev-local.mjs`, which loads the
+  Express accounts were disconnected by migration 0041 (2026-11-19) and must reconnect as their
+  own account. See `artifacts/api-server/src/lib/stripePayments.ts`. Dev Club #1000 was disconnected
+  too: reconnect it on Payments (test mode) before testing card payments locally. Both servers are launched by `scripts/dev-local.mjs`, which loads the
   root `.env` (gitignored; template `.env.example`). AI env vars are placeholders, so
   Rocky/AI/TTS routes fail locally until real keys are configured.
 - `node scripts/dev-bootstrap-admin.mjs [email] [club] [state]`: creates the first
