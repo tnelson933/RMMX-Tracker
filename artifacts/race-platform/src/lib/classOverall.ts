@@ -1,4 +1,4 @@
-import { compareOverall, olympicPenalty, overallPositions, type OverallRow } from "./overallOrder";
+import { compareOverall, motoStatus, olympicPenalty, overallPositions, type OverallRow } from "./overallOrder";
 
 type ResultLike = {
   riderId: number;
@@ -34,8 +34,9 @@ export function rankClassOverall<T extends ResultLike>(
   motoOrder?: number[],
 ): Array<{ result: T; total: number; position: number }> {
   const motoIds = motoOrder ?? [...new Set(rows.map(r => r.motoId))].sort((a, b) => a - b);
+  // Olympic DNF/DNS penalties count each moto's starters (riders who aren't DNS).
   const classSize = new Map<number, number>();
-  for (const r of rows) classSize.set(r.motoId, (classSize.get(r.motoId) ?? 0) + 1);
+  for (const r of rows) if (!r.dns) classSize.set(r.motoId, (classSize.get(r.motoId) ?? 0) + 1);
 
   const byRider = new Map<number, T[]>();
   for (const r of rows) {
@@ -47,8 +48,10 @@ export function rankClassOverall<T extends ResultLike>(
     let total = 0;
     let lastMotoFinish: number | null = null;
     let finishedAny = false;
+    const motoStatuses: number[] = [];
     for (const motoId of motoIds) {
       const r = mine.find(x => x.motoId === motoId);
+      if (r) motoStatuses.unshift(motoStatus(r));
       const out = !r || r.dnf || r.dns;
       if (lowerIsBetter) {
         total += !r || r.dns ? olympicPenalty("dns", classSize.get(motoId) ?? 0)
@@ -60,7 +63,7 @@ export function rankClassOverall<T extends ResultLike>(
       lastMotoFinish = out ? null : r!.position ?? null;
       if (!out) finishedAny = true;
     }
-    const order: OverallRow = { total, finishedAny, lastMotoFinish };
+    const order: OverallRow = { total, finishedAny, lastMotoFinish, motoStatuses };
     const best = Math.min(...mine.filter(r => !r.dnf && !r.dns).map(r => r.position ?? 999), 999);
     return { result: mine[0], total, order, best };
   });

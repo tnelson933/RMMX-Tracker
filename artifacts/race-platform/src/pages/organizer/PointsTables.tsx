@@ -58,6 +58,10 @@ function unavailableMessage(err: unknown): string | undefined {
 const AMA_SCALE = AMA_POINTS;
 const OLYMPIC_SCALE = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
 const ENDURO_SCALE = [25, 22, 20, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+/** AMA National Enduro, National Hare & Hound, GNCC Pro, RMEC: 30, 25, 21, 18, 16 … 20th = 1. */
+const AMA_OFFROAD_SCALE = [30, 25, 21, 18, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+/** GNCC amateur classes: 20 down to 1. */
+const GNCC_AMATEUR_SCALE = Array.from({ length: 20 }, (_, i) => 20 - i);
 
 function scaleToText(scale: number[]): string {
   return scale.join(", ");
@@ -403,7 +407,7 @@ function AiAssistPanel({
   }) => void;
 }) {
   const [scoringDesc, setScoringDesc] = useState("");
-  const [motoTerminology, setMotoTerminology] = useState<"heats" | "divisions" | "motos">("motos");
+  const [motoTerminology, setMotoTerminology] = useState<"heats" | "divisions" | "motos" | "tests">("motos");
   const [motoDesc, setMotoDesc] = useState("");
   const [motoNotes, setMotoNotes] = useState<string | null>(null);
   const suggestMutation = useAiSuggestPointsTable();
@@ -460,7 +464,7 @@ function AiAssistPanel({
 
       <div className="space-y-1.5">
         <Label className="text-xs font-medium">What should races be called?</Label>
-        <Select value={motoTerminology} onValueChange={(v) => setMotoTerminology(v as "heats" | "divisions" | "motos")}>
+        <Select value={motoTerminology} onValueChange={(v) => setMotoTerminology(v as "heats" | "divisions" | "motos" | "tests")}>
           <SelectTrigger className="bg-background text-sm h-9">
             <SelectValue />
           </SelectTrigger>
@@ -468,6 +472,7 @@ function AiAssistPanel({
             <SelectItem value="motos">Motos</SelectItem>
             <SelectItem value="heats">Heats</SelectItem>
             <SelectItem value="divisions">Divisions</SelectItem>
+            <SelectItem value="tests">Tests (enduro)</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -564,7 +569,8 @@ function AiTweakPanel({
 
       onApply(result);
       setInstruction("");
-      toast({ title: "Table updated by AI ✓", description: "Review the changes below before saving." });
+      // A note says when the change is automatic or set elsewhere (e.g. Auto DNF).
+      toast({ title: "Table updated by AI ✓", description: result.motoNotes ? `${result.motoNotes} Review the changes below before saving.` : "Review the changes below before saving." });
     } catch (err) {
       toast({ title: "AI couldn't apply that change", description: unavailableMessage(err) ?? "Try rephrasing.", variant: "destructive" });
     }
@@ -862,8 +868,29 @@ function TableFormDialog({
                       size="sm"
                       className="flex-1 text-xs"
                       onClick={() => setForm((f) => ({ ...f, scoringMethod: "highest_points", mainEventOnly: false, scaleText: scaleToText(ENDURO_SCALE) }))}
+                      title="Regional enduro and hare scramble (ECEA, WORCS): 25, 22, 20, 18, 16, 15 … 20th = 1"
                     >
-                      Enduro
+                      Enduro / HS
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 text-xs"
+                      onClick={() => setForm((f) => ({ ...f, scoringMethod: "highest_points", mainEventOnly: false, scaleText: scaleToText(AMA_OFFROAD_SCALE) }))}
+                      title="AMA National Enduro, National Hare & Hound, GNCC Pro, RMEC: 30, 25, 21, 18, 16, 15 … 20th = 1"
+                    >
+                      AMA Off-Road
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 text-xs"
+                      onClick={() => setForm((f) => ({ ...f, scoringMethod: "highest_points", mainEventOnly: false, scaleText: scaleToText(GNCC_AMATEUR_SCALE) }))}
+                      title="GNCC amateur classes: 20, 19, 18 … 20th = 1"
+                    >
+                      GNCC Am
                     </Button>
                     <Button
                       type="button"
@@ -1379,7 +1406,8 @@ export default function PointsTables() {
               {(() => {
                 const pct = parseInt(dnfThreshold, 10);
                 if (isNaN(pct) || pct < 1 || pct > 100) return null;
-                const minLaps = Math.floor(10 * pct / 100);
+                // Laps needed round up, as the scoring engine does (lib/motoPoints.ts).
+                const minLaps = Math.ceil(10 * pct / 100 - 1e-9);
                 return (
                   <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-1.5">
                     e.g. leader completes <strong>10 laps</strong> → riders below <strong>{minLaps} lap{minLaps !== 1 ? "s" : ""}</strong> score 0 pts

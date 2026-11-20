@@ -65,7 +65,8 @@ function PointsOverallStandings({ eventId, motos }: { eventId: number; motos: Mo
 
   // Olympic tables: lowest total wins; DNF/DNS/missed motos score penalties.
   const lowerIsBetter = classResults.some((r) => (r as any).lowerIsBetter);
-  const classSize = (motoId: number) => classResults.filter((r) => r.motoId === motoId).length;
+  // Olympic DNF/DNS penalties count the moto's starters (riders who aren't DNS).
+  const classSize = (motoId: number) => classResults.filter((r) => r.motoId === motoId && !r.dns).length;
   const ranking = rankClassOverall(classResults as any[], lowerIsBetter, completedClassMotos.map((m) => m.id));
   const rankByRider = new Map(ranking.map((e) => [e.result.riderId as number, e]));
 

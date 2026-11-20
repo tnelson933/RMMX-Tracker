@@ -9,15 +9,12 @@
  */
 import { getDb, parseJson, parseJsonArr } from "../db";
 
-/** A start read with no finish after this long is not treated as a finish by hardware reads. */
-export const ENDURO_MAX_RUN_MS = 30 * 60_000;
-
 /** Placeholder class enduro tests are created with (tests are event-wide). */
 export const ENDURO_ALL_CLASSES = "All Classes";
 
 /**
  * An enduro crossing that can't be recorded (rider finished every run, test
- * finished, wrong gate, run too long, unknown tag).
+ * finished, wrong gate, unknown tag).
  */
 export class EnduroCrossingRejected extends Error {}
 

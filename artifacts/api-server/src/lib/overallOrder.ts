@@ -6,8 +6,8 @@
  * Olympic scoring follows the AMA amateur motocross rules (MX Sports
  * Competition Bulletin 2017-12, AMA rulebook):
  *   - a finish scores its position (or the table's value for it);
- *   - DNF scores the number of riders in the class, never less than 20;
- *   - DNS scores the number of riders in the class plus 30;
+ *   - DNF scores the moto's starters (riders who aren't DNS), never less than 20;
+ *   - DNS scores the moto's starters plus 30;
  *   - a missed moto scores as a DNS;
  *   - lowest total wins; a tie goes to the better finish in the last moto;
  *   - a rider must finish at least one moto to place ahead of anyone who did.
@@ -16,6 +16,13 @@
  *   - an event overall: the better finish in the last moto;
  *   - a series championship: most wins, then most 2nds, 3rds, ... (count-back,
  *     when `finishCounts` is given), then the final moto of the last round.
+ * On equal totals, both kinds also rank:
+ *   - a rider who made the main event ahead of one who didn't (Supercross:
+ *     a main-event DNF beats a heat-only DNQ), when `reachedMain` is given;
+ *   - after the last-moto finish, DNF ahead of DNS, result by result from the
+ *     rider's last one back, when `motoStatuses` is given. So [DNS, DNF] beats
+ *     [DNF, DNS], and both beat [DNS, DNS]. Only motos the rider has a result in
+ *     count (a heat they weren't in isn't a DNS).
  */
 
 /**
@@ -31,9 +38,12 @@ export function isLowerBetter(scoringMethod: string | null | undefined): boolean
   return scoringMethod === "lowest_positions";
 }
 
-/** Olympic score for a moto the rider didn't finish (DNF) or didn't start / missed (DNS). */
-export function olympicPenalty(kind: "dnf" | "dns", classSize: number): number {
-  const riders = Math.max(0, Math.floor(classSize));
+/**
+ * Olympic score for a moto the rider didn't finish (DNF) or didn't start / missed
+ * (DNS). `starters`: riders in the moto who aren't DNS (a 24-starter gate: DNF 24, DNS 54).
+ */
+export function olympicPenalty(kind: "dnf" | "dns", starters: number): number {
+  const riders = Math.max(0, Math.floor(starters));
   return kind === "dns" ? riders + OLYMPIC_DNS_EXTRA : Math.max(riders, OLYMPIC_DNF_MINIMUM);
 }
 
@@ -46,6 +56,39 @@ export interface OverallRow {
   lastMotoFinish: number | null;
   /** Series count-back: finishCounts[0] = wins, [1] = 2nds, … (points tables). */
   finishCounts?: number[];
+  /** Raced the class's main event (an event with a main; Supercross format). */
+  reachedMain?: boolean;
+  /** Outcome (MOTO_FINISHED / MOTO_DNF / MOTO_DNS) of each moto the rider has a result in, last first. */
+  motoStatuses?: number[];
+}
+
+export const MOTO_FINISHED = 0;
+export const MOTO_DNF = 1;
+export const MOTO_DNS = 2;
+
+/** A result's outcome for `motoStatuses`. */
+export function motoStatus(r: { dnf?: boolean | null; dns?: boolean | null }): number {
+  return r.dns ? MOTO_DNS : r.dnf ? MOTO_DNF : MOTO_FINISHED;
+}
+
+/** Last-moto finish, then DNF over DNS result by result from the last one back. */
+function lastMotoTieBreak(a: OverallRow, b: OverallRow): number {
+  const last = (a.lastMotoFinish ?? Number.MAX_SAFE_INTEGER) - (b.lastMotoFinish ?? Number.MAX_SAFE_INTEGER);
+  if (last !== 0) return last;
+  const sa = a.motoStatuses, sb = b.motoStatuses;
+  if (sa && sb) {
+    for (let i = 0; i < Math.max(sa.length, sb.length); i++) {
+      const diff = (sa[i] ?? MOTO_DNS) - (sb[i] ?? MOTO_DNS);
+      if (diff !== 0) return diff;
+    }
+  }
+  return 0;
+}
+
+/** Made the main event ahead of didn't (only when both say). */
+function mainEventTieBreak(a: OverallRow, b: OverallRow): number {
+  if (a.reachedMain == null || b.reachedMain == null || a.reachedMain === b.reachedMain) return 0;
+  return a.reachedMain ? -1 : 1;
 }
 
 /** finishCounts from finishing positions (nulls ignored). */
@@ -63,17 +106,18 @@ export function countFinishes(positions: Array<number | null | undefined>): numb
 export function compareOverall(a: OverallRow, b: OverallRow, lowerIsBetter: boolean): number {
   if (!lowerIsBetter) {
     if (b.total !== a.total) return b.total - a.total;
+    const main = mainEventTieBreak(a, b);
+    if (main !== 0) return main;
     if (a.finishCounts && b.finishCounts) {
       for (let i = 0; i < Math.max(a.finishCounts.length, b.finishCounts.length); i++) {
         const diff = (b.finishCounts[i] ?? 0) - (a.finishCounts[i] ?? 0);
         if (diff !== 0) return diff;
       }
     }
-    return (a.lastMotoFinish ?? Number.MAX_SAFE_INTEGER) - (b.lastMotoFinish ?? Number.MAX_SAFE_INTEGER);
+    return lastMotoTieBreak(a, b);
   }
   if (a.finishedAny !== b.finishedAny) return a.finishedAny ? -1 : 1;
-  return a.total - b.total
-    || (a.lastMotoFinish ?? Number.MAX_SAFE_INTEGER) - (b.lastMotoFinish ?? Number.MAX_SAFE_INTEGER);
+  return a.total - b.total || mainEventTieBreak(a, b) || lastMotoTieBreak(a, b);
 }
 
 /** Overall positions for rows already sorted with compareOverall (ties share a position). */

@@ -1,7 +1,6 @@
 // Sprint-enduro scoring is pure and lives in the shared package: the desktop's
 // offline server runs the same code for the event overall.
 export {
-  ENDURO_MAX_RUN_MS,
   compareEnduroOverall,
   computeEnduroOverall,
   pairEnduroRuns,

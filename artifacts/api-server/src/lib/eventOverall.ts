@@ -57,7 +57,8 @@ export async function computeEventOverall(eventId: number): Promise<{
     .leftJoin(ridersTable, eq(raceResultsTable.riderId, ridersTable.id))
     .where(inArray(raceResultsTable.motoId, motos.map(m => m.id)));
 
-  const { classes, hasPoints } = buildEventOverall(motos.map(m => m.id), rows, lowerIsBetter, { compareOverall, overallPositions, olympicPenalty });
+  const { classes, hasPoints } = buildEventOverall(motos.map(m => m.id), rows, lowerIsBetter, { compareOverall, overallPositions, olympicPenalty },
+    motos.filter(m => m.type === "main").map(m => m.id));
   return { classes, hasPoints, lowerIsBetter };
 }
 

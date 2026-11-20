@@ -31,7 +31,8 @@ import {
   motosTable,
   registrationsTable,
 } from "@workspace/db/schema";
-import { eq, and, count, ilike, or, desc, isNotNull } from "drizzle-orm";
+import { eq, and, count, ilike, or, desc, isNotNull, inArray } from "drizzle-orm";
+import { pickEnduroGate } from "@workspace/api-zod";
 import { processCrossing, handleFacilityCrossing, handlePing, buildLeaderboard, sseBroadcast, withMotoLock, motoForRider, RiderMotoFinishedError, EnduroCrossingRejected } from "./timing";
 import { recordSplitCrossing, splitForReader } from "../lib/sectors";
 import { broadcastPracticeBoard, processPracticeCrossing } from "./practice";
@@ -507,60 +508,67 @@ router.post("/timing/readers/:token/crossing", express.text({ type: "text/*" }),
     return res.json({ ok: true, message: `Time check arrival recorded (check id ${timeCheckAssignment.timeCheckId})` });
   }
 
-  // 6. Detect same-gate scenario: reader is assigned BOTH start AND finish for the same moto.
-  //    When a test starts and ends at the same physical location, organizers assign one reader
-  //    to both roles. We pick the correct role by crossing-parity (even count → start, odd → finish).
-  const startByMoto = new Map(
-    assignments.filter((a) => a.role === "start" && a.motoId).map((a) => [a.motoId!, a]),
-  );
-  const finishByMoto = new Map(
-    assignments.filter((a) => a.role === "finish" && a.motoId).map((a) => [a.motoId!, a]),
-  );
-  const sameGateMotoId = [...startByMoto.keys()].find((id) => finishByMoto.has(id)) ?? null;
-
-  if (sameGateMotoId) {
-    // Resolve rider first so we can read crossing parity
+  // 6. Enduro test gates (Course Map). Each test has its own start reader and
+  //    finish reader, or one reader for both when it starts and ends in one
+  //    spot. A reader can gate more than one test (the same course run as two
+  //    tests, or one test's finish next to the next test's start):
+  //    pickEnduroGate decides from the rider's runs which test, and which end.
+  const gateRows = assignments.filter((a) => a.motoId != null && (a.role === "start" || a.role === "finish"));
+  const gates = gateRows.some((a) => a.antennaId != null && a.antennaId === incomingAntenna)
+    ? gateRows.filter((a) => a.antennaId === incomingAntenna)
+    : gateRows.filter((a) => a.antennaId == null);
+  if (gates.length > 0) {
     const riderId = await resolveRider(rfidNumber, eventId, isActiveTransponderReader);
     if (!riderId) {
       return res.json({ ok: false, message: `Tag ${rfidNumber} not assigned to any rider in this event` });
     }
-
-    const [countRow] = await db
-      .select({ n: count() })
+    const gateMotoIds = [...new Set(gates.map((g) => g.motoId!))];
+    const tests = await db
+      .select({ id: motosTable.id, name: motosTable.name, motoNumber: motosTable.motoNumber, lapCount: motosTable.lapCount, status: motosTable.status })
+      .from(motosTable)
+      .where(inArray(motosTable.id, gateMotoIds));
+    const counts = await db
+      .select({ motoId: lapCrossingsTable.motoId, n: count() })
       .from(lapCrossingsTable)
-      .where(and(eq(lapCrossingsTable.motoId, sameGateMotoId), eq(lapCrossingsTable.riderId, riderId)));
-
-    const existing = Number(countRow?.n ?? 0);
-    const isEven = existing % 2 === 0; // even = expecting start; odd = expecting finish
-
+      .where(and(inArray(lapCrossingsTable.motoId, gateMotoIds), eq(lapCrossingsTable.riderId, riderId)))
+      .groupBy(lapCrossingsTable.motoId);
+    const picked = pickEnduroGate(
+      gates.map((g) => ({ motoId: g.motoId!, role: g.role as "start" | "finish" })),
+      tests.map((t) => ({
+        motoId: t.id,
+        name: t.name,
+        motoNumber: t.motoNumber ?? 0,
+        requiredRuns: Math.max(1, t.lapCount ?? 1),
+        status: t.status ?? "scheduled",
+        crossings: Number(counts.find((c) => c.motoId === t.id)?.n ?? 0),
+      })),
+    );
+    if ("error" in picked) return res.json({ ok: false, message: picked.error });
     try {
       const result = await processCrossing({
         rfidNumber,
-        motoId: sameGateMotoId,
+        motoId: picked.motoId,
         crossingTime,
         readerId: `reader:${reader.id}`,
         antennaId: incomingAntenna ?? undefined,
         readerReceivedAt: body.readerReceivedAt ?? originalReceipt?.toISOString(),
+        // Re-checked inside the moto lock (the run count above is a fast path).
+        enduroRole: picked.role,
       });
       if (result.debounced) return res.json({ ok: true, message: "Duplicate read ignored" });
-      const action = (result as any)?.enduroAction ?? (isEven ? "started" : "finished");
-      return res.json({ ok: true, message: `Rider ${action} on moto ${sameGateMotoId}` });
+      const action = (result as any)?.enduroAction ?? (picked.role === "start" ? "started" : "finished");
+      return res.json({ ok: true, message: `Rider ${action} on ${picked.name}` });
     } catch (err: any) {
       return enduroCrossingError(res, err);
     }
   }
 
-  // 7. Normal single-role: pick assignment by antenna specificity, then wildcard
+  // 7. A time check on this antenna (or reader-wide).
   const assignment =
     assignments.find((a) => a.antennaId !== null && a.antennaId === incomingAntenna) ??
     assignments.find((a) => a.antennaId === null) ??
     null;
-
-  if (!assignment) {
-    return res.status(422).json({ ok: false, message: "Reader has no matching checkpoint assignment" });
-  }
-
-  if (assignment.role === "time_check") {
+  if (assignment?.role === "time_check") {
     if (assignment.timeCheckId) {
       const riderId = await resolveRider(rfidNumber, eventId, isActiveTransponderReader);
       if (riderId) {
@@ -584,50 +592,7 @@ router.post("/timing/readers/:token/crossing", express.text({ type: "text/*" }),
     }
     return res.json({ ok: true, message: `Time check arrival recorded (check id ${assignment.timeCheckId})` });
   }
-
-  if (!assignment.motoId) {
-    return res.status(422).json({ ok: false, message: "Assignment has no motoId for start/finish" });
-  }
-
-  // Enforce role parity for dedicated start/finish readers
-  const riderId = await resolveRider(rfidNumber, eventId, isActiveTransponderReader);
-  if (!riderId) {
-    return res.json({ ok: false, message: `Tag ${rfidNumber} not assigned to any rider in this event` });
-  }
-
-  const [countRow] = await db
-    .select({ n: count() })
-    .from(lapCrossingsTable)
-    .where(and(eq(lapCrossingsTable.motoId, assignment.motoId), eq(lapCrossingsTable.riderId, riderId)));
-
-  const existing = Number(countRow?.n ?? 0);
-  const isEven = existing % 2 === 0;
-
-  if (assignment.role === "start" && !isEven) {
-    return res.json({ ok: false, message: "Rider already has an open start — waiting for finish crossing" });
-  }
-  if (assignment.role === "finish" && isEven) {
-    return res.json({ ok: false, message: "No open start for this rider on this test" });
-  }
-
-  // 8. Delegate to the standard crossing processor
-  try {
-    const result = await processCrossing({
-      rfidNumber,
-      motoId: assignment.motoId,
-      crossingTime,
-      readerId: `reader:${reader.id}`,
-      antennaId: incomingAntenna ?? undefined,
-      readerReceivedAt: body.readerReceivedAt ?? originalReceipt?.toISOString(),
-      // Re-checked inside the moto lock (the parity check above is a fast path).
-      enduroRole: assignment.role === "start" || assignment.role === "finish" ? assignment.role : undefined,
-    });
-    if (result.debounced) return res.json({ ok: true, message: "Duplicate read ignored" });
-    const action = (result as any)?.enduroAction ?? (isEven ? "started" : "finished");
-    return res.json({ ok: true, message: `Rider ${action} on moto ${assignment.motoId}` });
-  } catch (err: any) {
-    return enduroCrossingError(res, err);
-  }
+  return res.status(422).json({ ok: false, message: "Reader has no matching checkpoint assignment" });
 });
 
 export default router;

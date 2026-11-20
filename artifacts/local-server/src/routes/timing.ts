@@ -1,6 +1,7 @@
 import { teamTagRider } from "../lib/group-teams";
 import { recordTagsInPayload, scannerOpen } from "../lib/recentTags";
 import { Router } from "express";
+import { pickEnduroGate } from "@workspace/api-zod";
 import { compareStandings, computeFinishAt, everyoneFinished, finishGraceMs, flagTimeFor, scoreRider, type ScoringMoto } from "../lib/lapScoring";
 import type { Response } from "express";
 import { getDb, parseJsonArr, parseJson } from "../db";
@@ -19,7 +20,6 @@ import {
 } from "../lib/sectors";
 import {
   ENDURO_ALL_CLASSES,
-  ENDURO_MAX_RUN_MS,
   EnduroCrossingRejected,
   pairEnduroRuns,
   recomputeEnduroPositionsForEvent,
@@ -694,15 +694,6 @@ function processCrossing(opts: {
       const elapsedMs = openStart
         ? Math.max(0, crossingTime.getTime() - new Date(openStart.crossing_time).getTime())
         : 0;
-      // A hardware read finishing a run open longer than the maximum is almost
-      // certainly a missed finish: don't record it. The start stays open so the
-      // organizer can void it or finish it by manual bib entry (no maximum).
-      if (openStart && !bypassDebounce && elapsedMs > ENDURO_MAX_RUN_MS) {
-        console.warn(JSON.stringify({ event: "enduro_finish_rejected_over_max", motoId, riderId, startCrossingId: openStart.id, elapsedMs, readerId: readerId ?? null }));
-        throw new EnduroCrossingRejected(
-          `Run open for ${Math.round(elapsedMs / 60_000)} min (max ${ENDURO_MAX_RUN_MS / 60_000}) — not recorded as a finish. Void the start in Race Day Management or finish it by bib entry.`,
-        );
-      }
 
       const ins = db.prepare(`
         INSERT INTO lap_crossings
@@ -998,53 +989,55 @@ function handleEnduroGateRead(res: Response, opts: {
     return true;
   }
 
-  // Same gate: one reader is both start and finish of a test; the rider's
-  // crossing count picks the role (even → start, odd → finish).
-  const startMotos = new Set(assignments.filter(a => a.role === "start" && a.moto_id).map(a => a.moto_id as number));
-  const sameGateMotoId = assignments.find(a => a.role === "finish" && a.moto_id && startMotos.has(a.moto_id))?.moto_id ?? null;
-  if (sameGateMotoId) {
-    if (!resolveRider(rfidNumber, eventId)) {
+  // Enduro test gates (Course Map). Each test has its own start reader and
+  // finish reader, or one reader for both when it starts and ends in one spot.
+  // A reader can gate more than one test (the same course run as two tests, or
+  // one test's finish next to the next test's start): pickEnduroGate decides
+  // from the rider's runs which test, and which end. Same rule as the cloud.
+  const gateRows = assignments.filter(a => a.moto_id != null && (a.role === "start" || a.role === "finish"));
+  const gates = gateRows.some(a => a.antenna_id != null && a.antenna_id === antennaId)
+    ? gateRows.filter(a => a.antenna_id === antennaId)
+    : gateRows.filter(a => a.antenna_id == null);
+  if (gates.length > 0) {
+    const riderId = resolveRider(rfidNumber, eventId);
+    if (!riderId) {
       res.json({ ok: false, message: `Tag ${rfidNumber} not assigned to any rider in this event` });
       return true;
     }
-    scoreGate(sameGateMotoId);
+    const gateMotoIds = [...new Set(gates.map(g => g.moto_id as number))];
+    const tests = db
+      .prepare(`SELECT id, name, moto_number, lap_count, status FROM motos WHERE id IN (${gateMotoIds.map(() => "?").join(",")})`)
+      .all(...gateMotoIds) as Array<{ id: number; name: string; moto_number: number | null; lap_count: number | null; status: string | null }>;
+    const picked = pickEnduroGate(
+      gates.map(g => ({ motoId: g.moto_id as number, role: g.role as "start" | "finish" })),
+      tests.map(t => ({
+        motoId: t.id,
+        name: t.name,
+        motoNumber: t.moto_number ?? 0,
+        requiredRuns: Math.max(1, t.lap_count ?? 1),
+        status: t.status ?? "scheduled",
+        crossings: crossingCount(t.id, riderId),
+      })),
+    );
+    if ("error" in picked) {
+      res.json({ ok: false, message: picked.error });
+      return true;
+    }
+    scoreGate(picked.motoId, picked.role);
     return true;
   }
 
-  // One role: the assignment for this antenna, else the reader-wide one.
+  // A time check on this antenna (or reader-wide).
   const assignment =
     assignments.find(a => a.antenna_id != null && a.antenna_id === antennaId) ??
     assignments.find(a => a.antenna_id == null) ??
     null;
-  if (!assignment) {
-    res.status(422).json({ ok: false, message: "Reader has no matching checkpoint assignment" });
-    return true;
-  }
-  if (assignment.role === "time_check") {
+  if (assignment?.role === "time_check") {
     recordTimeCheckArrival(eventId, assignment.time_check_id ?? null, rfidNumber, crossingTime);
     res.json({ ok: true, message: `Time check arrival recorded (check id ${assignment.time_check_id ?? null})` });
     return true;
   }
-  if (!assignment.moto_id) {
-    res.status(422).json({ ok: false, message: "Assignment has no motoId for start/finish" });
-    return true;
-  }
-
-  const riderId = resolveRider(rfidNumber, eventId);
-  if (!riderId) {
-    res.json({ ok: false, message: `Tag ${rfidNumber} not assigned to any rider in this event` });
-    return true;
-  }
-  const isEven = crossingCount(assignment.moto_id, riderId) % 2 === 0;
-  if (assignment.role === "start" && !isEven) {
-    res.json({ ok: false, message: "Rider already has an open start — waiting for finish crossing" });
-    return true;
-  }
-  if (assignment.role === "finish" && isEven) {
-    res.json({ ok: false, message: "No open start for this rider on this test" });
-    return true;
-  }
-  scoreGate(assignment.moto_id, assignment.role === "start" || assignment.role === "finish" ? assignment.role : undefined);
+  res.status(422).json({ ok: false, message: "Reader has no matching checkpoint assignment" });
   return true;
 }
 
@@ -1552,7 +1545,6 @@ router.get("/motos/:motoId/open-runs", (req, res) => {
       runNumber: run.runs.length + 1,
       startCrossingId: run.open!.id,
       startedAt: new Date(run.open!.crossingTime).toISOString(),
-      overMax: now - new Date(run.open!.crossingTime).getTime() > ENDURO_MAX_RUN_MS,
     }))
     .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
   return res.json(open);

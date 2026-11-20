@@ -16,7 +16,7 @@ import {
   registrationsTable,
 } from "@workspace/db";
 import { ENDURO_ALL_CLASSES, rerankEnduroTest, resolveEnduroRiderClass } from "./enduro-scoring";
-import { ENDURO_MAX_RUN_MS, pairEnduroRuns } from "../lib/enduroOverall";
+import { pairEnduroRuns } from "../lib/enduroOverall";
 import { logger } from "../lib/logger";
 import { eq, and, asc, desc, isNotNull, isNull, or, gt, lt, sql, inArray, ilike, ne } from "drizzle-orm";
 import type { Request, Response } from "express";
@@ -1128,16 +1128,6 @@ async function _processCrossing(opts: {
     const elapsedMs = openStart
       ? Math.max(0, crossingTime.getTime() - new Date(openStart.crossingTime).getTime())
       : 0;
-    // A hardware read finishing a run that has been open longer than the
-    // maximum is almost certainly a missed finish, not a real run: don't record
-    // it. The start stays open so the organizer can void it (Race Day
-    // Management) or finish it by manual bib entry, which has no maximum.
-    if (openStart && !bypassDebounce && elapsedMs > ENDURO_MAX_RUN_MS) {
-      logger.warn({ motoId, riderId, startCrossingId: openStart.id, elapsedMs, readerId }, "enduro finish read rejected: run longer than maximum");
-      throw new EnduroCrossingRejected(
-        `Run open for ${Math.round(elapsedMs / 60_000)} min (max ${ENDURO_MAX_RUN_MS / 60_000}) — not recorded as a finish. Void the start in Race Day Management or finish it by bib entry.`,
-      );
-    }
 
     const [crossing] = await db
       .insert(lapCrossingsTable)
@@ -2092,7 +2082,6 @@ router.get("/motos/:motoId/open-runs", async (req, res) => {
       runNumber: run.runs.length + 1,
       startCrossingId: run.open!.id,
       startedAt: new Date(run.open!.crossingTime).toISOString(),
-      overMax: now - new Date(run.open!.crossingTime).getTime() > ENDURO_MAX_RUN_MS,
     }))
     .sort((a, b) => a.startedAt.localeCompare(b.startedAt));
   return res.json(open);

@@ -23,7 +23,7 @@ export function calcPoints(opts: {
   autoDnfThreshold?: number;
   lapsCompleted?: number;
   leaderLapsCompleted?: number;
-  /** Riders in the class for this moto (Olympic DNF/DNS scores); defaults to the starters. */
+  /** Olympic DNF/DNS scores use the moto's starters (riders who aren't DNS); defaults to totalStarters. */
   classSize?: number;
 }): number {
   if (opts.mainEventOnly && opts.motoType !== "main") return 0;
@@ -41,7 +41,10 @@ export function calcPoints(opts: {
     opts.lapsCompleted != null &&
     opts.autoDnfThreshold != null
   ) {
-    const minLaps = Math.floor(opts.leaderLapsCompleted * opts.autoDnfThreshold / 100);
+    // Laps required = threshold % of the leader's laps, rounded UP: a rider
+    // must complete at least the threshold (75% of 7 = 5.25 → 6 laps; 5 is
+    // only 71%). The epsilon keeps an exact result (75% of 4 = 3) at 3.
+    const minLaps = Math.ceil(opts.leaderLapsCompleted * opts.autoDnfThreshold / 100 - 1e-9);
     if (opts.lapsCompleted < minLaps) return olympic ? olympicPenalty("dnf", classSize) : 0;
   }
 
@@ -96,7 +99,6 @@ export function scoreMotoRows(rows: MotoPointsRow[], settings: MotoScoringSettin
       dnf: !!r.dnf,
       dns: !!r.dns,
       totalStarters,
-      classSize: rows.length,
       ...settings,
       motoType,
       lapsCompleted: lapsOf(r),

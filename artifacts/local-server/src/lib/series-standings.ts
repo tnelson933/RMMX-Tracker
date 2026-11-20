@@ -2,7 +2,7 @@
 // (api-server/src/lib/seriesStandings.ts). Keep the two in step.
 import { getDb } from "../db";
 import { formulaPoints } from "./safeFormula";
-import { AMA_POINTS, compareOverall, countFinishes, isLowerBetter, olympicPenalty, overallPositions, type OverallRow } from "./overallOrder";
+import { AMA_POINTS, compareOverall, countFinishes, isLowerBetter, motoStatus, olympicPenalty, overallPositions, type OverallRow } from "./overallOrder";
 import { parseJson } from "./cloud-shape";
 
 type SeriesRow = { id: number; club_id: number; event_ids: string | null; scoring_table_id: number | null };
@@ -109,7 +109,8 @@ export function computeSeriesStandings(series: SeriesRow): { standings: any[]; e
     if (!resultsByMoto.has(key)) resultsByMoto.set(key, []);
     resultsByMoto.get(key)!.push(r);
   }
-  const classSizeOf = (key: string) => resultsByMoto.get(key)?.length ?? 0;
+  // Olympic DNF/DNS penalties count the moto's starters (riders who aren't DNS).
+  const classSizeOf = (key: string) => starters.get(key) ?? 0;
   const pointsFor = (r: any): number => {
     if (enduroMotoIds.has(r.motoId)) return r.points ?? 0;
     if (lowerIsBetter && (r.dnf || r.dns)) return olympicPenalty(r.dns ? "dns" : "dnf", classSizeOf(keyOfResult(r)));
@@ -139,6 +140,7 @@ export function computeSeriesStandings(series: SeriesRow): { standings: any[]; e
     for (const [riderId, riderName] of riderNames) {
       let totalScore = 0;
       let eventsEntered = 0;
+      const statuses: number[] = []; // outcome of each result, in raced order
       const breakdown: any[] = [];
       for (const eventId of eventIds) {
         const motos = byEvent.get(eventId);
@@ -152,6 +154,7 @@ export function computeSeriesStandings(series: SeriesRow): { standings: any[]; e
           const r = (resultsByMoto.get(m.key) ?? []).find(x => x.riderId === riderId);
           if (r) {
             attended = true;
+            statuses.push(motoStatus(r));
             const pts = pointsFor(r);
             eventScore += pts;
             motoPoints.push(pts);
@@ -171,7 +174,7 @@ export function computeSeriesStandings(series: SeriesRow): { standings: any[]; e
       const finishes = breakdown.flatMap(e => e.finishPositions as (number | null)[]);
       rows.push({
         position: 0, riderId, riderName, raceClass, totalScore, eventsEntered, official, lowerIsBetter, events: breakdown,
-        _order: { total: totalScore, finishedAny: finishes.some(f => f != null), lastMotoFinish: finishes[finishes.length - 1] ?? null, finishCounts: countFinishes(finishes) },
+        _order: { total: totalScore, finishedAny: finishes.some(f => f != null), lastMotoFinish: finishes[finishes.length - 1] ?? null, finishCounts: countFinishes(finishes), motoStatuses: [...statuses].reverse() },
       });
     }
     rows.sort((a, b) => compareOverall(a._order, b._order, lowerIsBetter) || String(a.riderName).localeCompare(String(b.riderName)));

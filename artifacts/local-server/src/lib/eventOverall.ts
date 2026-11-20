@@ -55,10 +55,10 @@ export function computeEventOverall(eventId: number): EventOverall {
   const enduro = evt?.race_style === "enduro";
   // Running order as in the cloud (PostgreSQL sorts a missing race number last).
   const motos = db.prepare(
-    `SELECT id, name, moto_number, lap_count, results_finalized_at FROM motos
+    `SELECT id, name, type, moto_number, lap_count, results_finalized_at FROM motos
       WHERE event_id = ? AND status = 'completed' AND ${enduro ? "type = 'enduro_test'" : "type != 'practice'"}
       ORDER BY moto_number IS NULL, moto_number, id`,
-  ).all(eventId) as Array<{ id: number; name: string; moto_number: number | null; lap_count: number | null; results_finalized_at: string | null }>;
+  ).all(eventId) as Array<{ id: number; name: string; type: string | null; moto_number: number | null; lap_count: number | null; results_finalized_at: string | null }>;
 
   if (enduro) {
     const tests = motos.map((m) => ({
@@ -73,6 +73,7 @@ export function computeEventOverall(eventId: number): EventOverall {
 
   if (motos.length === 0) return { classes: [], hasPoints: false, lowerIsBetter };
   const motoIds = motos.map((m) => m.id);
-  const { classes, hasPoints } = buildEventOverall(motoIds, loadResults(motoIds), lowerIsBetter, { compareOverall, overallPositions, olympicPenalty });
+  const { classes, hasPoints } = buildEventOverall(motoIds, loadResults(motoIds), lowerIsBetter, { compareOverall, overallPositions, olympicPenalty },
+    motos.filter((m) => m.type === "main").map((m) => m.id));
   return { classes, hasPoints, lowerIsBetter };
 }

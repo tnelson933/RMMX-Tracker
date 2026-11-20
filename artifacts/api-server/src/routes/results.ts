@@ -136,7 +136,8 @@ export async function recalculateSeriesPoints(seriesIds: number[]): Promise<void
       // Olympic (lowest wins): DNF/DNS and missed motos score penalties (lib/overallOrder.ts).
       const lowerIsBetter = isLowerBetter(seriesScoringMethod);
       const classSizeByMoto = new Map<number, number>();
-      for (const r of results) classSizeByMoto.set(r.motoId, (classSizeByMoto.get(r.motoId) ?? 0) + 1);
+      // Olympic DNF/DNS penalties count the moto's starters (riders who aren't DNS).
+      for (const r of results) if (!r.dns) classSizeByMoto.set(r.motoId, (classSizeByMoto.get(r.motoId) ?? 0) + 1);
 
       for (const r of results) {
         const motoType = motoTypeMap.get(r.motoId) ?? "heat";
@@ -513,7 +514,6 @@ router.post("/events/:eventId/results", async (req, res) => {
         dnf:           !!r.dnf,
         dns:           !!r.dns,
         totalStarters,
-        classSize:     riderResults.length,
         scoringMethod,
         pointsScale,
         scoringFormula,

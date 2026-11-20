@@ -13,6 +13,10 @@ export interface OverallOrderRow {
   total: number;
   finishedAny: boolean;
   lastMotoFinish: number | null;
+  /** Raced the class's main event (set when the class ran one). */
+  reachedMain?: boolean;
+  /** Outcome of each moto the rider has a result in, last first: 0 finished, 1 DNF, 2 DNS. */
+  motoStatuses?: number[];
 }
 export interface OverallOrderRules {
   compareOverall(a: OverallOrderRow, b: OverallOrderRow, lowerIsBetter: boolean): number;
@@ -69,17 +73,22 @@ export interface EventOverallResultRow {
  * Overall standings per class from an event's finished races (practice
  * excluded). `motoIds` are those races in running order. Points tables:
  * highest total first. Olympic: lowest total, DNF/DNS/missed motos score
- * penalties, ties go to the last moto.
+ * penalties (from each moto's starters), ties go to the last moto. On equal
+ * totals a rider who raced the main event (`mainMotoIds`, Supercross format)
+ * ranks ahead of one who didn't, and a DNF ahead of a DNS (overallOrder.ts).
  */
 export function buildEventOverall(
   motoIds: number[],
   rows: EventOverallResultRow[],
   lowerIsBetter: boolean,
   rules: OverallOrderRules,
+  mainMotoIds: number[] = [],
 ): { classes: Array<{ raceClass: string; riders: EventOverallRider[] }>; hasPoints: boolean } {
   const { compareOverall, overallPositions, olympicPenalty } = rules;
+  // Olympic DNF/DNS penalties count each moto's starters (riders who aren't DNS).
   const classSize = new Map<number, number>();
-  for (const r of rows) classSize.set(r.motoId, (classSize.get(r.motoId) ?? 0) + 1);
+  for (const r of rows) if (!r.dns) classSize.set(r.motoId, (classSize.get(r.motoId) ?? 0) + 1);
+  const mains = new Set(mainMotoIds);
   const hasPoints = lowerIsBetter || rows.some(r => (r.points ?? 0) > 0);
 
   const classes = new Map<string, EventOverallResultRow[]>();
@@ -92,6 +101,7 @@ export function buildEventOverall(
   const out: Array<{ raceClass: string; riders: EventOverallRider[] }> = [];
   for (const [raceClass, classRows] of [...classes.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     const classMotoIds = motoIds.filter(id => classRows.some(r => r.motoId === id));
+    const classRanMain = classMotoIds.some(id => mains.has(id));
     const riders = new Map<number, EventOverallResultRow[]>();
     for (const r of classRows) {
       if (!riders.has(r.riderId)) riders.set(r.riderId, []);
@@ -100,8 +110,10 @@ export function buildEventOverall(
     const entries = [...riders.entries()].map(([riderId, mine]) => {
       let total = 0;
       let lastMotoFinish: number | null = null;
+      const motoStatuses: number[] = [];
       for (const motoId of classMotoIds) {
         const r = mine.find(x => x.motoId === motoId);
+        if (r) motoStatuses.unshift(r.dns ? 2 : r.dnf ? 1 : 0);
         const finished = r && !r.dnf && !r.dns ? r.position : null;
         if (lowerIsBetter) {
           total += !r ? olympicPenalty("dns", classSize.get(motoId) ?? 0)
@@ -114,7 +126,10 @@ export function buildEventOverall(
         lastMotoFinish = finished ?? null;
       }
       const finishes = mine.filter(r => !r.dnf && !r.dns).map(r => r.position);
-      const order: OverallOrderRow = { total, finishedAny: finishes.length > 0, lastMotoFinish };
+      const order: OverallOrderRow = {
+        total, finishedAny: finishes.length > 0, lastMotoFinish, motoStatuses,
+        ...(classRanMain ? { reachedMain: mine.some(r => mains.has(r.motoId)) } : {}),
+      };
       return {
         order,
         bestPosition: finishes.length ? Math.min(...finishes) : null,

@@ -393,7 +393,7 @@ function LiveLeaderboard({ motoId, isElapsedTimeSport, isEnduro, lapCount, penal
   );
 }
 
-type EnduroOpenRun = { riderId: number; riderName: string; bibNumber: string | null; runNumber: number; startedAt: string; overMax: boolean };
+type EnduroOpenRun = { riderId: number; riderName: string; bibNumber: string | null; runNumber: number; startedAt: string };
 
 /** Enduro riders on course (start read, no finish yet) with a Void start button for missed finish reads. */
 function EnduroOpenRuns({ motoId }: { motoId: number }) {
@@ -437,7 +437,7 @@ function EnduroOpenRuns({ motoId }: { motoId: number }) {
         <div key={run.riderId} className="flex items-center gap-2 text-xs">
           <span className="font-mono w-10 text-muted-foreground">{run.bibNumber ? `#${run.bibNumber}` : ""}</span>
           <span className="font-bold truncate">{run.riderName}</span>
-          <span className={run.overMax ? "text-destructive font-bold" : "text-muted-foreground"}>
+          <span className="text-muted-foreground">
             Run {run.runNumber} · on course since {format(new Date(run.startedAt), "h:mm a")}
           </span>
           <div className="ml-auto flex gap-1">

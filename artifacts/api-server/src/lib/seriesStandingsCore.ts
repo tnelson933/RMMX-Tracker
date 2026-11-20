@@ -3,7 +3,7 @@
  * loads the rows and calls this, and tests run whole seasons through it.
  */
 import { calcPoints } from "./motoPoints";
-import { compareOverall, countFinishes, isLowerBetter, olympicPenalty, overallPositions, type OverallRow } from "./overallOrder";
+import { compareOverall, countFinishes, isLowerBetter, motoStatus, olympicPenalty, overallPositions, type OverallRow } from "./overallOrder";
 
 /** Is this finished moto's class counted for the series? */
 export function motoCounts(
@@ -127,7 +127,8 @@ export function buildSeriesStandings(input: {
   for (const r of allResults) if (!r.dns) starters.set(keyOfResult(r), (starters.get(keyOfResult(r)) ?? 0) + 1);
   // Olympic tables: lowest total wins and DNF/DNS/missed motos score penalties.
   const lowerIsBetter = isLowerBetter(scoring.scoringMethod);
-  const classSizeOf = (key: string) => resultsByMoto.get(key)?.length ?? 0;
+  // Olympic DNF/DNS penalties count the moto's starters (riders who aren't DNS).
+  const classSizeOf = (key: string) => starters.get(key) ?? 0;
   const pointsFor = (r: (typeof allResults)[number]): number => {
     // Enduro: one award per event, stored on one test result (0 on the others).
     if (enduroMotoIds.has(r.motoId)) return r.points ?? 0;
@@ -176,6 +177,7 @@ export function buildSeriesStandings(input: {
     for (const [riderId, riderName] of riderNames) {
       let totalScore = 0;
       let eventsEntered = 0;
+      const statuses: number[] = []; // outcome of each result, in raced order
       const breakdown: SeriesStandingRow["events"] = [];
       for (const eventId of eventIds) {
         const motos = byEvent.get(eventId);
@@ -189,6 +191,7 @@ export function buildSeriesStandings(input: {
           const r = (resultsByMoto.get(m.key) ?? []).find(x => x.riderId === riderId);
           if (r) {
             attended = true;
+            statuses.push(motoStatus(r));
             const pts = pointsFor(r);
             eventScore += pts;
             motoPoints.push(pts);
@@ -218,7 +221,7 @@ export function buildSeriesStandings(input: {
         position: 0, riderId, riderName, raceClass, totalScore, eventsEntered, official, lowerIsBetter, events: breakdown,
         // For ordering: ties go to the count-back of moto finishes (points tables),
         // then the better finish in the class's last moto.
-        _order: { total: totalScore, finishedAny: finishes.some(f => f != null), lastMotoFinish: finishes[finishes.length - 1] ?? null, finishCounts: countFinishes(finishes) },
+        _order: { total: totalScore, finishedAny: finishes.some(f => f != null), lastMotoFinish: finishes[finishes.length - 1] ?? null, finishCounts: countFinishes(finishes), motoStatuses: [...statuses].reverse() },
       } as SeriesStandingRow & { _order: OverallRow });
     }
 

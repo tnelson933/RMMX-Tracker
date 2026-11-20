@@ -9,8 +9,53 @@
  * rank after those who did (more completed runs first, then lower time).
  */
 
-/** A start read with no finish after this long is not treated as a finish by hardware reads. */
-export const ENDURO_MAX_RUN_MS = 30 * 60_000;
+/**
+ * A test a reader gates (Course Map), with the rider's crossings on it so far.
+ * Runs have no time limit: a test can take hours.
+ */
+export interface EnduroGateTest {
+  motoId: number;
+  name: string;
+  motoNumber: number;
+  /** Runs each rider makes of this test (the test's lap count, at least 1). */
+  requiredRuns: number;
+  status: string;
+  /** The rider's crossings on this test (start, finish, start, …). */
+  crossings: number;
+}
+
+/**
+ * Which test, and which end of it, a gate read belongs to. Each test has its
+ * own start reader and finish reader (or one reader for both when the test
+ * starts and ends in one spot). A reader may gate more than one test: the same
+ * course run as two tests, or one test's finish next to the next test's start.
+ *  1. A finish read closes the rider's open run (lowest test number first).
+ *  2. Otherwise a start read opens a run on the first test (by test number)
+ *     the rider still has runs left on and isn't on course in.
+ */
+export function pickEnduroGate(
+  gates: Array<{ motoId: number; role: "start" | "finish" }>,
+  tests: EnduroGateTest[],
+): { motoId: number; role: "start" | "finish"; name: string } | { error: string } {
+  const ordered = [...tests].sort((a, b) => a.motoNumber - b.motoNumber || a.motoId - b.motoId);
+  const has = (t: EnduroGateTest, role: "start" | "finish") => gates.some((g) => g.motoId === t.motoId && g.role === role);
+  const open = (t: EnduroGateTest) => t.crossings % 2 === 1;
+  const finishTest = ordered.find((t) => has(t, "finish") && open(t));
+  if (finishTest) return { motoId: finishTest.motoId, role: "finish", name: finishTest.name };
+  const startTests = ordered.filter((t) => has(t, "start"));
+  const startTest = startTests.find((t) => t.status !== "completed" && !open(t) && t.crossings < Math.max(1, t.requiredRuns) * 2);
+  if (startTest) return { motoId: startTest.motoId, role: "start", name: startTest.name };
+  if (startTests.length === 0) {
+    const names = ordered.filter((t) => has(t, "finish")).map((t) => t.name).join(", ");
+    return { error: `No open start for this rider on ${names || "this test"}` };
+  }
+  const onCourse = startTests.find(open);
+  if (onCourse) return { error: `Rider already has an open start on ${onCourse.name} — waiting for finish crossing` };
+  const finished = startTests.find((t) => t.status === "completed" && t.crossings < Math.max(1, t.requiredRuns) * 2);
+  if (finished) return { error: `${finished.name} is finished — reopen it to record more runs` };
+  const runs = Math.max(1, startTests[0].requiredRuns);
+  return { error: `Rider already completed all ${runs} run${runs > 1 ? "s" : ""} of ${startTests.map((t) => t.name).join(", ")}` };
+}
 
 export interface EnduroRun<T> {
   start: T;
