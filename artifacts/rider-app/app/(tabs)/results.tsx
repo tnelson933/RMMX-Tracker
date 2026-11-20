@@ -276,7 +276,10 @@ function PublicRiderLapSheet({
             <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 }}>
               Lap Times
             </Text>
-            <RiderLookupCard riderId={riderId} name={riderName} onBeforeOpen={onClose} />
+            {/* Full sheet width: reaches under the close button's column. */}
+            <View style={{ marginRight: -38 }}>
+              <RiderLookupCard riderId={riderId} name={riderName} onBeforeOpen={onClose} />
+            </View>
           </View>
           <Pressable onPress={onClose} hitSlop={8} style={{ padding: 4 }} accessibilityRole="button" accessibilityLabel="Close">
             <Feather name="x" size={20} color={colors.mutedForeground} />
@@ -1428,7 +1431,9 @@ function SeriesStandingsScreen({
                   <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 }}>
                     {selectedRider.raceClass} · {ordinalSuffix(selectedRider.position)} place · {selectedRider.totalScore} pts total
                   </Text>
-                  <RiderLookupCard riderId={selectedRider.riderId} name={selectedRider.riderName} onBeforeOpen={() => setSelectedRider(null)} />
+                  <View style={{ marginRight: -28 }}>
+                    <RiderLookupCard riderId={selectedRider.riderId} name={selectedRider.riderName} onBeforeOpen={() => setSelectedRider(null)} />
+                  </View>
                 </View>
                 <Pressable onPress={() => setSelectedRider(null)} hitSlop={8} style={{ padding: 4 }} accessibilityRole="button" accessibilityLabel="Close">
                   <Feather name="x" size={20} color={colors.mutedForeground} />
