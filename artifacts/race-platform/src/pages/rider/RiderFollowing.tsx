@@ -10,7 +10,7 @@ import { ChevronRight, Search } from "lucide-react";
 
 import { RiderLayout } from "@/components/layout/RiderLayout";
 import { PosBadge } from "@/components/rider/insights";
-import { riderApi } from "@/lib/rider-api";
+import { riderApi, type SuggestedRider } from "@/lib/rider-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -52,9 +52,11 @@ export default function RiderFollowing() {
   const { data: follows } = useQuery({ queryKey: ["rider-follows"], queryFn: () => riderApi.follows() });
   const { data: found, isFetching } = useQuery({ queryKey: ["rider-search", term], queryFn: () => riderApi.searchRiders(term), enabled: term.length >= 2 });
 
+  const { data: suggested } = useQuery({ queryKey: ["rider-suggested"], queryFn: () => riderApi.suggestedRiders() });
   const toggle = useMutation({
     mutationFn: ({ id, follow }: { id: number; follow: boolean }) => (follow ? riderApi.follow(id) : riderApi.unfollow(id)),
     onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["rider-suggested"] });
       qc.invalidateQueries({ queryKey: ["rider-follows"] });
       qc.invalidateQueries({ queryKey: ["rider-search"] });
       qc.invalidateQueries({ queryKey: ["rider-feed"] });
@@ -107,6 +109,28 @@ export default function RiderFollowing() {
             </div>
           )}
         </section>
+
+        {([
+          ["Riders you race against", suggested?.competitors],
+          ["Riders near you", suggested?.nearby],
+          ["Top riders", suggested?.top],
+        ] as Array<[string, SuggestedRider[] | undefined]>).filter(([, list]) => (list?.length ?? 0) > 0).map(([title, list]) => (
+          <section key={title} className="space-y-3">
+            <h2 className="font-heading font-bold uppercase tracking-[1.2px] text-[14px] text-[#A8A8A8]">{title}</h2>
+            <div className="divide-y divide-[#3A3A3A] rounded-xl border border-[#3A3A3A] bg-[#242424]">
+              {list!.map(r => (
+                <div key={r.id} className="flex items-center gap-3 px-4 py-3">
+                  <RiderAvatar url={r.avatarUrl} name={r.name} size={36} />
+                  <Link href={`/rider/racer/${r.id}`} className="min-w-0 flex-1 hover:underline">
+                    <span className="block truncate text-[15px] font-semibold text-white">{r.number ? `#${r.number} ` : ""}{r.name}</span>
+                    <span className="block truncate text-[13px] text-[#A8A8A8]">{r.reason}</span>
+                  </Link>
+                  <Button size="sm" disabled={toggle.isPending} onClick={() => toggle.mutate({ id: r.id, follow: true })}>Follow</Button>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
 
         <section className="space-y-3">
           <h2 className="font-heading font-bold uppercase tracking-[1.2px] text-[14px] text-[#A8A8A8]">Latest results</h2>

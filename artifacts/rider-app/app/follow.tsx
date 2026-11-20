@@ -14,6 +14,14 @@ import { displayDate } from "@/lib/format";
 
 interface FoundRider { id: number; name: string; avatarUrl?: string | null; lastRaced: string | null; clubName: string | null; following: boolean }
 interface Followed { riderId: number; name: string; avatarUrl?: string | null; raceAlerts?: boolean }
+interface Suggested { id: number; name: string; avatarUrl?: string | null; number?: string | null; state?: string | null; reason?: string | null }
+interface Suggestions { competitors?: Suggested[]; nearby?: Suggested[]; top?: Suggested[] }
+
+const SUGGESTION_SECTIONS: Array<{ key: keyof Suggestions; title: string }> = [
+  { key: "competitors", title: "Riders you race against" },
+  { key: "nearby", title: "Riders near you" },
+  { key: "top", title: "Top riders" },
+];
 
 /** Find riders by name and follow them. Following puts their results in your feed and sends a push when results are in. */
 export default function FollowScreen() {
@@ -31,6 +39,23 @@ export default function FollowScreen() {
   // Only the newest search may fill the list; one follow/unfollow per rider at a time.
   const searchSeq = useRef(0);
   const toggling = useRef(new Set<number>());
+  // Who to follow, shown while the search box is empty. Missing on older servers: the sections just don't show.
+  const [suggestions, setSuggestions] = useState<Suggestions>({});
+  const [followedSuggestions, setFollowedSuggestions] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await riderFetch("/api/rider/riders/suggested");
+        if (!r.ok) return;
+        const body = await r.json();
+        const list = (v: unknown): Suggested[] => (Array.isArray(v) ? v.filter(x => x && typeof x.id === "number" && typeof x.name === "string") : []);
+        if (alive) setSuggestions({ competitors: list(body?.competitors), nearby: list(body?.nearby), top: list(body?.top) });
+      } catch { /* suggestions are optional */ }
+    })();
+    return () => { alive = false; };
+  }, [riderFetch]);
 
   const loadFollowing = useCallback(async () => {
     try {
@@ -69,8 +94,12 @@ export default function FollowScreen() {
   const toggle = useCallback(async (riderId: number, follow: boolean) => {
     if (toggling.current.has(riderId)) return;
     toggling.current.add(riderId);
-    setResults(prev => prev.map(r => (r.id === riderId ? { ...r, following: follow } : r)));
-    const rollback = () => setResults(prev => prev.map(x => (x.id === riderId ? { ...x, following: !follow } : x)));
+    const mark = (on: boolean) => {
+      setResults(prev => prev.map(r => (r.id === riderId ? { ...r, following: on } : r)));
+      setFollowedSuggestions(prev => { const next = new Set(prev); if (on) next.add(riderId); else next.delete(riderId); return next; });
+    };
+    mark(follow);
+    const rollback = () => mark(!follow);
     try {
       const r = await riderFetch(`/api/rider/follows/${riderId}`, { method: follow ? "POST" : "DELETE" });
       if (!r.ok) { rollback(); Alert.alert(follow ? "Couldn't follow" : "Couldn't unfollow", `Try again (error ${r.status}).`); }
@@ -91,6 +120,7 @@ export default function FollowScreen() {
       const r = await riderFetch(`/api/rider/follows/${riderId}`, { method: "DELETE" });
       if (!r.ok) { setFollowing(before); Alert.alert("Couldn't unfollow", `Try again (error ${r.status}).`); return; }
       setResults(prev => prev.map(x => (x.id === riderId ? { ...x, following: false } : x)));
+      setFollowedSuggestions(prev => { const next = new Set(prev); next.delete(riderId); return next; });
     } catch {
       setFollowing(before);
       Alert.alert("Couldn't unfollow", NETWORK_ERROR_MESSAGE);
@@ -139,6 +169,23 @@ export default function FollowScreen() {
         ))}
         {searchError && q.trim().length >= 2 && !searching && <Text style={[s.muted, { color: "#DC2626" }]}>{searchError}</Text>}
         {q.trim().length >= 2 && !searching && !searchError && results.length === 0 && <Text style={s.muted}>No riders with results match "{q.trim()}".</Text>}
+
+        {q.trim().length === 0 && SUGGESTION_SECTIONS.map(section => {
+          const riders = suggestions[section.key] ?? [];
+          if (riders.length === 0) return null;
+          return (
+            <React.Fragment key={section.key}>
+              <Text style={s.section}>{section.title}</Text>
+              {riders.map(r => {
+                const isFollowing = followedSuggestions.has(r.id);
+                return (
+                  <RiderRow key={r.id} title={r.name} avatarUrl={r.avatarUrl} subtitle={[r.number ? `#${r.number}` : null, r.reason].filter(Boolean).join(" · ")}
+                    following={isFollowing} onToggle={() => { void toggle(r.id, !isFollowing); }} onOpen={() => router.push(`/racer/${r.id}` as any)} colors={colors} />
+                );
+              })}
+            </React.Fragment>
+          );
+        })}
 
         {(following.length > 0 || followingError) && <Text style={s.section}>Following</Text>}
         {followingError && (

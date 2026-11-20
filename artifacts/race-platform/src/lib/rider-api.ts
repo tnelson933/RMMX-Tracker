@@ -435,6 +435,28 @@ export const riderApi = {
   racer: (riderId: number): Promise<RacerProfile> =>
     apiFetch(`/rider/riders/${riderId}/public`),
 
+  /** The profile anyone with the link can see (no sign-in). Private profiles answer 404. */
+  publicRacer: (riderId: number): Promise<RacerProfile> =>
+    apiFetch(`/public/riders/${riderId}`),
+
+  /** Full results history with filters. `publicPage` reads the no-sign-in copy. */
+  racerHistory: (riderId: number, filter: HistoryFilter, publicPage = false): Promise<RacerHistory> => {
+    const q = new URLSearchParams();
+    if (filter.year) q.set("year", filter.year);
+    if (filter.raceClass) q.set("class", filter.raceClass);
+    if (filter.track) q.set("track", filter.track);
+    const qs = q.toString();
+    return apiFetch(`${publicPage ? "/public" : "/rider"}/riders/${riderId}/history${qs ? `?${qs}` : ""}`);
+  },
+
+  /** Short "who is this rider" card for live timing and results (no sign-in). */
+  riderCard: (riderId: number): Promise<RiderLookupCard> =>
+    apiFetch(`/public/riders/${riderId}/card`),
+
+  /** Riders to follow: common competitors, riders from your state, and recent winners. */
+  suggestedRiders: (): Promise<{ competitors: SuggestedRider[]; nearby: SuggestedRider[]; top: SuggestedRider[] }> =>
+    apiFetch("/rider/riders/suggested"),
+
   /** Set a profile or background photo (JPEG/PNG/WebP, up to 8 MB). Owner or manager only. */
   uploadPhoto: (riderId: number, kind: PhotoKind, photo: Blob): Promise<{ avatarUrl: string | null; coverUrl: string | null }> =>
     apiFetch(`/rider/profiles/${riderId}/photo?kind=${kind}`, { method: "POST", headers: { "Content-Type": photo.type || "application/octet-stream" }, body: photo }),
@@ -503,7 +525,23 @@ export interface FeedItem {
   raceClass: string;
   official: boolean;
   bestPosition: number | null;
+  track?: string | null;
   motos: Array<{ motoName: string; position: number | null; dnf: boolean; dns: boolean }>;
+}
+
+export interface HistoryFilter { year?: string | null; raceClass?: string | null; track?: string | null }
+export interface RacerHistory {
+  filters: { years: string[]; classes: string[]; tracks: string[] };
+  total: number;
+  items: FeedItem[];
+}
+export interface SeriesStanding { seriesId: number; seriesName: string; raceClass: string; position: number; points: number; riders: number }
+export interface SuggestedRider { id: number; name: string; avatarUrl: string | null; number: string | null; state: string | null; reason: string }
+export interface RiderLookupCard {
+  riderId: number; name: string; number: string | null; plateColor: string | null; avatarUrl: string | null;
+  state: string | null; bike: string | null; mainClass: string | null; firstYear: string | null;
+  starts: number; wins: number; podiums: number; avgFinish: number | null;
+  series: SeriesStanding[]; visibility: "public" | "private"; sharePath: string | null;
 }
 
 export interface RacerProfile {
@@ -525,7 +563,21 @@ export interface RacerProfile {
     tracks: string[];
     firstYear: string | null;
   };
-  profile?: { number: string | null; plateColor: string | null; state: string | null; bio: string | null; avatarUrl?: string | null; coverUrl?: string | null };
+  profile?: {
+    number: string | null; plateColor: string | null; state: string | null; bio: string | null;
+    avatarUrl?: string | null; coverUrl?: string | null; bike?: string | null; sponsors?: string[];
+  };
+  /** Built from results: events, top-10s, big wins, every track and state raced. */
+  extras?: {
+    events: number;
+    top10s: number;
+    bigWins: Array<{ eventId: number; eventName: string; eventDate: string; raceClass: string; motoName: string; fieldSize: number }>;
+    tracks: Array<{ name: string; events: number }>;
+    states: Array<{ code: string; events: number }>;
+  };
+  series?: SeriesStanding[];
   visibility?: "public" | "private";
   isManager?: boolean;
+  /** The public page for this profile; null when the profile is private. */
+  sharePath?: string | null;
 }

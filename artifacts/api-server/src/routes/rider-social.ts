@@ -4,7 +4,7 @@ import { and, asc, count, eq, inArray } from "drizzle-orm";
 import { requireRiderAuth } from "./rider-portal";
 import { canManageRider, managedRiderIds, ownsRider } from "../lib/riderAccess";
 import { loadCareerStats, loadRacerResume, loadResultsFeed, searchPublicRiders } from "../lib/riderCareer";
-import { effectiveVisibility } from "../lib/riderResume";
+import { buildRacerProfile, loadProfileRider } from "../lib/racerProfileView";
 import { checkPhoto, photoKind, visiblePhotos } from "../lib/riderPhotos";
 import { saveUpload } from "../lib/uploadStore";
 
@@ -147,46 +147,17 @@ router.get("/rider/riders/search", requireRiderAuth, async (req, res) => {
 router.get("/rider/riders/:riderId/public", requireRiderAuth, async (req, res) => {
   const account = await currentAccount(req);
   if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
-  const riderId = Number(req.params.riderId);
-  if (!Number.isInteger(riderId) || riderId <= 0) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
-  const [rider] = await db.select({
-    id: ridersTable.id, email: ridersTable.email, firstName: ridersTable.firstName, lastName: ridersTable.lastName,
-    bibNumber: ridersTable.bibNumber, homeState: ridersTable.homeState, dateOfBirth: ridersTable.dateOfBirth,
-    bio: ridersTable.bio, plateColor: ridersTable.plateColor, profileVisibility: ridersTable.profileVisibility,
-    avatarUrl: ridersTable.avatarUrl, coverUrl: ridersTable.coverUrl,
-  }).from(ridersTable).where(eq(ridersTable.id, riderId));
+  const rider = await loadProfileRider(Number(req.params.riderId));
   if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
-  const [{ stats, resume }, recent, follow, [followers], isManager] = await Promise.all([
-    loadRacerResume(rider.id, true),
-    loadResultsFeed([rider.id], 10),
+  const [isManager, follow] = await Promise.all([
+    canManageRider(account, rider),
     db.select({ id: riderFollowsTable.id }).from(riderFollowsTable)
       .where(and(eq(riderFollowsTable.riderAccountId, account.id), eq(riderFollowsTable.riderId, rider.id))),
-    db.select({ n: count() }).from(riderFollowsTable).where(eq(riderFollowsTable.riderId, rider.id)),
-    canManageRider(account, rider),
   ]);
-  if (stats.starts === 0 && recent.length === 0 && !isManager) {
-    return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
-  }
-  const visibility = effectiveVisibility(rider, new Date().toISOString().slice(0, 10));
-  const showPersonal = visibility === "public" || isManager;
-  return res.json({
-    riderId: rider.id,
-    name: `${rider.firstName} ${rider.lastName}`.trim(),
-    following: follow.length > 0,
-    followerCount: Number(followers?.n ?? 0),
-    stats,
-    recent,
-    resume,
-    profile: {
-      number: rider.bibNumber ?? null,
-      plateColor: rider.plateColor ?? null,
-      state: showPersonal ? rider.homeState ?? null : null,
-      bio: showPersonal ? rider.bio ?? null : null,
-      ...visiblePhotos(rider, isManager, new Date().toISOString().slice(0, 10)),
-    },
-    visibility,
-    isManager,
-  });
+  // The same builder as the public share page (lib/racerProfileView.ts).
+  const profile = await buildRacerProfile(rider, isManager);
+  if (!profile) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
+  return res.json({ ...profile, following: follow.length > 0 });
 });
 
 router.get("/rider/follows", requireRiderAuth, async (req, res) => {

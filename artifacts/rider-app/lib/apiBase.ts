@@ -5,3 +5,8 @@ const override = process.env.EXPO_PUBLIC_API_URL?.replace(/\/+$/, "");
 const domain = process.env.EXPO_PUBLIC_DOMAIN;
 
 export const API_BASE_URL = override || (domain ? `https://${domain}` : "");
+
+/** A page on the public website (the API and the website share one address), e.g. webUrl("/racer/12"). */
+export function webUrl(path: string): string {
+  return `${API_BASE_URL || "https://www.rmroost.com"}${path.startsWith("/") ? path : `/${path}`}`;
+}

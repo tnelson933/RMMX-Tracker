@@ -1,8 +1,9 @@
 import {
   db, raceResultsTable, motosTable, eventsTable, eventPublicationTable, clubsTable,
-  ridersTable, riderFollowsTable, riderPushTokensTable,
+  ridersTable, riderFollowsTable, riderPushTokensTable, seriesTable, seriesPointsTable,
 } from "@workspace/db";
-import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, ne, notInArray, sql } from "drizzle-orm";
+import { computeProfileExtras, type ProfileExtras } from "./riderProfilePlus";
 import { computeCareerStats, cumulativeMs, type CareerStats } from "./careerStats";
 import { computeResume, effectiveVisibility, type RacerResume } from "./riderResume";
 import { visiblePhotos } from "./riderPhotos";
@@ -22,9 +23,9 @@ export async function loadCareerStats(riderId: number, publishedOnly: boolean): 
 }
 
 /** Career stats plus the racer-profile résumé (highlights, badges, seasons, headline). */
-export async function loadRacerResume(riderId: number, publishedOnly: boolean): Promise<{ stats: CareerStats; resume: RacerResume }> {
-  const { stats, resume } = await loadCareer(riderId, publishedOnly, true);
-  return { stats, resume: resume! };
+export async function loadRacerResume(riderId: number, publishedOnly: boolean): Promise<{ stats: CareerStats; resume: RacerResume; extras: ProfileExtras }> {
+  const { stats, resume, extras } = await loadCareer(riderId, publishedOnly, true);
+  return { stats, resume: resume!, extras: extras! };
 }
 
 async function loadCareer(riderId: number, publishedOnly: boolean, withResume: boolean) {
@@ -38,6 +39,7 @@ async function loadCareer(riderId: number, publishedOnly: boolean, withResume: b
       lapTimes: raceResultsTable.lapTimes, eventId: raceResultsTable.eventId, eventName: eventsTable.name,
       raceStyle: eventsTable.raceStyle, eventDate: eventsTable.date, raceClass: raceResultsTable.raceClass,
       track: sql<string | null>`coalesce(nullif(${eventsTable.trackName}, ''), nullif(${eventsTable.location}, ''))`,
+      state: eventsTable.state,
     })
     .from(raceResultsTable)
     .leftJoin(motosTable, eq(raceResultsTable.motoId, motosTable.id))
@@ -47,11 +49,14 @@ async function loadCareer(riderId: number, publishedOnly: boolean, withResume: b
 
   const motoIds = [...new Set(rows.map(r => r.motoId))];
   const field = motoIds.length
-    ? await db.select({ motoId: raceResultsTable.motoId, lapTimes: raceResultsTable.lapTimes })
+    ? await db.select({ motoId: raceResultsTable.motoId, lapTimes: raceResultsTable.lapTimes, dns: raceResultsTable.dns })
         .from(raceResultsTable).where(inArray(raceResultsTable.motoId, motoIds))
     : [];
   const fieldByMoto = new Map<number, number[][]>();
+  // Starters per race (everyone who isn't DNS): the field size behind a "big win".
+  const startersByMoto = new Map<number, number>();
   for (const f of field) {
+    if (!f.dns) startersByMoto.set(f.motoId, (startersByMoto.get(f.motoId) ?? 0) + 1);
     const cum = cumulativeMs((f.lapTimes as unknown[]) ?? []);
     if (!cum) continue;
     if (!fieldByMoto.has(f.motoId)) fieldByMoto.set(f.motoId, []);
@@ -70,7 +75,14 @@ async function loadCareer(riderId: number, publishedOnly: boolean, withResume: b
         raceClass: r.raceClass, track: r.track ?? null,
       })), fieldByMoto, stats)
     : null;
-  return { stats, resume };
+  const extras = withResume
+    ? computeProfileExtras(rows.map(r => ({
+        motoId: r.motoId, motoType: r.motoType, motoName: r.motoName ?? "Moto", position: r.position, dnf: r.dnf, dns: r.dns,
+        eventId: r.eventId, eventName: r.eventName ?? `Event ${r.eventId}`, eventDate: String(r.eventDate ?? ""),
+        raceClass: r.raceClass, track: r.track ?? null, state: r.state ?? null,
+      })), startersByMoto)
+    : null;
+  return { stats, resume, extras };
 }
 
 export interface FeedItem {
@@ -80,6 +92,8 @@ export interface FeedItem {
   eventName: string;
   eventDate: string;
   raceClass: string;
+  /** Track or venue name, when the event has one. */
+  track: string | null;
   publishedAt: string | null;
   /** Every race in this item finalized by the organizer; otherwise unofficial results. */
   official: boolean;
@@ -102,6 +116,7 @@ export async function loadResultsFeed(riderIds: number[], limit = 30): Promise<F
       motoName: motosTable.name, motoNumber: motosTable.motoNumber, motoType: motosTable.type,
       position: raceResultsTable.position, dnf: raceResultsTable.dnf, dns: raceResultsTable.dns,
       resultsFinalizedAt: motosTable.resultsFinalizedAt,
+      track: sql<string | null>`coalesce(nullif(${eventsTable.trackName}, ''), nullif(${eventsTable.location}, ''))`,
     })
     .from(raceResultsTable)
     .leftJoin(eventPublicationTable, eq(eventPublicationTable.eventId, raceResultsTable.eventId))
@@ -121,7 +136,7 @@ export async function loadResultsFeed(riderIds: number[], limit = 30): Promise<F
       items.set(key, {
         riderId: r.riderId, riderName: `${r.firstName} ${r.lastName}`.trim(), eventId: r.eventId,
         eventName: r.eventName ?? `Event ${r.eventId}`, eventDate: String(r.eventDate ?? "").slice(0, 10),
-        raceClass: r.raceClass, publishedAt: r.publishedAt ? r.publishedAt.toISOString() : null,
+        raceClass: r.raceClass, track: r.track ?? null, publishedAt: r.publishedAt ? r.publishedAt.toISOString() : null,
         official: true, bestPosition: null, motos: [],
         riderAvatarUrl: visiblePhotos(r, false, today).avatarUrl,
       });
@@ -245,4 +260,88 @@ export async function notifyFollowersOfResults(eventId: number): Promise<void> {
   } catch (err) {
     logger.error({ err, eventId }, "notifyFollowersOfResults failed");
   }
+}
+
+// ── Racer profile extras (lib/riderProfilePlus.ts) ────────────────────────────
+
+export interface SeriesStanding {
+  seriesId: number;
+  seriesName: string;
+  raceClass: string;
+  position: number;
+  points: number;
+  riders: number;
+}
+
+/** Where the rider stands in each series class they have points in, most recently updated first. */
+export async function loadSeriesStandings(riderId: number, limit = 4): Promise<SeriesStanding[]> {
+  const mine = await db
+    .select({ seriesId: seriesPointsTable.seriesId, raceClass: seriesPointsTable.raceClass, points: seriesPointsTable.totalPoints, seriesName: seriesTable.name })
+    .from(seriesPointsTable).innerJoin(seriesTable, eq(seriesTable.id, seriesPointsTable.seriesId))
+    .where(eq(seriesPointsTable.riderId, riderId))
+    .orderBy(desc(seriesPointsTable.updatedAt)).limit(limit);
+  const out: SeriesStanding[] = [];
+  for (const m of mine) {
+    const [rank] = await db
+      .select({
+        ahead: sql<number>`count(*) filter (where ${seriesPointsTable.totalPoints} > ${m.points})`,
+        riders: sql<number>`count(*)`,
+      })
+      .from(seriesPointsTable)
+      .where(and(eq(seriesPointsTable.seriesId, m.seriesId), eq(seriesPointsTable.raceClass, m.raceClass)));
+    out.push({ seriesId: m.seriesId, seriesName: m.seriesName, raceClass: m.raceClass, points: m.points, position: Number(rank?.ahead ?? 0) + 1, riders: Number(rank?.riders ?? 1) });
+  }
+  return out;
+}
+
+const completedRace = and(eq(motosTable.status, "completed"), ne(motosTable.type, "practice"));
+
+/** Riders who lined up in the same races as `mine` most often: [riderId, shared races]. */
+export async function loadCommonCompetitors(mine: number[], limit = 40): Promise<Array<{ riderId: number; weight: number }>> {
+  if (mine.length === 0) return [];
+  const myMotos = db.select({ motoId: raceResultsTable.motoId }).from(raceResultsTable)
+    .innerJoin(motosTable, eq(motosTable.id, raceResultsTable.motoId))
+    .where(and(inArray(raceResultsTable.riderId, mine), completedRace));
+  const rows = await db
+    .select({ riderId: raceResultsTable.riderId, shared: sql<number>`count(distinct ${raceResultsTable.motoId})` })
+    .from(raceResultsTable)
+    .where(and(inArray(raceResultsTable.motoId, myMotos), notInArray(raceResultsTable.riderId, mine)))
+    .groupBy(raceResultsTable.riderId)
+    .orderBy(desc(sql`count(distinct ${raceResultsTable.motoId})`))
+    .limit(limit);
+  return rows.map(r => ({ riderId: r.riderId, weight: Number(r.shared) }));
+}
+
+/** Riders with the most race wins in the last 12 months: [riderId, wins]. */
+export async function loadTopRiders(limit = 40): Promise<Array<{ riderId: number; weight: number }>> {
+  const since = new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10);
+  const rows = await db
+    .select({ riderId: raceResultsTable.riderId, wins: sql<number>`count(*)` })
+    .from(raceResultsTable)
+    .innerJoin(motosTable, eq(motosTable.id, raceResultsTable.motoId))
+    .innerJoin(eventsTable, eq(eventsTable.id, raceResultsTable.eventId))
+    .where(and(completedRace, eq(raceResultsTable.position, 1), eq(raceResultsTable.dnf, false), eq(raceResultsTable.dns, false),
+      gte(sql`${eventsTable.date}::text`, since)))
+    .groupBy(raceResultsTable.riderId)
+    .orderBy(desc(sql`count(*)`))
+    .limit(limit);
+  return rows.map(r => ({ riderId: r.riderId, weight: Number(r.wins) }));
+}
+
+/** Riders from these home states who have raced, most recent first. */
+export async function loadRidersNear(states: string[], limit = 40): Promise<Array<{ riderId: number; weight: number }>> {
+  const codes = [...new Set(states.map(s => s.trim().toUpperCase()).filter(s => /^[A-Z]{2}$/.test(s)))];
+  if (codes.length === 0) return [];
+  const rows = await db
+    .select({ riderId: ridersTable.id, last: sql<string>`max(${eventsTable.date}::text)` })
+    .from(ridersTable)
+    .innerJoin(raceResultsTable, eq(raceResultsTable.riderId, ridersTable.id))
+    .innerJoin(motosTable, and(eq(motosTable.id, raceResultsTable.motoId), completedRace))
+    .innerJoin(eventsTable, eq(eventsTable.id, raceResultsTable.eventId))
+    .where(inArray(sql`upper(${ridersTable.homeState})`, codes))
+    .groupBy(ridersTable.id)
+    .orderBy(desc(sql`max(${eventsTable.date}::text)`))
+    .limit(limit);
+  // Newest first: weight falls with rank.
+  return rows.map((r, i) => ({ riderId: r.riderId, weight: rows.length - i }));
 }

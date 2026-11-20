@@ -3,7 +3,7 @@ import { StatusBarBackdrop } from "@/components/StatusBarBackdrop";
 import { useBottomSpace } from "@/hooks/useBottomSpace";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ChartCard, LineChart } from "@/components/charts";
@@ -16,6 +16,7 @@ import { CoverBackdrop, RiderAvatar } from "@/components/RiderPhoto";
 import { fonts } from "@/constants/fonts";
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { webUrl } from "@/lib/apiBase";
 import { displayDate } from "@/lib/format";
 import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 import { goBack } from "@/lib/navigation";
@@ -47,11 +48,29 @@ interface RacerProfile {
   stats: CareerStats;
   recent: Recent[];
   resume?: Resume;
-  profile?: { number: string | null; plateColor: string | null; state: string | null; bio: string | null; avatarUrl?: string | null; coverUrl?: string | null };
+  profile?: {
+    number: string | null; plateColor: string | null; state: string | null; bio: string | null; avatarUrl?: string | null; coverUrl?: string | null;
+    /** "2024 KTM 250 SX-F". Newer servers only. */
+    bike?: string | null;
+    sponsors?: string[];
+  };
   visibility?: "public" | "private";
   isManager?: boolean;
+  /** Newer servers only: extra career numbers, big wins, and where they've raced. */
+  extras?: {
+    events?: number;
+    top10s?: number;
+    bigWins?: Array<{ eventId: number; eventName: string; eventDate: string; raceClass: string; motoName: string; fieldSize: number }>;
+    tracks?: Array<{ name: string; events: number }>;
+    states?: Array<{ code: string; events: number }>;
+  };
+  series?: Array<{ seriesId: number; seriesName: string; raceClass: string; position: number; points: number; riders: number }>;
+  /** The profile's page on the website; null or missing when the profile is private. */
+  sharePath?: string | null;
 }
 
+const TRACKS_SHOWN = 6;
+const shortDate = (iso: string) => displayDate(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
 /**
  * Racer profile: a résumé the system builds from the rider's results (headline,
@@ -68,6 +87,7 @@ export default function RacerScreen() {
   const live = useRiderLive(Number(id), riderFetch);
   const [data, setData] = useState<RacerProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [allTracks, setAllTracks] = useState(false);
 
   const load = useCallback(async (refresh = false) => {
     if (!refresh) setError(null);
@@ -111,6 +131,16 @@ export default function RacerScreen() {
     }
   }, [data, id, riderFetch]);
 
+  const share = useCallback(async () => {
+    if (!data?.sharePath) return;
+    const url = webUrl(data.sharePath);
+    try {
+      await Share.share({ message: `${data.name}'s racer profile on RM Roost: ${url}`, title: `${data.name} on RM Roost` });
+    } catch {
+      Alert.alert("Couldn't open sharing", "Try again.");
+    }
+  }, [data]);
+
   const s = styles(colors, insets);
 
   const backButton = (
@@ -148,6 +178,24 @@ export default function RacerScreen() {
   const seasons = (resume?.seasons ?? []).filter(x => x.avgFinish != null);
   const worst = seasons.length ? Math.max(...seasons.map(x => x.avgFinish!)) : 3;
 
+  const extras = data.extras;
+  const sponsors = profile?.sponsors ?? [];
+  const bigWins = extras?.bigWins ?? [];
+  const series = data.series ?? [];
+  // Older servers send track names only (no counts) in the résumé.
+  const tracks: Array<{ name: string; events: number | null }> = extras?.tracks ?? (resume?.tracks ?? []).map(name => ({ name, events: null }));
+  const states = extras?.states ?? [];
+  const shownTracks = allTracks ? tracks : tracks.slice(0, TRACKS_SHOWN);
+  const hasLaps = (st.totalLaps ?? 0) > 0;
+  const career = [
+    extras?.events != null ? { l: "Events", v: String(extras.events) } : null,
+    extras?.top10s != null ? { l: "Top 10s", v: String(extras.top10s) } : null,
+    st.top5s != null ? { l: "Top 5s", v: String(st.top5s) } : null,
+    st.avgFinish != null ? { l: "Avg finish", v: `P${st.avgFinish.toFixed(1)}` } : null,
+    hasLaps && st.lapsLed != null ? { l: "Laps led", v: st.pctLapsLed != null ? `${st.lapsLed} (${Math.round(st.pctLapsLed)}%)` : String(st.lapsLed) } : null,
+    hasLaps && st.avgLap1Position != null ? { l: "Avg lap-1 position", v: `P${st.avgLap1Position.toFixed(1)}` } : null,
+  ].filter((x): x is { l: string; v: string } => !!x);
+
   return (
     <View style={s.root}>
       <ScrollView contentContainerStyle={{ paddingBottom: bottomSpace }}>
@@ -183,6 +231,12 @@ export default function RacerScreen() {
                 <Text style={[s.pillText, data.following ? { color: colors.foreground } : null]}>{data.following ? "Following" : "Follow"}</Text>
               </Pressable>
             )}
+            {data.sharePath ? (
+              <Pressable onPress={() => { void share(); }} accessibilityRole="button" accessibilityLabel="Share this profile" hitSlop={6}
+                style={({ pressed }) => [s.iconBtn, { opacity: pressed ? 0.6 : 1 }]}>
+                <Feather name="share-2" size={16} color={colors.foreground} />
+              </Pressable>
+            ) : null}
           </View>
 
           {live ? <RiderLiveBanner riderId={data.riderId} live={live.live} canWatch={live.canWatch} viewers={live.viewers} /> : null}
@@ -195,6 +249,22 @@ export default function RacerScreen() {
           )}
 
           {profile?.bio ? <Text style={s.bio}>{profile.bio}</Text> : null}
+
+          {(profile?.bike || sponsors.length > 0) && (
+            <View style={[s.card, { gap: 8 }]}>
+              {profile?.bike ? <Text style={s.muted}><Text style={s.kv}>Bike  </Text>{profile.bike}</Text> : null}
+              {sponsors.length > 0 && (
+                <View style={{ gap: 6 }}>
+                  <Text style={[s.muted, s.kv]}>Sponsors</Text>
+                  <View style={s.chips}>
+                    {sponsors.map(name => (
+                      <View key={name} style={s.badge}><Text style={s.badgeText}>{name}</Text></View>
+                    ))}
+                  </View>
+                </View>
+              )}
+            </View>
+          )}
 
           {resume?.headline ? (
             <View style={s.card}>
@@ -217,6 +287,17 @@ export default function RacerScreen() {
               </View>
             ))}
           </View>
+
+          {career.length > 0 && (
+            <View style={[s.card, { paddingVertical: 4 }]}>
+              {career.map((row, i) => (
+                <View key={row.l} style={[s.statRow, i > 0 ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border } : null]}>
+                  <Text style={s.statLabel}>{row.l}</Text>
+                  <Text style={s.statValue}>{row.v}</Text>
+                </View>
+              ))}
+            </View>
+          )}
 
           {(resume?.highlights.bestFinish || st.bestLap || resume?.highlights.bestComeback) && (
             <>
@@ -277,11 +358,80 @@ export default function RacerScreen() {
             </View>
           )}
 
-          {((resume?.classes.length ?? 0) > 0 || (resume?.tracks.length ?? 0) > 0) && (
+          {(resume?.classes.length ?? 0) > 0 && (
             <View style={[s.card, { gap: 6 }]}>
-              {(resume?.classes.length ?? 0) > 0 && <Text style={s.muted}><Text style={s.kv}>Classes  </Text>{resume!.classes.slice(0, 4).join(", ")}</Text>}
-              {(resume?.tracks.length ?? 0) > 0 && <Text style={s.muted}><Text style={s.kv}>Tracks  </Text>{resume!.tracks.slice(0, 4).join(", ")}</Text>}
+              <Text style={s.muted}><Text style={s.kv}>Classes  </Text>{resume!.classes.slice(0, 4).join(", ")}</Text>
             </View>
+          )}
+
+          {bigWins.length > 0 && (
+            <>
+              <Text style={s.section}>Big wins</Text>
+              <View style={[s.card, { paddingVertical: 4 }]}>
+                {bigWins.map((w, i) => (
+                  <Pressable key={`${w.eventId}-${w.raceClass}-${w.motoName}`} onPress={() => router.push(`/event/${w.eventId}` as any)} accessibilityRole="button"
+                    style={({ pressed }) => [s.winRow, i > 0 ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border } : null, { opacity: pressed ? 0.6 : 1 }]}>
+                    <PositionBadge position={1} size="sm" />
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={s.winTitle} numberOfLines={1}>{w.eventName}</Text>
+                      <Text style={s.muted} numberOfLines={1}>{[w.raceClass, w.eventDate ? shortDate(w.eventDate) : null].filter(Boolean).join("  ·  ")}</Text>
+                      <Text style={s.muted}>Won against {w.fieldSize - 1} riders</Text>
+                    </View>
+                    <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+                  </Pressable>
+                ))}
+              </View>
+            </>
+          )}
+
+          {series.length > 0 && (
+            <>
+              <Text style={s.section}>Series</Text>
+              <View style={[s.card, { paddingVertical: 4 }]}>
+                {series.map((x, i) => (
+                  <View key={`${x.seriesId}-${x.raceClass}`} style={[s.winRow, i > 0 ? { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border } : null]}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={s.winTitle} numberOfLines={1}>{x.seriesName}</Text>
+                      <Text style={s.muted} numberOfLines={1}>{x.raceClass}</Text>
+                    </View>
+                    <Text style={s.statValue}>P{x.position} of {x.riders}  ·  {x.points} pts</Text>
+                  </View>
+                ))}
+              </View>
+            </>
+          )}
+
+          {(tracks.length > 0 || states.length > 0) && (
+            <>
+              <Text style={s.section}>Where they've raced</Text>
+              <View style={[s.card, { gap: 10 }]}>
+                {states.length > 0 && (
+                  <View style={s.chips}>
+                    {states.map(x => (
+                      <View key={x.code} style={s.badge}>
+                        <Text style={s.badgeText}>{stateNameFromCode(x.code) ?? x.code}</Text>
+                        <Text style={[s.badgeText, { color: colors.mutedForeground }]}>{x.events}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+                {tracks.length > 0 && (
+                  <View>
+                    {shownTracks.map(t => (
+                      <View key={t.name} style={s.trackRow}>
+                        <Text style={s.trackName} numberOfLines={1}>{t.name}</Text>
+                        {t.events != null ? <Text style={s.muted}>{t.events} {t.events === 1 ? "event" : "events"}</Text> : null}
+                      </View>
+                    ))}
+                  </View>
+                )}
+                {tracks.length > TRACKS_SHOWN && (
+                  <Pressable onPress={() => setAllTracks(v => !v)} accessibilityRole="button" hitSlop={6} style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}>
+                    <Text style={s.link}>{allTracks ? "Show fewer" : `Show all ${tracks.length} tracks`}</Text>
+                  </Pressable>
+                )}
+              </View>
+            </>
           )}
 
           <Text style={s.section}>Recent results</Text>
@@ -298,6 +448,13 @@ export default function RacerScreen() {
               />
             </View>
           ))}
+          {data.recent.length > 0 && (
+            <Pressable onPress={() => router.push(`/racer/history/${data.riderId}?name=${encodeURIComponent(data.name)}` as any)} accessibilityRole="link"
+              style={({ pressed }) => [s.historyLink, { opacity: pressed ? 0.6 : 1 }]}>
+              <Text style={s.link}>Full history</Text>
+              <Feather name="chevron-right" size={16} color={colors.primaryText} />
+            </Pressable>
+          )}
           {resume?.highlights.bestFinish?.eventDate ? (
             <Text style={[s.muted, { fontSize: 11 }]}>
               Built from published results, most recently {displayDate(data.recent[0]?.eventDate ?? resume.highlights.bestFinish.eventDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}.
@@ -337,5 +494,16 @@ const styles = (colors: ReturnType<typeof useColors>, insets: { bottom: number }
   badge: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card },
   badgeText: { color: colors.foreground, fontFamily: fonts.medium, fontSize: 12 },
   kv: { color: colors.foreground, fontFamily: fonts.bold },
+  iconBtn: { width: 38, height: 38, borderRadius: 19, borderWidth: 1, borderColor: colors.border, alignItems: "center", justifyContent: "center" },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  statRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingVertical: 9 },
+  statLabel: { color: colors.mutedForeground, fontFamily: fonts.regular, fontSize: 14 },
+  statValue: { color: colors.foreground, fontFamily: fonts.bold, fontSize: 14 },
+  winRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10 },
+  winTitle: { color: colors.foreground, fontFamily: fonts.semibold, fontSize: 14 },
+  trackRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingVertical: 5 },
+  trackName: { flex: 1, color: colors.foreground, fontFamily: fonts.medium, fontSize: 14 },
+  link: { color: colors.primaryText, fontFamily: fonts.semibold, fontSize: 14 },
+  historyLink: { flexDirection: "row", alignItems: "center", gap: 2, alignSelf: "flex-start", paddingVertical: 4 },
   muted: { fontSize: 12, color: colors.mutedForeground, fontFamily: fonts.regular, lineHeight: 17 },
 });

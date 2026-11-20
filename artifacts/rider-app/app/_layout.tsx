@@ -176,6 +176,7 @@ function RootLayoutNav() {
       <Stack.Screen name="stats/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="follow" options={{ headerShown: false }} />
       <Stack.Screen name="racer/[id]" options={{ headerShown: false }} />
+      <Stack.Screen name="racer/history/[id]" options={{ headerShown: false }} />
     </Stack>
     {/* Rocky, minimized, on every signed-in screen */}
     {isAuthenticated && !isLoading && <RockyLauncher />}

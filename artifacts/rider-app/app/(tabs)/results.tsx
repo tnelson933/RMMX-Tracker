@@ -19,7 +19,7 @@ import { fmtDateShared as fmtDate, fmtLap } from "@/components/RaceSubScreens";
 import { useColors } from "@/hooks/useColors";
 import { onTabReset } from "@/utils/tabEvents";
 import { EmptyState } from "@/components/EmptyState";
-import { RacerLink } from "@/components/RacerLink";
+import { RiderLookupCard } from "@/components/RiderLookupCard";
 import { placeLabel } from "@/lib/format";
 import { EventCard as RaceEventCard } from "@/components/RaceCards";
 import { defaultSide, nextScheduled, splitLivePast } from "@/lib/liveRaces";
@@ -276,7 +276,7 @@ function PublicRiderLapSheet({
             <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 }}>
               Lap Times
             </Text>
-            <RacerLink riderId={riderId} onBeforeOpen={onClose} />
+            <RiderLookupCard riderId={riderId} name={riderName} onBeforeOpen={onClose} />
           </View>
           <Pressable onPress={onClose} hitSlop={8} style={{ padding: 4 }} accessibilityRole="button" accessibilityLabel="Close">
             <Feather name="x" size={20} color={colors.mutedForeground} />
@@ -1428,7 +1428,7 @@ function SeriesStandingsScreen({
                   <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 }}>
                     {selectedRider.raceClass} · {ordinalSuffix(selectedRider.position)} place · {selectedRider.totalScore} pts total
                   </Text>
-                  <RacerLink riderId={selectedRider.riderId} onBeforeOpen={() => setSelectedRider(null)} />
+                  <RiderLookupCard riderId={selectedRider.riderId} name={selectedRider.riderName} onBeforeOpen={() => setSelectedRider(null)} />
                 </View>
                 <Pressable onPress={() => setSelectedRider(null)} hitSlop={8} style={{ padding: 4 }} accessibilityRole="button" accessibilityLabel="Close">
                   <Feather name="x" size={20} color={colors.mutedForeground} />

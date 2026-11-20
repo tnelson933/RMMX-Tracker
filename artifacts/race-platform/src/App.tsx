@@ -25,6 +25,7 @@ import ForgotPassword from "@/pages/public/ForgotPassword";
 import Register from "@/pages/public/Register";
 import PdfView from "@/pages/public/PdfView";
 import LiveLeaderboard from "@/pages/public/LiveLeaderboard";
+import PublicRacer from "@/pages/public/PublicRacer";
 
 import Dashboard from "@/pages/organizer/Dashboard";
 import EventLayout from "@/pages/organizer/EventLayout";
@@ -211,6 +212,9 @@ function Router() {
       </Route>
       <Route path="/rider-live/:riderId">
         <RiderLiveWatch />
+      </Route>
+      <Route path="/racer/:riderId">
+        <PublicLayout><PublicRacer /></PublicLayout>
       </Route>
       <Route path="/results">
         <PublicLayout><Results /></PublicLayout>

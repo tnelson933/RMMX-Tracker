@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { SectorTimes, type SectorEntry } from "@/components/SectorTimes";
+import { RiderLookupHost, RiderLookupName } from "@/components/RiderLookup";
 
 export interface LeaderboardEntry {
   position: number;
@@ -375,7 +376,7 @@ function FastestLapRanking({ data }: { data: LeaderboardData }) {
                     <td className={`px-3 py-4 text-center font-heading text-lg font-bold ${index === 0 ? "text-yellow-400" : "text-white/45"}`}>
                       {entry.bestLapMs != null ? index + 1 : "—"}
                     </td>
-                    <td className="px-3 py-4 font-heading text-base font-bold text-white">{entry.riderName}</td>
+                    <td className="px-3 py-4 font-heading text-base font-bold text-white"><RiderLookupName riderId={entry.riderId} name={entry.riderName} /></td>
                     <td className="hidden px-3 py-4 text-center font-mono text-xs text-white/45 sm:table-cell">{entry.bibNumber ?? "—"}</td>
                     <td className="px-3 py-4 text-right font-mono font-bold tabular-nums text-white">{entry.bestLap ?? "Waiting"}</td>
                     <td className="hidden px-3 py-4 text-right font-mono tabular-nums text-white/40 md:table-cell">
@@ -513,7 +514,7 @@ function LiveTimingTable({
                           </motion.span>
                         )}
                       </AnimatePresence>
-                      {entry.riderName}
+                      <RiderLookupName riderId={entry.riderId} name={entry.riderName} />
                     </motion.div>
                   </td>
                   <td className="hidden px-2 py-3 text-center sm:table-cell">
@@ -688,6 +689,7 @@ export function LiveRaceViews({
   const isLive = data?.status === "in_progress";
   return (
     <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-sidebar text-sidebar-foreground">
+      <RiderLookupHost />
       <AnimatePresence>
         {correctionVisible && (
           <motion.div
@@ -900,6 +902,7 @@ function LegacyLiveLeaderboard() {
 
   return (
     <main className="fixed inset-0 z-40 flex h-[100dvh] flex-col overflow-hidden bg-sidebar text-sidebar-foreground">
+      <RiderLookupHost />
       {/* Correction notice banner */}
       <AnimatePresence>
         {correctionVisible && (
