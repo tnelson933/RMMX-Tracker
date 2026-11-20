@@ -11,7 +11,7 @@ type SeriesRow = { id: number; club_id: number; event_ids: string | null; scorin
 function seriesScope(series: SeriesRow) {
   const db = getDb();
   const listed = [...new Set(parseJson<unknown[]>(series.event_ids, []).map(Number).filter(Number.isFinite))];
-  const clubEvents = db.prepare("SELECT id, race_class_series_map FROM events WHERE club_id = ? ORDER BY id").all(series.club_id) as Array<{ id: number; race_class_series_map: string | null }>;
+  const clubEvents = db.prepare("SELECT id, race_class_series_map, date FROM events WHERE club_id = ? ORDER BY id").all(series.club_id) as Array<{ id: number; race_class_series_map: string | null; date: string | null }>;
   const eligibleClasses = new Map<number, Set<string> | null>();
   const linkedOnly: number[] = [];
   for (const evt of clubEvents) {
@@ -27,7 +27,14 @@ function seriesScope(series: SeriesRow) {
       eligibleClasses.set(evt.id, null);
     }
   }
-  return { eventIds: [...listed.filter(id => eligibleClasses.has(id)), ...linkedOnly], eligibleClasses };
+  // Rounds run in date order (then id), however they were added to the series
+  // (cloud orderSeriesRounds): that decides the "last round" in a tie.
+  const counted = new Set([...listed.filter(id => eligibleClasses.has(id)), ...linkedOnly]);
+  const day = (d: unknown) => String(d ?? "").slice(0, 10) || "9999";
+  const eventIds = clubEvents.filter(e => counted.has(e.id))
+    .sort((a, b) => day(a.date).localeCompare(day(b.date)) || a.id - b.id)
+    .map(e => e.id);
+  return { eventIds, eligibleClasses };
 }
 
 function motoCounts(eligibleClasses: Map<number, Set<string> | null>, moto: { eventId: number; raceClass: string | null }): boolean {

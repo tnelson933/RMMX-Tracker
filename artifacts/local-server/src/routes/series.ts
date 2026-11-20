@@ -4,6 +4,7 @@ import { getDb } from "../db";
 import { computeSeriesStandings } from "../lib/series-standings";
 import { newDesktopId } from "../lib/desktop-ids";
 import { isoTime } from "../lib/cloud-shape";
+import { SCORING_STYLE_MISMATCH, seriesMismatchesEvents } from "../lib/scoringStyle";
 
 const router = Router();
 
@@ -98,6 +99,9 @@ router.post("/series", (req, res) => {
   if (!name || !season) {
     return res.status(400).json({ error: "Enter a series name and season." });
   }
+  if (seriesMismatchesEvents(null, clubId, scoringTableId, uniqueIds(eventIds))) {
+    return res.status(400).json({ error: SCORING_STYLE_MISMATCH });
+  }
 
   // The website's checks, in its order.
   if (!scoringTableUsable(scoringTableId, clubId)) return res.status(400).json({ error: "That scoring table isn't available to this club." });
@@ -142,20 +146,14 @@ router.patch("/series/:seriesId", (req, res) => {
   if (scoringTableId !== undefined && !scoringTableUsable(scoringTableId, existing.club_id)) {
     return res.status(400).json({ error: "That scoring table isn't available to this club." });
   }
-  // Events must match the series' scoring format, whether the events or the table change.
+  // Every event that counts toward the series (listed or linked per class)
+  // must be scored the same way, whether the events or the table change.
   const existingIds = uniqueIds((() => { try { return JSON.parse(existing.event_ids || "[]"); } catch { return []; } })());
-  const checkIds = eventIds !== undefined ? uniqueIds(eventIds) : existingIds;
-  if (checkIds.length > 0 && (eventIds !== undefined || scoringTableId !== undefined)) {
-    const tableId = scoringTableId !== undefined ? (scoringTableId ?? null) : existing.scoring_table_id;
-    if (tableId) {
-      const events = db.prepare(`SELECT id, scoring_table_id FROM events WHERE id IN (${checkIds.map(() => "?").join(",")})`)
-        .all(...checkIds) as Array<{ id: number; scoring_table_id: number | null }>;
-      const mismatched = events.filter(e => e.scoring_table_id !== Number(tableId));
-      if (mismatched.length > 0) {
-        return res.status(400).json({
-          error: `Events ${mismatched.map(e => e.id).join(", ")} use a different scoring format than this series. All events in a series must use the same scoring format.`,
-        });
-      }
+  if (eventIds !== undefined || scoringTableId !== undefined) {
+    const nextTable = scoringTableId !== undefined ? (scoringTableId ?? null) : existing.scoring_table_id;
+    const nextEvents = eventIds !== undefined ? uniqueIds(eventIds) : existingIds;
+    if (seriesMismatchesEvents(id, existing.club_id, nextTable, nextEvents)) {
+      return res.status(400).json({ error: SCORING_STYLE_MISMATCH });
     }
   }
 
@@ -208,60 +206,21 @@ router.post("/series/:seriesId/recalculate", (req, res) => {
   if (!series) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
   const lowerIsBetter = seriesLowerIsBetter(series);
 
-  const eventIds: number[] = uniqueIds((() => { try { return JSON.parse(series.event_ids || "[]"); } catch { return []; } })());
-
-  db.prepare("DELETE FROM series_points WHERE series_id = ?").run(id);
-
-  if (eventIds.length === 0) return res.json({ ok: true, rows: 0 });
-
-  const ph = eventIds.map(() => "?").join(",");
-  const motos = db.prepare(`SELECT * FROM motos WHERE event_id IN (${ph}) AND status = 'completed' AND type != 'practice'`).all(...eventIds) as any[];
-
-  if (motos.length === 0) return res.json({ ok: true, rows: 0 });
-
-  const motoIds = motos.map((m: any) => m.id);
-  const motoPh = motoIds.map(() => "?").join(",");
-
-  const results = db.prepare(`
-    SELECT rr.rider_id, rr.race_class, rr.points, rr.dnf, rr.dns, rr.moto_id,
-           r.first_name, r.last_name
-    FROM race_results rr
-    LEFT JOIN riders r ON rr.rider_id = r.id
-    WHERE rr.moto_id IN (${motoPh})
-  `).all(...motoIds) as any[];
-
-  const motoEventMap: Record<number, number> = {};
-  for (const m of motos) motoEventMap[m.id] = m.event_id;
-
-  const pointsMap: Record<string, { riderId: number; raceClass: string; totalPoints: number; byEvent: Record<number, number> }> = {};
-
-  for (const r of results) {
-    const key = `${r.rider_id}:${r.race_class}`;
-    if (!pointsMap[key]) {
-      pointsMap[key] = { riderId: r.rider_id, raceClass: r.race_class, totalPoints: 0, byEvent: {} };
-    }
-    // Olympic tables store DNF/DNS penalty points on the result; keep them.
-    const pts = lowerIsBetter ? (Number(r.points) || 0) : (r.dnf || r.dns) ? 0 : (Number(r.points) || 0);
-    const eventId = motoEventMap[r.moto_id];
-    pointsMap[key].totalPoints += pts;
-    pointsMap[key].byEvent[eventId] = (pointsMap[key].byEvent[eventId] ?? 0) + pts;
-  }
-
+  // The stored totals are the standings pages' totals (same events and classes,
+  // penalties and missed motos), so anything reading them agrees with the pages.
+  const { standings } = computeSeriesStandings(series);
   const insert = db.prepare(
     `INSERT INTO series_points (series_id, rider_id, race_class, total_points, event_results, updated_at)
      VALUES (?, ?, ?, ?, ?, datetime('now'))`
   );
-
   db.transaction(() => {
-    for (const entry of Object.values(pointsMap)) {
-      const eventResults = JSON.stringify(
-        eventIds.map(eid => ({ eventId: eid, points: entry.byEvent[eid] ?? 0 }))
-      );
-      insert.run(id, entry.riderId, entry.raceClass, entry.totalPoints, eventResults);
+    db.prepare("DELETE FROM series_points WHERE series_id = ?").run(id);
+    for (const row of standings as Array<{ riderId: number; raceClass: string; totalScore: number; events: Array<{ eventId: number; eventScore: number }> }>) {
+      insert.run(id, row.riderId, row.raceClass, row.totalScore, JSON.stringify(row.events.map(e => ({ eventId: e.eventId, points: e.eventScore }))));
     }
   })();
 
-  return res.json({ ok: true, rows: Object.keys(pointsMap).length });
+  return res.json({ ok: true, rows: standings.length });
 });
 
 // GET /series/:seriesId/points — legacy alias kept for backward compat

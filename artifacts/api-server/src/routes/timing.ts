@@ -2034,6 +2034,13 @@ router.delete("/timing/crossings/:crossingId", async (req, res) => {
     });
   }
 
+  // A lap removed after the race finished changes the finishing order: the
+  // points follow it (a running race is scored when it finishes).
+  if (moto.status === "completed" && moto.type !== "practice") {
+    const { scoreMotoPoints } = await import("./results");
+    await scoreMotoPoints(motoId).catch(() => {});
+  }
+
   // Broadcast updated leaderboard (outside transaction — read-only)
   // Include correction: true so live viewers know a crossing was removed
   const snapshot = await buildLeaderboard(motoId);

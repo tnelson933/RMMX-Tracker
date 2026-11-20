@@ -1,9 +1,11 @@
+import { combineProblem, planCombinedStarts, type CombineCandidate } from "@workspace/api-zod";
 import { Router } from "express";
 import { practiceInsertNumber } from "@workspace/api-zod";
 import { getDb, parseJsonArr } from "../db";
 import { sseBroadcast, buildLeaderboard } from "./timing";
 import { isoTime } from "../lib/cloud-shape";
-import { scoreMotoPoints } from "./results";
+import { afterMotoCompleted, scoreMotoPoints } from "./results";
+import { mainLineupFromHeats } from "../lib/supercrossAdvance";
 
 const router = Router();
 
@@ -61,6 +63,7 @@ function serializeMoto(m: any, groupMembersMap?: Map<number, number[]>) {
     staggeredOrder: m.staggered_order ?? null,
     staggeredGroupId: groupId,
     staggeredGroupMembers: groupId != null && groupMembersMap ? (groupMembersMap.get(groupId) ?? null) : null,
+    combinedStart: m.combined_start === 1,
     countdownSeconds: m.countdown_seconds ?? null,
     resultsFinalizedAt: m.results_finalized_at ?? null,
     enduroHasRfidStart: m.enduro_has_rfid_start === 1,
@@ -343,7 +346,7 @@ router.patch("/motos/:motoId", (req, res) => {
   if (!moto) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
 
   // A race that just finished gets its points from the finishing order, as on the website.
-  if (req.body.status === "completed" && existingFormat.status !== "completed") scoreMotoPoints(id);
+  if (req.body.status === "completed" && existingFormat.status !== "completed") afterMotoCompleted(id);
 
   if (req.body.status !== undefined || completedOnTimeExpiry) {
     const snapshot = buildLeaderboard(id);
@@ -363,11 +366,14 @@ router.delete("/motos/:motoId", (req, res) => {
   const moto = db.prepare("SELECT id, status FROM motos WHERE id = ?").get(id) as any;
   if (!moto) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
 
+  // A finished race keeps its results, as on the website.
+  if (moto.status === "completed" && db.prepare("SELECT 1 FROM race_results WHERE moto_id = ? LIMIT 1").get(id)) {
+    return res.status(409).json({ error: "This race is finished and has results, so it can't be deleted. If it shouldn't count, restart it (that clears its laps) and then delete it." });
+  }
+
   db.prepare("DELETE FROM split_crossings WHERE moto_id = ?").run(id);
   db.prepare("DELETE FROM lap_crossings WHERE moto_id = ?").run(id);
-  if (moto.status !== "completed") {
-    db.prepare("DELETE FROM race_results WHERE moto_id = ?").run(id);
-  }
+  db.prepare("DELETE FROM race_results WHERE moto_id = ?").run(id);
   db.prepare("DELETE FROM motos WHERE id = ?").run(id);
   return res.status(204).send();
 });
@@ -473,6 +479,67 @@ router.post("/motos/:motoId/resume", (req, res) => {
   return res.json(serializeMoto(updated));
 });
 
+/** An event's motos as the combined-start planner sees them (all, or just `onlyIds`). */
+function combineCandidates(eventId: number, onlyIds?: number[]): CombineCandidate[] {
+  const rows = getDb().prepare("SELECT id, race_class, type, moto_number, status, staggered_group_id, lineup FROM motos WHERE event_id = ?").all(eventId) as any[];
+  return rows
+    .filter(m => !onlyIds || onlyIds.includes(m.id))
+    .map(m => ({
+      id: m.id,
+      raceClass: m.race_class ?? "",
+      type: m.type ?? "heat",
+      motoNumber: m.moto_number ?? 0,
+      status: m.status,
+      grouped: m.staggered_group_id != null,
+      riderIds: (parseJsonArr(m.lineup) as Array<{ riderId?: unknown }>).map(l => Number(l.riderId)).filter(Number.isFinite),
+    }));
+}
+
+/**
+ * Link motos into one start group, in this order (the website's linkStartGroup):
+ * old groups they were in are cleared, the group's run-order numbers are shared
+ * out in start order, and `combined` marks a combined start.
+ */
+function linkStartGroup(ids: number[], combined: boolean): void {
+  const db = getDb();
+  const placeholders = ids.map(() => "?").join(",");
+  const existing = db.prepare(`SELECT id, staggered_group_id, moto_number FROM motos WHERE id IN (${placeholders})`).all(...ids) as any[];
+  const oldGroupIds = [...new Set(existing.map((m: any) => m.staggered_group_id).filter((g: any) => g != null))] as number[];
+  if (oldGroupIds.length > 0) {
+    db.prepare(
+      `UPDATE motos SET staggered_group_id = NULL, staggered_order = NULL, combined_start = 0 WHERE staggered_group_id IN (${oldGroupIds.map(() => "?").join(",")})`,
+    ).run(...oldGroupIds);
+  }
+  // Use min ID as stable group identifier
+  const groupId = Math.min(...ids);
+  const sortedNums = existing.map((m: any) => m.moto_number ?? 0).sort((a: number, b: number) => a - b);
+  const updateStmt = db.prepare("UPDATE motos SET staggered_group_id = ?, staggered_order = ?, moto_number = ?, combined_start = ? WHERE id = ?");
+  for (let i = 0; i < ids.length; i++) updateStmt.run(groupId, i + 1, sortedNums[i] ?? 0, combined ? 1 : 0, ids[i]);
+}
+
+// POST /events/:eventId/combine-starts { gateSize } — "Combine starts for smaller
+// classes": link the races still to run into combined starts that fit the gate.
+router.post("/events/:eventId/combine-starts", (req, res) => {
+  const session = req.session as any;
+  if (!session?.userId) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
+  const eventId = Number(req.params.eventId);
+  const gateSize = Math.trunc(Number(req.body?.gateSize));
+  if (!(gateSize >= 2)) return res.status(400).json({ error: "Enter how many gate spots there are (2 or more)." });
+  const candidates = combineCandidates(eventId);
+  const groups = planCombinedStarts(candidates, gateSize);
+  for (const ids of groups) linkStartGroup(ids, true);
+  const byId = new Map(candidates.map(c => [c.id, c]));
+  return res.json({
+    ok: true,
+    gateSize,
+    groups: groups.map(ids => ({
+      motoIds: ids,
+      classes: ids.map(id => byId.get(id)?.raceClass ?? ""),
+      riders: ids.reduce((n, id) => n + (byId.get(id)?.riderIds.length ?? 0), 0),
+    })),
+  });
+});
+
 // POST /events/:eventId/stagger — link N motos as a staggered start group
 router.post("/events/:eventId/stagger", (req, res) => {
   const session = req.session as any;
@@ -488,27 +555,14 @@ router.post("/events/:eventId/stagger", (req, res) => {
     return res.status(400).json({ error: "The same moto is listed twice. Refresh the page and try again." });
   }
 
-  // Clear existing group memberships for any groups that overlap with these IDs
-  const placeholders = ids.map(() => "?").join(",");
-  const existing = db
-    .prepare(`SELECT staggered_group_id FROM motos WHERE id IN (${placeholders})`)
-    .all(...ids) as any[];
-  const oldGroupIds = [...new Set(existing.map((m: any) => m.staggered_group_id).filter((g: any) => g != null))] as number[];
-  if (oldGroupIds.length > 0) {
-    const gPlaceholders = oldGroupIds.map(() => "?").join(",");
-    db.prepare(
-      `UPDATE motos SET staggered_group_id = NULL, staggered_order = NULL WHERE staggered_group_id IN (${gPlaceholders})`,
-    ).run(...oldGroupIds);
+  // Combined start: classes share the gate and leave together, so no rider may
+  // be in two of them and none may have started (the website's check).
+  const combined = req.body.combined === true;
+  if (combined) {
+    const problem = combineProblem(combineCandidates(Number(req.params.eventId), ids));
+    if (problem) return res.status(400).json({ error: problem });
   }
-
-  // Use min ID as stable group identifier
-  const groupId = Math.min(...ids);
-  const updateStmt = db.prepare(
-    "UPDATE motos SET staggered_group_id = ?, staggered_order = ? WHERE id = ?",
-  );
-  for (let i = 0; i < ids.length; i++) {
-    updateStmt.run(groupId, i + 1, ids[i]);
-  }
+  linkStartGroup(ids, combined);
   return res.json({ ok: true });
 });
 
@@ -533,14 +587,14 @@ router.delete("/motos/:motoId/stagger", (req, res) => {
 
   // Clear this moto
   db.prepare(
-    "UPDATE motos SET staggered_group_id = NULL, staggered_order = NULL WHERE id = ?",
+    "UPDATE motos SET staggered_group_id = NULL, staggered_order = NULL, combined_start = 0 WHERE id = ?",
   ).run(id);
 
   if (remaining.length <= 1) {
     // Group dissolves
     if (remaining.length === 1) {
       db.prepare(
-        "UPDATE motos SET staggered_group_id = NULL, staggered_order = NULL WHERE id = ?",
+        "UPDATE motos SET staggered_group_id = NULL, staggered_order = NULL, combined_start = 0 WHERE id = ?",
       ).run(remaining[0].id);
     }
     return res.json({ ok: true });
@@ -1522,58 +1576,14 @@ router.post("/events/:eventId/advance-to-main", (req, res) => {
   if (!raceClass) return res.status(400).json({ error: "Choose a class." });
   const top = Number(topPerHeat);
 
-  const heatMotos = db
-    .prepare("SELECT * FROM motos WHERE event_id = ? AND race_class = ? AND type = 'heat'")
-    .all(eventId, String(raceClass)) as any[];
-  if (heatMotos.length === 0) return res.status(404).json({ error: "This class has no heat motos yet. Generate motos on the Motos page first." });
-
-  const mainMoto = db
-    .prepare("SELECT * FROM motos WHERE event_id = ? AND race_class = ? AND type = 'main' LIMIT 1")
-    .get(eventId, String(raceClass)) as any;
-  if (!mainMoto) return res.status(404).json({ error: "No main event moto found. Generate lineups first." });
-
-  type LineupEntry = { position: number; riderId: number; riderName: string; bibNumber: string | null; rfidNumber: string | null };
-  const resultsFor = db.prepare("SELECT * FROM race_results WHERE moto_id = ?");
-  const advancedRiderIds = new Set<number>();
-  const advancedLineup: LineupEntry[] = [];
-
-  for (const heat of heatMotos) {
-    const results = resultsFor.all(heat.id) as any[];
-    const heatLineup = parseJsonArr<LineupEntry>(heat.lineup);
-
-    if (results.length > 0) {
-      const sorted = results.filter((r) => r.dnf !== 1 && r.dns !== 1).sort((a, b) => a.position - b.position);
-      for (const r of sorted.slice(0, top)) {
-        if (advancedRiderIds.has(r.rider_id)) continue;
-        advancedRiderIds.add(r.rider_id);
-        const fromLineup = heatLineup.find((l) => l.riderId === r.rider_id);
-        advancedLineup.push({
-          position: advancedLineup.length + 1,
-          riderId: r.rider_id,
-          riderName: fromLineup?.riderName ?? `Rider #${r.rider_id}`,
-          bibNumber: r.bib_number ?? fromLineup?.bibNumber ?? null,
-          rfidNumber: fromLineup?.rfidNumber ?? null,
-        });
-      }
-    } else {
-      const sorted = [...heatLineup].sort((a, b) => a.position - b.position);
-      for (const l of sorted.slice(0, top)) {
-        if (advancedRiderIds.has(l.riderId)) continue;
-        advancedRiderIds.add(l.riderId);
-        advancedLineup.push({
-          position: advancedLineup.length + 1,
-          riderId: l.riderId,
-          riderName: l.riderName,
-          bibNumber: l.bibNumber ?? null,
-          rfidNumber: l.rfidNumber ?? null,
-        });
-      }
-    }
+  const built = mainLineupFromHeats(eventId, String(raceClass), top);
+  if ("error" in built) {
+    return res.status(404).json({ error: built.error === "no_heats"
+      ? "This class has no heat motos yet. Generate motos on the Motos page first."
+      : "No main event moto found. Generate lineups first." });
   }
-
-  advancedLineup.forEach((r, i) => { r.position = i + 1; });
-  db.prepare("UPDATE motos SET lineup = ? WHERE id = ?").run(JSON.stringify(advancedLineup), mainMoto.id);
-  const updated = db.prepare("SELECT * FROM motos WHERE id = ?").get(mainMoto.id) as any;
+  db.prepare("UPDATE motos SET lineup = ? WHERE id = ?").run(JSON.stringify(built.lineup), built.mainMotoId);
+  const updated = db.prepare("SELECT * FROM motos WHERE id = ?").get(built.mainMotoId) as any;
   return res.json(serializeMoto(updated));
 });
 

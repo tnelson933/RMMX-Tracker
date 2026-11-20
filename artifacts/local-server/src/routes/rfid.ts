@@ -258,9 +258,12 @@ router.post("/rfid", (req, res) => {
             )
             .get(moto.event_id, numRiderId) as any);
 
-        const lapTimes = riderCrossings
+        const allLapTimes = riderCrossings
           .map((c: any) => c.lap_time_ms)
           .filter((t: any): t is number => t !== null && t !== undefined);
+        // Only a fixed-lap race is capped to its lap count; a timed race keeps every lap (as on the website).
+        const lapCap = moto.lap_count != null && moto.lap_count > 0 && !moto.time_limit_ms ? Number(moto.lap_count) : null;
+        const lapTimes = lapCap != null ? allLapTimes.slice(0, lapCap) : allLapTimes;
         const totalMs = lapTimes.reduce((s: number, t: number) => s + t, 0);
 
         const existing = db
@@ -268,14 +271,13 @@ router.post("/rfid", (req, res) => {
           .get(moto_id, numRiderId) as any;
 
         if (existing) {
-          const prevLaps = parseJsonArr<number>(existing.lap_times);
-          const merged = prevLaps.length > 0 ? prevLaps : lapTimes;
-          const mergedTotal = merged.reduce((s: number, t: number) => s + t, 0);
+          // The rider's laps are rebuilt from every crossing now theirs, as on the website.
           db.prepare(
-            "UPDATE race_results SET lap_times = ?, total_time = ? WHERE id = ?",
+            "UPDATE race_results SET lap_times = ?, total_time = ?, bib_number = ? WHERE id = ?",
           ).run(
-            JSON.stringify(merged),
-            merged.length ? formatLapTime(mergedTotal) : null,
+            JSON.stringify(lapTimes),
+            lapTimes.length ? formatLapTime(totalMs) : null,
+            checkin?.bib_number ?? null,
             existing.id,
           );
         } else {

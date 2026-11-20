@@ -17,6 +17,8 @@ import { missingWaiverSetup } from "../lib/waiverSettings";
 import { callerOwnsClub } from "../middleware/accessControl";
 import { eventTimingTags, eventsTimingTags } from "../lib/eventTimingTags";
 import { cardPaymentsBlocked } from "../lib/stripePayments";
+import { scoringFormatChanged } from "../lib/motoPoints";
+import { SCORING_STYLE_MISMATCH, eventMismatchesSeries, seriesIdsInMap, seriesOfEvent } from "../lib/seriesScoringMatch";
 
 const router = Router();
 const normalizeTimingTechnology = (value: unknown) =>
@@ -159,6 +161,8 @@ router.post("/events", async (req, res) => {
   const isDraftCreate = req.body.draft === true;
   if (!clubId || !name) return res.status(400).json({ error: "Enter an event name." });
   if (!(await scoringTableUsable(scoringTableId, clubId))) return res.status(400).json({ error: "That scoring table isn't available to this club." });
+  // A race only counts toward a series scored the same way.
+  if (await eventMismatchesSeries(scoringTableId, seriesIdsInMap(raceClassSeriesMap))) return res.status(400).json({ error: SCORING_STYLE_MISMATCH });
   const waiverSetupProblem = await missingWaiverSetup(clubId, { requireWaiver, requireLiabilityWaiver });
   if (waiverSetupProblem) return res.status(400).json({ error: waiverSetupProblem });
   if (paymentEnabled) {
@@ -357,7 +361,7 @@ router.patch("/events/:eventId", async (req, res) => {
   const id = Number(req.params.eventId);
 
   // Capture previous status before update; also check club ownership for staff.
-  const [before] = await db.select({ status: eventsTable.status, clubId: eventsTable.clubId, date: eventsTable.date, endDate: eventsTable.endDate, trackName: eventsTable.trackName, location: eventsTable.location, state: eventsTable.state, quickCheckinEnabled: eventsTable.quickCheckinEnabled, streetAddress: eventsTable.streetAddress, zip: eventsTable.zip, purchaseOptions: eventsTable.purchaseOptions, paymentEnabled: eventsTable.paymentEnabled }).from(eventsTable).where(eq(eventsTable.id, id));
+  const [before] = await db.select({ status: eventsTable.status, clubId: eventsTable.clubId, date: eventsTable.date, endDate: eventsTable.endDate, trackName: eventsTable.trackName, location: eventsTable.location, state: eventsTable.state, quickCheckinEnabled: eventsTable.quickCheckinEnabled, streetAddress: eventsTable.streetAddress, zip: eventsTable.zip, purchaseOptions: eventsTable.purchaseOptions, paymentEnabled: eventsTable.paymentEnabled, scoringTableId: eventsTable.scoringTableId, raceClassSeriesMap: eventsTable.raceClassSeriesMap }).from(eventsTable).where(eq(eventsTable.id, id));
   const previousStatus = before?.status;
   const staffCId = getStaffClubId(res);
   if (staffCId !== null) {
@@ -366,6 +370,20 @@ router.patch("/events/:eventId", async (req, res) => {
 
   if (req.body.scoringTableId !== undefined && before && !(await scoringTableUsable(req.body.scoringTableId, before.clubId))) {
     return res.status(400).json({ error: "That scoring table isn't available to this club." });
+  }
+  // Changing the scoring style or the series links: the event must still be
+  // scored the same way as every series it counts toward.
+  if (before) {
+    const styleChanged = req.body.scoringTableId !== undefined && scoringFormatChanged(before.scoringTableId, req.body.scoringTableId);
+    const linksChanged = req.body.raceClassSeriesMap !== undefined
+      && JSON.stringify(req.body.raceClassSeriesMap ?? {}) !== JSON.stringify(before.raceClassSeriesMap ?? {});
+    if (styleChanged || linksChanged) {
+      const nextTable = req.body.scoringTableId !== undefined ? req.body.scoringTableId : before.scoringTableId;
+      const nextMap = req.body.raceClassSeriesMap !== undefined ? req.body.raceClassSeriesMap : before.raceClassSeriesMap;
+      if (await eventMismatchesSeries(nextTable, await seriesOfEvent(id, before.clubId, nextMap))) {
+        return res.status(400).json({ error: SCORING_STYLE_MISMATCH });
+      }
+    }
   }
 
   if (before) {
@@ -474,6 +492,13 @@ router.patch("/events/:eventId", async (req, res) => {
   if (nextStatus) {
     await db.update(eventsTable).set({ status: nextStatus }).where(eq(eventsTable.id, id));
     event.status = nextStatus;
+  }
+
+  // A different Scoring Format: the races already finished are scored again
+  // with it (in the background), so stored points match the table now shown.
+  if (before && scoringFormatChanged(before.scoringTableId, event.scoringTableId)) {
+    const { rescoreEvents } = await import("./points-tables");
+    rescoreEvents([event.id]);
   }
 
   return res.json({ ...event, timingTechnology: normalizeTimingTechnology(event.timingTechnology), entryFee: event.entryFee ? Number(event.entryFee) : null, earlyBirdFee: event.earlyBirdFee ? Number(event.earlyBirdFee) : null, rfidStickerFee: event.rfidStickerFee ? Number(event.rfidStickerFee) : null, createdAt: event.createdAt.toISOString(), clubName: null });

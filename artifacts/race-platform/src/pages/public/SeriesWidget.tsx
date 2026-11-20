@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { rankClassOverall } from "@/lib/classOverall";
+import { finishedMotoOrder, rankClassOverall } from "@/lib/classOverall";
 import { useParams } from "wouter";
 import rmLogo from "@assets/rm-logo.png";
 
@@ -212,7 +212,10 @@ export default function SeriesWidget() {
     // Traditional multi-heat: total across all motos (Olympic: lowest wins).
     const classRows = eventResults.filter(r => r.raceClass === displayEventClass);
     const lowerIsBetter = classRows.some(r => (r as any).lowerIsBetter);
-    return rankClassOverall(classRows as any[], lowerIsBetter)
+    // Finished races only (no practice), in running order for the tie-break.
+    const order = finishedMotoOrder(eventMotos as any[], displayEventClass);
+    const counted = order.length ? classRows.filter(r => order.includes(r.motoId)) : classRows;
+    return rankClassOverall(counted as any[], lowerIsBetter, order.length ? order : undefined)
       .map(entry => ({ ...entry.result, position: entry.position }));
   })();
 

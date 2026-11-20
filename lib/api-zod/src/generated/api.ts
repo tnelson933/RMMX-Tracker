@@ -1491,6 +1491,7 @@ export const ListMotosResponseItem = zod.object({
   "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2+ = subsequent start positions in a staggered group'),
   "staggeredGroupId": zod.number().nullish().describe('Shared group identifier for all motos in a staggered start group'),
   "staggeredGroupMembers": zod.array(zod.number()).nullish().describe('Ordered list of moto IDs in the staggered group (sorted by staggeredOrder)'),
+  "combinedStart": zod.boolean().optional().describe('The start group leaves the gate together (classes combined on one gate, each scored separately) rather than in staggered waves'),
   "enduroHasRfidStart": zod.boolean().optional().describe('Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock')
 })
 export const ListMotosResponse = zod.array(ListMotosResponseItem)
@@ -1736,7 +1737,7 @@ export const SetEventReaderAssignmentsResponse = zod.array(SetEventReaderAssignm
 
 
 /**
- * @summary Link two motos as a staggered start pair
+ * @summary Link motos as a start group (staggered waves, or a combined start when `combined` is true)
  */
 export const LinkStaggerParams = zod.object({
   "eventId": zod.coerce.number()
@@ -1747,7 +1748,8 @@ export const linkStaggerBodyOrderedMotoIdsMin = 2;
 
 
 export const LinkStaggerBody = zod.object({
-  "orderedMotoIds": zod.array(zod.number()).min(linkStaggerBodyOrderedMotoIdsMin).describe('Ordered list of moto IDs — first element starts first, last starts last')
+  "orderedMotoIds": zod.array(zod.number()).min(linkStaggerBodyOrderedMotoIdsMin).describe('Ordered list of moto IDs — first element starts first, last starts last'),
+  "combined": zod.boolean().optional().describe('True for a combined start (classes share one gate and leave together, each scored separately); false or omitted for staggered waves')
 })
 
 
@@ -1794,6 +1796,7 @@ export const PauseMotoResponse = zod.object({
   "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2+ = subsequent start positions in a staggered group'),
   "staggeredGroupId": zod.number().nullish().describe('Shared group identifier for all motos in a staggered start group'),
   "staggeredGroupMembers": zod.array(zod.number()).nullish().describe('Ordered list of moto IDs in the staggered group (sorted by staggeredOrder)'),
+  "combinedStart": zod.boolean().optional().describe('The start group leaves the gate together (classes combined on one gate, each scored separately) rather than in staggered waves'),
   "enduroHasRfidStart": zod.boolean().optional().describe('Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock')
 })
 
@@ -1841,6 +1844,7 @@ export const ResumeMotoResponse = zod.object({
   "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2+ = subsequent start positions in a staggered group'),
   "staggeredGroupId": zod.number().nullish().describe('Shared group identifier for all motos in a staggered start group'),
   "staggeredGroupMembers": zod.array(zod.number()).nullish().describe('Ordered list of moto IDs in the staggered group (sorted by staggeredOrder)'),
+  "combinedStart": zod.boolean().optional().describe('The start group leaves the gate together (classes combined on one gate, each scored separately) rather than in staggered waves'),
   "enduroHasRfidStart": zod.boolean().optional().describe('Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock')
 })
 
@@ -1917,6 +1921,7 @@ export const UpdateMotoResponse = zod.object({
   "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2+ = subsequent start positions in a staggered group'),
   "staggeredGroupId": zod.number().nullish().describe('Shared group identifier for all motos in a staggered start group'),
   "staggeredGroupMembers": zod.array(zod.number()).nullish().describe('Ordered list of moto IDs in the staggered group (sorted by staggeredOrder)'),
+  "combinedStart": zod.boolean().optional().describe('The start group leaves the gate together (classes combined on one gate, each scored separately) rather than in staggered waves'),
   "enduroHasRfidStart": zod.boolean().optional().describe('Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock')
 })
 
@@ -1976,6 +1981,7 @@ export const ReorderMotosResponseItem = zod.object({
   "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2+ = subsequent start positions in a staggered group'),
   "staggeredGroupId": zod.number().nullish().describe('Shared group identifier for all motos in a staggered start group'),
   "staggeredGroupMembers": zod.array(zod.number()).nullish().describe('Ordered list of moto IDs in the staggered group (sorted by staggeredOrder)'),
+  "combinedStart": zod.boolean().optional().describe('The start group leaves the gate together (classes combined on one gate, each scored separately) rather than in staggered waves'),
   "enduroHasRfidStart": zod.boolean().optional().describe('Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock')
 })
 export const ReorderMotosResponse = zod.array(ReorderMotosResponseItem)
@@ -2043,6 +2049,7 @@ export const GenerateLineupsResponseItem = zod.object({
   "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2+ = subsequent start positions in a staggered group'),
   "staggeredGroupId": zod.number().nullish().describe('Shared group identifier for all motos in a staggered start group'),
   "staggeredGroupMembers": zod.array(zod.number()).nullish().describe('Ordered list of moto IDs in the staggered group (sorted by staggeredOrder)'),
+  "combinedStart": zod.boolean().optional().describe('The start group leaves the gate together (classes combined on one gate, each scored separately) rather than in staggered waves'),
   "enduroHasRfidStart": zod.boolean().optional().describe('Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock')
 })
 export const GenerateLineupsResponse = zod.array(GenerateLineupsResponseItem)
@@ -2096,6 +2103,7 @@ export const GenerateMotoLineupResponse = zod.object({
   "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2+ = subsequent start positions in a staggered group'),
   "staggeredGroupId": zod.number().nullish().describe('Shared group identifier for all motos in a staggered start group'),
   "staggeredGroupMembers": zod.array(zod.number()).nullish().describe('Ordered list of moto IDs in the staggered group (sorted by staggeredOrder)'),
+  "combinedStart": zod.boolean().optional().describe('The start group leaves the gate together (classes combined on one gate, each scored separately) rather than in staggered waves'),
   "enduroHasRfidStart": zod.boolean().optional().describe('Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock')
 })
 
@@ -2337,6 +2345,7 @@ export const AdvanceToMainResponse = zod.object({
   "staggeredOrder": zod.number().nullish().describe('1 = starts first, 2+ = subsequent start positions in a staggered group'),
   "staggeredGroupId": zod.number().nullish().describe('Shared group identifier for all motos in a staggered start group'),
   "staggeredGroupMembers": zod.array(zod.number()).nullish().describe('Ordered list of moto IDs in the staggered group (sorted by staggeredOrder)'),
+  "combinedStart": zod.boolean().optional().describe('The start group leaves the gate together (classes combined on one gate, each scored separately) rather than in staggered waves'),
   "enduroHasRfidStart": zod.boolean().optional().describe('Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock')
 })
 

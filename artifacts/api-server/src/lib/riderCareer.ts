@@ -2,12 +2,13 @@ import {
   db, raceResultsTable, motosTable, eventsTable, eventPublicationTable, clubsTable,
   ridersTable, riderFollowsTable, riderPushTokensTable,
 } from "@workspace/db";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { computeCareerStats, cumulativeMs, type CareerStats } from "./careerStats";
 import { computeResume, effectiveVisibility, type RacerResume } from "./riderResume";
 import { visiblePhotos } from "./riderPhotos";
 import { sendPushNotifications } from "./push";
 import { logger } from "./logger";
+import { claimNotification, pendingResultNotifications, releaseNotification } from "./resultsNotify";
 
 const FINISH_SENTINEL = 999;
 
@@ -164,65 +165,84 @@ export async function searchPublicRiders(q: string, limit = 20) {
 }
 
 /**
- * Push "results are in" to accounts following riders in this event. Fire-and-forget:
- * called when an event's results go from unpublished to published.
+ * Followers hear once when an event's results become official. If results are
+ * corrected and finalized again, only followers of riders whose place or lap
+ * times changed hear again ("Results updated"); lib/resultsNotify.ts keeps the
+ * record, so a restart or a second finalize can't repeat a push.
  */
-// Events whose "results are in" push already went out from this process, so an
-// unpublish/republish (or a re-finalized moto) doesn't re-send it. In-memory only:
-// a restart forgets it (durable dedupe would need a new table).
-const followResultsNotified = new Map<number, number>();
-const FOLLOW_RESULTS_DEDUPE_MS = 14 * 24 * 60 * 60 * 1000;
+/** The stats run and the follower push start together on first official; anything older is a past event. */
+const LEGACY_RESULTS_MS = 10 * 60_000;
 
 export async function notifyFollowersOfResults(eventId: number): Promise<void> {
-  const now = Date.now();
-  for (const [id, at] of followResultsNotified) if (now - at > FOLLOW_RESULTS_DEDUPE_MS) followResultsNotified.delete(id);
-  if (followResultsNotified.has(eventId)) return;
-  // Claim before any await so concurrent calls for the same event can't both send.
-  followResultsNotified.set(eventId, now);
-  let sent = false;
   try {
-    const [event] = await db.select({ name: eventsTable.name }).from(eventsTable).where(eq(eventsTable.id, eventId));
+    const pending = await pendingResultNotifications(eventId, "follow_push");
+    const [event] = await db.select({ name: eventsTable.name, statsSentAt: eventsTable.statsEmailsSentAt })
+      .from(eventsTable).where(eq(eventsTable.id, eventId));
+    // An event made official before this record existed (its stats run is
+    // older than a few minutes, and nobody is recorded): note today's results
+    // as told rather than pushing every follower a second time.
+    if (pending.sent.size === 0 && event?.statsSentAt && Date.now() - new Date(event.statsSentAt).getTime() > LEGACY_RESULTS_MS) {
+      for (const [riderId, fingerprint] of pending.current) await claimNotification(eventId, riderId, "follow_push", fingerprint);
+      return;
+    }
+    const due = [...pending.first, ...pending.changed];
+    if (due.length === 0) return;
+    const updated = new Set(pending.changed);
+
+    // Finished races only: practice and races still running aren't results.
     const results = await db
       .select({ riderId: raceResultsTable.riderId, firstName: ridersTable.firstName, lastName: ridersTable.lastName,
         raceClass: raceResultsTable.raceClass, position: raceResultsTable.position, dnf: raceResultsTable.dnf, dns: raceResultsTable.dns })
       .from(raceResultsTable).innerJoin(ridersTable, eq(ridersTable.id, raceResultsTable.riderId))
-      .where(eq(raceResultsTable.eventId, eventId));
-    if (results.length === 0) return;
+      .innerJoin(motosTable, eq(motosTable.id, raceResultsTable.motoId))
+      .where(and(eq(raceResultsTable.eventId, eventId), inArray(raceResultsTable.riderId, due),
+        eq(motosTable.status, "completed"), ne(motosTable.type, "practice")));
 
     const best = new Map<number, { name: string; raceClass: string; position: number | null }>();
     for (const r of results) {
       const pos = !r.dnf && !r.dns && r.position > 0 && r.position < FINISH_SENTINEL ? r.position : null;
       const cur = best.get(r.riderId);
       if (!cur) best.set(r.riderId, { name: `${r.firstName} ${r.lastName}`.trim(), raceClass: r.raceClass, position: pos });
-      else if (pos != null && (cur.position == null || pos < cur.position)) cur.position = pos;
+      else if (pos != null && (cur.position == null || pos < cur.position)) { cur.position = pos; cur.raceClass = r.raceClass; }
     }
-    const follows = await db.select({ accountId: riderFollowsTable.riderAccountId, riderId: riderFollowsTable.riderId })
-      .from(riderFollowsTable).where(inArray(riderFollowsTable.riderId, [...best.keys()]));
-    if (follows.length === 0) return;
 
-    const byAccount = new Map<number, number[]>();
-    for (const f of follows) byAccount.set(f.accountId, [...(byAccount.get(f.accountId) ?? []), f.riderId]);
-    const tokens = await db.select({ accountId: riderPushTokensTable.riderAccountId, token: riderPushTokensTable.expoPushToken })
-      .from(riderPushTokensTable).where(inArray(riderPushTokensTable.riderAccountId, [...byAccount.keys()]));
+    // Claim each rider first: a second finalize running now skips them.
+    const claimed: number[] = [];
+    for (const riderId of best.keys()) {
+      if (await claimNotification(eventId, riderId, "follow_push", pending.current.get(riderId)!)) claimed.push(riderId);
+    }
+    if (claimed.length === 0) return;
+    const release = async () => { for (const id of claimed) await releaseNotification(eventId, id, "follow_push", pending.sent.get(id)); };
 
-    const eventName = event?.name ?? "the race";
-    const messages = tokens.map(t => {
-      const riders = (byAccount.get(t.accountId) ?? []).map(id => best.get(id)!).filter(Boolean);
-      const body = riders.length === 1
-        ? `${riders[0].name} ${riders[0].position ? `finished P${riders[0].position}` : "raced"} in ${riders[0].raceClass} at ${eventName}.`
-        : `${riders.length} riders you follow have results from ${eventName}.`;
-      return { to: t.token, title: "Results are in 🏁", body, data: { type: "follow-results", eventId } };
-    });
-    if (messages.length) {
-      const result = await sendPushNotifications(messages);
-      // Keep the claim if anyone got it; release on a total failure so a later publish can retry.
-      sent = result.accepted > 0 || !result.results.some(r => r.retryable);
-    } else {
-      sent = true;
+    try {
+      const follows = await db.select({ accountId: riderFollowsTable.riderAccountId, riderId: riderFollowsTable.riderId })
+        .from(riderFollowsTable).where(inArray(riderFollowsTable.riderId, claimed));
+      if (follows.length === 0) return;
+      const byAccount = new Map<number, number[]>();
+      for (const f of follows) byAccount.set(f.accountId, [...(byAccount.get(f.accountId) ?? []), f.riderId]);
+      const tokens = await db.select({ accountId: riderPushTokensTable.riderAccountId, token: riderPushTokensTable.expoPushToken })
+        .from(riderPushTokensTable).where(inArray(riderPushTokensTable.riderAccountId, [...byAccount.keys()]));
+
+      const eventName = event?.name ?? "the race";
+      const messages = tokens.map(t => {
+        const ids = byAccount.get(t.accountId) ?? [];
+        const riders = ids.map(id => best.get(id)!).filter(Boolean);
+        const correction = ids.every(id => updated.has(id));
+        const body = riders.length === 1
+          ? `${riders[0].name} ${riders[0].position ? `${correction ? "now shows" : "finished"} P${riders[0].position}` : "raced"} in ${riders[0].raceClass} at ${eventName}.`
+          : `${riders.length} riders you follow have ${correction ? "updated " : ""}results from ${eventName}.`;
+        return { to: t.token, title: correction ? "Results updated 🏁" : "Results are in 🏁", body, data: { type: "follow-results", eventId } };
+      });
+      if (messages.length) {
+        const result = await sendPushNotifications(messages);
+        // Nothing accepted and it's worth retrying: let a later finalize send it.
+        if (result.accepted === 0 && result.results.some(r => r.retryable)) await release();
+      }
+    } catch (err) {
+      await release();
+      throw err;
     }
   } catch (err) {
     logger.error({ err, eventId }, "notifyFollowersOfResults failed");
-  } finally {
-    if (!sent) followResultsNotified.delete(eventId);
   }
 }

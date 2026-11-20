@@ -5,7 +5,7 @@ import { compareStandings, computeFinishAt, everyoneFinished, finishGraceMs, fla
 import type { Response } from "express";
 import { getDb, parseJsonArr, parseJson } from "../db";
 import { rejectForeignBrowserIngest } from "../lib/request-origin";
-import { scoreMotoPoints } from "./results";
+import { afterMotoCompleted } from "./results";
 import { buildRaceAnalytics, normalizeLapMs, parseTimeToMs, raceTimeRemainingMs } from "../lib/leaderboard-shape";
 import { LIVE_WINDOW_MS, broadcastPracticeBoard, claimUnassignedPracticeReads, resolvePracticeRider } from "./practice";
 import {
@@ -557,8 +557,8 @@ export function completeTimedMotoIfFinished(motoId: number, nowMs = Date.now()):
   const changed = db.prepare("UPDATE motos SET status = 'completed', completed_at = ? WHERE id = ? AND status = 'in_progress'")
     .run(new Date().toISOString(), motoId);
   if (changed.changes > 0) {
-    // Points from the finishing order, as when the cloud's race clock closes a race.
-    scoreMotoPoints(motoId);
+    // Points from the finishing order (and Supercross advancement), as when the cloud's race clock closes a race.
+    afterMotoCompleted(motoId);
     const snapshot = buildLeaderboard(motoId);
     if (snapshot) sseBroadcast(motoId, snapshot);
   }

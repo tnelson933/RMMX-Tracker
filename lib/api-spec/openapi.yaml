@@ -1541,7 +1541,7 @@ paths:
     post:
       operationId: linkStagger
       tags: [motos]
-      summary: Link two motos as a staggered start pair
+      summary: Link motos as a start group (staggered waves, or a combined start when `combined` is true)
       parameters:
         - name: eventId
           in: path
@@ -4618,6 +4618,9 @@ components:
             type: integer
           nullable: true
           description: Ordered list of moto IDs in the staggered group (sorted by staggeredOrder)
+        combinedStart:
+          type: boolean
+          description: The start group leaves the gate together (classes combined on one gate, each scored separately) rather than in staggered waves
         enduroHasRfidStart:
           type: boolean
           description: Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock
@@ -4719,6 +4722,9 @@ components:
             type: integer
           minItems: 2
           description: Ordered list of moto IDs — first element starts first, last starts last
+        combined:
+          type: boolean
+          description: True for a combined start (classes share one gate and leave together, each scored separately); false or omitted for staggered waves
 
     MotoReorderInput:
       type: object

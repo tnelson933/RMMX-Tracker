@@ -10,6 +10,7 @@ import { raceResultsTable, motosTable, ridersTable, eventPublicationTable, regis
 import { eq, and, inArray, ne, isNull, isNotNull, sql, desc } from "drizzle-orm";
 import { motoCounts, seriesScope } from "../lib/seriesStandings";
 import { calcPoints, loadSeriesScoring } from "../lib/scoringTables";
+import { scoreMotoRows } from "../lib/motoPoints";
 import { isLowerBetter, olympicPenalty } from "../lib/overallOrder";
 import { logger } from "../lib/logger";
 import { formulaPoints } from "../lib/safeFormula";
@@ -402,22 +403,9 @@ export async function scoreMotoPoints(motoId: number): Promise<void> {
   const rows = await db.select().from(raceResultsTable).where(eq(raceResultsTable.motoId, motoId));
   if (rows.length === 0) return;
   const settings = await loadScoringSettings(moto.eventId);
-  const totalStarters = rows.filter(r => !r.dns).length;
-  const lapsOf = (r: typeof rows[number]) => (Array.isArray(r.lapTimes) ? r.lapTimes.length : 0);
-  const leader = rows.find(r => r.position === 1 && !r.dnf && !r.dns);
-  const leaderLapsCompleted = settings.autoDnfEnabled && leader ? lapsOf(leader) : undefined;
+  const scored = scoreMotoRows(rows, settings, moto.type ?? "heat");
   for (const r of rows) {
-    const points = calcPoints({
-      position: r.position,
-      dnf: !!r.dnf,
-      dns: !!r.dns,
-      totalStarters,
-      classSize: rows.length,
-      ...settings,
-      motoType: moto.type ?? "heat",
-      lapsCompleted: lapsOf(r),
-      leaderLapsCompleted,
-    });
+    const points = scored.get(r.id)!;
     if (points !== r.points) await db.update(raceResultsTable).set({ points }).where(eq(raceResultsTable.id, r.id));
   }
   awardSeriesPoints(moto.eventId, moto.raceClass, motoId);

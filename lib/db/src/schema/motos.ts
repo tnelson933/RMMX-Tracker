@@ -25,6 +25,8 @@ export const motosTable = pgTable("motos", {
   staggeredWithMotoId: integer("staggered_with_moto_id"),
   staggeredOrder: integer("staggered_order"), // 1 = starts first, 2 = starts second
   staggeredGroupId: integer("staggered_group_id"),
+  /** The start group leaves the gate together (classes combined on one gate, scored separately) rather than in waves. */
+  combinedStart: boolean("combined_start").notNull().default(false),
   enduroHasRfidStart: boolean("enduro_has_rfid_start").notNull().default(false),
   pausedAt: timestamp("paused_at", { withTimezone: true }),
   totalPausedMs: integer("total_paused_ms").notNull().default(0),

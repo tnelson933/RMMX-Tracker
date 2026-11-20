@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { rankClassOverall } from "@/lib/classOverall";
+import { finishedMotoOrder, rankClassOverall } from "@/lib/classOverall";
 import { useParams } from "wouter";
 import { useGetEvent, useListResults, useListMotos, RaceResult } from "@workspace/api-client-react";
 import { formatEventDates } from "@/lib/eventDates";
@@ -183,7 +183,10 @@ export default function EventWidget() {
     // Traditional multi-heat: total across all motos (Olympic: lowest wins).
     const classRows = raceResults.filter(r => r.raceClass === activeClass);
     const lowerIsBetter = classRows.some(r => (r as any).lowerIsBetter);
-    return rankClassOverall(classRows, lowerIsBetter)
+    // Finished races in running order (the tie-break is the last one run).
+    const order = finishedMotoOrder((motos ?? []) as any[], activeClass);
+    const counted = order.length ? classRows.filter(r => order.includes(r.motoId)) : classRows;
+    return rankClassOverall(counted, lowerIsBetter, order.length ? order : undefined)
       .map(entry => ({ ...entry.result, position: entry.position }));
   })();
 

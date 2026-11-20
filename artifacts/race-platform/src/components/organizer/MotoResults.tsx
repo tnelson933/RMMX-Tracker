@@ -16,6 +16,7 @@ import {
   Plus, Trash2, Zap, Clock, BadgeCheck, RotateCcw, Loader2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { finishingPositions, initialReviewRows, reviewEntries, type ReviewEntry } from "@/lib/motoReview";
 
 // Reviewing a finished moto's results on Race Day Management: positions, total
 // time, laps, DNF/DNS, then Finalize Race to make the results official. Results
@@ -166,6 +167,7 @@ function LapEditor({
 
 function MotoSection({
   moto,
+  entries,
   motoResults,
   onUpdate,
   onSave,
@@ -173,6 +175,8 @@ function MotoSection({
   lapCount,
 }: {
   moto: any;
+  /** The lineup plus anyone with a result who isn't on it. */
+  entries: ReviewEntry[];
   motoResults: MotoResults;
   onUpdate: (riderId: number, field: keyof RiderState, value: any) => void;
   onSave: (motoId: number) => void;
@@ -190,17 +194,11 @@ function MotoSection({
   };
 
   const isCompleted = moto.status === "completed";
-  const hasLineup = moto.lineup && moto.lineup.length > 0;
+  const hasLineup = entries.length > 0;
 
-  const sortedLineup = hasLineup
-    ? [...moto.lineup].sort((a: any, b: any) => {
-        const aD = motoResults[a.riderId];
-        const bD = motoResults[b.riderId];
-        if ((aD?.dnf || aD?.dns) && !(bD?.dnf || bD?.dns)) return 1;
-        if (!(aD?.dnf || aD?.dns) && (bD?.dnf || bD?.dns)) return -1;
-        return (parseInt(aD?.pos) || 999) - (parseInt(bD?.pos) || 999);
-      })
-    : [];
+  // Finishers in position order, then DNF, then DNS: the order that gets saved.
+  const saved = finishingPositions(entries, motoResults);
+  const sortedLineup = [...entries].sort((a, b) => (saved.get(a.riderId) ?? 999) - (saved.get(b.riderId) ?? 999));
 
   const hasLapErrors = sortedLineup.some((e: any) => {
     const s = motoResults[e.riderId];
@@ -415,46 +413,38 @@ export function MotoResultsReview({ eventId, moto, onFinalized }: { eventId: num
   const [finalizing, setFinalizing] = useState(false);
   const official = !!moto.resultsFinalizedAt;
 
-  // Start from the stored results, in their stored finishing order.
+  // Start from the stored results, in their stored finishing order. Riders on
+  // the lineup with no result in a scored race start as DNS (lib/motoReview.ts).
+  const [entries, setEntries] = useState<ReviewEntry[]>([]);
   useEffect(() => {
-    if (!existingResults || motoResults || !moto.lineup) return;
-    const init: MotoResults = {};
+    if (!existingResults || motoResults) return;
     const motoRes = existingResults.filter((r) => r.motoId === moto.id);
-    (moto.lineup as any[]).forEach((entry: any, idx: number) => {
-      const existing = motoRes.find((r) => r.riderId === entry.riderId);
-      init[entry.riderId] = {
-        pos: existing ? existing.position.toString() : (idx + 1).toString(),
-        time: existing?.totalTime ?? "",
-        dnf: existing?.dnf ?? false,
-        dns: existing?.dns ?? false,
-        laps: Array.isArray(existing?.lapTimes)
-          ? (existing!.lapTimes as Array<string | number>)
-              .slice(0, moto.lapCount != null ? moto.lapCount : undefined)
-              .map((l) => typeof l === "number" ? fmtMs(l) : l)
-          : [],
-        totalOverridden: false,
-        bibNumber: existing?.bibNumber ?? entry.bibNumber ?? "",
-        riderName: existing?.riderName ?? entry.riderName ?? "",
-      };
-    });
-    // Riders with no result yet follow the stored order, in lineup order.
-    if (motoRes.length > 0) {
-      let next = Math.max(0, ...motoRes.map((r) => r.position).filter((p) => p < 999)) + 1;
-      for (const entry of moto.lineup as any[]) {
-        if (!motoRes.some((r) => r.riderId === entry.riderId) && init[entry.riderId]) init[entry.riderId].pos = (next++).toString();
-      }
-    }
-    setMotoResults(init);
+    const listed = reviewEntries(Array.isArray(moto.lineup) ? moto.lineup : [], motoRes);
+    setEntries(listed);
+    setMotoResults(initialReviewRows(listed, motoRes, moto.lapCount, (l) => typeof l === "number" ? fmtMs(l) : l));
   }, [existingResults, moto, motoResults]);
 
   const onUpdate = useCallback((riderId: number, field: keyof RiderState, value: any) => {
-    setMotoResults((prev) => ({
-      ...(prev ?? {}),
-      [riderId]: { ...DEFAULT_RIDER_STATE, ...prev?.[riderId], [field]: value },
-    }));
-  }, []);
+    setMotoResults((prev) => {
+      const next: MotoResults = {
+        ...(prev ?? {}),
+        [riderId]: { ...DEFAULT_RIDER_STATE, ...prev?.[riderId], [field]: value },
+      };
+      if (field !== "dnf" && field !== "dns") return next;
+      // A rider going out (or back in) moves the others: show the positions that will be saved.
+      const positions = finishingPositions(entries, next);
+      for (const entry of entries) {
+        const row = next[entry.riderId];
+        if (!row) continue;
+        next[entry.riderId] = { ...row, pos: row.dnf || row.dns ? "" : String(positions.get(entry.riderId) ?? "") };
+      }
+      return next;
+    });
+  }, [entries]);
 
-  const buildPayload = () => (moto.lineup as any[]).map((entry: any) => {
+  const buildPayload = () => {
+    const positions = finishingPositions(entries, motoResults ?? {});
+    return entries.map((entry) => {
     const data = motoResults?.[entry.riderId] ?? { ...DEFAULT_RIDER_STATE };
     const lapCap = moto.lapCount != null && moto.lapCount > 0 ? moto.lapCount : data.laps.length;
     // Sent as text per the API contract; the server stores milliseconds.
@@ -465,7 +455,7 @@ export function MotoResultsReview({ eventId, moto, onFinalized }: { eventId: num
       .map((ms) => fmtMs(ms));
     return {
       riderId: entry.riderId,
-      position: parseInt(data.pos) || 999,
+      position: positions.get(entry.riderId) ?? 999,
       totalTime: data.time || undefined,
       dnf: data.dnf,
       dns: data.dns,
@@ -473,7 +463,8 @@ export function MotoResultsReview({ eventId, moto, onFinalized }: { eventId: num
       bibNumber: data.bibNumber || undefined,
       riderName: data.riderName || undefined,
     };
-  });
+    });
+  };
 
   const save = () => new Promise<boolean>((resolve) => {
     setSaving(true);
@@ -519,6 +510,7 @@ export function MotoResultsReview({ eventId, moto, onFinalized }: { eventId: num
     <div className="space-y-4">
       <MotoSection
         moto={moto}
+        entries={entries}
         motoResults={motoResults}
         onUpdate={onUpdate}
         onSave={() => { void save().then(ok => ok && toast({ title: "Results saved", description: official ? "Official results updated." : "Still unofficial until you finalize." })); }}

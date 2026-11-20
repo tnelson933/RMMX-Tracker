@@ -27,6 +27,8 @@ import {
   PointsScreen,
   SeriesStandingsScreen,
   ViewState,
+  bestSeriesEntry,
+  type RiderSeriesEntry,
 } from "@/components/RaceSubScreens";
 import { NoProfileLinked } from "@/components/NoProfileLinked";
 import { SeasonView } from "@/components/SeasonView";
@@ -444,6 +446,20 @@ export default function MyRacesScreen() {
   // Stable key for the set of active profiles — drives data reload
   const activeProfileKey = activeProfiles.map(p => p.id).join(",");
 
+  // The series the rider ranks highest in (points and place on the tiles).
+  // A rider can race several events and series, so one grand total means little.
+  const [bestSeries, setBestSeries] = useState<RiderSeriesEntry | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!isAuthenticated || !activeProfileKey) { setBestSeries(null); return; }
+    const ids = activeProfileKey.split(",").map(Number);
+    riderFetch("/api/rider/series")
+      .then(r => (r.ok ? r.json() : []))
+      .then((d: RiderSeriesEntry[]) => { if (!cancelled) setBestSeries(bestSeriesEntry(Array.isArray(d) ? d : [], ids)); })
+      .catch(() => { if (!cancelled) setBestSeries(null); });
+    return () => { cancelled = true; };
+  }, [riderFetch, isAuthenticated, activeProfileKey, history.length]);
+
   // Lightweight schedule-only refresh — used for background polling during race day
   // Only the newest request may fill the screen (switching riders, polling).
   const loadSeq = useRef(0);
@@ -702,6 +718,7 @@ export default function MyRacesScreen() {
             riderPosition={currentView.riderPosition}
             riderPoints={currentView.riderPoints}
             riderIds={currentView.riderIds}
+            entry={currentView.entry}
             onBack={popView}
             colors={colors}
             insets={insets}
@@ -797,6 +814,7 @@ export default function MyRacesScreen() {
               riderPosition: s.position,
               riderPoints: s.totalPoints,
               riderIds: [riderId],
+              entry: s,
             })}
           />
         ) : (
@@ -847,8 +865,17 @@ export default function MyRacesScreen() {
         {/* Tappable stat tiles */}
         <View style={styles.statsRow}>
           <StatTile value={combinedEventsRaced} label="Events" onPress={handleTapEvents} />
-          <StatTile value={combinedTotalPoints} label="Points" onPress={handleTapPoints} highlight />
-          <StatTile value={combinedBestPosition != null ? `P${combinedBestPosition}` : "—"} label="Best Finish" onPress={handleTapBestFinish} />
+          {bestSeries ? (
+            <>
+              <StatTile value={bestSeries.totalPoints} label={bestSeries.lowerIsBetter ? "Series Score" : "Series Pts"} onPress={handleTapPoints} highlight />
+              <StatTile value={`P${bestSeries.position}`} label="In Series" onPress={handleTapPoints} />
+            </>
+          ) : (
+            <>
+              <StatTile value={combinedTotalPoints} label="Points" onPress={handleTapPoints} highlight />
+              <StatTile value={combinedBestPosition != null ? `P${combinedBestPosition}` : "—"} label="Best Finish" onPress={handleTapBestFinish} />
+            </>
+          )}
         </View>
       </View>
 

@@ -3,6 +3,8 @@ import { checkBirthDate, isEmail } from "../lib/validateInput";
 import { releaseCompCodeIfCheckoutInactive } from "./registrations";
 import { isLowerBetter } from "../lib/overallOrder";
 import { loadSeriesScoring } from "../lib/scoringTables";
+import { computeSeriesStandings } from "../lib/seriesStandings";
+import { riderSeriesEntries, sortRiderSeries, type RiderSeriesEntry } from "../lib/riderSeriesCore";
 import { practiceSectors } from "../lib/practiceSplits";
 import { computeMotoSectors } from "../lib/sectors";
 import { APPROVED_LINKS_RULES, enforceApprovedLinks, enforceApprovedLinksDeep } from "../lib/approvedLinks";
@@ -2925,89 +2927,25 @@ router.get("/rider/series", requireRiderAuth, async (req, res) => {
   if (onlyRider != null && !riders.some(r => r.id === onlyRider)) return res.json([]);
   const riderIds = onlyRider != null ? [onlyRider] : riders.map(r => r.id);
 
-  // Find all series_points rows for these riders (only with actual points)
-  const myPoints = await db
-    .select()
-    .from(seriesPointsTable)
-    .where(and(
-      inArray(seriesPointsTable.riderId, riderIds),
-      sql`${seriesPointsTable.totalPoints} > 0`,
-    ));
+  // Series the riders have raced in: every series of the clubs whose finished
+  // races they have results in. Places come from the official standings (the
+  // same tie-breaks and Olympic rules as the standings pages), never from the
+  // stored totals.
+  const raced = await db.selectDistinct({ clubId: eventsTable.clubId })
+    .from(raceResultsTable)
+    .innerJoin(eventsTable, eq(eventsTable.id, raceResultsTable.eventId))
+    .where(inArray(raceResultsTable.riderId, riderIds));
+  const clubIds = raced.map(r => r.clubId).filter((id): id is number => id != null);
+  if (clubIds.length === 0) return res.json([]);
+  const seriesList = await db.select().from(seriesTable).where(inArray(seriesTable.clubId, clubIds));
 
-  if (myPoints.length === 0) return res.json([]);
-
-  // Fetch series names
-  const seriesIds = [...new Set(myPoints.map(p => p.seriesId))];
-  const seriesList = await db
-    .select({ id: seriesTable.id, name: seriesTable.name, season: seriesTable.season, eventIds: seriesTable.eventIds })
-    .from(seriesTable)
-    .where(inArray(seriesTable.id, seriesIds));
-  const seriesNameMap = new Map(seriesList.map(s => [s.id, s.name]));
-  const seriesById = new Map(seriesList.map(s => [s.id, s]));
-
-  // Deduplicate: if multiple riderIds appear in same seriesId+raceClass, pick the highest-points one
-  const grouped = new Map<string, typeof myPoints[0]>();
-  for (const row of myPoints) {
-    const key = `${row.seriesId}:${row.raceClass}`;
-    const existing = grouped.get(key);
-    if (!existing || row.totalPoints > existing.totalPoints) {
-      grouped.set(key, row);
-    }
+  const entries: RiderSeriesEntry[] = [];
+  for (const series of seriesList) {
+    const { standings, eventIds } = await computeSeriesStandings(series);
+    entries.push(...riderSeriesEntries({ id: series.id, name: series.name, season: series.season ?? null, eventIds }, standings, riderIds));
   }
-
-  // For each unique series+class, compute the rider's position from all series_points
-  const result: Array<{
-    seriesId: number;
-    seriesName: string;
-    raceClass: string;
-    totalPoints: number;
-    position: number;
-    /** The series' season year and events, so the app can match it to a season's races. */
-    season: number | null;
-    eventIds: number[];
-  }> = [];
-
-  for (const [, myRow] of grouped) {
-    const allInClass = await db
-      .select({ riderId: seriesPointsTable.riderId, totalPoints: seriesPointsTable.totalPoints })
-      .from(seriesPointsTable)
-      .where(and(
-        eq(seriesPointsTable.seriesId, myRow.seriesId),
-        eq(seriesPointsTable.raceClass, myRow.raceClass),
-      ));
-
-    // Rank by total: highest first, or lowest first on an Olympic table. Ties share a position.
-    const [seriesRow] = await db.select({ scoringTableId: seriesTable.scoringTableId })
-      .from(seriesTable).where(eq(seriesTable.id, myRow.seriesId));
-    const lowerIsBetter = isLowerBetter((await loadSeriesScoring(seriesRow?.scoringTableId ?? null)).scoringMethod);
-    allInClass.sort((a, b) => lowerIsBetter ? a.totalPoints - b.totalPoints : b.totalPoints - a.totalPoints);
-
-    let position = 1;
-    let assignedPos = 1;
-    for (let i = 0; i < allInClass.length; i++) {
-      if (i > 0 && allInClass[i].totalPoints !== allInClass[i - 1].totalPoints) {
-        assignedPos = i + 1;
-      }
-      if (riderIds.includes(allInClass[i].riderId)) {
-        position = assignedPos;
-        break;
-      }
-    }
-
-    result.push({
-      seriesId: myRow.seriesId,
-      seriesName: seriesNameMap.get(myRow.seriesId) ?? `Series ${myRow.seriesId}`,
-      raceClass: myRow.raceClass,
-      totalPoints: myRow.totalPoints,
-      position,
-      season: seriesById.get(myRow.seriesId)?.season ?? null,
-      eventIds: seriesById.get(myRow.seriesId)?.eventIds ?? [],
-    });
-  }
-
-  result.sort((a, b) => a.seriesName.localeCompare(b.seriesName) || a.raceClass.localeCompare(b.raceClass));
-
-  return res.json(result);
+  // Best first: the first entry is the series the rider ranks highest in.
+  return res.json(sortRiderSeries(entries));
 });
 
 // POST /rider/mechanic-memory-update — summarize the last exchange into a memory entry

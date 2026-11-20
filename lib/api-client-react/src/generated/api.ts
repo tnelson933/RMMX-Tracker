@@ -5059,7 +5059,7 @@ export const getLinkStaggerUrl = (eventId: number,) => {
 }
 
 /**
- * @summary Link two motos as a staggered start pair
+ * @summary Link motos as a start group (staggered waves, or a combined start when `combined` is true)
  */
 export const linkStagger = async (eventId: number,
     staggerLinkInput: StaggerLinkInput, options?: RequestInit): Promise<void> => {
@@ -5109,7 +5109,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type LinkStaggerMutationError = ErrorType<unknown>
 
     /**
- * @summary Link two motos as a staggered start pair
+ * @summary Link motos as a start group (staggered waves, or a combined start when `combined` is true)
  */
 export const useLinkStagger = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof linkStagger>>, TError,{eventId: number;data: BodyType<StaggerLinkInput>}, TContext>, request?: SecondParameter<typeof customFetch>}

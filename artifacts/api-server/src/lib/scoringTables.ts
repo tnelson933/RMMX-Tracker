@@ -1,7 +1,6 @@
 import { db, pointsTablesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { evaluateFormula, formulaPoints } from "./safeFormula";
-import { AMA_POINTS, isLowerBetter, olympicPenalty } from "./overallOrder";
+import { evaluateFormula } from "./safeFormula";
 
 export const SCORING_METHODS = ["highest_points", "lowest_positions", "per_rider", "formula"] as const;
 
@@ -44,60 +43,8 @@ export function formulaError(formula: unknown): string | null {
   }
 }
 
-/** No scoring table: the current AMA scale (see lib/overallOrder.ts). */
-export const FALLBACK_POINTS = AMA_POINTS;
-
-/** Points for one result under a scoring table (shared by event and series scoring). */
-export function calcPoints(opts: {
-  position: number;
-  dnf: boolean;
-  dns: boolean;
-  totalStarters: number;
-  scoringMethod: string;
-  pointsScale: number[];
-  scoringFormula: string | null;
-  mainEventOnly: boolean;
-  motoType: string;
-  autoDnfEnabled?: boolean;
-  autoDnfThreshold?: number;
-  lapsCompleted?: number;
-  leaderLapsCompleted?: number;
-  /** Riders in the class for this moto (Olympic DNF/DNS scores); defaults to the starters. */
-  classSize?: number;
-}): number {
-  if (opts.mainEventOnly && opts.motoType !== "main") return 0;
-  // Olympic (lowest wins): a DNF or DNS scores a penalty, not 0 (lib/overallOrder.ts).
-  const olympic = isLowerBetter(opts.scoringMethod);
-  const classSize = opts.classSize ?? opts.totalStarters;
-  if (opts.dns) return olympic ? olympicPenalty("dns", classSize) : 0;
-  if (opts.dnf) return olympic ? olympicPenalty("dnf", classSize) : 0;
-
-  // Auto DNF: rider completed too few laps vs the leader → treat as DNF for scoring
-  if (
-    opts.autoDnfEnabled &&
-    opts.leaderLapsCompleted != null &&
-    opts.leaderLapsCompleted > 0 &&
-    opts.lapsCompleted != null &&
-    opts.autoDnfThreshold != null
-  ) {
-    const minLaps = Math.floor(opts.leaderLapsCompleted * opts.autoDnfThreshold / 100);
-    if (opts.lapsCompleted < minLaps) return olympic ? olympicPenalty("dnf", classSize) : 0;
-  }
-
-  switch (opts.scoringMethod) {
-    case "formula":
-      if (!opts.scoringFormula) return 0;
-      return formulaPoints(opts.scoringFormula, opts.position, opts.totalStarters);
-    case "per_rider":
-      return Math.max(0, opts.totalStarters - opts.position + 1);
-    case "highest_points":
-      return opts.pointsScale[opts.position - 1] ?? 0;
-    case "lowest_positions":
-      return opts.pointsScale[opts.position - 1] ?? opts.position;
-    default:
-      return FALLBACK_POINTS[opts.position - 1] ?? 0;
-  }
-}
+// The points rules are pure and live in lib/motoPoints.ts.
+export { FALLBACK_POINTS, calcPoints } from "./motoPoints";
 
 /** A series' scoring table settings, or the default 25-22-20... scale. */
 export async function loadSeriesScoring(scoringTableId: number | null): Promise<{

@@ -608,6 +608,8 @@ function SortableMotoCard({
   const isCountdownComplete = isCountdownMode && isCompleted && (moto as any).startedAt != null;
 
   const isAlreadyStaggered = !!(moto as any).staggeredGroupId;
+  // Classes sharing one gate (leave together, scored separately) rather than staggered waves.
+  const isCombinedStart = isAlreadyStaggered && !!(moto as any).combinedStart;
   const staggerOrder: number = (moto as any).staggeredOrder ?? 0;
   const groupMembers = staggerGroup ?? [];
 
@@ -636,18 +638,22 @@ function SortableMotoCard({
           <div className="flex items-center gap-2 flex-wrap">
             <Link2 size={12} className="text-primary shrink-0" />
             <span className="text-xs font-semibold text-primary">
-              Staggered Group — {groupMembers.length} motos
+              {isCombinedStart ? `Combined start — ${groupMembers.length} classes on one gate` : `Staggered Group — ${groupMembers.length} motos`}
             </span>
-            <span className="text-[10px] text-muted-foreground">starts {staggerOrder === 1 ? "1st" : `${staggerOrder}${staggerOrder === 2 ? "nd" : staggerOrder === 3 ? "rd" : "th"}`}</span>
+            <span className="text-[10px] text-muted-foreground">
+              {isCombinedStart
+                ? `${groupMembers.reduce((n, gm) => n + (Array.isArray(gm.lineup) ? gm.lineup.length : 0), 0)} riders · each class scored separately`
+                : `starts ${staggerOrder === 1 ? "1st" : `${staggerOrder}${staggerOrder === 2 ? "nd" : staggerOrder === 3 ? "rd" : "th"}`}`}
+            </span>
             <div className="ml-auto flex items-center gap-1">
-              <button
+              {!isCombinedStart && <button
                 onClick={() => onEditStagger?.(groupMembers.map(m => m.id))}
                 className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded border border-border hover:border-primary/60 hover:text-primary text-muted-foreground transition-colors"
                 title="Edit staggered start order"
               >
                 <Pencil size={9} />
                 Edit order
-              </button>
+              </button>}
               {groupMembers.map(gm => (
                 <button
                   key={gm.id}
@@ -1379,6 +1385,34 @@ export default function EventSchedule() {
   const [staggerPendingGroup, setStaggerPendingGroup] = useState<{ orderedMotoIds: number[] } | null>(null);
   const [staggerSelectMode, setStaggerSelectMode] = useState(false);
   const [staggerSelected, setStaggerSelected] = useState<number[]>([]);
+  // The same picker links motos two ways: staggered waves, or a combined start
+  // (small classes on one gate, leaving together, each scored separately).
+  const [groupMode, setGroupMode] = useState<"stagger" | "combine">("stagger");
+  const [combineGateSize, setCombineGateSize] = useState("");
+  const [combineBusy, setCombineBusy] = useState(false);
+  const [combineOnGenerate, setCombineOnGenerate] = useState(false);
+
+  /** "Combine starts for smaller classes": link the races still to run into combined starts that fit the gate. */
+  const autoCombineStarts = async (gateSize: number): Promise<void> => {
+    setCombineBusy(true);
+    try {
+      const res = await fetch(`/api/events/${eventId}/combine-starts`, {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gateSize }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Try again in a moment.");
+      const groups: Array<{ classes: string[]; riders: number }> = body.groups ?? [];
+      await queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) as any });
+      toast(groups.length > 0
+        ? { title: `Combined ${groups.length} start${groups.length === 1 ? "" : "s"}`, description: groups.map(g => `${g.classes.join(" + ")} (${g.riders} riders)`).join(" · ") + ". Each class is still scored separately." }
+        : { title: "Nothing to combine", description: `No two classes fit together on ${gateSize} gate spots.` });
+    } catch (err) {
+      toast({ title: "Couldn't combine starts", description: errorText(err), variant: "destructive" });
+    } finally {
+      setCombineBusy(false);
+    }
+  };
 
   // ── Mutations ──
   const reorderMutation = useReorderMotos();
@@ -2138,6 +2172,8 @@ export default function EventSchedule() {
           queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
           queryClient.invalidateQueries({ queryKey: getListCheckinsQueryKey(eventId) as any });
           setIsGenerateOpen(false);
+          // Then pair up the small classes on one gate, if asked.
+          if (combineOnGenerate && ridersPerHeatVal && ridersPerHeatVal >= 2) void autoCombineStarts(ridersPerHeatVal);
           if (generateGateMethod === "prior_round_finish") {
             toast({ title: "Lineups generated", description: "Gate picks seeded from prior moto finish order." });
           } else {
@@ -2477,14 +2513,29 @@ export default function EventSchedule() {
 
               {/* Stagger motos toggle (run-order only, non-enduro) */}
               {viewMode === "run-order" && !isEnduro && (
-                <Button
-                  variant={staggerSelectMode ? "secondary" : "outline"}
-                  size="sm"
-                  onClick={() => { setStaggerSelectMode(v => !v); setStaggerSelected([]); }}
-                >
-                  <Link2 size={14} className="mr-1.5" />
-                  {staggerSelectMode ? "Cancel" : "Stagger Motos"}
-                </Button>
+                <>
+                  {(!staggerSelectMode || groupMode === "stagger") && (
+                    <Button
+                      variant={staggerSelectMode ? "secondary" : "outline"}
+                      size="sm"
+                      onClick={() => { setGroupMode("stagger"); setStaggerSelectMode(v => !v); setStaggerSelected([]); }}
+                    >
+                      <Link2 size={14} className="mr-1.5" />
+                      {staggerSelectMode ? "Cancel" : "Stagger Motos"}
+                    </Button>
+                  )}
+                  {(!staggerSelectMode || groupMode === "combine") && (
+                    <Button
+                      variant={staggerSelectMode ? "secondary" : "outline"}
+                      size="sm"
+                      title="Run two or more small classes on one gate. Each class is still scored separately."
+                      onClick={() => { setGroupMode("combine"); setStaggerSelectMode(v => !v); setStaggerSelected([]); }}
+                    >
+                      <Users size={14} className="mr-1.5" />
+                      {staggerSelectMode ? "Cancel" : "Combine Starts"}
+                    </Button>
+                  )}
+                </>
               )}
 
               {/* Delete All (run-order only, only when there are non-completed motos) */}
@@ -2564,20 +2615,57 @@ export default function EventSchedule() {
                 <Link2 size={15} className="text-primary shrink-0" />
                 <span className="text-sm font-medium">{staggerSelected.length} motos selected</span>
                 <div className="ml-auto">
-                  <Button size="sm" onClick={() => {
-                    setStaggerPendingGroup({ orderedMotoIds: staggerSelected });
-                    setStaggerSelectMode(false);
-                    setStaggerSelected([]);
-                  }}>
-                    Create Stagger Group
-                  </Button>
+                  {groupMode === "combine" ? (
+                    <Button size="sm" disabled={linkStaggerMutation.isPending} onClick={() => {
+                      const ids = staggerSelected;
+                      linkStaggerMutation.mutate(
+                        { eventId, data: { orderedMotoIds: ids, combined: true } },
+                        {
+                          onSuccess: () => {
+                            queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) as any });
+                            toast({ title: `Combined start — ${ids.length} classes on one gate`, description: "They start and finish together. Each class is scored separately." });
+                            setStaggerSelectMode(false);
+                            setStaggerSelected([]);
+                          },
+                          onError: (err) => toast({ title: "Couldn't combine these races", description: errorText(err), variant: "destructive" }),
+                        },
+                      );
+                    }}>
+                      Combine on One Gate
+                    </Button>
+                  ) : (
+                    <Button size="sm" onClick={() => {
+                      setStaggerPendingGroup({ orderedMotoIds: staggerSelected });
+                      setStaggerSelectMode(false);
+                      setStaggerSelected([]);
+                    }}>
+                      Create Stagger Group
+                    </Button>
+                  )}
                 </div>
               </div>
             )}
             {!isEnduro && staggerSelectMode && staggerSelected.length < 2 && (
               <div className="flex items-center gap-2 text-xs text-muted-foreground bg-primary/5 border border-primary/20 rounded-md px-3 py-2">
                 <Link2 size={12} className="shrink-0 text-primary/70" />
-                <span>Select 2 or more motos below, then click <strong>Create Stagger Group</strong>.</span>
+                {groupMode === "combine" ? (
+                  <div className="flex flex-wrap items-center gap-2 w-full">
+                    <span>Select 2 or more races below, then click <strong>Combine on One Gate</strong>. Or let RM Roost pair up the small classes:</span>
+                    <Input
+                      type="number" min={2} value={combineGateSize} onChange={e => setCombineGateSize(e.target.value)}
+                      placeholder="Gate spots" className="h-7 w-24 text-xs" aria-label="Gate spots"
+                    />
+                    <Button
+                      size="sm" variant="outline" className="h-7 text-xs"
+                      disabled={combineBusy || !(parseInt(combineGateSize, 10) >= 2)}
+                      onClick={() => { void autoCombineStarts(parseInt(combineGateSize, 10)).then(() => { setStaggerSelectMode(false); setStaggerSelected([]); }); }}
+                    >
+                      {combineBusy ? "Combining…" : "Combine starts for smaller classes"}
+                    </Button>
+                  </div>
+                ) : (
+                  <span>Select 2 or more motos below, then click <strong>Create Stagger Group</strong>.</span>
+                )}
               </div>
             )}
 
@@ -3850,6 +3938,20 @@ export default function EventSchedule() {
               <p className="text-xs text-muted-foreground">
                 If a class exceeds this number, riders are split into separate motos. Leave blank for no limit.
               </p>
+              <label className={`flex items-start gap-2 text-sm ${ridersPerHeat.trim() ? "" : "opacity-60"}`}>
+                <input
+                  type="checkbox" className="mt-1"
+                  checked={combineOnGenerate && !!ridersPerHeat.trim()}
+                  disabled={!ridersPerHeat.trim()}
+                  onChange={e => setCombineOnGenerate(e.target.checked)}
+                />
+                <span>
+                  <strong>Combine starts for smaller classes</strong>
+                  <span className="block text-xs text-muted-foreground">
+                    Small classes that fit together within the number above share one gate and race together, and each class is still scored separately. Enter the number of gate spots above to use this.
+                  </span>
+                </span>
+              </label>
             </div>
 
             {/* Race timing format */}

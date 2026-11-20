@@ -684,8 +684,8 @@ export async function runPull(): Promise<{ ok: boolean; rows: Record<string, num
         id, event_id, name, type, status, race_class, race_classes,
         scheduled_time, lap_count, time_limit_ms, plus_laps, practice_mode,
         countdown_seconds, started_at, time_expired_at, completed_at,
-        staggered_group_id, staggered_order, results_finalized_at, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        staggered_group_id, staggered_order, combined_start, results_finalized_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name                   = excluded.name,
         type                   = excluded.type,
@@ -703,6 +703,7 @@ export async function runPull(): Promise<{ ok: boolean; rows: Record<string, num
         completed_at           = excluded.completed_at,
         staggered_group_id     = excluded.staggered_group_id,
         staggered_order        = excluded.staggered_order,
+        combined_start         = excluded.combined_start,
         results_finalized_at   = excluded.results_finalized_at
     `);
 
@@ -722,6 +723,7 @@ export async function runPull(): Promise<{ ok: boolean; rows: Record<string, num
         toDateStr(m.completedAt),
         toSQLiteScalar(m.staggeredGroupId) ?? null,
         toSQLiteScalar(m.staggeredOrder) ?? null,
+        m.combinedStart ? 1 : 0,
         toDateStr(m.resultsFinalizedAt),
         toDateStr(m.createdAt) ?? new Date().toISOString(),
       );

@@ -79,6 +79,8 @@ export interface Moto {
   staggeredGroupId?: number | null;
   /** Ordered list of moto IDs in the staggered group (sorted by staggeredOrder) */
   staggeredGroupMembers?: number[] | null;
+  /** The start group leaves the gate together (classes combined on one gate, each scored separately) rather than in staggered waves */
+  combinedStart?: boolean;
   /** Enduro tests only — true means RFID transponder at the start gate; false means organizer manually enters rider bib to start the clock */
   enduroHasRfidStart?: boolean;
 }

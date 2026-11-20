@@ -8,6 +8,8 @@ import { randomUUID } from "node:crypto";
 import { includesRmTrackr, RM_TRACKR_OPTION_ID, RM_TRACKR_NAME, RM_TRACKR_PRICE } from "../lib/rm-trackr";
 import { eventsTimingTags, isoTime, parseJson, quickCheckinRequirements } from "../lib/cloud-shape";
 import { registrationJson, resolvePurchaseOptions } from "../lib/registration-json";
+import { SCORING_STYLE_MISMATCH, eventMismatchesSeries, seriesIdsInMap, seriesOfEvent } from "../lib/scoringStyle";
+import { rescoreEvents } from "./results";
 
 const router = Router();
 
@@ -312,6 +314,10 @@ router.post("/events", (req, res) => {
 
   const invalid = validateEventInput(req.body ?? {});
   if (invalid) return res.status(400).json({ error: invalid });
+  // A race only counts toward a series scored the same way.
+  if (eventMismatchesSeries(req.body?.scoringTableId, seriesIdsInMap(req.body?.raceClassSeriesMap))) {
+    return res.status(400).json({ error: SCORING_STYLE_MISMATCH });
+  }
 
   const {
     name, date, location, state, trackName, raceClasses,
@@ -498,6 +504,26 @@ router.patch("/events/:eventId", (req, res) => {
     quickCheckinEnabled: "quick_checkin_enabled",
   };
 
+  // Changing the scoring style or the series links: the event must still be
+  // scored the same way as every series it counts toward (as on the website).
+  const beforeScoring = db.prepare("SELECT club_id, scoring_table_id, race_class_series_map FROM events WHERE id = ?").get(id) as
+    { club_id: number; scoring_table_id: number | null; race_class_series_map: string | null } | undefined;
+  const tableIdOf = (v: unknown) => (v == null || v === "" ? null : Number(v));
+  const styleChanged = !!beforeScoring && req.body.scoringTableId !== undefined
+    && tableIdOf(req.body.scoringTableId) !== tableIdOf(beforeScoring.scoring_table_id);
+  if (beforeScoring) {
+    const beforeMap = parseJson<Record<string, unknown>>(beforeScoring.race_class_series_map, {}) ?? {};
+    const linksChanged = req.body.raceClassSeriesMap !== undefined
+      && JSON.stringify(req.body.raceClassSeriesMap ?? {}) !== JSON.stringify(beforeMap);
+    if (styleChanged || linksChanged) {
+      const nextTable = req.body.scoringTableId !== undefined ? req.body.scoringTableId : beforeScoring.scoring_table_id;
+      const nextMap = req.body.raceClassSeriesMap !== undefined ? req.body.raceClassSeriesMap : beforeMap;
+      if (eventMismatchesSeries(nextTable, seriesOfEvent(id, beforeScoring.club_id, nextMap))) {
+        return res.status(400).json({ error: SCORING_STYLE_MISMATCH });
+      }
+    }
+  }
+
   const fields: string[] = [];
   const values: unknown[] = [];
 
@@ -535,6 +561,8 @@ router.patch("/events/:eventId", (req, res) => {
 
   const event = db.prepare("SELECT * FROM events WHERE id = ?").get(id) as any;
   if (!event) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
+  // A different Scoring Format: the races already finished are scored again with it.
+  if (styleChanged) rescoreEvents([id]);
   const nextStatus = computeAutoStatus(event);
   if (nextStatus) {
     db.prepare("UPDATE events SET status = ? WHERE id = ?").run(nextStatus, id);

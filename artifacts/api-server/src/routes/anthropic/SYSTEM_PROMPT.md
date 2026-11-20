@@ -625,10 +625,10 @@ There is no separate Enter Results tab any more. Results are reviewed and finali
 - When a race finishes, its results are public right away (website, live page, widgets, Rider App), labelled **Unofficial results**.
 - Once the organizer finalizes that race, it shows **Official results** everywhere.
 - Finalizing is per race (moto) and doesn't have to happen right away: run the next races and come back later, even after the whole day is done.
-- When every finished race in an event is official, followers get the "results are in" notification.
+- When every finished race in an event is official, followers get the "results are in" notification. If a race is corrected and finalized again, only followers of riders whose place or lap times changed get a "Results updated" notification; nobody else hears twice.
 
 ### Review and finalize a race
-Race Day Management → a finished race's card shows an amber **Unofficial** badge and a **Review & finalize** button → the dialog lists every rider: change **finish position**, **total time**, expand to edit **lap times**, toggle **DNF** / **DNS** → **Save Moto N** keeps the edits (still unofficial) → **Finalize race** saves and makes the results official (greyed out until the moto is finished: "Finish the race before finalizing its results"). The dialog is titled **Review results**; clicking the **Unofficial** / **Official** badge opens it too. Bib # and rider name can be corrected there. Click the **Laps** number to open a rider's laps (**Add lap**, trash); times are M:SS.mmm ("Fix invalid lap times before saving" means one isn't), and Total Time follows the laps unless typed.
+Race Day Management → a finished race's card shows an amber **Unofficial** badge and a **Review & finalize** button → the dialog lists every rider: change **finish position**, **total time**, expand to edit **lap times**, toggle **DNF** / **DNS** → **Save Moto N** keeps the edits (still unofficial) → **Finalize race** saves and makes the results official (greyed out until the moto is finished: "Finish the race before finalizing its results"). The dialog is titled **Review results**; clicking the **Unofficial** / **Official** badge opens it too. Bib # and rider name can be corrected there. Click the **Laps** number to open a rider's laps (**Add lap**, trash); times are M:SS.mmm ("Fix invalid lap times before saving" means one isn't), and Total Time follows the laps unless typed. A rider on the lineup with no laps in a timed race starts as **DNS** (untick it and type a position if they did race); a rider scored by their tag who wasn't on the lineup is listed too. Marking a rider DNF or DNS moves everyone behind them up a place: saved positions always run 1, 2, 3… through the finishers, then DNF, then DNS.
 
 An official race shows a green **Official** badge and a **Results** button. Edits saved there stay official. **Reopen as unofficial** puts it back to unofficial.
 
@@ -636,10 +636,10 @@ If a completed event still has unofficial races, the organizer sees a **Results 
 
 ### Emails that follow finalizing (automatic)
 - **Finalize reminder (to organizers):** if any finished race is still unofficial 12 hours after the event ended (its last race finished, or the end of the event day at the track), the club's organizers get one email with a **Finalize results** button that opens the event's Race Day Management page (after signing in if needed). Sent once per event, for events from the last week.
-- **Race day stats (to riders):** riders can tick **Send me my race day stats** when they register online. When every finished race at the event is finalized, each of those riders who raced gets one email with their finish, time, points and lap times per race (best lap highlighted) and a link to the full results. Sent once per event; correcting a race afterwards doesn't send it again. Riders who didn't tick the box, or have no email on their profile, don't get it. The organizer's only step is finalizing every race.
+- **Race day stats (to riders):** riders can tick **Send me my race day stats** when they register online. When every finished race at the event is finalized, each of those riders who raced gets one email with their finish, time, points and lap times per race (best lap highlighted) and a link to the full results. Each rider gets it once. If a race is corrected and finalized again, only riders whose own place or lap times changed get a new email ("Updated race day stats"); riders whose results didn't change get nothing more. Race Gas credits are sent once per rider per event and never again. Riders who didn't tick the box, or have no email on their profile, don't get it. The organizer's only step is finalizing every race.
 
 ### Overall standings
-**Report** tab → **Overall Standings** at the top: pick a class to see the points table combining its finished motos, ranked by total points (tiebroken by total time), with an Unofficial/Official label.
+**Report** tab → **Overall Standings** at the top: pick a class to see the points table combining its finished motos, ranked by total points (a tie goes to the better finish in the last moto), with an Unofficial/Official label. Practice sessions never count.
 
 ---
 
@@ -685,9 +685,9 @@ A series only counts events that are linked to it. Link them per class:
 - **On an existing event:** event edit → **Series** dropdown.
 Only series whose scoring format matches the event's are offered. If a series leaderboard is empty, the usual cause is that no events are linked.
 
-Standings update as motos are completed. Public series standings are labelled **Unofficial results** until every race counted in them is finalized.
+Riders see this in the app: the tiles on My Races show the points and place for the series they rank highest in, and tapping a tile opens **My Series** (every series they race, best first) and each series' standings with their own stats. Standings update as motos are completed. Public series standings are labelled **Unofficial results** until every race counted in them is finalized.
 
-Standings are worked out live, so there's no recalculate button (and no delete button for a series). The series' **Classes** list is a label only: what counts is the classes linked on each event. Same-named classes at different events are combined, but different spellings ("250 B" vs "250B") show separately, and a rider with two profiles shows as two rows. "(n) no-show" means the rider missed that event. Saving a series is refused if a linked event uses a different scoring format ("Events … use a different scoring format…"): change the event's Scoring Format or unlink it first.
+Standings are worked out live, so there's no recalculate button (and no delete button for a series). The series' **Classes** list is a label only: what counts is the classes linked on each event. Same-named classes at different events are combined, but different spellings ("250 B" vs "250B") show separately, and a rider with two profiles shows as two rows. "(n) no-show" means the rider missed that event. Rounds run in **event date** order (that decides which is the "last round" in a tie), however the events were added. **A race can only be in a series that's scored the same way.** Saving an event or a series is refused when they differ ("This points scoring style does not match the series you have selected. Please update the points scoring style or remove the series this race is tied to."): change the event's **Scoring Format** to match, or remove the series from that class. Two tables with the same method and points count as the same; no Scoring Format means the AMA MX scale.
 
 ### Points Scoring Tables
 Create reusable scoring configurations. **Points Scoring Tables** (sidebar) → **Create Table**. **Presets** buttons fill in common formats:
@@ -695,7 +695,9 @@ Create reusable scoring configurations. **Points Scoring Tables** (sidebar) → 
 - **Supercross** — the same scale with **Main Event Only** on: heats and LCQs don't score.
 - **Enduro** — 25, 22, 20, 18, 16, 15 … 20th = 1.
 - **Olympic** — lowest total wins (see below).
-Events with no scoring table use the AMA MX scale.
+Events with no scoring table use the AMA MX scale. Changing an event's **Scoring Format** after races have finished re-scores those races with the new table in the background (wait a minute, then refresh).
+
+**Combined starts (two or more small classes on one gate):** each class keeps its own race, results, points and overall, and they are linked to start and finish together. Schedule tab → **Combine Starts** → tick 2 or more races → **Combine on One Gate**; or type the number of **Gate spots** and click **Combine starts for smaller classes** to let RM Roost pair up the classes that fit. Generate Lineups has the same option as a checkbox under **Max Riders per Moto** (that number is the gate size). The card shows "Combined start — N classes on one gate"; the ✕ next to a class name takes it back out. Refused when a rider is entered in both classes ("…so those two can't start together"), when a race has already started, or for practice and enduro tests. Moto 1s are paired with Moto 1s. On Race Day Management the group has one **Start Group** / **Finish Group**. A staggered start (**Stagger Motos**) is the same link with classes leaving in waves.
 
 **Ties on points tables** follow AMA Pro rules: an event overall goes to the better finish in the **last moto**; a **series** goes to the most moto wins, then most 2nds, 3rds and so on, then the final moto of the last round.
 
@@ -1124,7 +1126,7 @@ Rider messages forwarded to you: "Registration … isn't open / has closed" → 
 - To time-limit a practice moto, enter **Time Limit (minutes)** when you click **Start** on Race Day Management; blank runs until **Finish**.
 - **No internet at the track?** Use the RM Roost desktop app (Offline Mode page). Sign in before leaving so the events sync to the laptop, and connect the reader with "No, connect without internet" in Reader Setup.
 - Transponder return reminders reach only riders with the RM Roost app and notifications on; for others, click their name for **Call** / **Text** / **Email**.
-- **Riders didn't get their race day stats?** They go out only after every finished race is finalized, only to riders who ticked **Send me my race day stats** and have an email, and only once per event.
+- **Riders didn't get their race day stats?** They go out only after every finished race is finalized, only to riders who ticked **Send me my race day stats** and have an email. After a correction, only riders whose place or lap times changed get an updated email.
 - **Forgot password (organizers and staff):** **Forgot your password?** on the sign-in page emails a reset link. Links in RM Roost emails go to the right page after signing in.
 - The AMA export (Report tab) downloads a CSV — use it for submitting results to AMA or other sanctioning bodies.
 - Discount code categories are optional. If a code has no categories checked, it applies to all charge types.

@@ -4,6 +4,7 @@ import { brandedEmailHtml, esc } from "./emailLayout";
 import { sendEmail } from "./email";
 import { logger } from "./logger";
 import { computeMotoSectors, type MotoSectors } from "./sectors";
+import { claimNotification, pendingResultNotifications, releaseNotification } from "./resultsNotify";
 
 /**
  * "Send me my race day stats" (a checkbox at online registration): once all of
@@ -105,10 +106,22 @@ function longDate(date: string): string {
  * correction) never sends twice. Returns how many were sent.
  */
 export async function sendRaceDayStats(eventId: number): Promise<number> {
-  const [claimed] = await db.update(eventsTable).set({ statsEmailsSentAt: new Date() })
-    .where(and(eq(eventsTable.id, eventId), isNull(eventsTable.statsEmailsSentAt)))
-    .returning({ name: eventsTable.name, date: eventsTable.date });
+  const [claimed] = await db.select({ name: eventsTable.name, date: eventsTable.date, sentAt: eventsTable.statsEmailsSentAt })
+    .from(eventsTable).where(eq(eventsTable.id, eventId));
   if (!claimed) return 0;
+
+  // First time official: every opted-in rider. Finalized again after a
+  // correction: only riders whose place or lap times changed (lib/resultsNotify.ts).
+  const pending = await pendingResultNotifications(eventId, "stats_email");
+  if (claimed.sentAt && pending.sent.size === 0) {
+    // Emailed before that record existed: note today's results as sent rather
+    // than emailing everyone a second time.
+    for (const [riderId, fingerprint] of pending.current) await claimNotification(eventId, riderId, "stats_email", fingerprint);
+    return 0;
+  }
+  const updated = new Set(pending.changed);
+  const due = new Set([...pending.first, ...pending.changed]);
+  if (due.size === 0) return 0;
 
   const optedIn = await db.select({
     riderId: registrationsTable.riderId,
@@ -125,7 +138,7 @@ export async function sendRaceDayStats(eventId: number): Promise<number> {
   // One email per rider (they may have entered several classes).
   const riders = new Map<number, { email: string; name: string }>();
   for (const r of optedIn) {
-    if (r.email && !riders.has(r.riderId)) riders.set(r.riderId, { email: r.email.trim(), name: [r.firstName, r.lastName].filter(Boolean).join(" ") });
+    if (r.email && due.has(r.riderId) && !riders.has(r.riderId)) riders.set(r.riderId, { email: r.email.trim(), name: [r.firstName, r.lastName].filter(Boolean).join(" ") });
   }
   if (riders.size === 0) return 0;
 
@@ -181,28 +194,35 @@ export async function sendRaceDayStats(eventId: number): Promise<number> {
         sectors: riderSectors(r.motoId, riderId),
       }));
     if (rows.length === 0) continue; // opted in but didn't race
+    const fingerprint = pending.current.get(riderId);
+    // Another finalize may be sending this same email right now.
+    if (fingerprint === undefined || !await claimNotification(eventId, riderId, "stats_email", fingerprint)) continue;
+    const isUpdate = updated.has(riderId);
     attempted++;
     const html = brandedEmailHtml({
       appUrl: appUrl(),
-      preheader: `Your official results from ${claimed.name}.`,
-      eyebrow: "Race day stats",
+      preheader: isUpdate ? `Your results from ${claimed.name} were updated.` : `Your official results from ${claimed.name}.`,
+      eyebrow: isUpdate ? "Updated race day stats" : "Race day stats",
       heading: claimed.name,
       paragraphs: [
         `Hi ${esc(rider.name || "rider")},`,
-        `Here are your official results from <strong>${esc(claimed.name)}</strong> on ${esc(date)}. Your best lap in each race is highlighted${rows.some(r => r.sectors) ? ", with your split times on each lap" : ""}.`,
+        `${isUpdate ? "Your results were corrected after they were first sent. Here are your updated official results" : "Here are your official results"} from <strong>${esc(claimed.name)}</strong> on ${esc(date)}. Your best lap in each race is highlighted${rows.some(r => r.sectors) ? ", with your split times on each lap" : ""}.`,
       ],
       extraHtml: statsTableHtml(rows),
       button: { label: "View full event results", url: resultsUrl },
       note: "You're getting this because you checked \"Send me my race day stats\" when you registered for this event.",
     });
-    const result = await sendEmail(rider.email, `Your race day stats: ${claimed.name}`, html);
+    const result = await sendEmail(rider.email, `${isUpdate ? "Updated race day stats" : "Your race day stats"}: ${claimed.name}`, html);
     if (result.ok) sent++;
-    else logger.warn({ eventId, riderId }, "race day stats email not sent");
+    else {
+      logger.warn({ eventId, riderId }, "race day stats email not sent");
+      // Not delivered: the next finalize tries this rider again.
+      await releaseNotification(eventId, riderId, "stats_email", pending.sent.get(riderId));
+    }
   }
   logger.info({ eventId, sent, optedIn: riders.size }, "race day stats emails");
-  // Nothing went out (email service down or not set up): let the next finalize try again.
-  if (sent === 0 && attempted > 0) {
-    await db.update(eventsTable).set({ statsEmailsSentAt: null }).where(eq(eventsTable.id, eventId));
+  if (sent > 0 && !claimed.sentAt) {
+    await db.update(eventsTable).set({ statsEmailsSentAt: new Date() }).where(eq(eventsTable.id, eventId));
   }
   return sent;
 }

@@ -9,6 +9,28 @@ import { and, inArray, ne } from "drizzle-orm";
 import { logger } from "../lib/logger";
 
 /**
+ * Re-score every finished race of these events with each event's current
+ * scoring table (series standings follow). Runs in the background.
+ */
+export function rescoreEvents(eventIds: number[]) {
+  if (eventIds.length === 0) return;
+  setImmediate(() => {
+    void (async () => {
+      try {
+        const motos = await db.select({ id: motosTable.id }).from(motosTable).where(and(
+          inArray(motosTable.eventId, eventIds),
+          eq(motosTable.status, "completed"),
+          ne(motosTable.type, "practice"),
+        ));
+        for (const m of motos) await scoreMotoPoints(m.id);
+      } catch (err) {
+        logger.error({ err, eventIds }, "Re-scoring after an event's scoring format changed failed");
+      }
+    })();
+  });
+}
+
+/**
  * After a table in use changes, re-score the finished races of events that use
  * it and rebuild the series that use it, so standings follow the new points.
  * Runs in the background; the edit itself is already saved.

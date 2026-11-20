@@ -12,4 +12,6 @@ export interface StaggerLinkInput {
      * @minItems 2
      */
   orderedMotoIds: number[];
+  /** True for a combined start (classes share one gate and leave together, each scored separately); false or omitted for staggered waves */
+  combined?: boolean;
 }

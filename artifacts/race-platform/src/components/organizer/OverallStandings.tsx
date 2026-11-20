@@ -43,7 +43,8 @@ function PointsOverallStandings({ eventId, motos }: { eventId: number; motos: Mo
   };
 
   // Use saved results to build standings (reflects what's actually in the DB)
-  const completedClassMotos = classMotos.filter(m => m.status === "completed");
+  // Finished races only: a class practice isn't a moto and never scores.
+  const completedClassMotos = classMotos.filter(m => m.status === "completed" && m.type !== "practice");
   const classResults = (existingResults || []).filter((r) =>
     completedClassMotos.some((m) => m.id === r.motoId),
   );

@@ -1,6 +1,7 @@
 import { eventToday, practiceInsertNumber } from "@workspace/api-zod";
 import { syncEventPublication } from "../lib/resultsVisibility";
 import { notifyFollowersOfResults } from "../lib/riderCareer";
+import { combineProblem, planCombinedStarts, type CombineCandidate } from "@workspace/api-zod";
 import { Router, type Response } from "express";
 import { db } from "@workspace/db";
 import { motosTable, checkinsTable, ridersTable, eventsTable, raceResultsTable, pointsTablesTable, clubsTable, usersTable, practiceSessionsTable, practiceCrossingsTable, eventPublicationTable, lapCrossingsTable, splitCrossingsTable, registrationsTable, seriesTable, seriesPointsTable, riderAccountsTable, riderPushTokensTable } from "@workspace/db";
@@ -664,15 +665,74 @@ router.delete("/motos/:motoId", async (req, res) => {
   const [moto] = await db.select().from(motosTable).where(eq(motosTable.id, id));
   if (!moto) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
 
+  // A finished race keeps its results (they count toward overalls and series).
+  // Checked before anything is removed, so a refused delete can't wipe its laps.
+  if (moto.status === "completed") {
+    const [kept] = await db.select({ id: raceResultsTable.id }).from(raceResultsTable).where(eq(raceResultsTable.motoId, id)).limit(1);
+    if (kept) return res.status(409).json({ error: "This race is finished and has results, so it can't be deleted. If it shouldn't count, restart it (that clears its laps) and then delete it." });
+  }
+
   // Delete FK-dependent rows before deleting the moto
   await db.delete(splitCrossingsTable).where(eq(splitCrossingsTable.motoId, id));
   await db.delete(lapCrossingsTable).where(eq(lapCrossingsTable.motoId, id));
-  if (moto.status !== "completed") {
-    await db.delete(raceResultsTable).where(eq(raceResultsTable.motoId, id));
-  }
+  await db.delete(raceResultsTable).where(eq(raceResultsTable.motoId, id));
   await db.delete(motosTable).where(eq(motosTable.id, id));
   return res.status(204).send();
 });
+
+/** An event's motos as the combined-start planner sees them (all, or just `onlyIds`). */
+async function combineCandidates(eventId: number, onlyIds?: number[]): Promise<CombineCandidate[]> {
+  const rows = await db.select().from(motosTable).where(eq(motosTable.eventId, eventId));
+  return rows
+    .filter(m => !onlyIds || onlyIds.includes(m.id))
+    .map(m => ({
+      id: m.id,
+      raceClass: m.raceClass ?? "",
+      type: m.type ?? "heat",
+      motoNumber: m.motoNumber ?? 0,
+      status: m.status,
+      grouped: m.staggeredGroupId != null,
+      riderIds: (Array.isArray(m.lineup) ? (m.lineup as Array<{ riderId?: unknown }>) : [])
+        .map(l => Number(l.riderId)).filter(Number.isFinite),
+    }));
+}
+
+/**
+ * Link motos into one start group, in this order. `combined`: they leave the
+ * gate together (classes sharing a gate); otherwise a staggered start.
+ */
+async function linkStartGroup(ids: number[], combined: boolean): Promise<void> {
+  // Clear any existing group memberships for motos in this list
+  const existing = await db.select({ staggeredGroupId: motosTable.staggeredGroupId })
+    .from(motosTable).where(inArray(motosTable.id, ids));
+  const oldGroupIds = [...new Set(existing.map(m => m.staggeredGroupId).filter((g): g is number => g != null))];
+  if (oldGroupIds.length > 0) {
+    await db.update(motosTable)
+      .set({ staggeredGroupId: null, staggeredOrder: null, combinedStart: false })
+      .where(inArray(motosTable.staggeredGroupId, oldGroupIds));
+  }
+
+  // Use min ID as stable group identifier
+  const groupId = Math.min(...ids);
+
+  // Fetch current moto_numbers for all group members so we can redistribute them
+  // in staggeredOrder — ensuring run-order matches stagger-start-order.
+  const groupMotos = await db
+    .select({ id: motosTable.id, motoNumber: motosTable.motoNumber })
+    .from(motosTable)
+    .where(inArray(motosTable.id, ids));
+
+  // Sort the existing moto_numbers so the primary slot gets the lowest value.
+  const sortedNums = groupMotos
+    .map(m => m.motoNumber ?? 0)
+    .sort((a, b) => a - b);
+
+  for (let i = 0; i < ids.length; i++) {
+    await db.update(motosTable)
+      .set({ staggeredGroupId: groupId, staggeredOrder: i + 1, motoNumber: sortedNums[i], combinedStart: combined })
+      .where(eq(motosTable.id, ids[i]));
+  }
+}
 
 // Link N motos as a staggered start group
 router.post("/events/:eventId/stagger", async (req, res) => {
@@ -698,37 +758,38 @@ router.post("/events/:eventId/stagger", async (req, res) => {
     return res.status(400).json({ error: "Some of these motos are from another event. Refresh the Motos page and try again." });
   }
 
-  // Clear any existing group memberships for motos in this list
-  const existing = await db.select({ staggeredGroupId: motosTable.staggeredGroupId })
-    .from(motosTable).where(inArray(motosTable.id, ids));
-  const oldGroupIds = [...new Set(existing.map(m => m.staggeredGroupId).filter((g): g is number => g != null))];
-  if (oldGroupIds.length > 0) {
-    await db.update(motosTable)
-      .set({ staggeredGroupId: null, staggeredOrder: null })
-      .where(inArray(motosTable.staggeredGroupId, oldGroupIds));
+  // Combined start: classes share the gate and leave together, so no rider may
+  // be in two of them (their laps couldn't be told apart) and none may have started.
+  const combined = req.body.combined === true;
+  if (combined) {
+    const problem = combineProblem(await combineCandidates(eventId, ids));
+    if (problem) return res.status(400).json({ error: problem });
   }
-
-  // Use min ID as stable group identifier
-  const groupId = Math.min(...ids);
-
-  // Fetch current moto_numbers for all group members so we can redistribute them
-  // in staggeredOrder — ensuring run-order matches stagger-start-order.
-  const groupMotos = await db
-    .select({ id: motosTable.id, motoNumber: motosTable.motoNumber })
-    .from(motosTable)
-    .where(inArray(motosTable.id, ids));
-
-  // Sort the existing moto_numbers so the primary slot gets the lowest value.
-  const sortedNums = groupMotos
-    .map(m => m.motoNumber ?? 0)
-    .sort((a, b) => a - b);
-
-  for (let i = 0; i < ids.length; i++) {
-    await db.update(motosTable)
-      .set({ staggeredGroupId: groupId, staggeredOrder: i + 1, motoNumber: sortedNums[i] })
-      .where(eq(motosTable.id, ids[i]));
-  }
+  await linkStartGroup(ids, combined);
   return res.json({ ok: true });
+});
+
+// POST /events/:eventId/combine-starts { gateSize } — "Combine starts for smaller
+// classes": link the races still to run into combined starts that fit the gate
+// (lib/combinedStarts.ts). Each class stays its own race and is scored separately.
+router.post("/events/:eventId/combine-starts", async (req, res) => {
+  const eventId = Number(req.params.eventId);
+  if (await rejectOtherClubEvent(res, eventId)) return;
+  const gateSize = Math.trunc(Number(req.body?.gateSize));
+  if (!(gateSize >= 2)) return res.status(400).json({ error: "Enter how many gate spots there are (2 or more)." });
+  const candidates = await combineCandidates(eventId);
+  const groups = planCombinedStarts(candidates, gateSize);
+  for (const ids of groups) await linkStartGroup(ids, true);
+  const byId = new Map(candidates.map(c => [c.id, c]));
+  return res.json({
+    ok: true,
+    gateSize,
+    groups: groups.map(ids => ({
+      motoIds: ids,
+      classes: ids.map(id => byId.get(id)?.raceClass ?? ""),
+      riders: ids.reduce((n, id) => n + (byId.get(id)?.riderIds.length ?? 0), 0),
+    })),
+  });
 });
 
 // Unlink a single moto from its stagger group; re-normalizes the remaining group order
@@ -747,14 +808,14 @@ router.delete("/motos/:motoId/stagger", async (req, res) => {
 
   // Clear this moto's group membership
   await db.update(motosTable)
-    .set({ staggeredGroupId: null, staggeredOrder: null })
+    .set({ staggeredGroupId: null, staggeredOrder: null, combinedStart: false })
     .where(eq(motosTable.id, id));
 
   if (remaining.length <= 1) {
     // Group dissolves — clear the last remaining member too
     if (remaining.length === 1) {
       await db.update(motosTable)
-        .set({ staggeredGroupId: null, staggeredOrder: null })
+        .set({ staggeredGroupId: null, staggeredOrder: null, combinedStart: false })
         .where(eq(motosTable.id, remaining[0].id));
     }
     return res.json({ ok: true });

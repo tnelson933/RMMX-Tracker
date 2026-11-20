@@ -432,6 +432,10 @@ export class SyncEngine {
         payload[table] = this.buildEnduroSetupSnapshots(ids);
         continue;
       }
+      if (table === SyncEngine.MOTO_SNAPSHOT_QUEUE) {
+        payload[table] = this.buildMotoRaceSnapshots(ids);
+        continue;
+      }
       const placeholders = ids.map(() => "?").join(",");
       let tableRows = this.db
         .prepare(`SELECT * FROM ${table} WHERE id IN (${placeholders})`)
@@ -846,6 +850,39 @@ export class SyncEngine {
     "event_reader_assignments",
   ];
 
+  /**
+   * A lap or a result deleted on the desktop (a crossing removed, a rider's
+   * last lap gone, a restart): the race is sent whole, so the cloud's laps and
+   * results for it end up the same as here. record_id is the moto id (queued by
+   * the delete triggers in local-server db-init.ts).
+   */
+  private static readonly MOTO_SNAPSHOT_QUEUE = "moto_race_snapshot";
+
+  private buildMotoRaceSnapshots(motoIds: number[]): Record<string, unknown>[] {
+    const cloudIdFor = this.db.prepare("SELECT cloud_rider_id FROM _rider_cloud_map WHERE local_rider_id = ?");
+    const cloudRider = (id: unknown): unknown => {
+      if (id == null) return id;
+      const mapped = cloudIdFor.get(Number(id)) as { cloud_rider_id: number | null } | undefined;
+      return mapped?.cloud_rider_id ?? id;
+    };
+    const out: Record<string, unknown>[] = [];
+    for (const motoId of [...new Set(motoIds)]) {
+      const moto = this.db.prepare("SELECT id, event_id FROM motos WHERE id = ?").get(motoId) as { id: number; event_id: number } | undefined;
+      // Race deleted since: its delete is pushed separately; nothing to send.
+      if (!moto) continue;
+      const crossings = this.db.prepare("SELECT * FROM lap_crossings WHERE moto_id = ? ORDER BY id").all(motoId) as Record<string, unknown>[];
+      const resultRiders = this.db.prepare("SELECT rider_id FROM race_results WHERE moto_id = ?").all(motoId) as Array<{ rider_id: number }>;
+      out.push({
+        id: motoId,
+        moto_id: motoId,
+        event_id: moto.event_id,
+        lap_crossings: crossings.map((c) => ({ ...c, rider_id: cloudRider(c.rider_id) })),
+        result_rider_ids: resultRiders.map((r) => cloudRider(r.rider_id)),
+      });
+    }
+    return out;
+  }
+
   private buildEnduroSetupSnapshots(eventIds: number[]): Record<string, unknown>[] {
     const out: Record<string, unknown>[] = [];
     for (const eventId of eventIds) {
@@ -1038,7 +1075,7 @@ export class SyncEngine {
 
           this.db
             .prepare(
-              "UPDATE _write_queue SET record_id = ? WHERE table_name = 'motos' AND record_id = ?",
+              "UPDATE _write_queue SET record_id = ? WHERE table_name IN ('motos', 'moto_race_snapshot') AND record_id = ?",
             )
             .run(cloudId, localId);
         }

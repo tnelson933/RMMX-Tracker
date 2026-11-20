@@ -124,8 +124,29 @@ export interface RiderSeriesEntry {
   totalPoints: number;
   position: number;
   /** The series' season year and events (from /rider/series). */
-  season?: number | null;
+  season?: number | string | null;
   eventIds?: number[];
+  /** Which of the account's riders this is, and their stats in the series (official standings). */
+  riderId?: number;
+  riderName?: string;
+  ridersInClass?: number;
+  lowerIsBetter?: boolean;
+  official?: boolean;
+  wins?: number;
+  podiums?: number;
+  motosFinished?: number;
+  bestFinish?: number | null;
+  roundsRaced?: number;
+  roundsRun?: number;
+  gapToLeader?: number;
+}
+
+/**
+ * The series a rider ranks highest in: /rider/series lists best first (highest
+ * place, then the bigger class). Limited to the riders shown.
+ */
+export function bestSeriesEntry(entries: RiderSeriesEntry[], riderIds: number[]): RiderSeriesEntry | null {
+  return entries.find(e => e.riderId == null || riderIds.includes(e.riderId)) ?? null;
 }
 
 export interface PublicSeriesStandingRow {
@@ -141,7 +162,7 @@ export type ViewState =
   | { type: "events" }
   | { type: "event_detail"; event: EventHistory }
   | { type: "points" }
-  | { type: "series_standings"; seriesId: number; seriesName: string; riderClass: string; riderPosition: number; riderPoints: number; riderIds: number[] };
+  | { type: "series_standings"; seriesId: number; seriesName: string; riderClass: string; riderPosition: number; riderPoints: number; riderIds: number[]; entry?: RiderSeriesEntry };
 
 // ─── Sub-screen: Sub-header ───────────────────────────────────────────────────
 
@@ -536,6 +557,7 @@ export function SeriesStandingsScreen({
   riderPosition,
   riderPoints,
   riderIds,
+  entry,
   onBack,
   colors,
   insets,
@@ -547,6 +569,8 @@ export function SeriesStandingsScreen({
   riderPosition: number;
   riderPoints: number;
   riderIds: number[];
+  /** The rider's stats in this series (from /rider/series), when known. */
+  entry?: RiderSeriesEntry;
   onBack: () => void;
   colors: ReturnType<typeof useColors>;
   insets: ReturnType<typeof useSafeAreaInsets>;
@@ -601,6 +625,35 @@ export function SeriesStandingsScreen({
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ padding: 16, gap: 0, paddingBottom: bottomSpace }}>
+          {/* The rider's own stats in this series */}
+          {entry && (
+            <View style={{ borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, padding: 14, marginBottom: 16, gap: 10 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
+                  {entry.riderName ? `${entry.riderName} · ` : ""}Your stats
+                </Text>
+                {entry.official === false && (
+                  <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>Unofficial</Text>
+                )}
+              </View>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", rowGap: 12 }}>
+                {[
+                  { v: `${ordinal(entry.position)}${entry.ridersInClass ? ` of ${entry.ridersInClass}` : ""}`, l: "Place" },
+                  { v: String(entry.totalPoints), l: entry.lowerIsBetter ? "Score (low wins)" : "Points" },
+                  { v: entry.position === 1 ? "Leader" : String(entry.gapToLeader ?? "—"), l: "Gap to 1st" },
+                  { v: String(entry.wins ?? 0), l: "Moto wins" },
+                  { v: String(entry.podiums ?? 0), l: "Top 3s" },
+                  { v: `${entry.roundsRaced ?? 0}/${entry.roundsRun ?? 0}`, l: "Rounds raced" },
+                ].map(t => (
+                  <View key={t.l} style={{ width: "33.33%", alignItems: "center" }}>
+                    <Text style={{ fontSize: 20, color: colors.foreground, fontFamily: "Barlow_800ExtraBold_Italic" }} numberOfLines={1} adjustsFontSizeToFit>{t.v}</Text>
+                    <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>{t.l}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
           {/* Section header */}
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 }}>
             <Feather name="award" size={13} color={colors.primaryText} />
@@ -730,7 +783,8 @@ export function PointsScreen({
     setSeriesLoading(true);
     riderFetch("/api/rider/series")
       .then(r => (r.ok ? r.json() : []))
-      .then((data: RiderSeriesEntry[]) => { if (!cancelled) setSeriesList(Array.isArray(data) ? data : []); })
+      // Best first from the server; only the riders being shown.
+      .then((data: RiderSeriesEntry[]) => { if (!cancelled) setSeriesList((Array.isArray(data) ? data : []).filter(e => e.riderId == null || riderIds.includes(e.riderId))); })
       .catch(() => { if (!cancelled) setSeriesList([]); })
       .finally(() => { if (!cancelled) setSeriesLoading(false); });
     return () => { cancelled = true; };
@@ -739,8 +793,8 @@ export function PointsScreen({
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <SubHeader
-        title="Points"
-        subtitle="Career points breakdown"
+        title="My Series"
+        subtitle="Every series you race, best first"
         onBack={onBack}
         colors={colors}
         insets={insets}
@@ -755,17 +809,31 @@ export function PointsScreen({
           <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: primary + "18", alignItems: "center", justifyContent: "center" }}>
             <Feather name="star" size={24} color={colors.primaryText} />
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textTransform: "uppercase", letterSpacing: 0.5 }}>
-              Career Total
-            </Text>
-            <Text style={{ fontSize: 40, fontWeight: "800", color: colors.primaryText, fontFamily: "Roboto_700Bold", letterSpacing: -1, lineHeight: 46 }}>
-              {totalPoints}
-            </Text>
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
-              pts across {events.length} event{events.length !== 1 ? "s" : ""}
-            </Text>
-          </View>
+          {seriesList.length > 0 ? (
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textTransform: "uppercase", letterSpacing: 0.5 }}>
+                Your best series
+              </Text>
+              <Text style={{ fontSize: 34, fontWeight: "800", color: colors.primaryText, fontFamily: "Roboto_700Bold", letterSpacing: -1, lineHeight: 40 }}>
+                {ordinal(seriesList[0].position)} · {seriesList[0].totalPoints} {seriesList[0].lowerIsBetter ? "score" : "pts"}
+              </Text>
+              <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
+                {seriesList[0].seriesName} · {seriesList[0].raceClass}
+              </Text>
+            </View>
+          ) : (
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textTransform: "uppercase", letterSpacing: 0.5 }}>
+                Points earned
+              </Text>
+              <Text style={{ fontSize: 40, fontWeight: "800", color: colors.primaryText, fontFamily: "Roboto_700Bold", letterSpacing: -1, lineHeight: 46 }}>
+                {totalPoints}
+              </Text>
+              <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
+                across {events.length} event{events.length !== 1 ? "s" : ""} · not in a series yet
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Series section */}
@@ -784,7 +852,7 @@ export function PointsScreen({
             </View>
             {seriesList.map(s => (
               <Pressable
-                key={`${s.seriesId}:${s.raceClass}`}
+                key={`${s.seriesId}:${s.raceClass}:${s.riderId ?? ""}`}
                 onPress={() => pushView({
                   type: "series_standings",
                   seriesId: s.seriesId,
@@ -792,7 +860,8 @@ export function PointsScreen({
                   riderClass: s.raceClass,
                   riderPosition: s.position,
                   riderPoints: s.totalPoints,
-                  riderIds,
+                  riderIds: s.riderId != null ? [s.riderId] : riderIds,
+                  entry: s,
                 })}
                 style={({ pressed }) => ({
                   borderRadius: 12, borderWidth: 1.5, borderColor: colors.primary + "33",
@@ -822,7 +891,7 @@ export function PointsScreen({
                         <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>{s.raceClass}</Text>
                       </View>
                       <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
-                        {s.totalPoints} pts
+                        {s.ridersInClass ? `of ${s.ridersInClass} · ` : ""}{s.totalPoints} {s.lowerIsBetter ? "score" : "pts"}{riderIds.length > 1 && s.riderName ? ` · ${s.riderName}` : ""}
                       </Text>
                     </View>
                   </View>

@@ -50,7 +50,8 @@ import { practiceCourseFor, resolveTrackId } from "../lib/trackCourse";
 import { rentalTranspondersTable } from "@workspace/db";
 import { newOrgPushContext, ORG_PUSH_CAPABILITY, pushOrgAfterEvents, pushOrgBeforeEvents, usableCategoryId, usableScoringTableId, type OrgPushContext } from "../lib/desktopOrgPush";
 import { rentalsOut } from "./rental-transponders";
-import { recalculateSeriesPoints } from "./results";
+import { recalculateSeriesPoints, scoreMotoPoints } from "./results";
+import { motoNeedsScoringAfterPush, positionsNeedSorting } from "../lib/motoPoints";
 import { rescoreUsers } from "./points-tables";
 
 const router = Router();
@@ -548,6 +549,8 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       const rawScheduledTime = firstDefined(rawMoto, "scheduled_time", "scheduledTime");
       const rawStaggeredGroupId = firstDefined(rawMoto, "staggered_group_id", "staggeredGroupId");
       const rawStaggeredOrder = firstDefined(rawMoto, "staggered_order", "staggeredOrder");
+      // Combined start (classes sharing a gate). Older desktops don't send it: leave it alone then.
+      const rawCombinedStart = firstDefined(rawMoto, "combined_start", "combinedStart");
       const rawPausedAt = firstDefined(rawMoto, "paused_at", "pausedAt");
       const rawTotalPausedMs = firstDefined(rawMoto, "total_paused_ms", "totalPausedMs");
       const rawResultsFinalizedAt = firstDefined(rawMoto, "results_finalized_at", "resultsFinalizedAt");
@@ -695,6 +698,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
         else if (rawStaggeredGroupId === null) updateSet.staggeredGroupId = null;
         if (rawStaggeredOrder     != null)  updateSet.staggeredOrder    = Number(rawStaggeredOrder);
         else if (rawStaggeredOrder === null)    updateSet.staggeredOrder = null;
+        if (rawCombinedStart !== undefined) updateSet.combinedStart = rawCombinedStart === true || Number(rawCombinedStart) === 1;
         if (rawPausedAt !== undefined) updateSet.pausedAt = rawPausedAt === null ? null : toDate(rawPausedAt);
         if (rawTotalPausedMs != null && Number.isFinite(Number(rawTotalPausedMs))) {
           updateSet.totalPausedMs = Math.max(0, Math.round(Number(rawTotalPausedMs)));
@@ -737,6 +741,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
           completedAt:      rawCompletedAt == null ? null : toDate(rawCompletedAt),
           staggeredGroupId: rawStaggeredGroupId != null ? Number(rawStaggeredGroupId) : null,
           staggeredOrder:   rawStaggeredOrder    != null ? Number(rawStaggeredOrder)    : null,
+          combinedStart:    rawCombinedStart === true || Number(rawCombinedStart) === 1,
           pausedAt:         rawPausedAt == null ? null : toDate(rawPausedAt),
           totalPausedMs:    rawTotalPausedMs != null && Number.isFinite(Number(rawTotalPausedMs))
             ? Math.max(0, Math.round(Number(rawTotalPausedMs))) : 0,
@@ -1010,6 +1015,76 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
     }
     results["race_results"] = resultsUpserted;
     total += resultsUpserted;
+
+    // ── moto_race_snapshot (a lap or result was deleted on the desktop) ───────
+    // The desktop sends the race's current laps and which riders still have a
+    // result; the cloud's copy is made to match, so a removed lap or result
+    // doesn't come back on the desktop's next download. Applied after the
+    // upserts above, which hold the latest values of the rows that remain.
+    const motoSnapshots = (payload["moto_race_snapshot"] ?? []) as Array<Record<string, unknown>>;
+    let snapshotsApplied = 0;
+    for (const snap of motoSnapshots) {
+      const motoId = mapMotoId(snap.moto_id);
+      const eventId = mapEventId(snap.event_id);
+      if (!motoId || !eventId || !await isClubEvent(eventId) || !await motoInEvent(motoId, eventId)) {
+        skip("moto_race_snapshot", { id: snap.id }, "moto not found for this club"); continue;
+      }
+      const keepRiders = new Set((Array.isArray(snap.result_rider_ids) ? snap.result_rider_ids : []).map(Number).filter(Boolean));
+      const cloudResults = await tx.select({ id: raceResultsTable.id, riderId: raceResultsTable.riderId })
+        .from(raceResultsTable).where(eq(raceResultsTable.motoId, motoId));
+      const gone = cloudResults.filter(r => !keepRiders.has(r.riderId)).map(r => r.id);
+      if (gone.length > 0) await tx.delete(raceResultsTable).where(inArray(raceResultsTable.id, gone));
+
+      const laps = (Array.isArray(snap.lap_crossings) ? snap.lap_crossings : []) as Array<Record<string, unknown>>;
+      await tx.delete(lapCrossingsTable).where(eq(lapCrossingsTable.motoId, motoId));
+      for (const c of laps) {
+        const rfidNumber = String(c.rfid_number ?? "");
+        const crossingTime = toDate(c.crossing_time);
+        if (!rfidNumber || !crossingTime) continue;
+        const requestedId = c.id != null && Number(c.id) > 0 ? Number(c.id) : undefined;
+        const clientId = requestedId && await idIsFree(lapCrossingsTable, requestedId) ? requestedId : undefined;
+        if (clientId) explicitIdTables.add("lap_crossings");
+        await tx.insert(lapCrossingsTable).values({
+          ...(clientId ? { id: clientId } : {}),
+          eventId,
+          motoId,
+          riderId:     c.rider_id != null ? Number(c.rider_id) : null,
+          rfidNumber,
+          crossingTime,
+          lapNumber:   Number(c.lap_number) || 0,
+          lapTimeMs:   Number(c.lap_time_ms) || 0,
+          readerId:    c.reader_id != null ? String(c.reader_id) : null,
+          antennaId:   c.antenna_id != null ? Number(c.antenna_id) : null,
+        });
+      }
+      snapshotsApplied++;
+      affectedMotoIds.add(motoId);
+      finalizeEventIds.add(eventId);
+    }
+    if (snapshotsApplied > 0) { results["moto_race_snapshot"] = snapshotsApplied; total += snapshotsApplied; }
+
+    // ── motos deleted on the desktop ─────────────────────────────────────────
+    // Same rule as the website's own delete: a finished race with results stays.
+    let motosDeleted = 0;
+    for (const rawId of ((deletes["motos"] ?? []) as unknown[]).map(Number).filter(Boolean)) {
+      const motoId = mapMotoId(rawId);
+      const [moto] = await tx.select({ id: motosTable.id, eventId: motosTable.eventId, status: motosTable.status })
+        .from(motosTable).where(eq(motosTable.id, motoId));
+      if (!moto) continue; // already gone
+      if (!await isClubEvent(moto.eventId)) { skip("motos_deleted", { id: rawId }, "moto not found for this club"); continue; }
+      if (moto.status === "completed") {
+        const [kept] = await tx.select({ id: raceResultsTable.id }).from(raceResultsTable).where(eq(raceResultsTable.motoId, motoId)).limit(1);
+        if (kept) { skip("motos_deleted", { id: rawId }, "race is finished and has results"); continue; }
+      }
+      await tx.delete(splitCrossingsTable).where(eq(splitCrossingsTable.motoId, motoId));
+      await tx.delete(lapCrossingsTable).where(eq(lapCrossingsTable.motoId, motoId));
+      await tx.delete(raceResultsTable).where(eq(raceResultsTable.motoId, motoId));
+      await tx.delete(motosTable).where(eq(motosTable.id, motoId));
+      affectedMotoIds.delete(motoId);
+      finalizeEventIds.add(moto.eventId);
+      motosDeleted++;
+    }
+    if (motosDeleted > 0) { results["motos_deleted"] = motosDeleted; total += motosDeleted; }
 
     // ── checkins ──────────────────────────────────────────────────────────────
     const checkins = (payload["checkins"] ?? []) as Array<{
@@ -1856,13 +1931,17 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
             // Only for motocross motos timed from laps: enduro tests are placed by
             // pass time (recomputed separately), and results entered by hand
             // (no lap data) keep the positions the desktop sent. DNF/DNS go last.
-            const [syncedMoto] = await db.select({ type: motosTable.type }).from(motosTable).where(eq(motosTable.id, motoId));
+            const [syncedMoto] = await db.select({ type: motosTable.type, status: motosTable.status }).from(motosTable).where(eq(motosTable.id, motoId));
             const allResults = await db
               .select()
               .from(raceResultsTable)
               .where(eq(raceResultsTable.motoId, motoId));
             const hasLapData = allResults.some(r => Array.isArray(r.lapTimes) && (r.lapTimes as unknown[]).length > 0);
-            if (allResults.length > 0 && syncedMoto?.type !== "enduro_test" && hasLapData) {
+            // A complete order from the desktop (1, 2, 3 … with no gaps) is kept: it is
+            // the desktop's own laps-then-time order, or a place the organizer corrected
+            // by hand there. Only an incomplete order is worked out again here.
+            if (allResults.length > 0 && syncedMoto?.type !== "enduro_test" && hasLapData
+              && positionsNeedSorting(allResults.map(r => r.position))) {
               const sorted = allResults
                 .map((r) => {
                   const laps = Array.isArray(r.lapTimes) ? (r.lapTimes as number[]) : [];
@@ -1881,6 +1960,10 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
                   .where(eq(raceResultsTable.id, sorted[i].id));
               }
             }
+            // The push carries finishing order, not points: score the finished race
+            // here (event table, club Auto DNF) so results, the event overall and
+            // series standings have points, as when a race finishes on the website.
+            if (motoNeedsScoringAfterPush(syncedMoto)) await scoreMotoPoints(motoId);
             const snapshot = await buildLeaderboard(motoId);
             if (snapshot) {
               if (startedMotoIds.has(motoId)) await startSharedAnnouncer(snapshot);

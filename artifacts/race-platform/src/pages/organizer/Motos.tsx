@@ -1954,7 +1954,7 @@ export default function Motos() {
         ...partnerIds.map(pid => updateMoto(pid, { status: "in_progress" } as any)),
       ]);
       await queryClient.invalidateQueries({ queryKey: getListMotosQueryKey(eventId) });
-      toast({ title: partnerIds.length > 0 ? `🏁 Staggered start — ${groupMembers.length} motos now live` : `🏁 Moto started — ${timingLabel} timing active` });
+      toast({ title: partnerIds.length > 0 ? `🏁 ${(motoObj as any)?.combinedStart ? "Combined" : "Staggered"} start — ${groupMembers.length} motos now live` : `🏁 Moto started — ${timingLabel} timing active` });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Could not start moto";
       toast({ title: "Couldn't start moto", description: msg, variant: "destructive" });
@@ -3366,7 +3366,7 @@ export default function Motos() {
                     {/* Staggered start badge */}
                     {(moto as any).staggeredOrder === 1 && (moto as any).staggeredGroupId && (
                       <span className="text-xs px-1.5 py-0.5 rounded border bg-primary/15 text-primary border-primary/30 flex items-center gap-1 font-semibold">
-                        <Link2 size={9} /> Staggered
+                        <Link2 size={9} /> {(moto as any).combinedStart ? "Combined start" : "Staggered"}
                       </span>
                     )}
                     {/* Race format pill — "15 min + 1 lap", "15 min", or "5 laps" */}

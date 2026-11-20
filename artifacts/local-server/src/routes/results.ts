@@ -5,6 +5,8 @@ import { AMA_POINTS, isLowerBetter, olympicPenalty } from "../lib/overallOrder";
 import { buildContingencyReport } from "@workspace/api-zod";
 import { computeEventOverall } from "../lib/eventOverall";
 import { lapTimeToMs } from "../lib/lapScoring";
+import { finishedMotoIds } from "../lib/scoringStyle";
+import { autoAdvanceAfterHeat } from "../lib/supercrossAdvance";
 import { ENDURO_ALL_CLASSES, loadEnduroRiderClasses, rerankEnduroTest } from "../lib/enduroScoring";
 
 const router = Router();
@@ -68,14 +70,15 @@ function calcPoints(opts: {
  * Points for a finished moto from its finishing order, with the event's points
  * table and the club's auto-DNF rule (the cloud's scoreMotoPoints). Run when a
  * race finishes on live timing or is finalized, so results and standings have
- * points without opening Enter Results. Enduro tests are scored by the enduro
- * overall, not here.
+ * points without opening Enter Results. Enduro tests are scored once per event
+ * from the enduro overall (scoreEnduroEventPoints).
  */
 export function scoreMotoPoints(motoId: number): void {
   try {
     const db = getDb();
     const moto = db.prepare("SELECT id, event_id, type FROM motos WHERE id = ?").get(motoId) as any;
-    if (!moto || moto.type === "practice" || moto.type === "enduro_test") return;
+    if (!moto || moto.type === "practice") return;
+    if (moto.type === "enduro_test") { scoreEnduroEventPoints(moto.event_id); return; }
     const rows = db.prepare("SELECT id, position, points, dnf, dns, lap_times FROM race_results WHERE moto_id = ?").all(motoId) as any[];
     if (rows.length === 0) return;
     const event = db.prepare("SELECT scoring_table_id, club_id FROM events WHERE id = ?").get(moto.event_id) as any;
@@ -111,6 +114,76 @@ export function scoreMotoPoints(motoId: number): void {
   } catch (err) {
     console.warn(`[results] could not score moto ${motoId}:`, err instanceof Error ? err.message : err);
   }
+}
+
+/**
+ * Enduro points: one award per rider per event, from their class's event
+ * overall position, scored with the event's points table. The award is stored
+ * on the rider's result in their latest finished test that they finished; their
+ * other test results store 0. Riders with no completed run or a time-check DQ
+ * score 0. (The website's scoreEnduroEventPoints.)
+ */
+export function scoreEnduroEventPoints(eventId: number): void {
+  try {
+    const db = getDb();
+    const overall = computeEventOverall(eventId);
+    const tests = overall.enduroTests ?? [];
+    if (overall.format !== "enduro" || tests.length === 0) return;
+    const event = db.prepare("SELECT scoring_table_id FROM events WHERE id = ?").get(eventId) as any;
+    const table = event?.scoring_table_id ? db.prepare("SELECT * FROM points_tables WHERE id = ?").get(event.scoring_table_id) as any : null;
+    const settings = {
+      scoringMethod: table ? String(table.scoring_method) : "fallback",
+      pointsScale: table ? (() => { try { return JSON.parse(table.points_scale || "[]") as number[]; } catch { return [] as number[]; } })() : [] as number[],
+      scoringFormula: table?.scoring_formula ?? null,
+    };
+    const testIds = tests.map(t => t.motoId);
+    // Latest test first.
+    const rows = db.prepare(
+      `SELECT rr.id, rr.rider_id, rr.points, rr.dnf, rr.dns
+         FROM race_results rr JOIN motos m ON m.id = rr.moto_id
+        WHERE rr.moto_id IN (${testIds.map(() => "?").join(",")})
+        ORDER BY m.moto_number DESC, m.id DESC`,
+    ).all(...testIds) as Array<{ id: number; rider_id: number; points: number | null; dnf: number; dns: number }>;
+    const save = db.prepare("UPDATE race_results SET points = ? WHERE id = ?");
+    for (const cls of overall.classes) {
+      const ranked = (r: (typeof cls.riders)[number]) => r.enduro != null && r.enduro.status !== "dq" && r.enduro.status !== "no_time";
+      const scored = cls.riders.filter(ranked);
+      for (const rider of cls.riders) {
+        const award = ranked(rider) ? calcPoints({
+          position: rider.position,
+          dnf: false,
+          dns: false,
+          totalStarters: scored.length,
+          classSize: cls.riders.length,
+          ...settings,
+          mainEventOnly: false,
+          motoType: "main",
+        }) : 0;
+        const mine = rows.filter(r => r.rider_id === rider.riderId);
+        const carrier = mine.find(r => r.dnf !== 1 && r.dns !== 1) ?? mine[0];
+        for (const r of mine) {
+          const points = r === carrier ? award : 0;
+          if (r.points !== points) save.run(points, r.id);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`[results] could not score enduro event ${eventId}:`, err instanceof Error ? err.message : err);
+  }
+}
+
+/** Follow-ups once a race finishes: points, and in Supercross the heat finishers go to the main. */
+export function afterMotoCompleted(motoId: number): void {
+  scoreMotoPoints(motoId);
+  autoAdvanceAfterHeat(motoId);
+}
+
+/**
+ * Score every finished race of these events again with each event's current
+ * scoring table, as the website does after a table or Scoring Format change.
+ */
+export function rescoreEvents(eventIds: number[]): void {
+  for (const motoId of finishedMotoIds(eventIds)) scoreMotoPoints(motoId);
 }
 
 // GET /events/:eventId/results  (organizer view — no auth check needed; returns all)
@@ -232,12 +305,10 @@ router.post("/events/:eventId/results", (req, res) => {
       pointsScale = (() => { try { return JSON.parse(table.points_scale || "[]"); } catch { return []; } })();
       scoringFormula = table.scoring_formula ?? null;
       mainEventOnly = table.main_event_only === 1;
-      autoDnfEnabled = table.auto_dnf_enabled === 1;
-      autoDnfThreshold = table.auto_dnf_threshold ?? 75;
     }
   }
 
-  // Club-level auto-DNF overrides the scoring table setting (mirrors cloud behaviour)
+  // Auto DNF is a club-level setting only, as on the website.
   if (event?.club_id) {
     const club = db
       .prepare("SELECT auto_dnf_enabled, auto_dnf_threshold FROM clubs WHERE id = ?")
@@ -250,13 +321,13 @@ router.post("/events/:eventId/results", (req, res) => {
 
   const totalStarters = (raw as any[]).filter((r: any) => !r.dns).length;
 
-  // Compute leader laps (for autoDnf check) — use the max lap count among finishers
-  const leaderLaps = Math.max(
-    0,
-    ...(raw as any[])
-      .filter((r: any) => !r.dns && !r.dnf)
-      .map((r: any) => Array.isArray(r.lapTimes) ? r.lapTimes.length : 0),
-  );
+  // The leader for Auto DNF is the rider in 1st who finished, as on the website
+  // (only looked up when Auto DNF is on; no laps entered for them = no Auto DNF).
+  let leaderLaps: number | undefined;
+  if (autoDnfEnabled) {
+    const leader = (raw as any[]).find((r: any) => r.position === 1 && !r.dnf && !r.dns);
+    if (leader) leaderLaps = Array.isArray(leader.lapTimes) ? leader.lapTimes.length : 0;
+  }
 
   // The page sends each rider's result without a row id and with lap times as
   // text ("1:05.32"). One row per rider in the moto: the rider's existing row is
@@ -324,7 +395,7 @@ router.post("/events/:eventId/results", (req, res) => {
 
   upsertTx();
   // Enduro tests: positions come from run times within each class.
-  if (isEnduroTest) rerankEnduroTest(Number(motoId));
+  if (isEnduroTest) { rerankEnduroTest(Number(motoId)); scoreEnduroEventPoints(eventId); }
 
   // Return updated results for this moto
   const updated = db
@@ -381,7 +452,7 @@ router.patch("/events/:eventId/results/:resultId/laps", (req, res) => {
   // Like the cloud: laps are capped to the moto's lap count and the total time
   // is worked out from them (the page sends the laps only; the total used to be
   // wiped here).
-  const lapMoto = db.prepare("SELECT lap_count, type FROM motos WHERE id = ?").get(existing.moto_id) as { lap_count: number | null; type: string | null } | undefined;
+  const lapMoto = db.prepare("SELECT lap_count, type, status FROM motos WHERE id = ?").get(existing.moto_id) as { lap_count: number | null; type: string | null; status: string | null } | undefined;
   const capped = (lapMoto?.lap_count != null && lapMoto.lap_count > 0 ? lapTimes.slice(0, lapMoto.lap_count) : lapTimes) as number[];
   const totalMs = capped.reduce((s, ms) => s + ms, 0);
   const formatMs = (ms: number) => ms <= 0
@@ -391,7 +462,10 @@ router.patch("/events/:eventId/results/:resultId/laps", (req, res) => {
 
   db.prepare("UPDATE race_results SET lap_times = ?, total_time = ? WHERE id = ?")
     .run(JSON.stringify(capped), totalTime, resultId);
-  if (lapMoto?.type === "enduro_test") rerankEnduroTest(existing.moto_id);
+  if (lapMoto?.type === "enduro_test") {
+    rerankEnduroTest(existing.moto_id);
+    if (lapMoto.status === "completed") scoreEnduroEventPoints(eventId);
+  }
 
   return res.json({ id: existing.id, lapTimes: capped, totalTime });
 });
@@ -581,7 +655,7 @@ router.post("/events/:eventId/results/publish", (req, res) => {
   db.prepare(
     publishedBool
       ? "UPDATE motos SET results_finalized_at = ? WHERE event_id = ? AND status = 'completed' AND type != 'practice' AND results_finalized_at IS NULL"
-      : "UPDATE motos SET results_finalized_at = NULL WHERE event_id = ? AND results_finalized_at IS NOT NULL",
+      : "UPDATE motos SET results_finalized_at = NULL WHERE event_id = ? AND status = 'completed' AND type != 'practice' AND results_finalized_at IS NOT NULL",
   ).run(...(publishedBool ? [now, eventId] : [eventId]));
 
   db.prepare(

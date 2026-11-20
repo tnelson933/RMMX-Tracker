@@ -3,6 +3,7 @@ import { getDb } from "../db";
 import { evaluateFormula } from "../lib/safeFormula";
 import { newDesktopId } from "../lib/desktop-ids";
 import { isoTime } from "../lib/cloud-shape";
+import { rescoreEvents } from "./results";
 
 const router = Router();
 
@@ -147,6 +148,14 @@ router.patch("/points-tables/:tableId", (req, res) => {
 
   values.push(id);
   db.prepare(`UPDATE points_tables SET ${fields.join(", ")} WHERE id = ?`).run(...(values as any[]));
+
+  // Saving a table in use re-scores the finished races of every event using it, as on the website.
+  const scoringChanged = ["scoringMethod", "mainEventOnly", "pointsScale", "scoringFormula", "autoDnfEnabled", "autoDnfThreshold"]
+    .some(k => req.body[k] !== undefined);
+  if (scoringChanged) {
+    const users = db.prepare("SELECT id FROM events WHERE scoring_table_id = ?").all(id) as Array<{ id: number }>;
+    rescoreEvents(users.map(e => e.id));
+  }
 
   const row = db.prepare("SELECT * FROM points_tables WHERE id = ?").get(id) as any;
   if (!row) return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });

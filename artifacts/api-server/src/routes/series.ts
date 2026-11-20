@@ -5,6 +5,7 @@ import { eq, inArray, and } from "drizzle-orm";
 import { computeSeriesStandings } from "../lib/seriesStandings";
 import { scoringTableUsable } from "../lib/scoringTables";
 import { recalculateSeriesPoints } from "./results";
+import { SCORING_STYLE_MISMATCH, seriesMismatchesEvents } from "../lib/seriesScoringMatch";
 
 const router = Router();
 
@@ -44,6 +45,9 @@ router.post("/series", async (req, res) => {
   if (!(await scoringTableUsable(scoringTableId, Number(clubId)))) return res.status(400).json({ error: "That scoring table isn't available to this club." });
   const foreignOnCreate = await foreignEventIds(eventIds, Number(clubId));
   if (foreignOnCreate.length > 0) return res.status(400).json({ error: `Events ${foreignOnCreate.join(", ")} don't belong to this club.` });
+  if (await seriesMismatchesEvents(null, Number(clubId), scoringTableId, uniqueIds(eventIds))) {
+    return res.status(400).json({ error: SCORING_STYLE_MISMATCH });
+  }
   const [series] = await db.insert(seriesTable).values({
     name,
     clubId,
@@ -74,21 +78,13 @@ router.patch("/series/:seriesId", async (req, res) => {
     return res.status(400).json({ error: "That scoring table isn't available to this club." });
   }
 
-  // Events must match the series' scoring format, whether the events or the table change.
-  const checkIds = eventIds !== undefined ? uniqueIds(eventIds) : uniqueIds(existingSeries.eventIds);
-  if (checkIds.length > 0 && (eventIds !== undefined || scoringTableId !== undefined)) {
-    const tableId = scoringTableId !== undefined ? (scoringTableId ?? null) : existingSeries.scoringTableId;
-
-    if (tableId) {
-      const events = await db.select({ id: eventsTable.id, scoringTableId: eventsTable.scoringTableId })
-        .from(eventsTable).where(inArray(eventsTable.id, checkIds));
-      const mismatched = events.filter(e => e.scoringTableId !== tableId);
-      if (mismatched.length > 0) {
-        const mismatchedIds = mismatched.map(e => e.id).join(", ");
-        return res.status(400).json({
-          error: `Events ${mismatchedIds} use a different scoring format than this series. All events in a series must use the same scoring format.`,
-        });
-      }
+  // Every event that counts toward the series (listed or linked per class)
+  // must be scored the same way, whether the events or the table change.
+  if (eventIds !== undefined || scoringTableId !== undefined) {
+    const nextTable = scoringTableId !== undefined ? (scoringTableId ?? null) : existingSeries.scoringTableId;
+    const nextEvents = eventIds !== undefined ? uniqueIds(eventIds) : uniqueIds(existingSeries.eventIds);
+    if (await seriesMismatchesEvents(seriesId, existingSeries.clubId, nextTable, nextEvents)) {
+      return res.status(400).json({ error: SCORING_STYLE_MISMATCH });
     }
   }
 

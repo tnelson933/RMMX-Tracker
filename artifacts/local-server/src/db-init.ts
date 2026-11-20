@@ -467,6 +467,29 @@ export function initDb() {
       INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('race_results', NEW.id, 'upsert');
     END;
 
+    -- Deletions made on the desktop. A removed lap or result queues a snapshot
+    -- of that race ('moto_race_snapshot', record_id = moto id): the sync sends
+    -- the race's current laps and which riders still have a result, and the
+    -- cloud makes its copy match. A removed race is sent as a delete.
+    CREATE TRIGGER IF NOT EXISTS _wq_lap_crossings_delete
+    AFTER DELETE ON lap_crossings
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('moto_race_snapshot', OLD.moto_id, 'upsert');
+    END;
+    CREATE TRIGGER IF NOT EXISTS _wq_race_results_delete
+    AFTER DELETE ON race_results
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('moto_race_snapshot', OLD.moto_id, 'upsert');
+    END;
+    CREATE TRIGGER IF NOT EXISTS _wq_motos_delete
+    AFTER DELETE ON motos
+    WHEN NOT EXISTS (SELECT 1 FROM _cloud_pull_guard)
+    BEGIN
+      INSERT INTO _write_queue (table_name, record_id, operation) VALUES ('motos', OLD.id, 'delete');
+    END;
+
     -- motos (moto status, lineup changes)
     CREATE TRIGGER IF NOT EXISTS _wq_motos_insert
     AFTER INSERT ON motos
@@ -719,6 +742,8 @@ export function initDb() {
     ["motos", "countdown_seconds      INTEGER"],
     ["motos", "staggered_order        INTEGER"],
     ["motos", "staggered_group_id     INTEGER"],
+    // The start group leaves the gate together (classes combined on one gate, scored separately).
+    ["motos", "combined_start         INTEGER DEFAULT 0"],
     // Set when the organizer finalizes the race: results become official.
     ["motos", "results_finalized_at   TEXT"],
     // Enduro test option the website stores (a dedicated start gate). Nullable:
