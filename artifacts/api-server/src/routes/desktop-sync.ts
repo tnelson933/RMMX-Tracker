@@ -1301,7 +1301,10 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
       if (!await isClubEvent(eventId)) { skip("registrations", r, "event not found for this club"); continue; }
 
       // Registration rows are class entries: match the pushed row by id when it
-      // is this event's row for this rider, otherwise fall back to (event, rider).
+      // is this event's row for this rider, otherwise fall back to (event, rider,
+      // class). Without the class, a rider's second class entry made offline
+      // overwrote the first one (the 450 A entry was lost into the 250 B row).
+      const pushedClass = r.race_class != null ? String(r.race_class) : null;
       const requestedRegId = r.id != null && Number(r.id) > 0 ? Number(r.id) : undefined;
       let [existing] = requestedRegId
         ? await tx
@@ -1323,6 +1326,7 @@ router.post("/clubs/:clubId/desktop-push", async (req, res) => {
             and(
               eq(registrationsTable.eventId, eventId),
               eq(registrationsTable.riderId, riderId),
+              ...(pushedClass != null ? [eq(registrationsTable.raceClass, pushedClass)] : []),
             ),
           );
       }

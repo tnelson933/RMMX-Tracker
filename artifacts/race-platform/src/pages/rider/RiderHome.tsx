@@ -16,6 +16,7 @@ import {
   EmptyCard, EventCard, FormStrip, FormTrendCard, NextRaceHero, ResultCard, RockyRow, SectionHeader, type HomeResult,
 } from "@/components/rider/home/HomeCards";
 import { FollowingFeed } from "@/components/rider/home/FollowingFeed";
+import { SuggestedRiders } from "@/components/rider/home/SuggestedRiders";
 import { fmtToday, greeting, localDateString, placeLabel } from "@/components/rider/home/format";
 
 const UPCOMING = new Set(["registration_open", "registration_closed", "race_day"]);
@@ -176,6 +177,7 @@ export default function RiderHome() {
 
           {/* ── Riders you follow ── */}
           <FollowingFeed />
+          <SuggestedRiders />
         </div>
       )}
     </RiderLayout>

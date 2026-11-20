@@ -1,7 +1,11 @@
 /**
  * A rider on the Profile tab. Checked riders get an always-open card with three
- * tiles (Racer Profile, Career Stats, Maintenance); unchecked riders get a slim
- * row. Tapping the checkbox shows or hides the rider across the app.
+ * tiles (Racer Profile, Career Stats, Maintenance) and their transponders (with
+ * Edit); unchecked riders get a slim row that lists the numbers. Tapping the
+ * checkbox shows or hides the rider across the app.
+ *
+ * Transponder numbers come from the owner/manager-only list
+ * (/api/rider/profiles/:id/transponders): never on public profiles.
  */
 import { Feather } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -10,6 +14,7 @@ import { Pressable, Text, View } from "react-native";
 import Svg, { Circle, Polyline } from "react-native-svg";
 
 import { NumberPlate } from "@/components/NumberPlate";
+import { RiderTransponders, type RiderTransponder } from "@/components/RiderTransponders";
 import { RiderAvatar } from "@/components/RiderPhoto";
 import { useRiderAuth, type RiderProfile } from "@/context/AuthContext";
 import { fonts } from "@/constants/fonts";
@@ -84,6 +89,17 @@ export function RiderCard({ profile, selected, isOnlyOne, onToggle }: {
   const router = useRouter();
   const { riderFetch } = useRiderAuth();
   const [data, setData] = useState<CardData | null>(null);
+  const [transponders, setTransponders] = useState<RiderTransponder[] | null>(null);
+  const [editingTransponders, setEditingTransponders] = useState(false);
+
+  const loadTransponders = useCallback(async () => {
+    try {
+      const r = await riderFetch(`/api/rider/profiles/${profile.id}/transponders`);
+      if (r.ok) setTransponders(await r.json());
+    } catch { /* keep what's shown */ }
+  }, [profile.id, riderFetch]);
+  useFocusEffect(useCallback(() => { void loadTransponders(); }, [loadTransponders]));
+  const transponderLine = (transponders ?? []).map(t => `${t.kind === "rfid" ? "RFID" : "RM TrackR"} ${t.number}`).join("  ·  ");
 
   useFocusEffect(useCallback(() => {
     if (!selected) return;
@@ -130,6 +146,9 @@ export function RiderCard({ profile, selected, isOnlyOne, onToggle }: {
         <View style={{ flex: 1 }}>
           <Text numberOfLines={1} style={{ fontSize: 15, color: colors.foreground, fontFamily: fonts.bold }}>{name}</Text>
           <Text numberOfLines={1} style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: fonts.regular, marginTop: 1 }}>{summary}</Text>
+          {transponderLine ? (
+            <Text numberOfLines={1} style={{ fontSize: 12, color: colors.foreground, fontFamily: fonts.semibold, marginTop: 1, fontVariant: ["tabular-nums"] }}>{transponderLine}</Text>
+          ) : null}
         </View>
         <Check on={false} colors={colors} />
       </Pressable>
@@ -184,6 +203,34 @@ export function RiderCard({ profile, selected, isOnlyOne, onToggle }: {
             {next ? next.label : hasBike ? "Set up reminders" : "Add your bike"}
           </Text>
         </Tile>
+      </View>
+
+      {/* Transponders: only this account sees them (owner or manager). */}
+      <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 10, gap: 6 }} testID="card-transponders">
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Feather name="radio" size={13} color={colors.mutedForeground} />
+          <Text style={{ flex: 1, fontSize: 11, fontFamily: fonts.display, letterSpacing: 1, textTransform: "uppercase", color: colors.mutedForeground }}>Transponders</Text>
+          <Pressable
+            onPress={() => { if (editingTransponders) void loadTransponders(); setEditingTransponders(v => !v); }}
+            hitSlop={10} accessibilityRole="button"
+            accessibilityLabel={editingTransponders ? `Done editing ${name}'s transponders` : `Edit ${name}'s transponders`}>
+            <Text style={{ fontSize: 13, color: colors.primaryText, fontFamily: fonts.semibold }}>{editingTransponders ? "Done" : "Edit"}</Text>
+          </Pressable>
+        </View>
+        {editingTransponders ? (
+          <RiderTransponders riderId={profile.id} riderFetch={riderFetch} fallback={{ trackr: null, rfid: profile.rfidNumber }} />
+        ) : transponders == null ? null : transponders.length === 0 ? (
+          <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: fonts.regular }}>None yet. Tap Edit to add your RM TrackR or RFID sticker.</Text>
+        ) : (
+          transponders.map(t => (
+            <View key={t.id} style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
+              <Text style={{ fontSize: 16, color: colors.foreground, fontFamily: fonts.bold, fontVariant: ["tabular-nums"] }} selectable>{t.number}</Text>
+              <Text numberOfLines={1} style={{ flex: 1, fontSize: 12, color: colors.mutedForeground, fontFamily: fonts.regular }}>
+                {t.kindName}{t.label ? ` · ${t.label}` : ""}
+              </Text>
+            </View>
+          ))
+        )}
       </View>
     </View>
   );

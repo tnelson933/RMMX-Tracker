@@ -3,7 +3,7 @@ import { RiderAvatar } from "@/components/RiderPhoto";
 import { useBottomSpace } from "@/hooks/useBottomSpace";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
@@ -30,6 +30,7 @@ export default function FollowScreen() {
   const router = useRouter();
   const { riderFetch } = useRiderAuth();
   const [q, setQ] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
   const [results, setResults] = useState<FoundRider[]>([]);
   const [following, setFollowing] = useState<Followed[]>([]);
   const [searching, setSearching] = useState(false);
@@ -154,12 +155,26 @@ export default function FollowScreen() {
         </Pressable>
         <Text style={s.headerTitle}>Find riders</Text>
       </View>
-      <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
+      {/* The keyboard opens only when the rider taps Search; scrolling, the
+          search key, or "Done" puts it away. */}
+      <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         <View style={s.searchBox}>
           <Feather name="search" size={16} color={colors.mutedForeground} />
           <TextInput value={q} onChangeText={setQ} placeholder="Search riders by name" placeholderTextColor={colors.mutedForeground}
-            style={s.searchInput} autoCorrect={false} autoFocus returnKeyType="search" />
+            style={s.searchInput} autoCorrect={false} returnKeyType="search"
+            onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)} onSubmitEditing={() => Keyboard.dismiss()}
+            accessibilityLabel="Search riders by name" />
           {searching && <ActivityIndicator size="small" color={colors.mutedForeground} />}
+          {q.length > 0 && !searching && (
+            <Pressable onPress={() => setQ("")} hitSlop={8} accessibilityRole="button" accessibilityLabel="Clear search">
+              <Feather name="x-circle" size={16} color={colors.mutedForeground} />
+            </Pressable>
+          )}
+          {searchFocused && (
+            <Pressable onPress={() => Keyboard.dismiss()} hitSlop={8} accessibilityRole="button" accessibilityLabel="Hide keyboard">
+              <Text style={{ fontSize: 14, color: colors.primaryText, fontFamily: "Roboto_600SemiBold" }}>Done</Text>
+            </Pressable>
+          )}
         </View>
         <Text style={s.muted}>Follow friends, teammates or rivals. Their results show on your home screen. You get a notification when they're about to start a race (turn it off with the bell) and when their results are official.</Text>
 

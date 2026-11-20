@@ -27,6 +27,7 @@ import {
 import { FormStrip, FormTrendCard, NextRaceHero, RockyRow } from "@/components/HomeCards";
 import { pickNextRace } from "@/lib/home";
 import { FollowingFeed } from "@/components/FollowingFeed";
+import { SuggestedRiders } from "@/components/SuggestedRiders";
 import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
 import { NoProfileLinked } from "@/components/NoProfileLinked";
@@ -426,6 +427,7 @@ export default function HomeScreen() {
 
         {/* ── Riders you follow ── */}
         {hasProfile && <FollowingFeed refreshKey={feedRefreshKey} />}
+        {hasProfile && <SuggestedRiders refreshKey={feedRefreshKey} onFollowed={() => setFeedRefreshKey(k => k + 1)} />}
 
         {/* Footer */}
         <View style={{ height: insets.bottom + 170 }} />

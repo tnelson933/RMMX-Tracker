@@ -86,14 +86,14 @@ export function RiderTranspondersCard({ riderId }: { riderId: number }) {
 
       <div className="space-y-2">
         {transponders.map((t) => (
-          <div key={t.id} className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
+          <div key={t.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
             <Badge variant={t.kind === "rfid" ? "secondary" : "default"} className="flex-shrink-0">{t.kindName}</Badge>
-            <span className="flex-1 min-w-0">
-              <span className="font-mono text-sm font-bold break-all">{t.number}</span>
+            <span className="min-w-[8rem] flex-1">
+              <span className="font-mono text-sm font-bold break-words">{t.number}</span>
               {t.label && <span className="text-xs text-muted-foreground ml-2">{t.label}</span>}
             </span>
             {confirmId === t.id ? (
-              <span className="flex gap-1">
+              <span className="ml-auto flex gap-1">
                 <Button size="sm" variant="destructive" disabled={removingId !== null} onClick={() => remove(t)}>
                   {removingId === t.id ? <Loader2 size={14} className="animate-spin" /> : "Delete"}
                 </Button>

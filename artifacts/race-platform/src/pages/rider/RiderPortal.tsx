@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import {
   User, UserPlus, TrendingUp, Check, ChevronRight, ChevronDown, ChevronUp, Bike, Trash2, Plus, Loader2,
-  Users, Zap, Smartphone, Link2, Shield, LogOut, AlertCircle,
+  Users, Zap, Smartphone, Link2, Shield, LogOut, AlertCircle, Radio,
 } from "lucide-react";
 import { cardSummary, nextMaintenance, recentFinishes } from "@workspace/rider-insights/profileCard";
 import { FollowingFeed } from "@/pages/rider/RiderFollowing";
@@ -13,6 +13,7 @@ import { RiderLayout } from "@/components/layout/RiderLayout";
 import { useRiderAuth } from "@/contexts/RiderAuthContext";
 import { useActiveRiders } from "@/lib/rider-active";
 import { riderApi, type RiderBike, type RiderProfile } from "@/lib/rider-api";
+import { RiderTranspondersCard, useRiderTransponders } from "@/components/rider/RiderTransponders";
 
 // The rider app's Profile tab (rider-app/app/(tabs)/profile.tsx and
 // components/RiderCard.tsx): checked riders get the full card with three tiles,
@@ -60,6 +61,10 @@ function RiderCard({ profile, selected, isOnlyOne, onToggle }: {
   profile: RiderProfile; selected: boolean; isOnlyOne: boolean; onToggle: () => void;
 }) {
   const { data } = useQuery({ queryKey: ["rider-card", profile.id], queryFn: () => riderApi.card(profile.id), enabled: selected });
+  // Owner/manager-only list: transponder numbers never show on public profiles.
+  const { data: transponders } = useRiderTransponders(profile.id);
+  const [editingTransponders, setEditingTransponders] = useState(false);
+  const transponderLine = (transponders ?? []).map(t => `${t.kind === "rfid" ? "RFID" : "RM TrackR"} ${t.number}`).join("  ·  ");
   const name = `${profile.firstName} ${profile.lastName}`.trim();
   const summary = cardSummary(profile);
   const checkLabel = selected ? (isOnlyOne ? `${name} is shown. At least one rider stays checked.` : `Hide ${name}`) : `Show ${name}`;
@@ -78,6 +83,7 @@ function RiderCard({ profile, selected, isOnlyOne, onToggle }: {
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[15px] font-bold text-white">{name}</span>
           <span className="block truncate text-[12px] text-[#A8A8A8]">{summary}</span>
+          {transponderLine && <span className="block truncate text-[12px] font-semibold tabular-nums text-white">{transponderLine}</span>}
         </span>
         <CheckCircle on={false} />
       </button>
@@ -125,6 +131,33 @@ function RiderCard({ profile, selected, isOnlyOne, onToggle }: {
             {next ? next.label : hasBike ? "Set up reminders" : "Add your bike"}
           </span>
         </Tile>
+      </div>
+
+      {/* Transponders: only this account sees them (owner or manager). */}
+      <div className="space-y-2 border-t border-[#3A3A3A] pt-3">
+        <div className="flex items-center gap-2">
+          <Radio size={13} className="text-[#A8A8A8]" aria-hidden />
+          <span className="flex-1 font-heading text-[12px] font-bold uppercase tracking-[1px] text-[#A8A8A8]">Transponders</span>
+          <button type="button" onClick={() => setEditingTransponders(v => !v)} aria-expanded={editingTransponders}
+            aria-label={editingTransponders ? `Done editing ${name}'s transponders` : `Edit ${name}'s transponders`}
+            className="min-h-[32px] px-1 text-[14px] font-semibold text-white underline-offset-2 hover:underline">
+            {editingTransponders ? "Done" : "Edit"}
+          </button>
+        </div>
+        {editingTransponders ? (
+          <RiderTranspondersCard riderId={profile.id} />
+        ) : transponders == null ? null : transponders.length === 0 ? (
+          <p className="text-[14px] text-[#A8A8A8]">None yet. Click Edit to add your RM TrackR or RFID sticker.</p>
+        ) : (
+          <ul className="space-y-1">
+            {transponders.map(t => (
+              <li key={t.id} className="flex items-baseline gap-2">
+                <span className="font-mono text-[16px] font-bold text-white">{t.number}</span>
+                <span className="truncate text-[13px] text-[#A8A8A8]">{t.kindName}{t.label ? ` · ${t.label}` : ""}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   );
