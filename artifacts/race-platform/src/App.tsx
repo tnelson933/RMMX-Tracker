@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
+import { Suspense, lazy, useEffect } from "react";
+import { Switch, Route, Router as WouterRouter, Redirect, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -7,74 +7,137 @@ import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { RiderAuthProvider, useRiderAuth } from "@/contexts/RiderAuthContext";
 import { BroadcastProvider } from "@/contexts/BroadcastContext";
 import { PublicLayout } from "@/components/layout/PublicLayout";
-import { OrganizerLayout } from "@/components/layout/OrganizerLayout";
-import { OfflineBanner } from "@/components/OfflineBanner";
-import { DesktopSyncModal } from "@/components/DesktopSyncModal";
-import { DesktopSerialModal } from "@/components/DesktopSerialModal";
 import NotFound from "@/pages/not-found";
+import { OptionalLazy, RouteBoundary, RouteErrorBoundary, RouteLoading } from "@/components/RouteLoading";
+import { lazyPage, preloadWhenIdle } from "@/lib/lazyPage";
 
+// Pages download on demand: a spectator opening the home page or a live
+// leaderboard doesn't download the organizer portal. Home stays in the main
+// bundle because it's the most common way in.
 import Home from "@/pages/public/Home";
-import RiderAppLanding from "@/pages/public/RiderAppLanding";
-import PhoneLive from "@/pages/public/PhoneLive";
-import RiderLiveWatch from "@/pages/public/RiderLiveWatch";
-import Results from "@/pages/public/Results";
-import EventResults from "@/pages/public/EventResults";
-import Leaderboard from "@/pages/public/Leaderboard";
-import Login from "@/pages/public/Login";
-import ForgotPassword from "@/pages/public/ForgotPassword";
-import Register from "@/pages/public/Register";
-import PdfView from "@/pages/public/PdfView";
-import LiveLeaderboard from "@/pages/public/LiveLeaderboard";
-import PublicRacer from "@/pages/public/PublicRacer";
 
-import Dashboard from "@/pages/organizer/Dashboard";
-import EventLayout from "@/pages/organizer/EventLayout";
-import EventsList from "@/pages/organizer/EventsList";
-import Riders from "@/pages/organizer/RidersList";
-import RiderDetail from "@/pages/organizer/RiderDetail";
-import RfidManagement from "@/pages/organizer/RfidManagement";
-import ReaderSetup from "@/pages/organizer/ReaderSetup";
-import OfflineMode from "@/pages/organizer/OfflineMode";
-import OfflineSync from "@/pages/organizer/OfflineSync";
-import Series from "@/pages/organizer/Series";
-import PointsTables from "@/pages/organizer/PointsTables";
-import ClubsAdmin from "@/pages/organizer/ClubsAdmin";
-import UsersAdmin from "@/pages/organizer/UsersAdmin";
-import AdminNotifications from "@/pages/organizer/AdminNotifications";
-import SetPassword from "@/pages/public/SetPassword";
-import SupportDecision from "@/pages/public/SupportDecision";
-import SupportTickets from "@/pages/organizer/SupportTickets";
-import RaceGasAdmin from "@/pages/organizer/RaceGasAdmin";
-import StripeConnect from "@/pages/organizer/StripeConnect";
-import StandalonePractice from "@/pages/organizer/StandalonePractice";
-import DiscountCodesPage from "@/pages/organizer/DiscountCodes";
-import TeamPage from "@/pages/organizer/TeamPage";
-import StaffPage from "@/pages/organizer/StaffPage";
-import { Notifications } from "@/pages/organizer/Notifications";
-import GateSchedulePage from "@/pages/organizer/GateSchedulePage";
-import MobileGateSchedulePage from "@/pages/organizer/MobileGateSchedulePage";
-import RaceDayDisplayPage from "@/pages/organizer/RaceDayDisplayPage";
-import NoAccessPage from "@/pages/organizer/NoAccessPage";
-import RiderLogin from "@/pages/rider/RiderLogin";
-import RiderPortal from "@/pages/rider/RiderPortal";
-import RiderHistory from "@/pages/rider/RiderHistory";
-import RiderCreateProfile from "@/pages/rider/RiderCreateProfile";
-import RmCash from "@/pages/rider/RmCash";
-import RacerProfile from "@/pages/rider/RacerProfile";
-import RiderFollowing from "@/pages/rider/RiderFollowing";
-import RiderHome from "@/pages/rider/RiderHome";
-import RiderRaces from "@/pages/rider/RiderRaces";
-import RiderResults from "@/pages/rider/RiderResults";
-import RiderTrain from "@/pages/rider/RiderTrain";
-import RiderMechanic from "@/pages/rider/RiderMechanic";
-import WatchLive from "@/pages/public/WatchLive";
-import HandScanner from "@/pages/public/HandScanner";
-import EventWidget from "@/pages/public/EventWidget";
-import SeriesWidget from "@/pages/public/SeriesWidget";
-import PrivacyPolicy from "@/pages/public/PrivacyPolicy";
-import TermsAndConditions from "@/pages/public/TermsAndConditions";
-import DeleteAccount from "@/pages/public/DeleteAccount";
-import ResetRiderPassword from "@/pages/rider/ResetRiderPassword";
+// ── Spectator pages (preloaded while idle on the home page) ──
+const Results = lazyPage(() => import("@/pages/public/Results"));
+const EventResults = lazyPage(() => import("@/pages/public/EventResults"));
+const LiveLeaderboard = lazyPage(() => import("@/pages/public/LiveLeaderboard"));
+const WatchLive = lazyPage(() => import("@/pages/public/WatchLive"));
+const Leaderboard = lazyPage(() => import("@/pages/public/Leaderboard"));
+const PublicRacer = lazyPage(() => import("@/pages/public/PublicRacer"));
+
+// ── Other public pages ──
+const RiderAppLanding = lazyPage(() => import("@/pages/public/RiderAppLanding"));
+const PhoneLive = lazyPage(() => import("@/pages/public/PhoneLive"));
+const RiderLiveWatch = lazyPage(() => import("@/pages/public/RiderLiveWatch"));
+const Login = lazyPage(() => import("@/pages/public/Login"));
+const ForgotPassword = lazyPage(() => import("@/pages/public/ForgotPassword"));
+const Register = lazyPage(() => import("@/pages/public/Register"));
+const PdfView = lazyPage(() => import("@/pages/public/PdfView"));
+const SetPassword = lazyPage(() => import("@/pages/public/SetPassword"));
+const SupportDecision = lazyPage(() => import("@/pages/public/SupportDecision"));
+const HandScanner = lazyPage(() => import("@/pages/public/HandScanner"));
+const EventWidget = lazyPage(() => import("@/pages/public/EventWidget"));
+const SeriesWidget = lazyPage(() => import("@/pages/public/SeriesWidget"));
+const PrivacyPolicy = lazyPage(() => import("@/pages/public/PrivacyPolicy"));
+const TermsAndConditions = lazyPage(() => import("@/pages/public/TermsAndConditions"));
+const DeleteAccount = lazyPage(() => import("@/pages/public/DeleteAccount"));
+const GateSchedulePage = lazyPage(() => import("@/pages/organizer/GateSchedulePage"));
+const MobileGateSchedulePage = lazyPage(() => import("@/pages/organizer/MobileGateSchedulePage"));
+
+// ── Rider portal ──
+const RiderLogin = lazyPage(() => import("@/pages/rider/RiderLogin"));
+const ResetRiderPassword = lazyPage(() => import("@/pages/rider/ResetRiderPassword"));
+const RiderPortal = lazyPage(() => import("@/pages/rider/RiderPortal"));
+const RiderHistory = lazyPage(() => import("@/pages/rider/RiderHistory"));
+const RiderCreateProfile = lazyPage(() => import("@/pages/rider/RiderCreateProfile"));
+const RmCash = lazyPage(() => import("@/pages/rider/RmCash"));
+const RacerProfile = lazyPage(() => import("@/pages/rider/RacerProfile"));
+const RiderFollowing = lazyPage(() => import("@/pages/rider/RiderFollowing"));
+const RiderHome = lazyPage(() => import("@/pages/rider/RiderHome"));
+const RiderRaces = lazyPage(() => import("@/pages/rider/RiderRaces"));
+const RiderResults = lazyPage(() => import("@/pages/rider/RiderResults"));
+const RiderTrain = lazyPage(() => import("@/pages/rider/RiderTrain"));
+const RiderMechanic = lazyPage(() => import("@/pages/rider/RiderMechanic"));
+
+// ── Organizer portal (preloaded while idle once signed in, for offline use) ──
+const Dashboard = lazyPage(() => import("@/pages/organizer/Dashboard"));
+const EventLayout = lazyPage(() => import("@/pages/organizer/EventLayout"));
+const EventsList = lazyPage(() => import("@/pages/organizer/EventsList"));
+const Riders = lazyPage(() => import("@/pages/organizer/RidersList"));
+const RiderDetail = lazyPage(() => import("@/pages/organizer/RiderDetail"));
+const RfidManagement = lazyPage(() => import("@/pages/organizer/RfidManagement"));
+const ReaderSetup = lazyPage(() => import("@/pages/organizer/ReaderSetup"));
+const OfflineMode = lazyPage(() => import("@/pages/organizer/OfflineMode"));
+const OfflineSync = lazyPage(() => import("@/pages/organizer/OfflineSync"));
+const Series = lazyPage(() => import("@/pages/organizer/Series"));
+const PointsTables = lazyPage(() => import("@/pages/organizer/PointsTables"));
+const ClubsAdmin = lazyPage(() => import("@/pages/organizer/ClubsAdmin"));
+const UsersAdmin = lazyPage(() => import("@/pages/organizer/UsersAdmin"));
+const AdminNotifications = lazyPage(() => import("@/pages/organizer/AdminNotifications"));
+const SupportTickets = lazyPage(() => import("@/pages/organizer/SupportTickets"));
+const RaceGasAdmin = lazyPage(() => import("@/pages/organizer/RaceGasAdmin"));
+const StripeConnect = lazyPage(() => import("@/pages/organizer/StripeConnect"));
+const StandalonePractice = lazyPage(() => import("@/pages/organizer/StandalonePractice"));
+const DiscountCodesPage = lazyPage(() => import("@/pages/organizer/DiscountCodes"));
+const TeamPage = lazyPage(() => import("@/pages/organizer/TeamPage"));
+const StaffPage = lazyPage(() => import("@/pages/organizer/StaffPage"));
+const Notifications = lazyPage(() =>
+  import("@/pages/organizer/Notifications").then((m) => ({ default: m.Notifications })),
+);
+const RaceDayDisplayPage = lazyPage(() => import("@/pages/organizer/RaceDayDisplayPage"));
+const NoAccessPage = lazyPage(() => import("@/pages/organizer/NoAccessPage"));
+
+// The organizer shell (sidebar, assistant, tour) and the desktop-only dialogs
+// aren't needed by spectators or riders either.
+const OrganizerLayoutImpl = lazyPage(() =>
+  import("@/components/layout/OrganizerLayout").then((m) => ({ default: m.OrganizerLayout })),
+);
+// The offline banner animates with framer-motion (~40 KB gzipped): load it just
+// after the page instead of before it. It loads on every visit, so the service
+// worker's code cache has it before the signal drops.
+const OfflineBanner = lazy(() =>
+  import("@/components/OfflineBanner").then((m) => ({ default: m.OfflineBanner })),
+);
+const DesktopSyncModal = lazy(() =>
+  import("@/components/DesktopSyncModal").then((m) => ({ default: m.DesktopSyncModal })),
+);
+const DesktopSerialModal = lazy(() =>
+  import("@/components/DesktopSerialModal").then((m) => ({ default: m.DesktopSerialModal })),
+);
+
+const SPECTATOR_PAGES = [Results, EventResults, LiveLeaderboard];
+
+// Event pages first: check-in and race day are what an organizer needs if the
+// signal drops. The export libraries come last (they're used from buttons).
+const ORGANIZER_PRELOADS = [
+  OrganizerLayoutImpl, EventLayout, Dashboard, EventsList, Riders, RiderDetail, OfflineMode, OfflineSync,
+  ReaderSetup, RfidManagement, StandalonePractice, Series, PointsTables, Notifications,
+  RaceDayDisplayPage, GateSchedulePage, MobileGateSchedulePage, StripeConnect,
+  DiscountCodesPage, TeamPage, StaffPage, NoAccessPage,
+  { preload: () => import("jspdf") },
+  { preload: () => import("jspdf-autotable") },
+  { preload: () => import("xlsx") },
+];
+
+/** The desktop app serves every file from its own local server: nothing to preload. */
+const isDesktopApp = () => typeof window !== "undefined" && !!(window as any).electronAPI;
+
+let organizerPreloadStarted = false;
+function useOrganizerPreload(enabled: boolean) {
+  useEffect(() => {
+    if (!enabled || organizerPreloadStarted || isDesktopApp()) return;
+    organizerPreloadStarted = true;
+    preloadWhenIdle(ORGANIZER_PRELOADS);
+  }, [enabled]);
+}
+
+/** On the home page, fetch the pages a spectator opens next while the phone is idle. */
+function SpectatorPreload() {
+  useEffect(() => {
+    if (isDesktopApp()) return;
+    return preloadWhenIdle(SPECTATOR_PAGES);
+  }, []);
+  return null;
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -132,11 +195,19 @@ function DesktopSyncWatcher() {
   return null;
 }
 
-const Loading = () => (
-  <div className="flex items-center justify-center h-screen bg-sidebar">
-    <div className="text-white font-heading text-xl uppercase tracking-widest animate-pulse">Loading...</div>
-  </div>
-);
+const Loading = () => <RouteLoading variant="screen" />;
+
+/** The organizer portal's layout around a lazily loaded page. */
+function OrganizerLayout({ children }: { children: React.ReactNode }) {
+  const [location] = useLocation();
+  return (
+    <RouteErrorBoundary variant="screen" resetKey={location}>
+      <Suspense fallback={<Loading />}>
+        <OrganizerLayoutImpl><RouteBoundary>{children}</RouteBoundary></OrganizerLayoutImpl>
+      </Suspense>
+    </RouteErrorBoundary>
+  );
+}
 
 /** The login page, coming back here after signing in. */
 function loginWithNext(): string {
@@ -150,6 +221,7 @@ function loginWithNext(): string {
  */
 function ProtectedRoute({ children, permKey }: { children: React.ReactNode; permKey?: string }) {
   const { isAuthenticated, isLoading, user, permissions } = useAuth();
+  useOrganizerPreload(isAuthenticated);
   if (isLoading) return <Loading />;
   if (!isAuthenticated) return <Redirect to={loginWithNext()} />;
 
@@ -164,6 +236,7 @@ function ProtectedRoute({ children, permKey }: { children: React.ReactNode; perm
 /** OrganizerOnlyRoute — redirects staff back to their landing destination. */
 function OrganizerOnlyRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading, user } = useAuth();
+  useOrganizerPreload(isAuthenticated);
   if (isLoading) return <Loading />;
   if (!isAuthenticated) return <Redirect to={loginWithNext()} />;
   if (user?.role === "staff") return <Redirect to="/no-access" />;
@@ -181,7 +254,7 @@ function RiderProtectedRoute({ children }: { children: React.ReactNode }) {
     </div>
   );
   if (!isAuthenticated) return <Redirect to={`/rider/login?next=${encodeURIComponent(here)}`} />;
-  return <>{children}</>;
+  return <RouteBoundary variant="rider">{children}</RouteBoundary>;
 }
 
 function Router() {
@@ -189,80 +262,81 @@ function Router() {
     <Switch>
       {/* ── Public routes ── */}
       <Route path="/">
+        <SpectatorPreload />
         <PublicLayout><Home /></PublicLayout>
       </Route>
       <Route path="/privacy">
-        <PrivacyPolicy />
+        <RouteBoundary><PrivacyPolicy /></RouteBoundary>
       </Route>
       <Route path="/terms">
-        <TermsAndConditions />
+        <RouteBoundary><TermsAndConditions /></RouteBoundary>
       </Route>
       <Route path="/delete-account">
-        <DeleteAccount />
+        <RouteBoundary><DeleteAccount /></RouteBoundary>
       </Route>
       <Route path="/rider/reset-password">
-        <ResetRiderPassword />
+        <RouteBoundary variant="rider"><ResetRiderPassword /></RouteBoundary>
       </Route>
       <Route path="/rider-app">
-        <RiderAppLanding />
+        <RouteBoundary><RiderAppLanding /></RouteBoundary>
       </Route>
       {/* Rider live video: the app's Go Live screen and the viewer (not linked from any public page). */}
       <Route path="/phone-live/:riderId">
-        <PhoneLive />
+        <RouteBoundary variant="screen"><PhoneLive /></RouteBoundary>
       </Route>
       <Route path="/rider-live/:riderId">
-        <RiderLiveWatch />
+        <RouteBoundary variant="screen"><RiderLiveWatch /></RouteBoundary>
       </Route>
       <Route path="/racer/:riderId">
-        <PublicLayout><PublicRacer /></PublicLayout>
+        <PublicLayout><RouteBoundary><PublicRacer /></RouteBoundary></PublicLayout>
       </Route>
       <Route path="/results">
-        <PublicLayout><Results /></PublicLayout>
+        <PublicLayout><RouteBoundary><Results /></RouteBoundary></PublicLayout>
       </Route>
       <Route path="/results/:eventId">
-        <PublicLayout><EventResults /></PublicLayout>
+        <PublicLayout><RouteBoundary><EventResults /></RouteBoundary></PublicLayout>
       </Route>
       <Route path="/leaderboard">
-        <PublicLayout><Leaderboard /></PublicLayout>
+        <PublicLayout><RouteBoundary><Leaderboard /></RouteBoundary></PublicLayout>
       </Route>
       <Route path="/login">
-        <PublicLayout><Login /></PublicLayout>
+        <PublicLayout><RouteBoundary><Login /></RouteBoundary></PublicLayout>
       </Route>
       <Route path="/setup-account">
-        <PublicLayout><SetPassword /></PublicLayout>
+        <PublicLayout><RouteBoundary><SetPassword /></RouteBoundary></PublicLayout>
       </Route>
       <Route path="/support/decide">
-        <PublicLayout><SupportDecision /></PublicLayout>
+        <PublicLayout><RouteBoundary><SupportDecision /></RouteBoundary></PublicLayout>
       </Route>
       <Route path="/forgot-password">
-        <PublicLayout><ForgotPassword /></PublicLayout>
+        <PublicLayout><RouteBoundary><ForgotPassword /></RouteBoundary></PublicLayout>
       </Route>
       {/* The rider app's in-app PDF viewer (waivers): no site header. */}
       <Route path="/pdf-view">
-        <PdfView />
+        <RouteBoundary><PdfView /></RouteBoundary>
       </Route>
       <Route path="/register/:eventId">
-        <PublicLayout><Register /></PublicLayout>
+        <PublicLayout><RouteBoundary><Register /></RouteBoundary></PublicLayout>
       </Route>
       <Route path="/live/:motoId">
-        <LiveLeaderboard />
+        <RouteBoundary variant="screen"><LiveLeaderboard /></RouteBoundary>
       </Route>
       <Route path="/watch/:eventId">
-        <WatchLive />
+        <RouteBoundary variant="screen"><WatchLive /></RouteBoundary>
       </Route>
       <Route path="/scan">
-        <HandScanner />
+        <RouteBoundary variant="screen"><HandScanner /></RouteBoundary>
       </Route>
       <Route path="/widget/series/:seriesId">
-        <SeriesWidget />
+        <RouteBoundary><SeriesWidget /></RouteBoundary>
       </Route>
       <Route path="/widget/:eventId">
-        <EventWidget />
+        <RouteBoundary><EventWidget /></RouteBoundary>
       </Route>
 
       {/* ── Rider portal ── */}
       <Route path="/rider/login">
-        <RiderLogin />
+        <RouteBoundary variant="rider"><RiderLogin /></RouteBoundary>
       </Route>
       <Route path="/rider">
         <Redirect to="/rider/home" />
@@ -303,12 +377,12 @@ function Router() {
 
       {/* ── Gate Schedule — public shareable link, no login required ── */}
       <Route path="/gate">
-        <GateSchedulePage />
+        <RouteBoundary><GateSchedulePage /></RouteBoundary>
       </Route>
 
       {/* ── Mobile gate schedule — shared from Admin page, mobile-optimised ── */}
       <Route path="/gate-mobile">
-        <MobileGateSchedulePage />
+        <RouteBoundary><MobileGateSchedulePage /></RouteBoundary>
       </Route>
 
       {/* ── No-access landing for restricted staff ── */}
@@ -403,13 +477,19 @@ function App() {
           <BroadcastProvider>
             <TooltipProvider>
               <DesktopSyncWatcher />
-              <OfflineBanner />
+              <OptionalLazy>
+                <OfflineBanner />
+              </OptionalLazy>
               <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, "")}>
                 <Router />
               </WouterRouter>
               <Toaster />
-              <DesktopSyncModal />
-              <DesktopSerialModal />
+              {isDesktopApp() && (
+                <OptionalLazy>
+                  <DesktopSyncModal />
+                  <DesktopSerialModal />
+                </OptionalLazy>
+              )}
             </TooltipProvider>
           </BroadcastProvider>
         </RiderAuthProvider>

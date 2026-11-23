@@ -172,7 +172,7 @@ function PublicFooter() {
                 <ul className="space-y-3">
                   {links.map(([label, href]) => (
                     <li key={href}>
-                      <Link href={href} className="text-[15px] text-[#8C8C8C] hover:text-white hover:underline underline-offset-2">
+                      <Link href={href} className="text-[15px] text-[#A8A8A8] hover:text-white hover:underline underline-offset-2">
                         {label}
                       </Link>
                     </li>
@@ -182,7 +182,7 @@ function PublicFooter() {
             ))}
             <div className="col-span-2 md:col-span-1 flex md:justify-end items-start">
               <div className="flex flex-col gap-2">
-                <span className="text-[13px] text-[#8C8C8C] uppercase tracking-[2px]">Powered by</span>
+                <span className="text-[13px] text-[#A8A8A8] uppercase tracking-[2px]">Powered by</span>
                 <img src={`${BASE}brand/rmatv-wordmark.svg`} alt="Rocky Mountain ATV/MC" className="h-12 w-auto" />
               </div>
             </div>

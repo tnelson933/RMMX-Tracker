@@ -808,13 +808,19 @@ export default function EventResults() {
         ) : (
           /* RESULTS MODE (completed / upcoming non-live) */
           (event.raceClasses && event.raceClasses.length > 0) || raceMotosList.length > 0 ? (
-            <Tabs value={activeClass} onValueChange={setActiveClass} className="w-full">
+            // Radix builds the tab/panel ids from the value, so class names with spaces
+            // ("250 B") broke aria-controls. Tab values are index slugs instead.
+            <Tabs
+              value={activeClass === "__schedule__" ? activeClass : `class-${(event.raceClasses ?? []).indexOf(activeClass)}`}
+              onValueChange={v => setActiveClass(v.startsWith("class-") ? (event.raceClasses ?? [])[Number(v.slice(6))] ?? "" : v)}
+              className="w-full"
+            >
               <div className="bg-card rounded-t-lg border-x border-t p-2 overflow-x-auto hide-scrollbar">
                 <TabsList className="inline-flex h-auto w-auto p-1 bg-[#F2F2F2] rounded-full">
-                  {(event.raceClasses ?? []).map(cls => (
+                  {(event.raceClasses ?? []).map((cls, i) => (
                     <TabsTrigger
                       key={cls}
-                      value={cls}
+                      value={`class-${i}`}
                       className="font-heading uppercase text-base px-6 py-3 rounded-full data-[state=active]:bg-[#242424] data-[state=active]:text-white transition-all whitespace-nowrap"
                     >
                       {cls}
@@ -832,11 +838,11 @@ export default function EventResults() {
               </div>
 
               {/* One TabsContent per race class */}
-              {(event.raceClasses ?? []).map(cls => {
+              {(event.raceClasses ?? []).map((cls, i) => {
                 const clsResults = results?.filter(r => r.raceClass === cls) || [];
                 const clsMotoIds = racesIn(clsResults);
                 return (
-                  <TabsContent key={cls} value={cls} className="m-0 bg-card border rounded-b-lg shadow-sm">
+                  <TabsContent key={cls} value={`class-${i}`} className="m-0 bg-card border rounded-b-lg shadow-sm">
                     <div className="p-6 md:p-8">
                       <div className="flex items-center justify-between mb-8">
                         <h2 className="text-2xl font-heading font-bold uppercase flex items-center gap-3">

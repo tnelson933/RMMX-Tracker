@@ -23,7 +23,6 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { QRCodeSVG } from "qrcode.react";
 import { useToast } from "@/hooks/use-toast";
-import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import { isInvalidAssignedActiveTransponderIdentifier } from "@/lib/activeTransponder";
 import { eventTimingTags, offeredTags, splitRegistrationTag } from "@/components/organizer/timingTags";
@@ -761,7 +760,8 @@ export default function Registrations() {
     }
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
+    const XLSX = await import("xlsx");
     const rows = (registrations ?? []).map((r) => ({
       "Registration ID": r.id,
       "Rider Name": r.riderName,

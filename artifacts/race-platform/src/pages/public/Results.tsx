@@ -98,7 +98,7 @@ export default function Results() {
       >
         <div className="w-full md:w-64">
           <Select value={stateFilter} onValueChange={setStateFilter}>
-            <SelectTrigger className="h-[52px] rounded-full border-2 border-[#8C8C8C] bg-white text-[#333] px-5 text-base">
+            <SelectTrigger aria-label="Filter by state" className="h-[52px] rounded-full border-2 border-[#8C8C8C] bg-white text-[#333] px-5 text-base">
               <SelectValue placeholder="Filter by State" />
             </SelectTrigger>
             <SelectContent>
@@ -137,6 +137,7 @@ export default function Results() {
           })}
         </div>
 
+        <h2 className="sr-only">{side === "live" ? "Live races" : "Past races"}</h2>
         {side === "live" ? (
           live.length > 0 ? (
             <div className="flex flex-col gap-4">
@@ -153,9 +154,9 @@ export default function Results() {
               </Card>
               {comingUp.length > 0 && (
                 <div>
-                  <h4 className="mb-3 flex items-center gap-2 font-heading font-bold uppercase tracking-[1px] text-[15px] text-[#B30000]">
+                  <h3 className="mb-3 flex items-center gap-2 font-heading font-bold uppercase tracking-[1px] text-[15px] text-[#B30000]">
                     <Calendar size={16} /> Coming up
-                  </h4>
+                  </h3>
                   <div className="flex flex-col gap-4">
                     {comingUp.map(event => <EventRow key={event.id} event={event} upcoming />)}
                   </div>

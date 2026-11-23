@@ -238,7 +238,7 @@ export function RacerBody({ data, riderId, onToggle, pending, publicPage = false
 
       {st.starts > 0 && (
         <div className="space-y-2">
-          <h3 className={H3}>Career</h3>
+          <h2 className={H3}>Career</h2>
           <dl className={`grid grid-cols-2 gap-x-4 gap-y-3 p-4 sm:grid-cols-3 ${CARD}`}>
             {[
               extras ? { l: "Events", v: String(extras.events) } : null,
@@ -259,7 +259,7 @@ export function RacerBody({ data, riderId, onToggle, pending, publicPage = false
 
       {(extras?.bigWins.length ?? 0) > 0 && (
         <div className="space-y-2">
-          <h3 className={H3}>Big wins</h3>
+          <h2 className={H3}>Big wins</h2>
           <div className={`divide-y divide-[#3A3A3A] ${CARD}`}>
             {extras!.bigWins.slice(0, 6).map(w => (
               <Link key={`${w.eventId}-${w.raceClass}-${w.motoName}`} href={`/results/${w.eventId}`} className="flex items-center gap-3 px-4 py-3 hover:bg-[#2E2E2E]">
@@ -277,7 +277,7 @@ export function RacerBody({ data, riderId, onToggle, pending, publicPage = false
 
       {series.length > 0 && (
         <div className="space-y-2">
-          <h3 className={H3}>Series standings</h3>
+          <h2 className={H3}>Series standings</h2>
           <div className={`divide-y divide-[#3A3A3A] ${CARD}`}>
             {series.map(sr => (
               <div key={`${sr.seriesId}-${sr.raceClass}`} className="flex items-center gap-3 px-4 py-3">
@@ -294,7 +294,7 @@ export function RacerBody({ data, riderId, onToggle, pending, publicPage = false
 
       {(resume?.highlights.bestFinish || st.bestLap || resume?.highlights.bestComeback) && (
         <div className="space-y-2">
-          <h3 className={H3}>Highlights</h3>
+          <h2 className={H3}>Highlights</h2>
           <div className="grid gap-3 sm:grid-cols-3">
             {resume?.highlights.bestFinish && (
               <div className="rounded-xl border border-[#3A3A3A] bg-[#242424] p-4">
@@ -348,7 +348,7 @@ export function RacerBody({ data, riderId, onToggle, pending, publicPage = false
 
       {extras && (extras.tracks.length > 0 || extras.states.length > 0) ? (
         <div className="space-y-2">
-          <h3 className={H3}>Where {data.name.split(" ")[0]} has raced</h3>
+          <h2 className={H3}>Where {data.name.split(" ")[0]} has raced</h2>
           <div className={`space-y-3 p-4 ${CARD}`}>
             {extras.states.length > 0 && (
               <div className="flex flex-wrap gap-2">
@@ -379,7 +379,7 @@ export function RacerBody({ data, riderId, onToggle, pending, publicPage = false
 
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-3">
-          <h3 className={H3}>{showHistory ? "Full history" : "Recent results"}</h3>
+          <h2 className={H3}>{showHistory ? "Full history" : "Recent results"}</h2>
           {data.recent.length > 0 && (
             <button type="button" onClick={() => setShowHistory(v => !v)} className="text-[13px] font-semibold text-white underline" aria-expanded={showHistory}>
               {showHistory ? "Show recent only" : "Full history and filters"}

@@ -11,11 +11,15 @@ import { useRiderAuth } from "@/contexts/RiderAuthContext";
 
 type Mode = "login" | "register" | "forgot";
 
-function Field({ icon, children }: { icon: ReactNode; children: ReactNode }) {
+// Each field has a visible label (not just a placeholder); `htmlFor` matches the input's id.
+function Field({ icon, label, htmlFor, children }: { icon: ReactNode; label: string; htmlFor: string; children: ReactNode }) {
   return (
-    <div className="flex items-center gap-2.5 rounded-xl border border-[#3A3A3A] bg-[#1c1c1c] px-4 min-h-[56px] focus-within:border-[#FAFAFA]">
-      <span className="text-[#A8A8A8] shrink-0">{icon}</span>
-      {children}
+    <div>
+      <label htmlFor={htmlFor} className="block mb-1.5 text-[14px] font-bold text-[#C8C8C8]">{label}</label>
+      <div className="flex items-center gap-2.5 rounded-xl border border-[#3A3A3A] bg-[#1c1c1c] px-4 min-h-[56px] focus-within:border-[#FAFAFA]">
+        <span aria-hidden className="text-[#A8A8A8] shrink-0">{icon}</span>
+        {children}
+      </div>
     </div>
   );
 }
@@ -69,8 +73,8 @@ function VerifyEmailStep({ email, onVerified, onSignOut }: { email: string; onVe
         </p>
       </div>
       <form onSubmit={(e) => { e.preventDefault(); verify.mutate(); }} className="space-y-3">
-        <Field icon={<KeyRound size={16} />}>
-          <input aria-label="6-digit code" inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code" maxLength={7}
+        <Field icon={<KeyRound size={16} />} label="Verification code" htmlFor="rider-code">
+          <input id="rider-code" inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code" maxLength={7}
             className={`${inputCls} tracking-[6px] font-bold`} autoFocus
             value={code} onChange={(e) => { setCode(e.target.value.replace(/[^\d]/g, "").slice(0, 6)); verify.reset(); }} required />
         </Field>
@@ -164,7 +168,7 @@ export default function RiderLogin() {
       {/* Race stripes behind the banner, like the app's sign-in screen. */}
       <div aria-hidden className="pointer-events-none absolute -top-24 -left-1/4 w-[150%] h-[260px] -rotate-[8deg] bg-[linear-gradient(180deg,transparent_0,transparent_40%,rgba(179,0,0,0.55)_40%,rgba(179,0,0,0.55)_46%,transparent_46%,transparent_58%,rgba(255,255,255,0.08)_58%,rgba(255,255,255,0.08)_60%,transparent_60%)]" />
 
-      <div className="relative flex-1 w-full max-w-[460px] mx-auto px-5 pt-8 pb-16 flex flex-col items-center">
+      <main className="relative flex-1 w-full max-w-[460px] mx-auto px-5 pt-8 pb-16 flex flex-col items-center">
         <img src="/brand/rm-roost-hero.png" alt="RM Roost" className="w-full max-w-[400px] h-auto" />
 
         <h1 className="mt-5 text-center font-heading font-extrabold uppercase text-[32px] sm:text-[36px] leading-[1.05] tracking-[1px] text-white">
@@ -208,8 +212,8 @@ export default function RiderLogin() {
                 </p>
               ) : (
                 <form onSubmit={(e) => { e.preventDefault(); forgotMutation.mutate(); }} className="space-y-4">
-                  <Field icon={<Mail size={16} />}>
-                    <input aria-label="Email address" type="email" autoComplete="email" placeholder="Email address" className={inputCls}
+                  <Field icon={<Mail size={16} />} label="Email address" htmlFor="rider-forgot-email">
+                    <input id="rider-forgot-email" type="email" autoComplete="email" placeholder="Email address" className={inputCls}
                       value={email} onChange={(e) => setEmail(e.target.value)} required />
                   </Field>
                   {error && <ErrorLine message={(error as Error).message} />}
@@ -235,12 +239,12 @@ export default function RiderLogin() {
                 onSubmit={(e) => { e.preventDefault(); (mode === "login" ? loginMutation : registerMutation).mutate(); }}
                 className="mt-5 space-y-3"
               >
-                <Field icon={<Mail size={16} />}>
-                  <input aria-label="Email address" type="email" autoComplete="email" placeholder="Email address" className={inputCls}
+                <Field icon={<Mail size={16} />} label="Email address" htmlFor="rider-email">
+                  <input id="rider-email" type="email" autoComplete="email" placeholder="Email address" className={inputCls}
                     value={email} onChange={(e) => setEmail(e.target.value)} required />
                 </Field>
-                <Field icon={<Lock size={16} />}>
-                  <input aria-label="Password" type={showPassword ? "text" : "password"} autoComplete={mode === "login" ? "current-password" : "new-password"}
+                <Field icon={<Lock size={16} />} label="Password" htmlFor="rider-password">
+                  <input id="rider-password" type={showPassword ? "text" : "password"} autoComplete={mode === "login" ? "current-password" : "new-password"}
                     placeholder={mode === "login" ? "Password" : "Password (at least 8 characters)"} className={inputCls}
                     value={password} onChange={(e) => setPassword(e.target.value)} required />
                   <button type="button" onClick={() => setShowPassword(v => !v)} aria-label={showPassword ? "Hide password" : "Show password"}
@@ -249,8 +253,8 @@ export default function RiderLogin() {
                   </button>
                 </Field>
                 {mode === "register" && (
-                  <Field icon={<Lock size={16} />}>
-                    <input aria-label="Confirm password" type={showPassword ? "text" : "password"} autoComplete="new-password" placeholder="Confirm password" className={inputCls}
+                  <Field icon={<Lock size={16} />} label="Confirm password" htmlFor="rider-confirm">
+                    <input id="rider-confirm" type={showPassword ? "text" : "password"} autoComplete="new-password" placeholder="Confirm password" className={inputCls}
                       value={confirm} onChange={(e) => setConfirm(e.target.value)} required />
                   </Field>
                 )}
@@ -277,13 +281,13 @@ export default function RiderLogin() {
           )}
         </div>
 
-        <div className="mt-6 text-[12px] font-bold uppercase tracking-[2px] text-[#707070]">Rocky Mountain ATV/MC</div>
+        <div className="mt-6 text-[12px] font-bold uppercase tracking-[2px] text-[#8A8A8A]">Rocky Mountain ATV/MC</div>
         <div className="mt-3 flex gap-4 text-[13px] text-[#A8A8A8]">
           <Link href="/" className="hover:text-white underline-offset-2 hover:underline">RM Roost home</Link>
           <Link href="/results" className="hover:text-white underline-offset-2 hover:underline">Race results</Link>
           <Link href="/rider-app" className="hover:text-white underline-offset-2 hover:underline">Get the app</Link>
         </div>
-      </div>
+      </main>
       {/* Checkered strip along the bottom, as on the app. */}
       <div aria-hidden className="h-6 w-full opacity-[0.12] bg-[length:24px_24px] bg-[conic-gradient(#fff_25%,transparent_0_50%,#fff_0_75%,transparent_0)]" />
     </div>

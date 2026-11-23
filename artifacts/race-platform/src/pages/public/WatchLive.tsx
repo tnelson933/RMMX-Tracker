@@ -3,7 +3,7 @@ import { useRoute, Link } from "wouter";
 import { Radio, WifiOff, ChevronLeft, ExternalLink, Volume2, VolumeX, Flag, CheckCircle2, Eye, Plus, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useListMotos, useListResults } from "@workspace/api-client-react";
-import { SplitView360 } from "@/components/SplitView360";
+import { SplitView360 } from "@/components/SplitView360Lazy";
 import { StackedSplitView } from "@/components/StackedSplitView";
 import {
   isAnnouncementStale,
@@ -48,7 +48,7 @@ function WatchLiveCountdown({ startedAt, timeLimitMs, plusLaps }: { startedAt: s
     <span className={`flex items-center gap-1 text-[10px] font-bold uppercase ${color}`}>
       <Flag size={9} />
       {minutes}:{String(seconds).padStart(2, "0")}
-      {plusLaps != null && plusLaps > 0 && <span className="text-white/40 font-normal">+{plusLaps}L</span>}
+      {plusLaps != null && plusLaps > 0 && <span className="text-white/60 font-normal">+{plusLaps}L</span>}
     </span>
   );
 }
@@ -158,7 +158,7 @@ export default function WatchLive() {
     t === "main" ? "bg-amber-500/20 text-amber-400" :
     t === "lcq"  ? "bg-purple-500/20 text-purple-400" :
     t === "heat" ? "bg-blue-500/20 text-blue-400" :
-                   "bg-white/10 text-white/40";
+                   "bg-white/10 text-white/60";
 
   const logEvent = (msg: string) => {
     lastErrRef.current = msg;
@@ -870,8 +870,8 @@ export default function WatchLive() {
     <div className="min-h-screen bg-black flex flex-col">
       <RiderLookupHost />
       {/* Top bar */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-        <Link href={resultsUrl} className="flex items-center gap-1.5 text-white/50 hover:text-white text-sm transition-colors">
+      <header className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+        <Link href={resultsUrl} className="flex items-center gap-1.5 text-white/65 hover:text-white text-sm transition-colors">
           <ChevronLeft size={16} /> Results
         </Link>
         <div className="flex items-center gap-2">
@@ -885,7 +885,7 @@ export default function WatchLive() {
             </span>
           )}
           {viewerState === "playing" && viewerCount !== null && (
-            <span className="flex items-center gap-1 text-white/40 text-xs">
+            <span className="flex items-center gap-1 text-white/60 text-xs">
               <Eye size={12} />
               {viewerCount}
             </span>
@@ -900,23 +900,24 @@ export default function WatchLive() {
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider transition-all ${
               announcerOn
                 ? "bg-primary text-white border border-primary hover:bg-[#8F0000]"
-                : "bg-white/5 text-white/30 border border-white/10 hover:bg-white/10"
+                : "bg-white/5 text-white/55 border border-white/10 hover:bg-white/10"
             }`}
           >
             {announcerOn ? <Volume2 size={13} /> : <VolumeX size={13} />}
             {announcerOn ? "Announcer" : "Muted"}
           </button>
         </div>
-        <a href={resultsUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-white/50 hover:text-white text-xs transition-colors">
+        <a href={resultsUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-white/65 hover:text-white text-xs transition-colors">
           Results <ExternalLink size={12} />
         </a>
-      </div>
+      </header>
 
       {/* Main content: sidebar + video */}
-      <div className="flex flex-1 flex-col overflow-y-auto md:min-h-0 md:flex-row md:overflow-hidden">
+      <main className="flex flex-1 flex-col overflow-y-auto md:min-h-0 md:flex-row md:overflow-hidden">
+        <h1 className="sr-only">Live stream and race timing</h1>
 
         {/* ── Left sidebar: current moto + leaderboard ── */}
-        <div className="max-h-[50vh] w-full shrink-0 border-b border-white/10 flex flex-col overflow-hidden md:max-h-none md:h-auto md:w-64 md:border-b-0 md:border-r">
+        <aside aria-label="Current race and leaderboard" className="max-h-[50vh] w-full shrink-0 border-b border-white/10 flex flex-col overflow-hidden md:max-h-none md:h-auto md:w-64 md:border-b-0 md:border-r">
           {activeMoto ? (
             <>
               {/* Moto header */}
@@ -926,7 +927,7 @@ export default function WatchLive() {
                     {motoTypeLabel(activeMoto.type)}
                   </span>
                   {activeMoto.raceClass && (
-                    <span className="text-white/40 text-[10px] uppercase tracking-wide">{activeMoto.raceClass}</span>
+                    <span className="text-white/60 text-[10px] uppercase tracking-wide">{activeMoto.raceClass}</span>
                   )}
                 </div>
                 <div className="text-white text-sm font-heading uppercase tracking-wide leading-tight">{activeMoto.name}</div>
@@ -964,7 +965,7 @@ export default function WatchLive() {
 
               {/* Announcer status */}
               {announcerOn && announcerLabel && (
-                <div className="px-3 py-1 border-b border-white/5 shrink-0 flex items-center gap-1 text-primary/60 text-[10px]">
+                <div className="px-3 py-1 border-b border-white/5 shrink-0 flex items-center gap-1 text-white/65 text-[10px]">
                   <Volume2 size={9} />
                   {announcerLabel}
                 </div>
@@ -984,14 +985,14 @@ export default function WatchLive() {
 
               {/* Column headers */}
               {sseLeaderboard && activeMoto.status === "in_progress" ? (
-                <div className="flex items-center px-3 py-1 text-white/20 text-[10px] uppercase tracking-wider border-b border-white/5 shrink-0">
+                <div className="flex items-center px-3 py-1 text-white/55 text-[10px] uppercase tracking-wider border-b border-white/5 shrink-0">
                   <span className="w-5 text-right mr-2.5 shrink-0">#</span>
                   <span className="flex-1">Rider</span>
                   <span className="text-right shrink-0 w-8">Laps</span>
                   <span className="text-right shrink-0 w-12 ml-1">Last</span>
                 </div>
               ) : (
-                <div className="flex items-center px-3 py-1 text-white/20 text-[10px] uppercase tracking-wider border-b border-white/5 shrink-0">
+                <div className="flex items-center px-3 py-1 text-white/55 text-[10px] uppercase tracking-wider border-b border-white/5 shrink-0">
                   <span className="w-5 text-right mr-2.5 shrink-0">#</span>
                   <span className="flex-1">Rider</span>
                   <span className="text-[10px] shrink-0">#</span>
@@ -1002,51 +1003,51 @@ export default function WatchLive() {
               <div className="min-h-0 flex-1 overflow-y-auto">
                 {sseLeaderboard && activeMoto.status === "in_progress" ? (
                   sseLeaderboard.length === 0 ? (
-                    <div className="px-3 py-10 text-white/20 text-xs text-center">Waiting for first crossing…</div>
+                    <div className="px-3 py-10 text-white/55 text-xs text-center">Waiting for first crossing…</div>
                   ) : (
                     sseLeaderboard.map((entry) => (
                       <div
                         key={entry.riderId}
-                        className={`flex items-center gap-2.5 px-3 py-2 border-b border-white/5 ${entry.position === 1 ? "bg-white/5" : ""} ${entry.dnf || entry.dns ? "opacity-40" : ""}`}
+                        className={`flex items-center gap-2.5 px-3 py-1 border-b border-white/5 ${entry.position === 1 ? "bg-white/5" : ""}`}
                       >
                         <span className={`text-xs font-bold w-5 text-right shrink-0 ${
-                          entry.dnf || entry.dns ? "text-white/20" :
+                          entry.dnf || entry.dns ? "text-white/55" :
                           entry.position === 1 ? "text-yellow-400" :
-                          entry.position === 2 ? "text-white/50" :
-                          entry.position === 3 ? "text-orange-600/70" :
-                          "text-white/25"
+                          entry.position === 2 ? "text-white/65" :
+                          entry.position === 3 ? "text-orange-400" :
+                          "text-white/60"
                         }`}>
                           {entry.dnf ? "D" : entry.dns ? "—" : entry.position}
                         </span>
-                        <span className="text-white/90 text-xs flex-1 truncate"><RiderLookupName riderId={entry.riderId} name={entry.riderName} /></span>
-                        <span className="text-white/40 text-[10px] font-mono text-right w-8 shrink-0">{entry.laps}</span>
-                        <span className="text-white/20 text-[10px] font-mono text-right w-12 ml-1 shrink-0 tabular-nums">{entry.lastLap ?? "—"}</span>
+                        <span className={`${entry.dnf || entry.dns ? "text-white/60 line-through" : "text-white/90"} text-xs flex-1 min-w-0`}><RiderLookupName riderId={entry.riderId} name={entry.riderName} className="block w-full min-h-6 truncate" /></span>
+                        <span className="text-white/60 text-[10px] font-mono text-right w-8 shrink-0">{entry.laps}</span>
+                        <span className="text-white/55 text-[10px] font-mono text-right w-12 ml-1 shrink-0 tabular-nums">{entry.lastLap ?? "—"}</span>
                       </div>
                     ))
                   )
                 ) : liveRiders.length === 0 ? (
-                  <div className="px-3 py-10 text-white/20 text-xs text-center">No lineup yet</div>
+                  <div className="px-3 py-10 text-white/55 text-xs text-center">No lineup yet</div>
                 ) : (
                   liveRiders.map((rider, idx) => (
                     <div
                       key={rider.riderId}
-                      className={`flex items-center gap-2.5 px-3 py-2 border-b border-white/5 ${
+                      className={`flex items-center gap-2.5 px-3 py-1 border-b border-white/5 ${
                         activeMoto.status === "completed" && idx === 0 ? "bg-amber-500/5" : ""
                       }`}
                     >
                       <span className={`text-xs font-bold w-5 text-right shrink-0 ${
                         activeMoto.status === "completed"
                           ? idx === 0 ? "text-amber-400"
-                          : idx === 1 ? "text-white/50"
-                          : idx === 2 ? "text-orange-600/70"
-                          : "text-white/20"
-                          : "text-white/25"
+                          : idx === 1 ? "text-white/65"
+                          : idx === 2 ? "text-orange-400"
+                          : "text-white/55"
+                          : "text-white/60"
                       }`}>
                         {rider.position}
                       </span>
-                      <span className="text-white/90 text-xs flex-1 truncate"><RiderLookupName riderId={rider.riderId} name={rider.riderName} /></span>
+                      <span className="text-white/90 text-xs flex-1 min-w-0"><RiderLookupName riderId={rider.riderId} name={rider.riderName} className="block w-full min-h-6 truncate" /></span>
                       {rider.bibNumber ? (
-                        <span className="text-white/20 text-[10px] shrink-0">#{rider.bibNumber}</span>
+                        <span className="text-white/55 text-[10px] shrink-0">#{rider.bibNumber}</span>
                       ) : (
                         <span className="w-6 shrink-0" />
                       )}
@@ -1055,14 +1056,14 @@ export default function WatchLive() {
                 )}
               </div>
 
-              <div className="px-3 py-1.5 border-t border-white/5 text-white/15 text-[10px] text-center shrink-0">
+              <div className="px-3 py-1.5 border-t border-white/5 text-white/55 text-[10px] text-center shrink-0">
                 {sseLeaderboard && activeMoto.status === "in_progress" ? "● live timing" : "↻ updates every 15s"}
               </div>
 
               {/* Full Schedule */}
               {scheduleMotos.length > 0 && (
                 <div className="shrink-0 border-t border-white/10 flex flex-col" style={{ maxHeight: "40%" }}>
-                  <div className="px-3 pt-2.5 pb-1 text-white/25 text-[10px] uppercase tracking-widest font-bold shrink-0">
+                  <div className="px-3 pt-2.5 pb-1 text-white/55 text-[10px] uppercase tracking-widest font-bold shrink-0">
                     Schedule
                   </div>
                   <div className="overflow-y-auto">
@@ -1088,20 +1089,20 @@ export default function WatchLive() {
                             )}
                           </div>
                           {/* Type badge */}
-                          <span className={`text-[9px] font-bold uppercase tracking-wider px-1 py-0.5 rounded shrink-0 ${isDone ? "bg-white/5 text-white/20" : motoTypeColor(m.type)}`}>
+                          <span className={`text-[9px] font-bold uppercase tracking-wider px-1 py-0.5 rounded shrink-0 ${isDone ? "bg-white/5 text-white/55" : motoTypeColor(m.type)}`}>
                             {motoTypeLabel(m.type)}
                           </span>
                           {/* Name + class */}
                           <div className="flex-1 min-w-0">
-                            <div className={`text-[11px] font-heading uppercase tracking-wide truncate leading-tight ${isDone ? "text-white/20" : isActive ? "text-white/90" : "text-white/55"}`}>
+                            <div className={`text-[11px] font-heading uppercase tracking-wide truncate leading-tight ${isDone ? "text-white/55" : isActive ? "text-white/90" : "text-white/55"}`}>
                               {m.name}
                             </div>
                             {m.raceClass && (
-                              <div className={`text-[10px] truncate leading-tight ${isDone ? "text-white/15" : "text-white/25"}`}>{m.raceClass}</div>
+                              <div className={`text-[10px] truncate leading-tight ${isDone ? "text-white/55" : "text-white/60"}`}>{m.raceClass}</div>
                             )}
                           </div>
                           {m.scheduledTime && !isDone && (
-                            <div className="text-white/20 text-[10px] font-mono shrink-0">
+                            <div className="text-white/55 text-[10px] font-mono shrink-0">
                               {new Date(m.scheduledTime).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
                             </div>
                           )}
@@ -1116,7 +1117,7 @@ export default function WatchLive() {
             <>
               {scheduleMotos.length > 0 ? (
                 <div className="flex flex-col flex-1 min-h-0">
-                  <div className="px-3 pt-2.5 pb-1 text-white/25 text-[10px] uppercase tracking-widest font-bold shrink-0 border-b border-white/10">
+                  <div className="px-3 pt-2.5 pb-1 text-white/55 text-[10px] uppercase tracking-widest font-bold shrink-0 border-b border-white/10">
                     Schedule
                   </div>
                   <div className="overflow-y-auto flex-1">
@@ -1140,19 +1141,19 @@ export default function WatchLive() {
                               <span className="h-1 w-1 rounded-full bg-white/15" />
                             )}
                           </div>
-                          <span className={`text-[9px] font-bold uppercase tracking-wider px-1 py-0.5 rounded shrink-0 ${isDone ? "bg-white/5 text-white/20" : motoTypeColor(m.type)}`}>
+                          <span className={`text-[9px] font-bold uppercase tracking-wider px-1 py-0.5 rounded shrink-0 ${isDone ? "bg-white/5 text-white/55" : motoTypeColor(m.type)}`}>
                             {motoTypeLabel(m.type)}
                           </span>
                           <div className="flex-1 min-w-0">
-                            <div className={`text-[11px] font-heading uppercase tracking-wide truncate leading-tight ${isDone ? "text-white/20" : isActive ? "text-white/90" : "text-white/55"}`}>
+                            <div className={`text-[11px] font-heading uppercase tracking-wide truncate leading-tight ${isDone ? "text-white/55" : isActive ? "text-white/90" : "text-white/55"}`}>
                               {m.name}
                             </div>
                             {m.raceClass && (
-                              <div className={`text-[10px] truncate leading-tight ${isDone ? "text-white/15" : "text-white/25"}`}>{m.raceClass}</div>
+                              <div className={`text-[10px] truncate leading-tight ${isDone ? "text-white/55" : "text-white/60"}`}>{m.raceClass}</div>
                             )}
                           </div>
                           {m.scheduledTime && !isDone && (
-                            <div className="text-white/20 text-[10px] font-mono shrink-0">
+                            <div className="text-white/55 text-[10px] font-mono shrink-0">
                               {new Date(m.scheduledTime).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
                             </div>
                           )}
@@ -1165,13 +1166,13 @@ export default function WatchLive() {
                 <div className="flex-1 flex items-center justify-center">
                   <div className="text-center px-4">
                     <Flag size={22} className="text-white/15 mx-auto mb-2" />
-                    <p className="text-white/20 text-xs">No active race</p>
+                    <p className="text-white/55 text-xs">No active race</p>
                   </div>
                 </div>
               )}
             </>
           )}
-        </div>
+        </aside>
 
         {/* ── Video and live race views (right side) ── */}
         <div className="relative flex min-h-[34rem] min-w-0 flex-1 flex-col bg-black md:min-h-0">
@@ -1292,7 +1293,7 @@ export default function WatchLive() {
               <>
                 <Radio size={52} className="text-white/20" />
                 <h2 className="font-heading text-2xl uppercase font-bold">Stream Not Started</h2>
-                <p className="text-white/40 text-sm text-center max-w-sm">
+                <p className="text-white/60 text-sm text-center max-w-sm">
                   The organizer hasn't started the live stream yet. This page will automatically connect when they go live.
                 </p>
                 <Button
@@ -1308,7 +1309,7 @@ export default function WatchLive() {
               <>
                 <Radio size={52} className="text-white/20" />
                 <h2 className="font-heading text-2xl uppercase font-bold">Stream Ended</h2>
-                <p className="text-white/40 text-sm text-center max-w-sm">
+                <p className="text-white/60 text-sm text-center max-w-sm">
                   The live stream has ended. This page picks it up again by itself if the organizer goes back live.
                 </p>
                 <Link href={resultsUrl}>
@@ -1321,10 +1322,10 @@ export default function WatchLive() {
             {viewerState === "connecting" && (
               <>
                 <Radio size={52} className="text-white/20 animate-pulse" />
-                <p className="text-white/40 text-sm font-heading uppercase tracking-widest animate-pulse">Connecting…</p>
+                <p className="text-white/60 text-sm font-heading uppercase tracking-widest animate-pulse">Connecting…</p>
                 {connectingSlow && (
                   <>
-                    <p className="text-white/30 text-xs text-center max-w-xs">
+                    <p className="text-white/55 text-xs text-center max-w-xs">
                       Taking longer than expected. The stream may not be live yet.
                     </p>
                     <Button
@@ -1342,7 +1343,7 @@ export default function WatchLive() {
               <>
                 <Radio size={52} className="text-white/20 animate-pulse" />
                 <h2 className="font-heading text-2xl uppercase font-bold">Camera Reconnecting</h2>
-                <p className="text-white/40 text-sm text-center max-w-sm">
+                <p className="text-white/60 text-sm text-center max-w-sm">
                   {currentCamera?.name ? `${currentCamera.name} lost its connection.` : "The camera lost its connection."} The video picks up again as soon as it's back.
                 </p>
               </>
@@ -1350,14 +1351,14 @@ export default function WatchLive() {
             {viewerState === "buffering" && (
               <>
                 <Radio size={52} className="text-white/20 animate-pulse" />
-                <p className="text-white/40 text-sm font-heading uppercase tracking-widest animate-pulse">Loading video…</p>
+                <p className="text-white/60 text-sm font-heading uppercase tracking-widest animate-pulse">Loading video…</p>
               </>
             )}
             {viewerState === "unsupported" && (
               <>
                 <WifiOff size={52} className="text-white/20" />
                 <h2 className="font-heading text-2xl uppercase font-bold text-center">Can't Play Here</h2>
-                <p className="text-white/40 text-sm text-center max-w-sm px-4">
+                <p className="text-white/60 text-sm text-center max-w-sm px-4">
                   This browser can't play the live video. Update the phone's software, or watch in Chrome or on a computer.
                   Live timing below still works.
                 </p>
@@ -1367,7 +1368,7 @@ export default function WatchLive() {
               <>
                 <WifiOff size={52} className="text-white/20" />
                 <h2 className="font-heading text-2xl uppercase font-bold">Connection Lost</h2>
-                <p className="text-white/40 text-sm">Reconnecting automatically…</p>
+                <p className="text-white/60 text-sm">Reconnecting automatically…</p>
               </>
             )}
           </div>
@@ -1397,12 +1398,12 @@ export default function WatchLive() {
           </div>
         )}
         </div>{/* end video and analytics column */}
-      </div>{/* end sidebar+video flex row */}
+      </main>{/* end sidebar+video flex row */}
 
       {/* Footer */}
-      <div className="px-4 py-3 border-t border-white/10 text-center text-white/20 text-xs">
+      <footer className="px-4 py-3 border-t border-white/10 text-center text-white/55 text-xs">
         RM Roost · Live Stream
-      </div>
+      </footer>
     </div>
   );
 }

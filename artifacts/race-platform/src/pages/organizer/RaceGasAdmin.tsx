@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import * as XLSX from "xlsx";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,7 +28,8 @@ async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 /** The Race Gas template: its two note lines, then the seven required columns. */
-function downloadRaceGasFile(fileName: string, credits: Credit[]) {
+async function downloadRaceGasFile(fileName: string, credits: Credit[]) {
+  const XLSX = await import("xlsx");
   const rows: Array<Array<string | number>> = [
     ["All fields are required for Attendee to receive Race Gas Credit"],
     ["Please name and save your file out in this format: Organization - Event - Month-Day-Year  //  Example: Ridersclub-Hareandhound-04-10-2018"],
@@ -109,7 +109,7 @@ export default function RaceGasAdmin() {
     setBusyEvent(row.eventId);
     try {
       const d = await getJson<{ fileName: string; credits: Credit[] }>(`/api/admin/race-gas/events/${row.eventId}`);
-      downloadRaceGasFile(d.fileName, d.credits);
+      await downloadRaceGasFile(d.fileName, d.credits);
     } catch (e: any) { toast({ title: "Couldn't download", description: e.message, variant: "destructive" }); }
     finally { setBusyEvent(null); }
   };

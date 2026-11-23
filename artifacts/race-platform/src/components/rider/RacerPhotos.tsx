@@ -8,7 +8,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Camera, ImageIcon, Loader2, Trash2 } from "lucide-react";
 
 import { riderApi, type PhotoKind } from "@/lib/rider-api";
-import { STOCK_PHOTO } from "./insights";
+import { STOCK_PHOTO } from "./stockPhoto";
 
 export function initialsOf(name: string): string {
   return name.split(/\s+/).map(w => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "?";

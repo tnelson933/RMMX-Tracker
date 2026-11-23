@@ -21,7 +21,8 @@ export const CHART = {
 };
 
 /** Stock riding photo used until riders upload their own. */
-export const STOCK_PHOTO = "/brand/stock/rider-sand.jpg";
+import { STOCK_PHOTO } from "./stockPhoto";
+export { STOCK_PHOTO };
 
 /** Event images are stored as "/api/storage/..." paths, served same-origin. */
 export function eventImage(url: string | null | undefined): string | null {

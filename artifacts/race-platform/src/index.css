@@ -188,6 +188,25 @@
     @apply font-heading uppercase tracking-wide;
     font-weight: 800;
   }
+  /* Default keyboard focus indicator for anything without its own ring (plain links,
+     custom buttons). The 2px ring sits on a 2px halo in the page background colour,
+     so it stays >= 3:1 on white, charcoal and red surfaces alike. Components in
+     components/ui draw the same ring with ring-2 + ring-offset-2. */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+    box-shadow: 0 0 0 2px hsl(var(--background));
+  }
+}
+
+/* iOS Safari zooms into form fields under 16px on focus. Pinch-zoom is allowed
+   (no maximum-scale), so keep fields at 16px on iPhone instead. */
+@supports (-webkit-touch-callout: none) {
+  @media (max-width: 767px) {
+    input:not([type="checkbox"]):not([type="radio"]), select, textarea {
+      font-size: 16px !important;
+    }
+  }
 }
 
 /* ── Heat sheet: hidden on screen, shown only when printing ── */

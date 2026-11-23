@@ -110,7 +110,7 @@ async function installRealtimeFakes(page: Page) {
       onmessage: ((event: MessageEvent) => void) | null = null;
       onclose: ((event: CloseEvent) => void) | null = null;
       private listeners = new Map<string, Array<(event: Event) => void>>();
-      constructor() {
+      constructor(public url = "") {
         sockets.push(this);
         setTimeout(() => {
           this.readyState = 1;
@@ -194,12 +194,14 @@ async function installRealtimeFakes(page: Page) {
       },
       __raceSocket: {
         message(payload: unknown) {
-          const socket = [...sockets].reverse().find(item => item.readyState === 1);
+          // The page's video socket, not the Vite dev server's own (also faked).
+          const socket = [...sockets].reverse().find(item => item.readyState === 1 && item.url.includes("/api/video/"));
           if (!socket) throw new Error("No open WebSocket");
           socket.onmessage?.(new MessageEvent("message", { data: JSON.stringify(payload) }));
         },
         binary(bytes: number[]) {
-          const socket = [...sockets].reverse().find(item => item.readyState === 1);
+          // The page's video socket, not the Vite dev server's own (also faked).
+          const socket = [...sockets].reverse().find(item => item.readyState === 1 && item.url.includes("/api/video/"));
           if (!socket) throw new Error("No open WebSocket");
           socket.onmessage?.(new MessageEvent("message", { data: new Uint8Array(bytes).buffer }));
         },
@@ -208,18 +210,33 @@ async function installRealtimeFakes(page: Page) {
   });
 }
 
+// Pages download their code on demand (App.tsx lazy routes), so a page can
+// open its streams a moment after the load event. Retry while the stream or
+// socket doesn't exist yet; the action itself still runs exactly once.
+async function untilOpen<T>(page: Page, run: () => Promise<T>): Promise<T> {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    try {
+      return await run();
+    } catch (error) {
+      if (!/No open (stream|WebSocket)/.test(String(error)) || Date.now() > deadline) throw error;
+      await page.waitForTimeout(100);
+    }
+  }
+}
+
 async function streamAction(page: Page, action: "open" | "message" | "error" | "count", url: string, payload?: unknown) {
-  return page.evaluate(({ action, url, payload }) => {
+  return untilOpen(page, () => page.evaluate(({ action, url, payload }) => {
     const api = (window as unknown as { __raceStreams: Record<string, (...args: unknown[]) => unknown> }).__raceStreams;
     return api[action](url, ...(payload === undefined ? [] : [payload]));
-  }, { action, url, payload });
+  }, { action, url, payload }));
 }
 
 async function socketAction(page: Page, action: "message" | "binary", payload: unknown) {
-  await page.evaluate(({ action, payload }) => {
+  await untilOpen(page, () => page.evaluate(({ action, payload }) => {
     const api = (window as unknown as { __raceSocket: Record<string, (value: unknown) => void> }).__raceSocket;
     api[action](payload);
-  }, { action, payload });
+  }, { action, payload }));
 }
 
 async function mockCommonApi(page: Page, getMotos: () => Moto[] = () => []) {

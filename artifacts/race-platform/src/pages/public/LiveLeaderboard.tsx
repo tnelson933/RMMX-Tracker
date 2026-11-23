@@ -160,7 +160,7 @@ function ViewTab({
       aria-selected={active}
       onClick={onClick}
       className={`relative flex min-w-max items-center justify-center gap-2 px-4 py-3 text-xs font-heading font-bold uppercase tracking-wider transition-colors sm:px-7 sm:text-sm ${
-        active ? "text-white" : "text-white/45 hover:text-white/80"
+        active ? "text-white" : "text-white/60 hover:text-white/80"
       }`}
     >
       {icon}
@@ -177,7 +177,7 @@ function ViewTab({
 
 function EmptyInsight({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-28 items-center justify-center rounded-lg border border-dashed border-white/10 bg-black/10 px-5 text-center text-sm text-white/35">
+    <div className="flex min-h-28 items-center justify-center rounded-lg border border-dashed border-white/10 bg-black/10 px-5 text-center text-sm text-white/60">
       {children}
     </div>
   );
@@ -202,7 +202,7 @@ function InsightCard({
         </div>
         <div>
           <h2 className="font-heading text-lg font-bold uppercase tracking-wide text-white">{title}</h2>
-          <p className="mt-0.5 text-xs leading-relaxed text-white/40">{description}</p>
+          <p className="mt-0.5 text-xs leading-relaxed text-white/60">{description}</p>
         </div>
       </div>
       {children}
@@ -228,12 +228,12 @@ function RiderInsight({
           <div className="flex items-center gap-2">
             <span className="truncate font-heading text-xl font-bold text-white">{riderName}</span>
             {bibNumber && (
-              <span className="shrink-0 rounded bg-white/10 px-1.5 py-0.5 font-mono text-[11px] text-white/50">
+              <span className="shrink-0 rounded bg-white/10 px-1.5 py-0.5 font-mono text-[11px] text-white/65">
                 #{bibNumber}
               </span>
             )}
           </div>
-          <div className="mt-2 text-sm text-white/45">{detail}</div>
+          <div className="mt-2 text-sm text-white/60">{detail}</div>
         </div>
         <div className="shrink-0 text-right font-mono text-lg font-bold tabular-nums text-primary">{metric}</div>
       </div>
@@ -341,7 +341,7 @@ function FastestLapRanking({ data }: { data: LeaderboardData }) {
 
   if (fastestLaps.length === 0) {
     return (
-      <div className="flex min-h-full items-center justify-center p-8 text-center text-white/35">
+      <div className="flex min-h-full items-center justify-center p-8 text-center text-white/60">
         <div>
           <Timer size={36} className="mx-auto mb-3 opacity-40" />
           Waiting for timed laps…
@@ -355,12 +355,12 @@ function FastestLapRanking({ data }: { data: LeaderboardData }) {
       <div className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.025]">
         <div className="border-b border-white/10 px-4 py-4 sm:px-6">
           <h2 className="font-heading text-xl font-bold uppercase tracking-wide text-white">Fastest laps</h2>
-          <p className="mt-1 text-sm text-white/40">Each rider’s quickest completed lap, fastest to slowest.</p>
+          <p className="mt-1 text-sm text-white/60">Each rider’s quickest completed lap, fastest to slowest.</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-white/10 text-xs uppercase tracking-widest text-white/30">
+              <tr className="border-b border-white/10 text-xs uppercase tracking-widest text-white/55">
                 <th className="w-14 px-3 py-3 text-center font-bold">Rank</th>
                 <th className="px-3 py-3 text-left font-bold">Rider</th>
                 <th className="hidden w-20 px-3 py-3 text-center font-bold sm:table-cell">#</th>
@@ -373,13 +373,13 @@ function FastestLapRanking({ data }: { data: LeaderboardData }) {
                 const gapMs = leaderTime != null && entry.bestLapMs != null ? entry.bestLapMs - leaderTime : null;
                 return (
                   <tr key={entry.riderId} className={`border-b border-white/5 last:border-0 ${index === 0 ? "bg-yellow-400/[0.06]" : ""}`}>
-                    <td className={`px-3 py-4 text-center font-heading text-lg font-bold ${index === 0 ? "text-yellow-400" : "text-white/45"}`}>
+                    <td className={`px-3 py-4 text-center font-heading text-lg font-bold ${index === 0 ? "text-yellow-400" : "text-white/60"}`}>
                       {entry.bestLapMs != null ? index + 1 : "—"}
                     </td>
                     <td className="px-3 py-4 font-heading text-base font-bold text-white"><RiderLookupName riderId={entry.riderId} name={entry.riderName} /></td>
-                    <td className="hidden px-3 py-4 text-center font-mono text-xs text-white/45 sm:table-cell">{entry.bibNumber ?? "—"}</td>
+                    <td className="hidden px-3 py-4 text-center font-mono text-xs text-white/60 sm:table-cell">{entry.bibNumber ?? "—"}</td>
                     <td className="px-3 py-4 text-right font-mono font-bold tabular-nums text-white">{entry.bestLap ?? "Waiting"}</td>
-                    <td className="hidden px-3 py-4 text-right font-mono tabular-nums text-white/40 md:table-cell">
+                    <td className="hidden px-3 py-4 text-right font-mono tabular-nums text-white/60 md:table-cell">
                       {gapMs == null ? "—" : gapMs === 0 ? "Fastest" : `+${(gapMs / 1000).toFixed(2)}s`}
                     </td>
                   </tr>
@@ -429,7 +429,7 @@ function LiveTimingTable({
 }) {
   if (data.leaderboard.length === 0) {
     return (
-      <div className="flex min-h-full items-center justify-center py-16 text-center text-sm text-white/30">
+      <div className="flex min-h-full items-center justify-center py-16 text-center text-sm text-white/55">
         <div>
           <Radio size={32} className="mx-auto mb-3 opacity-30" />
           Waiting for first tag crossing…
@@ -444,7 +444,7 @@ function LiveTimingTable({
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead className="sticky top-0 z-10 bg-sidebar/95 backdrop-blur">
-          <tr className="border-b border-white/10 text-xs uppercase tracking-widest text-white/30">
+          <tr className="border-b border-white/10 text-xs uppercase tracking-widest text-white/55">
             <th className="w-12 px-3 py-3 text-center font-bold">Pos</th>
             <th className="px-3 py-3 text-left font-bold">Rider</th>
             <th className="hidden w-16 px-2 py-3 text-center font-bold sm:table-cell">#</th>
@@ -484,7 +484,7 @@ function LiveTimingTable({
                         entry.position === 1 ? "text-yellow-400" :
                         entry.position === 2 ? "text-slate-300" :
                         entry.position === 3 ? "text-amber-600" :
-                        "text-white/50"
+                        "text-white/65"
                       }`}
                     >
                       {entry.dnf ? "DNF" : entry.dns ? "DNS" : entry.position}
@@ -518,13 +518,13 @@ function LiveTimingTable({
                     </motion.div>
                   </td>
                   <td className="hidden px-2 py-3 text-center sm:table-cell">
-                    <span className="font-mono text-xs text-white/50">{entry.bibNumber ?? "—"}</span>
+                    <span className="font-mono text-xs text-white/65">{entry.bibNumber ?? "—"}</span>
                   </td>
                   <td className="px-2 py-3 text-center">
                     <span className="font-heading font-bold text-white">{entry.laps}</span>
                   </td>
                   <td className="px-3 py-3 text-right font-mono text-sm tabular-nums">{entry.totalTime ?? "—"}</td>
-                  <td className="hidden px-3 py-3 text-right font-mono text-sm tabular-nums text-white/50 md:table-cell">{entry.lastLap ?? "—"}</td>
+                  <td className="hidden px-3 py-3 text-right font-mono text-sm tabular-nums text-white/65 md:table-cell">{entry.lastLap ?? "—"}</td>
                   {hasSplits && (() => {
                     const { values, live } = shownSectors(entry);
                     return data.sectorNames!.map((name, i) => (
@@ -541,7 +541,7 @@ function LiveTimingTable({
                           <div className="font-mono text-sm tabular-nums text-white/80">
                             {entry.sectors.latest.gapToLeaderMs === 0 ? "Leader" : entry.sectors.latest.gapToLeaderMs != null ? `+${fmtSplit(entry.sectors.latest.gapToLeaderMs)}` : "—"}
                           </div>
-                          <div className="text-[10px] uppercase tracking-wider text-white/35">
+                          <div className="text-[10px] uppercase tracking-wider text-white/60">
                             L{entry.sectors.latest.lap} · {entry.sectors.latest.pointName ?? `Split ${entry.sectors.latest.point}`}
                             {entry.sectors.latest.gapToAheadMs != null && <> · +{fmtSplit(entry.sectors.latest.gapToAheadMs)} ahead</>}
                           </div>
@@ -549,7 +549,7 @@ function LiveTimingTable({
                       ) : <span className="text-white/25">—</span>}
                     </td>
                   )}
-                  <td className="hidden px-3 py-3 text-right text-sm text-white/40 lg:table-cell">{entry.gap}</td>
+                  <td className="hidden px-3 py-3 text-right text-sm text-white/60 lg:table-cell">{entry.gap}</td>
                 </motion.tr>
               );
             })}
@@ -557,7 +557,7 @@ function LiveTimingTable({
         </tbody>
       </table>
       {hasSplits && (
-        <div className="hidden flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2 text-[11px] text-white/40 xl:flex">
+        <div className="hidden flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2 text-[11px] text-white/60 xl:flex">
           {data.sectorNames!.map((name, i) => <span key={i}><strong className="text-white/60">S{i + 1}</strong> {name}</span>)}
           <span><span className="font-bold text-fuchsia-400">Purple</span> fastest in the race</span>
           <span><span className="font-bold text-green-400">Green</span> rider's best</span>
@@ -705,7 +705,7 @@ export function LiveRaceViews({
       <div className={`flex items-center justify-between border-b border-white/10 ${compact ? "px-3 py-2" : "px-4 py-3"}`}>
         <div className="min-w-0">
           <div className="truncate font-heading text-sm font-bold uppercase text-white">{data?.motoName ?? "Live race"}</div>
-          {data?.raceClass && <div className="truncate text-[10px] uppercase tracking-wider text-white/35">{data.raceClass}</div>}
+          {data?.raceClass && <div className="truncate text-[10px] uppercase tracking-wider text-white/60">{data.raceClass}</div>}
         </div>
         <span className={`ml-3 flex shrink-0 items-center gap-1.5 text-xs ${connected ? "text-green-400" : "text-yellow-400"}`}>
           {connected ? <Radio size={13} /> : <WifiOff size={13} />}
@@ -716,7 +716,7 @@ export function LiveRaceViews({
         <div className="flex shrink-0 flex-wrap items-center justify-center gap-3 border-b border-white/10 px-4 py-3">
           <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider ${
             isLive ? "bg-primary text-white" :
-            data.status === "completed" ? "border border-secondary/30 bg-secondary/30 text-secondary" :
+            data.status === "completed" ? "border border-secondary/30 bg-secondary/30 text-green-400" :
             "bg-white/10 text-white/60"
           }`}>
             {isLive && (
@@ -732,7 +732,7 @@ export function LiveRaceViews({
               <Clock size={13} />
               <CountdownClock startedAt={data.startedAt} timeLimitMs={data.timeLimitMs} pausedAt={(data as any).pausedAt} totalPausedMs={(data as any).totalPausedMs} />
               {data.plusLaps != null && data.plusLaps > 0 && (
-                <span className="text-xs text-white/40">+{data.plusLaps} lap{data.plusLaps > 1 ? "s" : ""}</span>
+                <span className="text-xs text-white/60">+{data.plusLaps} lap{data.plusLaps > 1 ? "s" : ""}</span>
               )}
             </span>
           )}
@@ -743,13 +743,13 @@ export function LiveRaceViews({
             </span>
           )}
           {isLive && data.startedAt && !data.timeLimitMs && (
-            <span className="flex items-center gap-1.5 text-sm text-white/50">
+            <span className="flex items-center gap-1.5 text-sm text-white/65">
               <Clock size={13} />
               <ElapsedClock startedAt={data.startedAt} pausedAt={(data as any).pausedAt} totalPausedMs={(data as any).totalPausedMs} />
             </span>
           )}
           {data.status === "completed" && (
-            <span className="flex items-center gap-1.5 text-sm text-white/50">
+            <span className="flex items-center gap-1.5 text-sm text-white/65">
               <Flag size={13} /> Race finished
               <OfficialResultsBadge compact className="ml-1 bg-white/90" official={!!(data as any).resultsOfficial} />
             </span>
@@ -764,9 +764,9 @@ export function LiveRaceViews({
       </div>
       <section role="tabpanel" className={`min-h-0 flex-1 overflow-y-auto overscroll-contain ${compact ? "text-xs" : ""}`}>
         {error ? (
-          <div className="flex min-h-40 items-center justify-center p-6 text-center text-sm text-white/45">{error}</div>
+          <div className="flex min-h-40 items-center justify-center p-6 text-center text-sm text-white/60">{error}</div>
         ) : !data ? (
-          <div className="flex min-h-40 items-center justify-center p-6 text-center font-heading text-sm uppercase tracking-widest text-white/35 animate-pulse">
+          <div className="flex min-h-40 items-center justify-center p-6 text-center font-heading text-sm uppercase tracking-widest text-white/60 animate-pulse">
             Connecting to timing system…
           </div>
         ) : (
@@ -922,7 +922,7 @@ function LegacyLiveLeaderboard() {
 
       {/* Header bar */}
       <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3">
-        <Link href="/" className="flex items-center gap-2 text-white/50 hover:text-white text-sm transition-colors">
+        <Link href="/" className="flex items-center gap-2 text-white/65 hover:text-white text-sm transition-colors">
           <ChevronLeft size={16} /> Home
         </Link>
 
@@ -947,23 +947,23 @@ function LegacyLiveLeaderboard() {
         <div className="flex flex-1 flex-col items-center justify-center space-y-4 p-8 text-center">
           <Radio size={48} className="text-white/20" />
           <h2 className="text-2xl font-heading font-bold uppercase">{error}</h2>
-          <p className="text-white/50 text-sm">Check the moto ID or wait for the race to start.</p>
+          <p className="text-white/65 text-sm">Check the moto ID or wait for the race to start.</p>
           <Link href="/"><button className="text-sm text-primary hover:underline">← Back to Home</button></Link>
         </div>
       ) : !data ? (
         <div className="flex flex-1 items-center justify-center">
-          <div className="font-heading text-lg uppercase tracking-widest text-white/40 animate-pulse">Connecting to timing system…</div>
+          <div className="font-heading text-lg uppercase tracking-widest text-white/60 animate-pulse">Connecting to timing system…</div>
         </div>
       ) : (
         <>
           {/* Moto header */}
           <div className="shrink-0 border-b border-white/10 px-4 py-4 text-center sm:py-5">
-            <div className="text-white/40 text-xs font-bold uppercase tracking-widest mb-1">{data.raceClass}</div>
+            <div className="text-white/60 text-xs font-bold uppercase tracking-widest mb-1">{data.raceClass}</div>
             <h1 className="font-heading text-2xl font-bold uppercase tracking-tight sm:text-3xl">{data.motoName}</h1>
             <div className="mt-2 flex flex-wrap items-center justify-center gap-3 sm:mt-3 sm:gap-4">
               <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
                 isLive ? "bg-primary text-white" :
-                data.status === "completed" ? "bg-secondary/30 text-secondary border border-secondary/30" :
+                data.status === "completed" ? "bg-secondary/30 text-green-400 border border-secondary/30" :
                 "bg-white/10 text-white/60"
               }`}>
                 {isLive && (
@@ -980,7 +980,7 @@ function LegacyLiveLeaderboard() {
                   <Clock size={13} />
                   <CountdownClock startedAt={data.startedAt} timeLimitMs={data.timeLimitMs} pausedAt={(data as any).pausedAt} totalPausedMs={(data as any).totalPausedMs} />
                   {data.plusLaps != null && data.plusLaps > 0 && (
-                    <span className="text-white/40 text-xs">+{data.plusLaps} lap{data.plusLaps > 1 ? "s" : ""}</span>
+                    <span className="text-white/60 text-xs">+{data.plusLaps} lap{data.plusLaps > 1 ? "s" : ""}</span>
                   )}
                 </span>
               )}
@@ -993,14 +993,14 @@ function LegacyLiveLeaderboard() {
               )}
 
               {isLive && data.startedAt && !data.timeLimitMs && (
-                <span className="text-white/50 text-sm flex items-center gap-1.5">
+                <span className="text-white/65 text-sm flex items-center gap-1.5">
                   <Clock size={13} />
                   <ElapsedClock startedAt={data.startedAt} pausedAt={(data as any).pausedAt} totalPausedMs={(data as any).totalPausedMs} />
                 </span>
               )}
 
               {data.status === "completed" && (
-                <span className="text-white/50 text-sm flex items-center gap-1.5">
+                <span className="text-white/65 text-sm flex items-center gap-1.5">
                   <Flag size={13} /> Race finished
                   <OfficialResultsBadge compact className="ml-1 bg-white/90" official={!!(data as any).resultsOfficial} />
                 </span>
@@ -1069,7 +1069,7 @@ function LegacyLiveLeaderboard() {
               </motion.div>
             </AnimatePresence>
 
-            <footer className="p-4 text-center text-xs text-white/20">
+            <footer className="p-4 text-center text-xs text-white/55">
               Powered by RM Roost · Updates live
             </footer>
           </section>
@@ -1085,10 +1085,10 @@ export default function LiveLeaderboard() {
   return (
     <main className="fixed inset-0 z-40 flex h-[100dvh] flex-col overflow-hidden bg-sidebar text-sidebar-foreground">
       <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3">
-        <Link href="/" className="flex items-center gap-2 text-sm text-white/50 transition-colors hover:text-white">
+        <Link href="/" className="flex items-center gap-2 text-sm text-white/65 transition-colors hover:text-white">
           <ChevronLeft size={16} /> Home
         </Link>
-        <span className="text-xs uppercase tracking-wider text-white/35">RM Roost Live</span>
+        <span className="text-xs uppercase tracking-wider text-white/60">RM Roost Live</span>
       </div>
       <LiveRaceViews {...stream} showRaceStatus />
     </main>

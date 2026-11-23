@@ -454,6 +454,7 @@ export default function Home() {
 
       {/* Events Section — tabbed */}
       <section className="container mx-auto px-4">
+        <h2 className="sr-only">Races</h2>
 
         {/* Search bar */}
         <div className="relative mb-5">
@@ -463,6 +464,7 @@ export default function Home() {
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search by race name, track, city or state…"
+            aria-label="Search races"
             className="w-full h-[52px] pl-12 pr-12 rounded-full border-2 border-[#8C8C8C] bg-white text-base text-[#333] placeholder:text-[#707070] focus:outline-none focus:border-[#242424] transition-colors"
           />
           {searchQuery && (

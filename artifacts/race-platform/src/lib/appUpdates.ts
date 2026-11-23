@@ -1,3 +1,5 @@
+import { isBackgroundLoading, reloadForStaleCode } from "./staleChunkReload";
+
 /**
  * Picks up a new release without getting in the way.
  *
@@ -37,9 +39,10 @@ export function listenForAppUpdates(): void {
   window.addEventListener("popstate", () => { if (updatePending) reload(); });
 
   // A page still running an older release can find its code files replaced:
-  // load the new release instead of failing.
+  // load the new release instead of failing (once; never offline or for a
+  // background preload, see staleChunkReload.ts).
   window.addEventListener("vite:preloadError", (event) => {
-    event.preventDefault();
-    reload();
+    if (isBackgroundLoading()) return;
+    if (reloadForStaleCode()) event.preventDefault();
   });
 }
