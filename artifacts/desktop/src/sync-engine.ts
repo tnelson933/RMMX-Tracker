@@ -1,5 +1,13 @@
 import Database from "better-sqlite3";
 import type { SyncState, SyncStatus } from "./ipc-types";
+import {
+  SYNC_TIMING,
+  isNetworkError,
+  localDateKey,
+  nextFullCycleDelay,
+  sessionStillTrusted,
+  shouldPullAfterPush,
+} from "./sync-schedule";
 
 type StateChangeCallback = (state: SyncState) => void;
 
@@ -48,15 +56,49 @@ export class SyncEngine {
   /** Stable JSON fingerprint of the last successful sync-pull response.
    *  Used to skip upserts (and UI invalidations) on no-op cycles. */
   private lastPullHash: string | null = null;
+  /** ETag of the response behind lastPullHash, sent back as If-None-Match. */
+  private lastPullEtag: string | null = null;
   /** Rows skipped by upsertPulled() during the current pull because they have
    *  pending local writes. A pull with skipped rows is not cached in
    *  lastPullHash so the same cloud response is re-applied once they push. */
   private pullSkippedPending = 0;
   private sessionCookie: string | null = null;
-  private flushTimer: ReturnType<typeof setInterval> | null = null;
+  /** When the cloud last accepted sessionCookie (any authenticated 2xx). */
+  private sessionConfirmedAt: number | null = null;
   private listeners: StateChangeCallback[] = [];
   private flushPromise: Promise<void> | null = null;
-  private pollIntervalMs: number;
+  /** Kind of the cycle in flushPromise. */
+  private flushKind: "full" | "push" = "full";
+  /** Fixed pull interval set by the caller (option or sync:setInterval); null = adaptive. */
+  private pollOverrideMs: number | null;
+  private isUserActive: () => boolean;
+
+  // ── Scheduling (see sync-schedule.ts) ──────────────────────────────────────
+  private running = false;
+  private cycleTimer: ReturnType<typeof setTimeout> | null = null;
+  private watchTimer: ReturnType<typeof setInterval> | null = null;
+  /** When the next full (push + pull) cycle is due. */
+  private nextFullAt = 0;
+  /** A local write is waiting to be pushed (since pushRequestedAt). */
+  private pushRequested = false;
+  private pushRequestedAt = 0;
+  /** Consecutive failed cycles; > 0 means backing off and probing /api/healthz first. */
+  private failures = 0;
+  /** Consecutive pulls whose response matched the previous one. */
+  private unchangedPulls = 0;
+  private lastPullAt: number | null = null;
+  /** Set by pullCloud(): the response matched the previous pull. */
+  private lastPullIdentical = false;
+  /** The current cycle pulled from the cloud. */
+  private cyclePulled = false;
+  /** Set by pushQueue(): the batch was full, so more rows are waiting. */
+  private lastPushBatchFull = false;
+  /** SQLite data_version last seen: changes only when another connection (the local server) commits. */
+  private lastDataVersion: number | null = null;
+  /** Fingerprint of the push queue last seen, so unrelated local writes don't trigger a push. */
+  private lastQueueSig = "";
+  /** Queue signature when the current cycle began. */
+  private cycleStartSig = "";
   /**
    * Set when the cloud answered a push without the club-setup capability (an
    * older release): until this time those rows stay queued and are left out of
@@ -70,7 +112,10 @@ export class SyncEngine {
     clubId: string;
     email: string;
     password: string;
+    /** Fixed pull interval; leave unset for the adaptive schedule in sync-schedule.ts. */
     pollIntervalMs?: number;
+    /** Whether someone is using the computer (shortens the idle pull interval). Default: always. */
+    isUserActive?: () => boolean;
     /** Optional hooks for persisting the session cookie across restarts */
     loadCachedCookie?: () => string | null;
     saveCachedCookie?: (cookie: string) => void;
@@ -83,9 +128,11 @@ export class SyncEngine {
     this.loadCachedCookie  = opts.loadCachedCookie  ?? null;
     this.saveCachedCookie  = opts.saveCachedCookie  ?? null;
     this.clearCachedCookie = opts.clearCachedCookie ?? null;
-    // Default: check for pending writes every 2 s so lap crossings reach the
-    // cloud (and SSE subscribers) within ~2 s of the RFID read.
-    this.pollIntervalMs = opts.pollIntervalMs ?? 2_000;
+    // Pushes don't wait for this: a local write is noticed within
+    // SYNC_TIMING.localCheckMs and pushed at once, so lap crossings still reach
+    // the cloud (and SSE subscribers) within ~1–2 s of the read.
+    this.pollOverrideMs = opts.pollIntervalMs ?? null;
+    this.isUserActive = opts.isUserActive ?? (() => true);
 
     this.db = new Database(opts.dbPath, { readonly: false });
     this.db.pragma("journal_mode = WAL");
@@ -154,21 +201,148 @@ export class SyncEngine {
       )
       .run(MAX_ATTEMPTS);
 
+    this.running = true;
+    this.lastDataVersion = this.dataVersion();
+    this.lastQueueSig = this.queueSignature();
+    this.watchTimer = setInterval(() => this.checkLocalWrites(), SYNC_TIMING.localCheckMs);
+    // First cycle at once: pushes anything queued offline and does the
+    // first-time pull after sign-in.
     void this.flush();
-    this.flushTimer = setInterval(() => void this.flush(), this.pollIntervalMs);
   }
 
   stop(): void {
-    if (this.flushTimer) {
-      clearInterval(this.flushTimer);
-      this.flushTimer = null;
+    this.running = false;
+    if (this.cycleTimer) {
+      clearTimeout(this.cycleTimer);
+      this.cycleTimer = null;
+    }
+    if (this.watchTimer) {
+      clearInterval(this.watchTimer);
+      this.watchTimer = null;
     }
   }
 
+  /** Fix the pull interval (0 or less: back to the adaptive schedule). */
   setInterval(ms: number): void {
-    this.pollIntervalMs = ms;
-    this.stop();
-    this.start();
+    this.pollOverrideMs = Number.isFinite(ms) && ms > 0 ? ms : null;
+    if (!this.running) return;
+    this.nextFullAt = Math.min(this.nextFullAt, Date.now() + nextFullCycleDelay(this.cycleOutcome()));
+    this.armTimer();
+  }
+
+  /**
+   * A local write happened (e.g. the local server answered a lap crossing):
+   * push it shortly. The once-a-second local check finds other writes itself.
+   */
+  notifyLocalWrite(): void {
+    this.requestPush();
+  }
+
+  // ── Scheduling ──────────────────────────────────────────────────────────────
+
+  /** SQLite's data_version: bumps when another connection commits. Cheap. */
+  private dataVersion(): number | null {
+    try {
+      return Number(this.db.pragma("data_version", { simple: true }));
+    } catch {
+      return null;
+    }
+  }
+
+  /** Newest queued write and the rider-profile edits waiting to be pushed. */
+  private queueSignature(): string {
+    try {
+      const row = this.db
+        .prepare(
+          `SELECT
+             (SELECT IFNULL(MAX(id), 0) FROM _write_queue) AS q,
+             (SELECT COUNT(*) || ':' || IFNULL(SUM(version), 0) || ':' || IFNULL(MAX(updated_at), '')
+                FROM _rider_profile_dirty) AS d`,
+        )
+        .get() as { q: number; d: string };
+      return `${row.q}|${row.d}`;
+    } catch {
+      return "";
+    }
+  }
+
+  /** Did the local server queue something between these two signatures? */
+  private queuedDuringCycle(before: string, after: string): boolean {
+    const [qBefore, dBefore] = before.split("|");
+    const [qAfter, dAfter] = after.split("|");
+    if (Number(qAfter) > Number(qBefore)) return true;
+    // Profile edits: changed and still waiting (our push removes the ones it sent).
+    return dAfter !== dBefore && !String(dAfter).startsWith("0:");
+  }
+
+  /** Runs every SYNC_TIMING.localCheckMs: has the local server queued anything new? */
+  private checkLocalWrites(): void {
+    if (!this.running) return;
+    const version = this.dataVersion();
+    if (version !== null && version === this.lastDataVersion) return;
+    this.lastDataVersion = version;
+    const sig = this.queueSignature();
+    if (sig === this.lastQueueSig) return;
+    this.lastQueueSig = sig;
+    if (this.getPendingCount() > 0) this.requestPush();
+  }
+
+  private requestPush(): void {
+    if (!this.running) return;
+    if (!this.pushRequested) {
+      this.pushRequested = true;
+      this.pushRequestedAt = Date.now();
+    }
+    // While a cycle runs, the flag is picked up when it finishes (armTimer).
+    if (!this.flushPromise) this.armTimer();
+  }
+
+  /** An event of this club is racing today (status race_day, or dated today and not finished). */
+  private isRaceDay(): boolean {
+    try {
+      const row = this.db
+        .prepare(
+          `SELECT 1 FROM events
+           WHERE status = 'race_day'
+              OR (substr(date, 1, 10) = ? AND status NOT IN ('draft', 'completed', 'results_published'))
+           LIMIT 1`,
+        )
+        .get(localDateKey(new Date()));
+      return !!row;
+    } catch {
+      return false;
+    }
+  }
+
+  private cycleOutcome() {
+    let userActive = true;
+    try { userActive = this.isUserActive(); } catch { /* treat as active */ }
+    return {
+      failures: this.failures,
+      overrideMs: this.pollOverrideMs,
+      raceDay: this.isRaceDay(),
+      userActive,
+      unchangedPulls: this.unchangedPulls,
+    };
+  }
+
+  /** One timer for both kinds of cycle: the next full cycle, or a pending push. */
+  private armTimer(): void {
+    if (this.cycleTimer) {
+      clearTimeout(this.cycleTimer);
+      this.cycleTimer = null;
+    }
+    if (!this.running) return;
+    let at = this.nextFullAt;
+    // While backing off, local writes wait for the next retry (they stay queued).
+    if (this.pushRequested && this.failures === 0) {
+      at = Math.min(at, this.pushRequestedAt + SYNC_TIMING.pushDebounceMs);
+    }
+    this.cycleTimer = setTimeout(() => {
+      this.cycleTimer = null;
+      const kind = Date.now() >= this.nextFullAt ? "full" : "push";
+      void this.runCycle(kind);
+    }, Math.max(0, at - Date.now()));
   }
 
   getPendingCount(): number {
@@ -214,29 +388,85 @@ export class SyncEngine {
   }
 
   /**
-   * Trigger a sync cycle. If a cycle is already in flight, returns the same
-   * promise so every caller waits for the same real completion — this is the
-   * fix for the race condition where setCredentials starts a flush and the
-   * modal's subsequent flush() call previously returned immediately.
+   * Run a full sync cycle now (push, then pull) — the "Sync now" button, the
+   * sign-in flow and the first cycle after start(). Skips any backoff wait.
+   * If a cycle is already in flight, returns the same promise so every caller
+   * waits for the same real completion (setCredentials starts a flush and the
+   * modal's flush() must wait for it); a push-only cycle in flight is followed
+   * by a full one.
    */
   flush(): Promise<void> {
-    if (this.flushPromise) return this.flushPromise;
-    this.flushPromise = this._flush().finally(() => {
-      this.flushPromise = null;
-    });
+    if (this.flushPromise) {
+      if (this.flushKind === "full") return this.flushPromise;
+      return this.flushPromise.then(() => this.flush());
+    }
+    return this.runCycle("full");
+  }
+
+  private runCycle(kind: "full" | "push"): Promise<void> {
+    if (this.flushPromise) {
+      if (kind === "full") return this.flush();
+      return this.flushPromise; // pushRequested stays set; armTimer() runs it afterwards
+    }
+    if (this.cycleTimer) {
+      clearTimeout(this.cycleTimer);
+      this.cycleTimer = null;
+    }
+    this.flushKind = kind;
+    this.flushPromise = this._flush(kind)
+      .then((ok) => this.afterCycle(kind, ok))
+      .finally(() => {
+        this.flushPromise = null;
+        this.armTimer();
+      });
     return this.flushPromise;
   }
 
-  private async _flush(): Promise<void> {
+  /** Book-keeping after a cycle: backoff, idle detection, next due time. */
+  private afterCycle(kind: "full" | "push", ok: boolean): void {
+    const now = Date.now();
+    // Writes the local server queued while this cycle ran were not in its
+    // push: send them next. Our own changes to the queue (rows marked synced,
+    // pushed profile edits removed) are absorbed so they don't trigger a push.
+    const sig = this.queueSignature();
+    if (this.queuedDuringCycle(this.cycleStartSig, sig)) this.requestPush();
+    this.lastQueueSig = sig;
+    if (!ok) {
+      this.failures += 1;
+      this.nextFullAt = now + nextFullCycleDelay(this.cycleOutcome());
+      return;
+    }
+    this.failures = 0;
+    if (this.lastPushBatchFull) {
+      // More than one batch was waiting: push the rest straight away.
+      this.lastPushBatchFull = false;
+      this.requestPush();
+    }
+    if (kind === "full" || this.cyclePulled) {
+      this.nextFullAt = now + nextFullCycleDelay(this.cycleOutcome());
+    }
+  }
+
+  /** One cycle. Returns false when it failed (offline, signed out, cloud error). */
+  private async _flush(kind: "full" | "push"): Promise<boolean> {
     // Reset per-cycle flag so stale "true" from a previous cycle never leaks
     // into a no-data cycle and triggers a spurious queryClient.invalidateQueries().
     this.lastRowsChanged = false;
+    // Writes queued from here on are seen by getPendingCount() below.
+    this.pushRequested = false;
+    this.cyclePulled = false;
+    this.cycleStartSig = this.queueSignature();
 
-    const reachable = await this.probe();
-    if (!reachable) {
-      this.wasOffline = true;
-      this.setStatus("offline");
-      return;
+    // While things are working, the sync requests themselves show whether the
+    // cloud is reachable. After a failure, ask the cheap health check first so
+    // a down server is not sent logins and full pulls.
+    if (this.failures > 0 || this.wasOffline) {
+      const reachable = await this.probe();
+      if (!reachable) {
+        this.wasOffline = true;
+        this.setStatus("offline");
+        return false;
+      }
     }
 
     // On reconnect, reset stranded rows so the queue drains automatically.
@@ -251,18 +481,20 @@ export class SyncEngine {
         .run(MAX_ATTEMPTS);
     }
 
-    this.setStatus("syncing");
-
     let pushErrorMsg: string | undefined;
+    let pushed = false;
 
     try {
-      await this.ensureSession();
-      // Check pending count AFTER ensureSession() so we don't miss writes
-      // that arrived while waiting for the network round-trip to verify the
-      // session cookie.  A stale count of 0 would skip pushQueue() and the
-      // subsequent pullCloud() would overwrite the unsaved local change.
+      // Check pending count before the network round-trips. upsertPulled()
+      // skips rows with queued writes, so a write that lands during the pull
+      // is never overwritten and is pushed by the next cycle.
       const pending = this.getPendingCount();
+      if (kind === "push" && pending === 0) return true;
+
+      this.setStatus("syncing");
+      await this.ensureSession();
       if (pending > 0) {
+        pushed = true;
         try {
           await this.pushRiderProfiles();
           await this.pushQueue();
@@ -274,24 +506,45 @@ export class SyncEngine {
           // Blocking the pull on push failures means cloud-created events
           // (or any web-portal changes) can never appear on the desktop
           // while a push is stuck — that is the bug this fixes.
+          if (isNetworkError(pushErr) || isNetworkError((pushErr as { cause?: unknown })?.cause)) throw pushErr;
           pushErrorMsg = pushErr instanceof Error ? pushErr.message : String(pushErr);
         }
       }
-      // pullCloud() returns true only when ≥1 SQLite row was actually changed.
-      // DesktopSyncWatcher reads this flag and skips queryClient.invalidateQueries()
-      // when nothing changed — preventing the 2-second UI jump on idle cycles.
-      this.lastRowsChanged = await this.pullCloud();
+      // A push-only cycle pulls too unless a pull ran moments ago, so the
+      // cloud's answer to the push (ids, totals) comes back promptly.
+      const now = Date.now();
+      if (kind === "full" || shouldPullAfterPush(now, this.lastPullAt)) {
+        // pullCloud() returns true only when ≥1 SQLite row was actually changed.
+        // DesktopSyncWatcher reads this flag and skips queryClient.invalidateQueries()
+        // when nothing changed — preventing a UI jump on idle cycles.
+        this.lastRowsChanged = await this.pullCloud();
+        this.lastPullAt = Date.now();
+        this.cyclePulled = true;
+        // Pulls that bring nothing new (and no pushes of ours) let an idle
+        // desktop slow down; any change resets it.
+        this.unchangedPulls = this.lastPullIdentical && !pushed ? this.unchangedPulls + 1 : 0;
+      } else if (pushed) {
+        this.unchangedPulls = 0;
+      }
       this.lastSyncedAt = new Date().toISOString();
       if (pushErrorMsg) {
         // Pull succeeded but push has outstanding failures — stay in error so
         // the sync bar keeps showing the push problem until it clears.
         this.setStatus("error", pushErrorMsg);
-      } else {
-        this.setStatus("idle", "");
+        return false;
       }
+      this.setStatus("idle", "");
+      return true;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      this.setStatus("error", msg);
+      if (isNetworkError(err) || isNetworkError((err as { cause?: unknown })?.cause)) {
+        // Lost the connection mid-cycle: show offline and probe before retrying.
+        this.wasOffline = true;
+        this.setStatus("offline");
+      } else {
+        this.setStatus("error", msg);
+      }
+      return false;
     }
   }
 
@@ -310,6 +563,11 @@ export class SyncEngine {
   }
 
   private async ensureSession(): Promise<void> {
+    // 0) A session the cloud accepted recently is reused as is. A 401 on any
+    //    request clears it (authedFetch), so /api/auth/me is only asked after
+    //    a restart or a long quiet spell, not on every cycle.
+    if (this.sessionCookie && sessionStillTrusted(Date.now(), this.sessionConfirmedAt)) return;
+
     // 1) Try in-memory session cookie (valid for current process lifetime)
     if (this.sessionCookie) {
       const ok = await this.verifySession();
@@ -351,19 +609,46 @@ export class SyncEngine {
 
     if (!cookie) throw new Error("Login succeeded but no session cookie");
     this.sessionCookie = cookie;
+    this.sessionConfirmedAt = Date.now();
     // Persist the new cookie so the next app restart skips the password flow
     this.saveCachedCookie?.(cookie);
   }
 
   private async verifySession(): Promise<boolean> {
-    try {
-      const res = await fetch(`${this.cloudUrl}/api/auth/me`, {
-        headers: { Cookie: this.sessionCookie! },
+    const res = await fetch(`${this.cloudUrl}/api/auth/me`, {
+      headers: { Cookie: this.sessionCookie! },
+    });
+    // A network error propagates (the cycle goes offline) instead of
+    // discarding a good cookie and trying a password login.
+    if (res.ok) this.sessionConfirmedAt = Date.now();
+    return res.ok;
+  }
+
+  /**
+   * fetch() to the cloud with the session cookie. A 401 means the session
+   * ended: sign in again and retry once. A 2xx confirms the session.
+   */
+  private async authedFetch(
+    path: string,
+    init: { method?: string; headers?: Record<string, string>; body?: string } = {},
+  ): Promise<Response> {
+    await this.ensureSession();
+    const send = () =>
+      fetch(`${this.cloudUrl}${path}`, {
+        ...init,
+        headers: { ...(init.headers ?? {}), Cookie: this.sessionCookie! },
       });
-      return res.ok;
-    } catch {
-      return false;
+    let res = await send();
+    if (res.status === 401) {
+      await res.text().catch(() => "");
+      this.sessionCookie = null;
+      this.sessionConfirmedAt = null;
+      this.clearCachedCookie?.();
+      await this.ensureSession();
+      res = await send();
     }
+    if (res.ok) this.sessionConfirmedAt = Date.now();
+    return res;
   }
 
   /**
@@ -374,13 +659,9 @@ export class SyncEngine {
     path: string,
     options: { method?: string; body?: unknown } = {},
   ): Promise<{ ok: boolean; status: number; data: unknown }> {
-    await this.ensureSession();
-    const res = await fetch(`${this.cloudUrl}${path}`, {
+    const res = await this.authedFetch(path, {
       method: options.method ?? "GET",
-      headers: {
-        "Content-Type": "application/json",
-        Cookie: this.sessionCookie!,
-      },
+      headers: { "Content-Type": "application/json" },
       ...(options.body !== undefined
         ? { body: JSON.stringify(options.body) }
         : {}),
@@ -410,6 +691,7 @@ export class SyncEngine {
       .all(MAX_ATTEMPTS) as WriteQueueRow[];
 
     if (rows.length === 0) return;
+    this.lastPushBatchFull = rows.length >= 100;
 
     // Separate deletes from upserts — deleted rows are gone from SQLite,
     // so we can't SELECT them; we just forward their IDs to the cloud.
@@ -513,24 +795,18 @@ export class SyncEngine {
 
     let res: Response;
     try {
-      res = await fetch(
-        `${this.cloudUrl}/api/clubs/${this.clubId}/desktop-push`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Cookie: this.sessionCookie!,
-          },
-          body: JSON.stringify(payload),
-        },
-      );
+      res = await this.authedFetch(`/api/clubs/${this.clubId}/desktop-push`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
     } catch (fetchErr) {
       // Network-level error (ECONNREFUSED, timeout, etc.) — increment attempt
       // counts so rows are eventually dead-lettered after MAX_ATTEMPTS and
       // no longer block pullCloud().
       const errMsg = `Push network error: ${fetchErr instanceof Error ? fetchErr.message : String(fetchErr)}`;
       markFailed(errMsg);
-      throw new Error(errMsg);
+      throw new Error(errMsg, { cause: fetchErr });
     }
 
     const now = new Date().toISOString();
@@ -791,9 +1067,9 @@ export class SyncEngine {
     }
     if (!riders.length) return;
 
-    const res = await fetch(`${this.cloudUrl}/api/clubs/${this.clubId}/sync`, {
+    const res = await this.authedFetch(`/api/clubs/${this.clubId}/sync`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Cookie: this.sessionCookie! },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ riders }),
     });
     const body = await res.text();
@@ -1143,18 +1419,23 @@ export class SyncEngine {
     const lastPulledAt: Record<string, string> = {};
     for (const w of watermarkRows) lastPulledAt[w.table_name] = w.last_pulled_at;
 
-    const res = await fetch(
-      `${this.cloudUrl}/api/clubs/${this.clubId}/sync-pull`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: this.sessionCookie!,
-        },
-        body: JSON.stringify({ lastPulledAt }),
-      },
-    );
+    this.lastPullIdentical = false;
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    // Lets a cloud that supports it answer 304 "nothing changed" instead of the
+    // whole dataset (today's cloud ignores it). Only sent when the last
+    // response was applied in full, so a 304 can never hide a skipped row.
+    if (this.lastPullEtag && this.lastPullHash !== null) headers["If-None-Match"] = this.lastPullEtag;
+    const res = await this.authedFetch(`/api/clubs/${this.clubId}/sync-pull`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ lastPulledAt }),
+    });
 
+    if (res.status === 304) {
+      await res.text().catch(() => "");
+      this.lastPullIdentical = true;
+      return false;
+    }
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       throw new Error(`sync-pull failed (${res.status}): ${body}`);
@@ -1166,6 +1447,7 @@ export class SyncEngine {
     // upserts entirely on no-op cycles — keeping rowsChanged === false and
     // preventing DesktopSyncWatcher from calling invalidateQueries every 2 s.
     const responseText = await res.text();
+    const etag = res.headers.get("etag");
     const rawData = JSON.parse(responseText) as Record<string, unknown[]>;
 
     // Sort each array by id for a stable comparison that is order-independent
@@ -1184,6 +1466,8 @@ export class SyncEngine {
 
     if (stableHash === this.lastPullHash) {
       // Identical response — nothing to upsert, nothing changed.
+      this.lastPullIdentical = true;
+      this.lastPullEtag = etag;
       return false;
     }
 
@@ -1345,6 +1629,7 @@ export class SyncEngine {
     // only when every row was applied. If rows were skipped because of pending
     // local writes, an identical response must still be upserted next cycle.
     this.lastPullHash = this.pullSkippedPending === 0 ? stableHash : null;
+    this.lastPullEtag = this.lastPullHash !== null ? etag : null;
 
     // Return whether any SQLite rows were actually inserted or updated.
     // The caller (_flush) stores this in lastRowsChanged so DesktopSyncWatcher

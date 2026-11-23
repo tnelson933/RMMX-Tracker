@@ -5,6 +5,7 @@ import {
   BrowserWindow,
   ipcMain,
   Menu,
+  powerMonitor,
   shell,
   dialog,
 } from "electron";
@@ -170,10 +171,19 @@ function sendReaderList(): void {
   contents.send("rfid-network:status", readers().rfidStatus(readers().firstOfKind("rfid")?.id));
 }
 
+/** The local server stored a crossing: push it now (a push, not a full pull). */
 function flushSyncSoon(): void {
-  if (syncEngine) {
-    setTimeout(() => void syncEngine?.flush(), 800);
-  }
+  syncEngine?.notifyLocalWrite();
+}
+
+/** No keyboard/mouse input for this long counts as nobody using the computer. */
+const SYNC_USER_IDLE_SECONDS = 120;
+
+/** Someone is using RM Roost: the window is showing and the computer had input recently. */
+function isUserActive(): boolean {
+  const win = mainWindow;
+  if (!win || win.isDestroyed() || !win.isVisible() || win.isMinimized()) return false;
+  return powerMonitor.getSystemIdleTime() < SYNC_USER_IDLE_SECONDS;
 }
 
 /** Resolve a host name (e.g. impinj-xx-xx-xx.local) to its IP; null if it can't be found quickly. */
@@ -495,6 +505,7 @@ function startSyncEngine(): void {
     loadCachedCookie:  loadSessionCookie,
     saveCachedCookie:  saveSessionCookie,
     clearCachedCookie: clearSessionCookie,
+    isUserActive,
   });
 
   syncEngine.onChange((state) => {
@@ -1098,6 +1109,8 @@ app.whenReady().then(async () => {
 
   createWindow();
   startSyncEngine();
+  // Waking from sleep: sync at once instead of waiting out an idle interval or backoff.
+  powerMonitor.on("resume", () => void syncEngine?.flush());
   startReaderStatePolling();
   readers().connectSavedReaders();
   setupAutoUpdater();

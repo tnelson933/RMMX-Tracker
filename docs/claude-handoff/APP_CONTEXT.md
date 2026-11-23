@@ -246,6 +246,14 @@ of the same web frontend, and uses SQLite and synchronization queues. RM Connect
 is a separate tray application connecting timing hardware to the cloud.
 Moving the website does not automatically update installed desktops/connectors.
 
+Desktop sync timing (`artifacts/desktop/src/sync-schedule.ts`): local writes are
+noticed by a once-a-second SQLite check and pushed within ~1–2 s; the full-club
+`sync-pull` runs every 10 s on race day, 15 s while someone uses the computer,
+and slows to 30/60 s when idle and unchanged. `/api/healthz` is only asked after
+a failure (backoff 2→30 s) and `/api/auth/me` only after a restart, a 401 or
+5 quiet minutes. The local server's own auto-sync loop does not run inside the
+desktop app (it gets no club credentials).
+
 ## 7. Current dashboard decisions
 
 The latest requested dashboard shape is:
