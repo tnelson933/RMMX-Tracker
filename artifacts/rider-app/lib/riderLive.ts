@@ -2,6 +2,7 @@ import Constants from "expo-constants";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
 
+import { useAppActive } from "@/hooks/useVisibleInterval";
 import { API_BASE_URL } from "@/lib/apiBase";
 
 /**
@@ -42,11 +43,12 @@ export function riderWatchUrl(riderId: number, ticket: string, name: string): st
   return `${API_BASE_URL}/rider-live/${riderId}#${frag({ ticket, name })}`;
 }
 
-/** The rider's live status while the screen is open, checked every 20 s. */
+/** The rider's live status while the screen is open and the app in the foreground, checked every 20 s. */
 export function useRiderLive(riderId: number, riderFetch: (path: string, options?: RequestInit) => Promise<Response>) {
   const [status, setStatus] = useState<RiderLiveStatus | null>(null);
+  const appActive = useAppActive();
   useFocusEffect(useCallback(() => {
-    if (!Number.isInteger(riderId) || riderId <= 0) return;
+    if (!appActive || !Number.isInteger(riderId) || riderId <= 0) return;
     let stopped = false;
     const load = async () => {
       try {
@@ -57,6 +59,6 @@ export function useRiderLive(riderId: number, riderFetch: (path: string, options
     void load();
     const timer = setInterval(load, 20_000);
     return () => { stopped = true; clearInterval(timer); };
-  }, [riderId, riderFetch]));
+  }, [appActive, riderId, riderFetch]));
   return status;
 }

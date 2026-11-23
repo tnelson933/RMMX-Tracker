@@ -37,6 +37,7 @@ export const PUBLIC_RULES: PublicRule[] = [
   { pattern: /^\/rider(\/|$)/, reason: "rider portal + mobile app (rider auth in handlers)" },
   { pattern: /^\/public(\/|$)/, reason: "public website and registration" },
   { pattern: /^\/account-deletion-request$/, methods: ["POST"], reason: "public account deletion request" },
+  { pattern: /^\/app-errors$/, methods: ["POST"], reason: "rider app JS error reports: allowlisted fields, size-capped, rate limited in handler, logged only" },
   { pattern: /^\/stripe\/webhook$/, methods: ["POST"], reason: "Stripe webhook (signature checked)" },
   { pattern: /^\/stripe\/connect-webhook$/, methods: ["POST"], reason: "Stripe Connect webhook for clubs' own accounts (signature checked)" },
   { pattern: /^\/stripe\/config$/, methods: READ, reason: "Stripe publishable key for the in-page payment form (public by design)" },

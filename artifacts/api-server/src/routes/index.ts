@@ -54,6 +54,7 @@ import twilioSmsRouter from "./twilio-sms";
 import cardReadersRouter from "./card-readers";
 import raceGasRouter from "./race-gas";
 import registrationFeeRouter from "./registration-fee";
+import appErrorsRouter from "./app-errors";
 
 const router: IRouter = Router();
 
@@ -112,5 +113,6 @@ router.use(twilioSmsRouter);
 router.use(cardReadersRouter);
 router.use(raceGasRouter);
 router.use(registrationFeeRouter);
+router.use(appErrorsRouter);
 
 export default router;

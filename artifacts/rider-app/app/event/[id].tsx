@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { useVisibleInterval } from "@/hooks/useVisibleInterval";
 import { RmCashWidget } from "@/components/RmCashWidget";
 import { EventLiveButton } from "@/components/LiveNowBanner";
 import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
@@ -195,12 +196,8 @@ export default function EventDetailScreen() {
 
   const loadFailed = error !== null;
   // Auto-poll every 15 s while the event is live so riders see race updates instantly
-  useEffect(() => {
-    // Also retry after a failed refresh so the "Offline, retrying" banner clears itself.
-    if (!event || (event.status !== "race_day" && !loadFailed)) return;
-    const timer = setInterval(() => { void load(); }, 15_000);
-    return () => clearInterval(timer);
-  }, [event?.status, loadFailed, load]);
+  // Also retry after a failed refresh so the "Offline, retrying" banner clears itself.
+  useVisibleInterval(load, 15_000, !!event && (event.status === "race_day" || loadFailed));
 
   // Auto-scroll to Race Schedule when arriving from a live event tap
   useEffect(() => {

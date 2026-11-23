@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useVisibleInterval } from "@/hooks/useVisibleInterval";
 import { API_BASE_URL } from "@/lib/apiBase";
 
 /** An event streaming live right now (GET /api/video/live-now). */
@@ -19,7 +20,8 @@ export interface LiveStreamEvent {
 const POLL_MS = 30_000;
 
 /**
- * Events streaming right now, refreshed every 30 seconds while mounted.
+ * Events streaming right now, refreshed every 30 seconds while the screen is
+ * on top and the app is in the foreground.
  * Public: no sign-in needed to see what's live.
  */
 export function useLiveStreams() {
@@ -44,9 +46,9 @@ export function useLiveStreams() {
   useEffect(() => {
     alive.current = true;
     void refresh();
-    const t = setInterval(() => { void refresh(); }, POLL_MS);
-    return () => { alive.current = false; clearInterval(t); };
+    return () => { alive.current = false; };
   }, [refresh]);
+  useVisibleInterval(refresh, POLL_MS);
 
   return { events, loading, error, refresh };
 }

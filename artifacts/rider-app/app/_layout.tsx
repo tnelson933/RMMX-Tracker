@@ -28,12 +28,17 @@ import { RockyChatProvider } from "@/context/RockyChatContext";
 import { ThemeProvider, useTheme } from "@/context/ThemeContext";
 import { StatusBar } from "react-native";
 import { openInApp } from "@/lib/inAppBrowser";
+import { initErrorReporting, reportError, setErrorReportRoute } from "@/lib/errorReport";
+import { routeFromSegments } from "@/lib/errorReportCore";
 
 /** Status bar icons follow the in-app Appearance setting. */
 function ThemedStatusBar() {
   const { resolvedScheme } = useTheme();
   return <StatusBar barStyle={resolvedScheme === "dark" ? "light-content" : "dark-content"} />;
 }
+
+// JS errors (uncaught, unhandled rejections) go to our API: lib/errorReport.ts.
+initErrorReporting();
 
 // Set API base URL for generated hooks (public endpoints like events list)
 setBaseUrl(API_BASE_URL);
@@ -136,6 +141,9 @@ function RootLayoutNav() {
   const { isAuthenticated, isLoading } = useRiderAuth();
   const router = useRouter();
   const segments = useSegments();
+  // Route template only ("/racer/[id]"), for error reports.
+  const routeKey = routeFromSegments(segments);
+  useEffect(() => { setErrorReportRoute(routeKey); }, [routeKey]);
 
   // Keep the launch screen until the account is restored (usually at once, from
   // this phone), so the app never flashes its signed-out screen first.
@@ -190,6 +198,10 @@ function RootLayoutNav() {
   );
 }
 
+function onBoundaryError(error: Error, componentStack: string) {
+  reportError(error, { source: "boundary", componentStack });
+}
+
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     Roboto_400Regular,
@@ -207,7 +219,7 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <ThemeProvider>
         <ThemedStatusBar />
-        <ErrorBoundary>
+        <ErrorBoundary onError={onBoundaryError}>
           <QueryClientProvider client={queryClient}>
             <AuthProvider>
               <RockyChatProvider>

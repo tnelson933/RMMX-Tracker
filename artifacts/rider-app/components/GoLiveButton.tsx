@@ -7,15 +7,17 @@ import { RiderAvatar } from "@/components/RiderPhoto";
 import { fonts } from "@/constants/fonts";
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { useAppActive } from "@/hooks/useVisibleInterval";
 
 interface Eligible { riderId: number; allowed: boolean }
 
-/** Which of this account's riders may go live now (race day, within 2 races of racing). Checked every 30 s. */
+/** Which of this account's riders may go live now (race day, within 2 races of racing). Checked every 30 s while on screen. */
 function useGoLiveRiders(): Set<number> {
   const { riderFetch, profiles } = useRiderAuth();
   const [allowed, setAllowed] = useState<Set<number>>(new Set());
+  const appActive = useAppActive();
   useFocusEffect(useCallback(() => {
-    if (profiles.length === 0) return;
+    if (!appActive || profiles.length === 0) return;
     let stopped = false;
     const load = async () => {
       try {
@@ -28,7 +30,7 @@ function useGoLiveRiders(): Set<number> {
     void load();
     const t = setInterval(load, 30_000);
     return () => { stopped = true; clearInterval(t); };
-  }, [riderFetch, profiles.length]));
+  }, [appActive, riderFetch, profiles.length]));
   return allowed;
 }
 

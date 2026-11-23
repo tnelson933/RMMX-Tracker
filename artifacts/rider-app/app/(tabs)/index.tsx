@@ -29,6 +29,7 @@ import { pickNextRace } from "@/lib/home";
 import { FollowingFeed } from "@/components/FollowingFeed";
 import { SuggestedRiders } from "@/components/SuggestedRiders";
 import { useColors } from "@/hooks/useColors";
+import { useVisibleInterval } from "@/hooks/useVisibleInterval";
 import { useRiderAuth } from "@/context/AuthContext";
 import { NoProfileLinked } from "@/components/NoProfileLinked";
 import { EmptyState } from "@/components/EmptyState";
@@ -222,11 +223,8 @@ export default function HomeScreen() {
 
   // Poll every 15 s when there's a live race-day event
   const hasLiveEvent = upcoming.some(e => e.status === "race_day");
-  useEffect(() => {
-    if (!hasLiveEvent || !primaryProfile) return;
-    const timer = setInterval(() => { void loadData({ quiet: true }); }, 15_000);
-    return () => clearInterval(timer);
-  }, [hasLiveEvent, loadData]);
+  const quietReload = useCallback(() => loadData({ quiet: true }), [loadData]);
+  useVisibleInterval(quietReload, 15_000, hasLiveEvent && !!primaryProfile);
 
   const [feedRefreshKey, setFeedRefreshKey] = useState(0);
   const onRefresh = useCallback(async () => {

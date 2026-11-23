@@ -4,6 +4,8 @@ import * as Notifications from "expo-notifications";
 import * as TaskManager from "expo-task-manager";
 import { Platform } from "react-native";
 
+import { reportCaught } from "@/lib/errorReport";
+
 // Quick Check-In arrival alert. The phone watches a 1-mile circle around each
 // track the rider is registered at (Quick Check-In events in the next week).
 // On entering it on race day, the OS wakes this task, even with RM Roost
@@ -39,7 +41,7 @@ export const ALWAYS_LOCATION_SUPPORTED = Platform.OS === "ios";
 export function todayAtTrack(timeZone?: string): string {
   try {
     if (timeZone) return new Date().toLocaleDateString("en-CA", { timeZone });
-  } catch { /* unknown zone: fall through */ }
+  } catch (e) { reportCaught("geofence.timeZone", e); /* unknown zone: fall through */ }
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }

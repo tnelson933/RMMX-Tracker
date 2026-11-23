@@ -16,6 +16,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
+import { useVisibleInterval } from "@/hooks/useVisibleInterval";
 import { useRiderAuth } from "@/context/AuthContext";
 import { BrandBar } from "@/components/BrandBar";
 import {
@@ -535,11 +536,7 @@ export default function MyRacesScreen() {
 
   // Poll schedule every 15 s while there are live race-day events
   const hasLiveRaceDay = (schedule?.events ?? []).some(e => e.status === "race_day");
-  useEffect(() => {
-    if (!hasLiveRaceDay || !primaryProfile) return;
-    const timer = setInterval(() => { void loadScheduleOnly(); }, 15_000);
-    return () => clearInterval(timer);
-  }, [hasLiveRaceDay, loadScheduleOnly]);
+  useVisibleInterval(loadScheduleOnly, 15_000, hasLiveRaceDay && !!primaryProfile);
 
   useEffect(() => {
     if (activeFilter !== "near_me" || nearMeState) return;

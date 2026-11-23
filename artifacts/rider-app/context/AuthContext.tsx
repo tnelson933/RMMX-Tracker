@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "@/lib/apiBase";
+import { reportCaught } from "@/lib/errorReport";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -342,7 +343,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         AsyncStorage.getItem(BIOMETRIC_ENABLED_KEY),
       ]);
       if (bikeRaw) {
-        try { setBikeInfoMapState(JSON.parse(bikeRaw)); } catch { /* ignore */ }
+        try { setBikeInfoMapState(JSON.parse(bikeRaw)); } catch (e) { reportCaught("auth.bikeInfoCache", e); }
       }
       if (bioFlag === "true") {
         setBiometricEnabledState(true);
@@ -373,7 +374,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const valid = sel.filter(id => prof.profiles.some((p: RiderProfile) => p.id === id));
             if (valid.length) setSelectedProfileIdsState(valid);
           }
-        } catch { /* a bad cache just means profiles load from the server */ }
+        } catch (e) { reportCaught("auth.profilesCache", e); /* profiles load from the server */ }
         setIsLoading(false);
         markRestored();
 

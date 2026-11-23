@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BrandBar } from "@/components/BrandBar";
 import { fmtDateShared as fmtDate, fmtLap } from "@/components/RaceSubScreens";
 import { useColors } from "@/hooks/useColors";
+import { useVisibleInterval } from "@/hooks/useVisibleInterval";
 import { onTabReset } from "@/utils/tabEvents";
 import { EmptyState } from "@/components/EmptyState";
 import { RiderLookupCard } from "@/components/RiderLookupCard";
@@ -611,12 +612,9 @@ function PublicMotoSheet({
     finally { setFetching(false); }
   }, [moto.motoId]);
 
-  useEffect(() => {
-    void fetchDetail();
-    if (!isLive) return;
-    const timer = setInterval(() => { void fetchDetail(); }, 5000);
-    return () => clearInterval(timer);
-  }, [fetchDetail, isLive]);
+  // Reload when the moto goes live; then every 5 s while live and on screen.
+  useEffect(() => { void fetchDetail(); }, [fetchDetail, isLive]);
+  useVisibleInterval(fetchDetail, 5000, isLive);
 
   const lineupRows: PublicLineupEntry[] = detail?.lineup?.length
     ? detail.lineup
@@ -903,12 +901,8 @@ function EventScheduleScreen({
     onOpenedMoto?.();
   }, [detail, openMotoId, onOpenedMoto]);
 
-  // Poll every 15s during live events
-  useEffect(() => {
-    if (!isLive) return;
-    const t = setInterval(() => { void load(); }, 15_000);
-    return () => clearInterval(t);
-  }, [isLive, load]);
+  // Poll every 15s during live events (only while on screen)
+  useVisibleInterval(load, 15_000, isLive);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -1591,10 +1585,9 @@ export default function ResultsScreen() {
   }, []);
   useEffect(() => { void loadUpcoming(); }, [loadUpcoming]);
 
-  useEffect(() => {
-    const t = setInterval(() => { void loadEvents(racesDebouncedQ); }, 30_000);
-    return () => clearInterval(t);
-  }, [racesDebouncedQ, loadEvents]);
+  // Keep the race list fresh while it's on screen.
+  const refreshEvents = useCallback(() => loadEvents(racesDebouncedQ), [loadEvents, racesDebouncedQ]);
+  useVisibleInterval(refreshEvents, 30_000);
 
   // ── Series data loading ──────────────────────────────────────────────────────
   const loadSeries = useCallback(async (q: string) => {

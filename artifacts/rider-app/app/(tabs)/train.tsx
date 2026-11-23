@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SessionLapChart, TrackProgressChart } from "@/components/PracticeCharts";
 import { fmtLapShort } from "@/lib/raceReport";
 import { Feather } from "@expo/vector-icons";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -21,6 +21,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
+import { useScreenVisible } from "@/hooks/useVisibleInterval";
 import { useRiderAuth } from "@/context/AuthContext";
 import { DirtBikeIcon } from "@/components/DirtBikeIcon";
 import { BrandBar } from "@/components/BrandBar";
@@ -1137,11 +1138,8 @@ export default function TrainScreen() {
   }, [currentTrack]);
 
   // Live laps are only fetched while this tab is the one on screen.
-  const [focused, setFocused] = useState(true);
-  useFocusEffect(useCallback(() => {
-    setFocused(true);
-    return () => setFocused(false);
-  }, []));
+  // Also paused while the app is in the background; polls again at once on return.
+  const focused = useScreenVisible();
 
   // ── Poll for live lap updates when an open-practice session is in progress ──
   useEffect(() => {

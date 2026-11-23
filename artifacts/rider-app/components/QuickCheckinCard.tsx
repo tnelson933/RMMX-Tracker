@@ -6,6 +6,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ActivityIndicator, AppState, Linking, Pressable, Text, View } from "react-native";
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { useVisibleInterval } from "@/hooks/useVisibleInterval";
 import {
   QUICK_CHECKIN_RADIUS_MILES,
   arrivalAlertStatus,
@@ -137,18 +138,19 @@ export function QuickCheckinCard() {
     } catch { /* keep the last good state */ }
   }, [isAuthenticated, riderFetch]);
 
+  // Back in the foreground: refresh. While polling, the interval below already
+  // refreshes on coming back, so this only covers the not-polling case.
+  const polling = rows.length > 0;
+  const pollingRef = useRef(polling);
+  useEffect(() => { pollingRef.current = polling; }, [polling]);
   useEffect(() => {
     void refresh();
-    const sub = AppState.addEventListener("change", state => { if (state === "active") void refresh(); });
+    const sub = AppState.addEventListener("change", state => { if (state === "active" && !pollingRef.current) void refresh(); });
     return () => sub.remove();
   }, [refresh]);
 
-  // Poll while there's something to check in for today.
-  useEffect(() => {
-    if (rows.length === 0) return;
-    const timer = setInterval(() => void refresh(), REFRESH_MS);
-    return () => clearInterval(timer);
-  }, [rows.length, refresh]);
+  // Poll while there's something to check in for today and the home screen is on screen.
+  useVisibleInterval(refresh, REFRESH_MS, polling);
 
   const events = useMemo(() => {
     const byEvent = new Map<number, { info: Row; rows: Row[] }>();
