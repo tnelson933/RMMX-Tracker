@@ -32,6 +32,7 @@ const READ: HttpMethod[] = ["GET", "HEAD"];
 export const PUBLIC_RULES: PublicRule[] = [
   // Handlers own their auth (login/setup/me return 401 themselves; rider routes use rider sessions/tokens).
   { pattern: /^\/healthz$/, reason: "health check" },
+  { pattern: /^\/healthz\/deep$/, methods: READ, reason: "uptime monitor: database ok/fail and timing only (rate limited in handler)" },
   { pattern: /^\/auth(\/|$)/, reason: "login, setup, me" },
   { pattern: /^\/rider(\/|$)/, reason: "rider portal + mobile app (rider auth in handlers)" },
   { pattern: /^\/public(\/|$)/, reason: "public website and registration" },

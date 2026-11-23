@@ -55,6 +55,26 @@ application's AI API access.
 The app's object-storage implementation also needs Replit's sidecar credential
 and signing service. These path variables alone are insufficient off-platform.
 
+## Race-day monitoring (cloud API)
+
+All optional; the defaults are what production should run with. Alert texts go to
+`SUPPORT_ALERT_PHONES` through Twilio (above), and only when `NODE_ENV=production`
+unless the matching `*_SMS=on` override is set; otherwise they are logged as
+`ops_alert_sms_skipped`. External uptime monitors should poll `GET /api/healthz/deep`
+(database check, 200 ok / 503 degraded); `/api/healthz` stays database-free for Railway's
+deploy healthcheck.
+
+| Name | Purpose |
+| --- | --- |
+| `RACE_WATCHDOG` | `off` disables the race-day watchdog (default on) |
+| `RACE_WATCHDOG_STALE_MIN` | Minutes a running race may go without an accepted crossing before an alert (default 6; twice that before the first crossing) |
+| `RACE_WATCHDOG_REPEAT_MIN` | Quiet period between repeat texts for the same moto and problem (default 30) |
+| `RACE_WATCHDOG_LONG_MIN` | Minutes in progress before a race without a time limit counts as left running (default 90; timed races: 2x the limit) |
+| `RACE_WATCHDOG_SMS` | `on` sends watchdog texts outside production (default off; local testing only) |
+| `SERVER_ERROR_ALERTS` | `off` stops server-error (5xx) texts; the `server_error` log lines stay (default on) |
+| `SERVER_ERROR_ALERT_WINDOW_MIN` | At most one server-error text per this many minutes, summarising the count and top route (default 15) |
+| `SERVER_ERROR_SMS` | `on` sends server-error texts outside production (default off; local testing only) |
+
 ## Local server, desktop and synchronization
 
 | Name | Purpose / notes |

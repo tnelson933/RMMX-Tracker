@@ -12,6 +12,7 @@ import { redactLogUrl } from "./lib/logRedaction";
 import { WebhookHandlers, processConnectWebhook } from "./webhookHandlers";
 import { accessControlMiddleware } from "./middleware/accessControl";
 import { ingestObservationMiddleware } from "./middleware/ingestObservation";
+import { noteServerError } from "./lib/serverErrorAlerts";
 
 const app: Express = express();
 // The Replit/deployment proxy terminates TLS before requests reach Express.
@@ -220,7 +221,13 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   const pgCode = err?.code ?? err?.cause?.code;
   const clientError = typeof pgCode === "string" && CLIENT_ERROR_PG_CODES.has(pgCode);
   const status = clientError ? 400 : typeof err?.status === "number" && err.status < 500 ? err.status : 500;
-  if (status >= 500) (req as any).log?.error({ err }, "Unhandled API error");
+  if (status >= 500) {
+    (req as any).log?.error({ err }, "Unhandled API error");
+    // Route pattern only (never the raw URL: reader tokens and ids live in paths), no bodies.
+    const route = req.route?.path ? `${req.baseUrl}${req.route.path}` : "unmatched";
+    logger.error({ event: "server_error", route, method: req.method, status, requestId: (req as any).id }, "server_error");
+    noteServerError(`${req.method} ${route}`);
+  }
   res.status(status).json({
     error: status === 500
       ? "Something went wrong on our end. Please try again in a minute. If it keeps happening, ask the AI Assistant for help."

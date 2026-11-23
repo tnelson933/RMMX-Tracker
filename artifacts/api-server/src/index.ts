@@ -14,6 +14,7 @@ import { sendEnrollmentConfirmations } from "./lib/smsAlerts";
 import { startFinalizeReminders } from "./lib/finalizeReminder";
 import { startRaceGasRetries } from "./lib/raceGasCredits";
 import { startPracticeClaimSweep } from "./routes/practice";
+import { startRaceWatchdog } from "./lib/raceWatchdog";
 
 const rawPort = process.env["PORT"];
 
@@ -58,4 +59,6 @@ httpServer.listen(port, (err?: Error) => {
   // Organizers: a reminder to finalize results 12 hours after an event ends.
   startFinalizeReminders();
   startRaceGasRetries();
+  // Race day: text support when live timing goes quiet or a race is left running.
+  startRaceWatchdog();
 });

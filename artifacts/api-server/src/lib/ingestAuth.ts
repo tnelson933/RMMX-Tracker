@@ -232,6 +232,21 @@ export type IngestHints = { motoId?: unknown; eventId?: unknown; practiceSession
 const UNAUTH_LOG_WINDOW_MS = 60_000;
 const unauthLogState = new Map<string, { loggedAt: number; suppressed: number }>();
 
+function shortText(v: unknown): string | undefined {
+  return typeof v === "string" || typeof v === "number" ? String(v).slice(0, 60) : undefined;
+}
+
+/** What an unauthenticated reader says about itself: generic readerId, Impinj hostname, or bridge source. */
+export function readerHint(body: unknown): { readerId?: string; source?: string } {
+  if (!body || typeof body !== "object") return {};
+  const b = body as Record<string, any>;
+  const firstEvent = Array.isArray(b.events) ? b.events[0] : undefined;
+  return {
+    readerId: shortText(b.readerId) ?? shortText(b.reader_id) ?? shortText(firstEvent?.hostname) ?? shortText(b.hostname),
+    source: shortText(b.source) ?? shortText(b.timeSource),
+  };
+}
+
 function logUnauthenticatedIngest(
   req: Request,
   route: string,
@@ -251,6 +266,7 @@ function logUnauthenticatedIngest(
   if (unauthLogState.size > 5_000) unauthLogState.clear();
   unauthLogState.set(key, { loggedAt: now, suppressed: 0 });
   const num = (v: unknown) => (positiveId(v) ?? undefined);
+  const reader = readerHint(req.body);
   logger.warn({
     event: "timing_ingest_unauthenticated",
     route,
@@ -258,6 +274,9 @@ function logUnauthenticatedIngest(
     motoId: num(hints.motoId),
     eventId: num(hints.eventId),
     practiceSessionId: num(hints.practiceSessionId),
+    // Which reader to update: its self-reported id/hostname/source (no credential to go by).
+    readerId: reader.readerId,
+    readerSource: reader.source,
     callerIp: ip,
     userAgent: typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"].slice(0, 120) : undefined,
     reason,
