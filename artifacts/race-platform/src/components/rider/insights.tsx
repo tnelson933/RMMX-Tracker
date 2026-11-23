@@ -29,13 +29,16 @@ export function eventImage(url: string | null | undefined): string | null {
   return url ? url : null;
 }
 
-export function ChartCard({ title, right, takeaway, children }: {
+export function ChartCard({ title, right, takeaway, children, level = 4 }: {
   title: string; right?: ReactNode; takeaway?: string | null; children: ReactNode;
+  /** Heading level for the title, so it follows the page's outline (looks the same at any level). */
+  level?: 2 | 3 | 4;
 }) {
+  const Heading = `h${level}` as "h2" | "h3" | "h4";
   return (
     <div className="rounded-xl border border-[#3A3A3A] bg-[#242424] p-4 space-y-3">
       <div className="flex items-center justify-between gap-3">
-        <h4 className="font-heading font-bold text-[14px] uppercase tracking-[1px] text-[#A8A8A8]">{title}</h4>
+        <Heading className="font-heading font-bold text-[14px] uppercase tracking-[1px] text-[#A8A8A8]">{title}</Heading>
         {right}
       </div>
       {children}

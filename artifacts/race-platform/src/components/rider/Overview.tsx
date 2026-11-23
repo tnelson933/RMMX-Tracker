@@ -60,7 +60,7 @@ export function RecentForm({ history, onOpen }: { history: EventHistory[]; onOpe
   return (
     <div className="rounded-xl border border-[#3A3A3A] bg-[#242424] p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h4 className="font-heading font-bold text-[14px] uppercase tracking-[1px] text-[#A8A8A8]">Recent form</h4>
+        <h2 className="font-heading font-bold text-[14px] uppercase tracking-[1px] text-[#A8A8A8]">Recent form</h2>
         <span className="text-[12px] text-[#A8A8A8]">Latest on the right</span>
       </div>
       <div className="flex gap-2">
@@ -85,7 +85,7 @@ export function FormTrend({ history }: { history: EventHistory[] }) {
   if (paceVals.length >= 2) {
     const last = paceVals[paceVals.length - 1];
     return (
-      <ChartCard title="Pace vs the winner" takeaway={paceTakeaway(rounds, `in your last ${rounds.length} races`)}
+      <ChartCard level={3} title="Pace vs the winner" takeaway={paceTakeaway(rounds, `in your last ${rounds.length} races`)}
         right={<span className="font-heading font-extrabold italic text-2xl text-white">{last.toFixed(1)}%</span>}>
         <TrendChart data={rounds.map((_, i) => ({ x: xs[i], you: pace[i] }))}
           series={[{ key: "you", name: "% off winner", color: CHART.you, dots: true, area: true }]}

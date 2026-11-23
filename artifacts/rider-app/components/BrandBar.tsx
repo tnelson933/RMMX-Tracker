@@ -10,8 +10,9 @@ import { useRiderAuth } from "@/context/AuthContext";
 // ─── Profile Avatars ──────────────────────────────────────────────────────────
 
 const PALETTE = [
-  "#cf152d", "#2563eb", "#16a34a", "#d97706",
-  "#7c3aed", "#0891b2", "#be185d", "#b45309",
+  // White initials stay >= 4.5:1 on every colour (matches race-platform lib/rider-active.ts).
+  "#cf152d", "#2563eb", "#15803d", "#a16207",
+  "#7c3aed", "#0e7490", "#be185d", "#b45309",
 ];
 
 function nameColor(name: string): string {

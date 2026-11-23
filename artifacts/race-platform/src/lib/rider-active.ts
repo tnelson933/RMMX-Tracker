@@ -62,8 +62,11 @@ export function useActiveRiders() {
   return { ...profilesQuery, profiles, activeProfiles, isActive, toggleActive };
 }
 
-/** Same avatar colours as the rider app's BrandBar. */
-const PALETTE = ["#cf152d", "#2563eb", "#16a34a", "#d97706", "#7c3aed", "#0891b2", "#be185d", "#b45309"];
+/**
+ * Same avatar colours as the rider app's BrandBar. Every colour keeps white
+ * initials at >= 4.5:1 (green, amber and cyan were one shade darker than before).
+ */
+const PALETTE = ["#cf152d", "#2563eb", "#15803d", "#a16207", "#7c3aed", "#0e7490", "#be185d", "#b45309"];
 export function nameColor(name: string): string {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;

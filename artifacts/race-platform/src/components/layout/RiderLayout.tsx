@@ -133,6 +133,7 @@ function BottomTabs({ current }: { current: string | null }) {
 /** Rocky, minimized: the app's floating red button. */
 function RockyButton() {
   return (
+    <aside aria-label="Rocky">
     <Link
       href="/rider/mechanic"
       aria-label="Ask Rocky, your AI mechanic and riding coach"
@@ -141,6 +142,7 @@ function RockyButton() {
       <Wrench size={26} />
       <span className="absolute top-1 right-1 w-3 h-3 rounded-full bg-[#22c55e] border-2 border-[#161616]" />
     </Link>
+    </aside>
   );
 }
 
