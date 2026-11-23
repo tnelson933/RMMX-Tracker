@@ -1,7 +1,6 @@
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "./logger";
-import { sendOpsText, type OpsSmsSender } from "./opsAlerts";
 import {
   evaluateWatchdog, watchdogConfigFromEnv,
   type WatchdogAlert, type WatchdogMoto, type WatchdogState,
@@ -15,7 +14,7 @@ import {
  * State is in memory: production is a single replica, and after a restart an
  * open problem is simply reported again.
  *
- * RACE_WATCHDOG=off disables it. Texts only in production unless RACE_WATCHDOG_SMS=on.
+ * RACE_WATCHDOG=off disables it. Log lines only: it never sends texts (owner decision 2026-11-23).
  */
 
 const TICK_MS = 60_000;
@@ -69,7 +68,7 @@ async function loadRunningMotos(nowMs: number): Promise<Array<WatchdogMoto & { c
   });
 }
 
-export async function tickRaceWatchdog(nowMs = Date.now(), sender?: OpsSmsSender): Promise<WatchdogAlert[]> {
+export async function tickRaceWatchdog(nowMs = Date.now()): Promise<WatchdogAlert[]> {
   const motos = await loadRunningMotos(nowMs);
   const ids = new Set(motos.map(m => m.motoId));
   for (const id of [...resumedAt.keys()]) if (!ids.has(id)) resumedAt.delete(id);
@@ -86,7 +85,9 @@ export async function tickRaceWatchdog(nowMs = Date.now(), sender?: OpsSmsSender
       motoId: m.motoId, moto: m.motoName,
       minutes: alert.minutes,
     }, alert.kind === "recovered" ? "race_watchdog_recovered" : "race_watchdog_alert");
-    await sendOpsText(`race_watchdog_${alert.kind}`, alert.text, "RACE_WATCHDOG_SMS", sender);
+    // Owner decision 2026-11-23: no texts for stalled or long-running races.
+    // With many clubs, forgotten practices would text the support list over and
+    // over; this stays a log line (race_watchdog_alert / _recovered) only.
   }
   return alerts;
 }

@@ -44,18 +44,18 @@ test("summary text names the count and top route", () => {
 });
 
 test("ops texts only in production unless the override is on", async () => {
-  assert.equal(opsSmsEnabled("RACE_WATCHDOG_SMS", { NODE_ENV: "development" }), false);
-  assert.equal(opsSmsEnabled("RACE_WATCHDOG_SMS", { NODE_ENV: "development", RACE_WATCHDOG_SMS: "on" }), true);
-  assert.equal(opsSmsEnabled("RACE_WATCHDOG_SMS", { NODE_ENV: "production" }), true);
+  assert.equal(opsSmsEnabled("SERVER_ERROR_SMS", { NODE_ENV: "development" }), false);
+  assert.equal(opsSmsEnabled("SERVER_ERROR_SMS", { NODE_ENV: "development", SERVER_ERROR_SMS: "on" }), true);
+  assert.equal(opsSmsEnabled("SERVER_ERROR_SMS", { NODE_ENV: "production" }), true);
 
   const sent: string[] = [];
   const stub = async (text: string) => { sent.push(text); return 1; };
-  assert.deepEqual(await sendOpsText("x", "hello", "RACE_WATCHDOG_SMS", stub, { NODE_ENV: "test" }), { sent: 0, skipped: true });
+  assert.deepEqual(await sendOpsText("x", "hello", "SERVER_ERROR_SMS", stub, { NODE_ENV: "test" }), { sent: 0, skipped: true });
   assert.deepEqual(sent, []);
-  assert.deepEqual(await sendOpsText("x", "hello", "RACE_WATCHDOG_SMS", stub, { NODE_ENV: "production" }), { sent: 1, skipped: false });
+  assert.deepEqual(await sendOpsText("x", "hello", "SERVER_ERROR_SMS", stub, { NODE_ENV: "production" }), { sent: 1, skipped: false });
   assert.deepEqual(sent, ["hello"]);
   const failing = async () => { throw new Error("twilio down"); };
-  assert.deepEqual(await sendOpsText("x", "hello", "RACE_WATCHDOG_SMS", failing, { NODE_ENV: "production" }), { sent: 0, skipped: false });
+  assert.deepEqual(await sendOpsText("x", "hello", "SERVER_ERROR_SMS", failing, { NODE_ENV: "production" }), { sent: 0, skipped: false });
 });
 
 test("unauthenticated ingest names the reader from its payload", () => {
