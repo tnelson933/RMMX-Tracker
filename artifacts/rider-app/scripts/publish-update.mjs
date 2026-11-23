@@ -44,8 +44,14 @@ const env = { ...process.env, EXPO_PUBLIC_DOMAIN: DOMAIN, NODE_ENV: "production"
 delete env.EXPO_PUBLIC_API_URL;
 const dist = path.join(appDir, "dist");
 rmSync(dist, { recursive: true, force: true });
+// Windows needs the shell to find npx.cmd, and the shell splits arguments on
+// spaces: quote each one (the update message has spaces).
+const quote = (a) => (/^[\w@./:=-]+$/.test(a) ? a : `"${a.replace(/"/g, '\\"')}"`);
 const run = (cmd, cmdArgs) => {
-  const r = spawnSync(cmd, cmdArgs, { cwd: appDir, env, stdio: "inherit", shell: process.platform === "win32" });
+  const win = process.platform === "win32";
+  const r = win
+    ? spawnSync([cmd, ...cmdArgs].map(quote).join(" "), { cwd: appDir, env, stdio: "inherit", shell: true })
+    : spawnSync(cmd, cmdArgs, { cwd: appDir, env, stdio: "inherit" });
   if (r.status !== 0) fail(`${cmd} ${cmdArgs[0]} failed (exit ${r.status}).`);
 };
 console.log(`Building the update for ${DOMAIN}…`);
