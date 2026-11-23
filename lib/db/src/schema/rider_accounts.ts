@@ -27,6 +27,17 @@ export const riderAccountsTable = pgTable("rider_accounts", {
   premiumPlan: text("premium_plan", { enum: ["individual", "family"] }),
   /** The rider profiles Premium unlocks (1 on Individual, up to 4 on Family). */
   premiumRiderIds: jsonb("premium_rider_ids").$type<number[]>().notNull().default([]),
+  /**
+   * When the account proved it owns its email (6-digit code, or a password-reset
+   * link). Null = unverified: it can sign in but owns and manages no rider
+   * profiles until verified (lib/riderAccess.ts). Accounts that existed before
+   * migration 0047 were marked verified.
+   */
+  emailVerifiedAt: timestamp("email_verified_at"),
+  /** The pending verification code (SHA-256 hash, never the code), its expiry and wrong tries. */
+  emailVerifyCodeHash: text("email_verify_code_hash"),
+  emailVerifyExpiresAt: timestamp("email_verify_expires_at"),
+  emailVerifyAttempts: integer("email_verify_attempts").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

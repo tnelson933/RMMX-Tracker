@@ -18,7 +18,7 @@ import { managedRiderIds } from "../lib/riderAccess";
 import { riderIdForTransponder } from "../lib/riderTransponders";
 import type { Response } from "express";
 import { sendConnectorCommand } from "../lib/connectorRelay";
-import { authorizeIngest } from "../lib/ingestAuth";
+import { authorizeIngest, ingestCallerIsAuthenticated } from "../lib/ingestAuth";
 import { listPracticeSplits, practiceSectors } from "../lib/practiceSplits";
 import { practiceCourseFor, resolveTrackId } from "../lib/trackCourse";
 import {
@@ -450,12 +450,22 @@ router.post("/practice/active/crossing", async (req, res) => {
     return res.status(200).json({ skipped: true, reason: result.reason });
   }
 
-  return res.status(201).json({
-    ...result.crossing,
-    crossingTime: result.crossing!.crossingTime.toISOString(),
-    createdAt: result.crossing!.createdAt.toISOString(),
-  });
+  return res.status(201).json(practiceCrossingReply(result.crossing!, ingestCallerIsAuthenticated(res)));
 });
+
+/**
+ * Reply to a practice reader post. A caller without a reader token or session
+ * gets only the lap, never whose tag it was: otherwise posting tag numbers would
+ * look riders up by transponder.
+ */
+function practiceCrossingReply(crossing: typeof practiceCrossingsTable.$inferSelect, identified: boolean) {
+  const out = {
+    ...crossing,
+    crossingTime: crossing.crossingTime.toISOString(),
+    createdAt: crossing.createdAt.toISOString(),
+  };
+  return identified ? out : { ...out, riderId: null, riderName: null, bibNumber: null };
+}
 
 // GET /practice — list sessions for organizer's club (super admins see all)
 router.get("/practice", async (req, res) => {
@@ -663,7 +673,7 @@ router.post("/practice/:id/crossing", async (req, res) => {
   const callerClubId = await getClubId(req);
   if (callerClubId !== null && session.clubId !== callerClubId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
   // Same reader check as the club's other ingest routes: no anonymous laps.
-  if (callerClubId === null && !(await authorizeIngest(req, res, session.clubId, "practice_session_crossing"))) return;
+  if (callerClubId === null && !(await authorizeIngest(req, res, session.clubId, "practice_session_crossing", { practiceSessionId: sessionId }))) return;
   if (session.status !== "active") return res.status(409).json({ error: "This practice session has ended. Start a new session on the Practice page." });
 
   const rawTime: string | undefined =
@@ -679,11 +689,7 @@ router.post("/practice/:id/crossing", async (req, res) => {
     return res.status(200).json({ skipped: true, reason: result.reason });
   }
 
-  return res.status(201).json({
-    ...result.crossing,
-    crossingTime: result.crossing!.crossingTime.toISOString(),
-    createdAt: result.crossing!.createdAt.toISOString(),
-  });
+  return res.status(201).json(practiceCrossingReply(result.crossing!, callerClubId !== null || ingestCallerIsAuthenticated(res)));
 });
 
 // GET /practice/:id/live — SSE

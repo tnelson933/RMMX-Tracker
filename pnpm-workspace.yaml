@@ -158,3 +158,12 @@ overrides:
   # drizzle-kit uses esbuild internally on an older version that's vulnerable, this overrides it
   "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0"
   esbuild: "0.27.3"
+  # Security (2026-11-23): patched within-major versions for transitive deps that
+  # no direct bump reaches. zod 4.x comes in via eas-cli / @expo/eas-build-job and
+  # is shared as the optional peer of @anthropic-ai/sdk / openai in the API
+  # (GHSA-mrhx-c7xc-m3w5); js-yaml 4.x via the desktop's electron-updater.
+  "eas-cli>zod": "^4.6.7"
+  "@expo/eas-build-job>zod": "^4.6.7"
+  "js-yaml@>=4.0.0 <4.3.2": "^4.3.2"
+  # stripe@17 pins an older qs 6.x (moderate DoS advisories); same major.
+  "stripe>qs": "^6.17.1"

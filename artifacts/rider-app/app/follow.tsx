@@ -13,7 +13,7 @@ import { goBack } from "@/lib/navigation";
 import { displayDate } from "@/lib/format";
 
 interface FoundRider { id: number; name: string; avatarUrl?: string | null; lastRaced: string | null; clubName: string | null; following: boolean }
-interface Followed { riderId: number; name: string; avatarUrl?: string | null; raceAlerts?: boolean }
+interface Followed { riderId: number; name: string; avatarUrl?: string | null; raceAlerts?: boolean; privateProfile?: boolean }
 interface Suggested { id: number; name: string; avatarUrl?: string | null; number?: string | null; state?: string | null; reason?: string | null }
 interface Suggestions { competitors?: Suggested[]; nearby?: Suggested[]; top?: Suggested[] }
 
@@ -103,7 +103,12 @@ export default function FollowScreen() {
     const rollback = () => mark(!follow);
     try {
       const r = await riderFetch(`/api/rider/follows/${riderId}`, { method: follow ? "POST" : "DELETE" });
-      if (!r.ok) { rollback(); Alert.alert(follow ? "Couldn't follow" : "Couldn't unfollow", `Try again (error ${r.status}).`); }
+      if (!r.ok) {
+        rollback();
+        // A private profile answers 403 with a message to show as is.
+        const message = r.status === 403 ? ((await r.json().catch(() => null))?.error as string | undefined) : undefined;
+        Alert.alert(follow ? "Couldn't follow" : "Couldn't unfollow", message ?? `Try again (error ${r.status}).`);
+      }
     } catch {
       rollback();
       Alert.alert(follow ? "Couldn't follow" : "Couldn't unfollow", NETWORK_ERROR_MESSAGE);
@@ -209,8 +214,10 @@ export default function FollowScreen() {
           </Pressable>
         )}
         {following.map(f => (
+          // A private profile you follow gives no alerts, results or video until it's made public.
           <RiderRow key={f.riderId} title={f.name} avatarUrl={f.avatarUrl} following onToggle={() => { void unfollow(f.riderId); }}
-            raceAlerts={f.raceAlerts !== false} onRaceAlerts={on => { void setRaceAlerts(f.riderId, on); }}
+            subtitle={f.privateProfile ? "Private profile" : undefined}
+            raceAlerts={f.raceAlerts !== false} onRaceAlerts={f.privateProfile ? undefined : on => { void setRaceAlerts(f.riderId, on); }}
             onOpen={() => router.push(`/racer/${f.riderId}` as any)} colors={colors} />
         ))}
       </ScrollView>

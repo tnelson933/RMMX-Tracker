@@ -41,7 +41,7 @@ export default function LoginScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { login, register, logout, loginWithBiometric, biometricEnabled } = useRiderAuth();
+  const { login, register, logout, loginWithBiometric, biometricEnabled, account, needsVerification, verifyEmail, resendVerification } = useRiderAuth();
 
   const [mode, setMode] = useState<"login" | "register" | "forgot">("login");
   const [email, setEmail] = useState("");
@@ -52,6 +52,10 @@ export default function LoginScreen() {
   const [forgotSent, setForgotSent] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [biometricType, setBiometricType] = useState<"face" | "fingerprint">("face");
+  // The email-code step (a new account, or signing in before confirming the email).
+  const [code, setCode] = useState("");
+  const [codeNotice, setCodeNotice] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
 
   useEffect(() => {
     if (Platform.OS === "web") return;
@@ -74,7 +78,8 @@ export default function LoginScreen() {
     setLoading(true);
     setError(null);
     try {
-      await loginWithBiometric();
+      const verified = await loginWithBiometric();
+      if (!verified) return; // the code step shows next
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace("/(tabs)" as any);
     } catch (e: any) {
@@ -131,9 +136,12 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       if (mode === "login") {
-        await login(target, password);
+        const verified = await login(target, password);
+        // Not confirmed yet: the code step shows next (a code was just emailed).
+        if (!verified) { setPassword(""); setCode(""); setCodeNotice(null); return; }
       } else {
-        const linked = await register(target, password);
+        const { linkedProfiles: linked, emailVerified } = await register(target, password);
+        if (!emailVerified) { setPassword(""); setCode(""); setCodeNotice(null); return; }
         if (linked === 0) {
           setLoading(false);
           const signOut = await choose(
@@ -313,6 +321,108 @@ export default function LoginScreen() {
       </ScrollView>
     </KeyboardAvoidingView>
   );
+
+  async function handleVerify() {
+    if (code.length !== 6) return;
+    setLoading(true);
+    setError(null);
+    setCodeNotice(null);
+    try {
+      const linked = await verifyEmail(code);
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (linked === 0) {
+        Alert.alert(
+          "No rider profiles found",
+          `Your email is confirmed, but no race registrations use ${account?.email ?? "it"} yet.\n\nIf you've raced before, you probably registered with a different email: sign out (Profile tab) and use that one.\n\nNew to racing? Register for an event with this email.`,
+        );
+      }
+      router.replace("/(tabs)" as any);
+    } catch (e: any) {
+      setError(e.message ?? "Couldn't check that code. Please try again.");
+      setCode("");
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleResend() {
+    setResending(true);
+    setError(null);
+    setCodeNotice(null);
+    try {
+      await resendVerification();
+      setCode("");
+      setCodeNotice("New code sent. It expires in 15 minutes; earlier codes no longer work.");
+    } catch (e: any) {
+      setError(e.message ?? "Couldn't send a new code. Please try again.");
+    } finally {
+      setResending(false);
+    }
+  }
+
+  // ── Confirm email view (6-digit code) ─────────────────────────────────────
+  if (needsVerification && account) {
+    return shell(
+      <>
+        <Text style={s.cardTitle}>Check your email</Text>
+        <Text style={s.cardSub}>
+          We sent a 6-digit code to {account.email}. Enter it to confirm this is your email. Your riders, results and race alerts appear once it's confirmed.
+        </Text>
+
+        {error && <Text style={s.error}>{error}</Text>}
+        {codeNotice && !error && <Text style={s.success}>{codeNotice}</Text>}
+
+        <View style={s.inputWrapper}>
+          <Feather name="key" size={16} color={muted} style={{ marginRight: 10 }} />
+          <TextInput
+            style={[s.input, { fontSize: 22, letterSpacing: 8, fontFamily: "Roboto_700Bold" }]}
+            placeholder="000000"
+            placeholderTextColor="#5A5A5A"
+            value={code}
+            onChangeText={v => { setCode(v.replace(/[^0-9]/g, "").slice(0, 6)); setError(null); }}
+            keyboardType="number-pad"
+            textContentType="oneTimeCode"
+            autoComplete={Platform.OS === "android" ? "sms-otp" : "one-time-code"}
+            maxLength={6}
+            returnKeyType="done"
+            onSubmitEditing={handleVerify}
+            accessibilityLabel="6-digit code"
+            autoFocus
+          />
+        </View>
+
+        <Pressable
+          style={[s.btn, (loading || code.length !== 6) && s.btnDisabled]}
+          onPress={handleVerify}
+          disabled={loading || code.length !== 6}
+        >
+          {loading
+            ? <ActivityIndicator color="#fff" />
+            : (
+              <>
+                <Text style={s.btnText}>Verify</Text>
+                <Feather name="arrow-right" size={18} color="#fff" />
+              </>
+            )
+          }
+        </Pressable>
+
+        <Text style={s.footerText}>Didn't get it? Check your spam folder, or ask for a new code.</Text>
+        <Pressable style={s.backLink} onPress={handleResend} disabled={resending} accessibilityRole="button">
+          {resending ? <ActivityIndicator color={text} /> : <Text style={[s.backText, { textDecorationLine: "underline" }]}>Resend code</Text>}
+        </Pressable>
+        <Pressable
+          style={s.backLink}
+          onPress={async () => { await logout(); setMode("login"); setCode(""); setError(null); setCodeNotice(null); }}
+          accessibilityRole="button"
+        >
+          <Text style={s.backText}>Wrong email? Sign out</Text>
+        </Pressable>
+      </>,
+      true,
+    );
+  }
 
   // ── Forgot password view ──────────────────────────────────────────────────
   if (mode === "forgot") {

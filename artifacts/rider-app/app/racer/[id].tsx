@@ -122,7 +122,12 @@ export default function RacerScreen() {
     const rollback = () => setData(d => (d ? { ...d, following: !follow, followerCount: Math.max(0, d.followerCount + (follow ? -1 : 1)) } : d));
     try {
       const r = await riderFetch(`/api/rider/follows/${id}`, { method: follow ? "POST" : "DELETE" });
-      if (!r.ok) { rollback(); Alert.alert(follow ? "Couldn't follow" : "Couldn't unfollow", `Try again (error ${r.status}).`); }
+      if (!r.ok) {
+        rollback();
+        // A private profile answers 403 with a message to show as is.
+        const message = r.status === 403 ? ((await r.json().catch(() => null))?.error as string | undefined) : undefined;
+        Alert.alert(follow ? "Couldn't follow" : "Couldn't unfollow", message ?? `Try again (error ${r.status}).`);
+      }
     } catch {
       rollback();
       Alert.alert(follow ? "Couldn't follow" : "Couldn't unfollow", NETWORK_ERROR_MESSAGE);
@@ -225,7 +230,8 @@ export default function RacerScreen() {
                 style={({ pressed }) => [s.pill, s.pillOutline, { opacity: pressed ? 0.7 : 1 }]}>
                 <Text style={[s.pillText, { color: colors.foreground }]}>Edit profile</Text>
               </Pressable>
-            ) : (
+            ) : data.visibility === "private" && !data.following ? null : (
+              // Private profiles can't be followed; an older follow can still be removed.
               <Pressable onPress={toggle} accessibilityRole="button" accessibilityState={{ selected: data.following }}
                 style={({ pressed }) => [s.pill, data.following ? s.pillOutline : null, { opacity: pressed ? 0.7 : 1 }]}>
                 <Text style={[s.pillText, data.following ? { color: colors.foreground } : null]}>{data.following ? "Following" : "Follow"}</Text>
@@ -240,6 +246,13 @@ export default function RacerScreen() {
           </View>
 
           {live ? <RiderLiveBanner riderId={data.riderId} live={live.live} canWatch={live.canWatch} viewers={live.viewers} /> : null}
+
+          {!data.isManager && data.visibility === "private" && (
+            <View style={s.notice}>
+              <Feather name="lock" size={14} color={colors.mutedForeground} />
+              <Text style={[s.muted, { flex: 1 }]}>This rider's profile is private. Ask their parent or guardian to make it public.</Text>
+            </View>
+          )}
 
           {data.isManager && data.visibility === "private" && (
             <View style={s.notice}>

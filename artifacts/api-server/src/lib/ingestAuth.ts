@@ -9,9 +9,11 @@
  *   - none:   legacy unauthenticated hardware and bridges
  *
  * A reader or user principal from a different club than the request targets is
- * rejected with 403. A request with no principal is handled by the target club's
- * `timing_ingest_auth` setting: off (accept), warn (accept and log) or enforce
- * (401). Clubs default to off, so callers working today keep working.
+ * rejected with 403. A request with no principal, or with a bearer token that
+ * doesn't verify, is logged as `timing_ingest_unauthenticated` and accepted
+ * unless enforcement is on: TIMING_INGEST_ENFORCE (all clubs) or the club's
+ * `timing_ingest_auth` = enforce. Both default off, so callers working today
+ * (older RM Connect, older bridges, hand-programmed facility URLs) keep working.
  *
  * Lookups are cached briefly so authorization adds no measurable latency ahead
  * of crossing processing. All checks run before processCrossing and never
@@ -116,11 +118,24 @@ export async function clubIdForMoto(motoId: unknown): Promise<number | null> {
 }
 
 /**
+ * TIMING_INGEST_ENFORCE=1 (or true/on/enforce) enforces credentials for every
+ * club at once. Default off: RM Connect before 1.0.16, older rfid_bridge.py
+ * downloads and readers hand-programmed with the ?clubId= facility URL send no
+ * credential, so they keep working (and are logged) until the owner flips it.
+ */
+export function globalIngestEnforce(): boolean {
+  const v = (process.env.TIMING_INGEST_ENFORCE ?? "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "on" || v === "yes" || v === "enforce";
+}
+
+/**
  * Effective mode for a club. TIMING_INGEST_AUTH_OVERRIDE=off is a global kill
- * switch that restores the old open behavior without a database change.
+ * switch that restores the old open behavior without a database change; it wins
+ * over TIMING_INGEST_ENFORCE so an emergency rollback is one variable.
  */
 export async function timingIngestAuthMode(clubId: number | null): Promise<TimingIngestAuthMode> {
   if (process.env.TIMING_INGEST_AUTH_OVERRIDE === "off") return "off";
+  if (globalIngestEnforce()) return "enforce";
   if (clubId === null) return "off";
   const cached = modeByClub.get(clubId);
   if (cached !== undefined) return cached;
@@ -141,8 +156,8 @@ export function bearerToken(authorization: string | undefined): string | null {
 
 /**
  * Resolve the caller. Returns "invalid_bearer" when an Authorization header is
- * present but is not a known reader token: a credential that was presented and
- * failed is rejected, never silently downgraded to "none".
+ * present but is not a known reader token. It is never treated as a credential:
+ * decideIngest handles it like a missing one (logged, and refused once enforced).
  */
 export async function resolveIngestPrincipal(
   req: Request,
@@ -183,28 +198,72 @@ export function decideIngest(
   targetClubId: number | null,
   mode: TimingIngestAuthMode,
 ): IngestDecision {
-  if (principal === "invalid_bearer") {
-    return { allow: false, status: 401, body: { ok: false, error: "Invalid reader token" } };
-  }
-  if (principal.kind === "reader" || (principal.kind === "user" && !principal.platformWide)) {
+  if (principal !== "invalid_bearer" && (principal.kind === "reader" || (principal.kind === "user" && !principal.platformWide))) {
+    // A credential that names a club only reaches that club's motos/events/practice.
     if (targetClubId !== null && principal.clubId !== targetClubId) {
       return { allow: false, status: 403, body: { ok: false, error: "Forbidden: credential belongs to a different club" } };
     }
     return { allow: true };
   }
-  if (principal.kind === "user") return { allow: true };
+  if (principal !== "invalid_bearer" && principal.kind === "user") return { allow: true };
+  // No credential, or one that didn't verify (unknown/rotated reader token).
+  // Until enforcement is on this is no worse than sending nothing, so it is
+  // accepted like a missing credential and logged as timing_ingest_unauthenticated.
   if (mode === "enforce") {
     return {
       allow: false,
       status: 401,
-      body: {
-        ok: false,
-        error: "This club requires a reader token for timing ingest",
-        hint: "Use the per-reader URL from Reader Setup, or send Authorization: Bearer <reader token>.",
-      },
+      body: principal === "invalid_bearer"
+        ? { ok: false, error: "Invalid reader token" }
+        : {
+          ok: false,
+          error: "This club requires a reader token for timing ingest",
+          hint: "Use the per-reader URL from Reader Setup, or send Authorization: Bearer <reader token>.",
+        },
     };
   }
   return { allow: true };
+}
+
+export type IngestHints = { motoId?: unknown; eventId?: unknown; practiceSessionId?: unknown };
+
+// One warning per route/club/IP a minute, with a count of the ones folded in, so
+// a reader posting several times a second can't flood the logs.
+const UNAUTH_LOG_WINDOW_MS = 60_000;
+const unauthLogState = new Map<string, { loggedAt: number; suppressed: number }>();
+
+function logUnauthenticatedIngest(
+  req: Request,
+  route: string,
+  targetClubId: number | null,
+  hints: IngestHints,
+  reason: "no_credential" | "invalid_credential",
+  enforced: boolean,
+): void {
+  const ip = req.ip ?? null;
+  const key = `${route}|${targetClubId ?? "-"}|${ip ?? "-"}|${reason}|${enforced}`;
+  const now = Date.now();
+  const prev = unauthLogState.get(key);
+  if (prev && now - prev.loggedAt < UNAUTH_LOG_WINDOW_MS) {
+    prev.suppressed++;
+    return;
+  }
+  if (unauthLogState.size > 5_000) unauthLogState.clear();
+  unauthLogState.set(key, { loggedAt: now, suppressed: 0 });
+  const num = (v: unknown) => (positiveId(v) ?? undefined);
+  logger.warn({
+    event: "timing_ingest_unauthenticated",
+    route,
+    clubId: targetClubId,
+    motoId: num(hints.motoId),
+    eventId: num(hints.eventId),
+    practiceSessionId: num(hints.practiceSessionId),
+    callerIp: ip,
+    userAgent: typeof req.headers["user-agent"] === "string" ? req.headers["user-agent"].slice(0, 120) : undefined,
+    reason,
+    enforced,
+    suppressedSinceLast: prev?.suppressed ?? 0,
+  }, "timing_ingest_unauthenticated");
 }
 
 /**
@@ -216,19 +275,25 @@ export async function authorizeIngest(
   res: Response,
   targetClubId: number | null,
   route: string,
+  hints: IngestHints = {},
 ): Promise<boolean> {
   const principal = await resolveIngestPrincipal(req, res);
   res.locals.ingestPrincipal = principal === "invalid_bearer" ? "invalid_bearer" : principal.kind;
-  const mode = principal !== "invalid_bearer" && principal.kind === "none"
-    ? await timingIngestAuthMode(targetClubId)
-    : "off";
+  const unauthenticated = principal === "invalid_bearer" || principal.kind === "none";
+  const mode = unauthenticated ? await timingIngestAuthMode(targetClubId) : "off";
   const decision = decideIngest(principal, targetClubId, mode);
+  if (unauthenticated) {
+    logUnauthenticatedIngest(req, route, targetClubId, hints,
+      principal === "invalid_bearer" ? "invalid_credential" : "no_credential", !decision.allow);
+  }
   if (!decision.allow) {
     res.status(decision.status).json(decision.body);
     return false;
   }
-  if (mode === "warn") {
-    logger.warn({ route, clubId: targetClubId }, "Unauthenticated timing ingest accepted (club is in warn mode)");
-  }
   return true;
+}
+
+/** True when this request was authorized by a reader token or an organizer session. */
+export function ingestCallerIsAuthenticated(res: Response): boolean {
+  return res.locals.ingestPrincipal === "reader" || res.locals.ingestPrincipal === "user";
 }

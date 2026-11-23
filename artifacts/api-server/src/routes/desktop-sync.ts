@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { compareStandings } from "../lib/lapScoring";
-import { asc, eq, gt, and, inArray, isNull, or, sql } from "drizzle-orm";
+import { asc, eq, gt, and, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { buildLeaderboard, formatLapTime, publishTimingSnapshot, startSharedAnnouncer } from "./timing";
 import {
@@ -2309,7 +2309,8 @@ router.post("/clubs/:clubId/sync-pull", async (req, res) => {
     riderAccounts = await db
       .select({ id: riderAccountsTable.id, email: riderAccountsTable.email })
       .from(riderAccountsTable)
-      .where(inArray(riderAccountsTable.email, riderEmails));
+      // Only accounts that verified their email own riders (lib/riderAccess.ts).
+      .where(and(inArray(riderAccountsTable.email, riderEmails), isNotNull(riderAccountsTable.emailVerifiedAt)));
 
     const accountIds = riderAccounts.map((a) => a.id);
     if (accountIds.length > 0) {

@@ -249,7 +249,8 @@ router.get("/events/:eventId/motos", async (req, res) => {
 
   // Callers outside the owning club (anonymous, or another club's organizer/staff on this
   // public route): only published events and active race-day events (gate page).
-  if (!callerOwnsClub(res, await getEventClubId(eventId))) {
+  const ownsClub = callerOwnsClub(res, await getEventClubId(eventId));
+  if (!ownsClub) {
     // Finished motos' results are public (marked unofficial until finalized).
     const [[finished], [evt]] = await Promise.all([
       db.select({ id: motosTable.id }).from(motosTable)
@@ -287,7 +288,8 @@ router.get("/events/:eventId/motos", async (req, res) => {
 
   return res.json(motos.map(m => ({
     ...m,
-    lineup: Array.isArray(m.lineup) ? m.lineup : [],
+    // Transponder/RFID numbers are private: only the owning club's staff see them.
+    lineup: (Array.isArray(m.lineup) ? m.lineup : []).map((l: Record<string, unknown>) => (ownsClub ? l : { ...l, rfidNumber: null })),
     createdAt: m.createdAt.toISOString(),
     startedAt: m.startedAt?.toISOString() ?? null,
     completedAt: m.completedAt?.toISOString() ?? null,

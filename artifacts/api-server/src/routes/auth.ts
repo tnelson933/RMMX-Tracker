@@ -7,6 +7,7 @@ import { db } from "@workspace/db";
 import { riderAccountsTable, usersTable, passwordSetupTokensTable, clubsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { sendSetupEmail } from "../lib/email";
+import { resetEmailSendsByAddress, resetEmailSendsByEmail, waitText } from "../lib/emailVerification";
 import { canUseOfflineSync } from "../lib/offlineSyncAccess";
 
 const router = Router();
@@ -137,6 +138,19 @@ router.post("/auth/request-setup", async (req, res) => {
   if (!email) return res.status(400).json({ error: "Enter an email address." });
 
   const trimmed = String(email).toLowerCase().trim();
+
+  // Limited per email (1 a minute, 5 an hour) and per caller, counted whether or
+  // not the account exists, so it can't flood an inbox or reveal who has one.
+  const cf = req.headers["cf-connecting-ip"];
+  const caller = `${req.ip ?? "unknown"}|${typeof cf === "string" ? cf.trim() : ""}`;
+  const waitMs = Math.max(resetEmailSendsByAddress.waitMs(caller), resetEmailSendsByEmail.waitMs(`organizer:${trimmed}`));
+  if (waitMs > 0) {
+    res.setHeader("Retry-After", String(Math.ceil(waitMs / 1000)));
+    return res.status(429).json({ error: `An email was just requested. ${waitText(waitMs)}, then try again, and check your spam folder.` });
+  }
+  resetEmailSendsByAddress.take(caller);
+  resetEmailSendsByEmail.take(`organizer:${trimmed}`);
+
   const [user] = await db.select().from(usersTable).where(eq(usersTable.email, trimmed));
 
   // Always return 200 to prevent email enumeration

@@ -22,6 +22,8 @@ import { logger } from "../lib/logger";
 import { eq, and, asc, desc, isNotNull, isNull, or, gt, lt, sql, inArray, ilike, ne } from "drizzle-orm";
 import type { Request, Response } from "express";
 import { authorizeIngest, clubIdForEvent, clubIdForMoto } from "../lib/ingestAuth";
+import { riderTiedToClub, RIDER_NOT_IN_CLUB_ERROR } from "../lib/clubRiderAccess";
+import { callerOwnsClub } from "../middleware/accessControl";
 import { textToSpeech, speakScript } from "@workspace/integrations-openai-ai-server/audio";
 import { processPracticeCrossing } from "./practice";
 import { computeMotoSectors, latestSplitGaps } from "../lib/sectors";
@@ -1275,7 +1277,7 @@ router.post("/timing/crossing", async (req, res) => {
   const antenna = antennaId !== undefined ? Number(antennaId) : undefined;
 
   // Reader token or session must belong to the moto's club (see lib/ingestAuth).
-  if (!(await authorizeIngest(req, res, await clubIdForMoto(motoId), "crossing"))) return;
+  if (!(await authorizeIngest(req, res, await clubIdForMoto(motoId), "crossing", { motoId }))) return;
 
   try {
     const result = await processCrossing({ rfidNumber, motoId: Number(motoId), crossingTime: time, readerId, antennaId: antenna });
@@ -1599,7 +1601,7 @@ router.post("/timing/impinj-crossing", async (req, res) => {
     return res.status(400).json({ error: "eventId query param is required" });
   }
 
-  if (!(await authorizeIngest(req, res, await clubIdForEvent(eventId), "impinj_crossing"))) return;
+  if (!(await authorizeIngest(req, res, await clubIdForEvent(eventId), "impinj_crossing", { eventId }))) return;
 
   const body = req.body as { events?: unknown[] };
   const events = Array.isArray(body.events) ? body.events : [];
@@ -1655,7 +1657,7 @@ router.post("/timing/zebra-crossing", async (req, res) => {
     return res.status(400).json({ error: "eventId query param is required" });
   }
 
-  if (!(await authorizeIngest(req, res, await clubIdForEvent(eventId), "zebra_crossing"))) return;
+  if (!(await authorizeIngest(req, res, await clubIdForEvent(eventId), "zebra_crossing", { eventId }))) return;
 
   const body = req.body as any;
   const tags: any[] = Array.isArray(body?.data?.tags)
@@ -1731,6 +1733,10 @@ router.post("/timing/manual-crossing", async (req, res) => {
         .where(eq(eventsTable.id, moto.eventId));
       if (!event || event.clubId !== sessionUser.clubId) {
         return res.status(403).json({ error: "This event belongs to another club. Open one of your club's events instead." });
+      }
+      // The lap is credited to riderId: it must be one of this club's riders.
+      if (!(await riderTiedToClub(riderId, event.clubId))) {
+        return res.status(403).json({ error: RIDER_NOT_IN_CLUB_ERROR });
       }
     }
 
@@ -1866,10 +1872,14 @@ router.get("/timing/announcer-audio/:eventId", (req, res) => {
 });
 
 // GET /timing/crossings/:motoId — all raw crossings (debug / replay)
+// Public route (live timing views). Transponder/RFID numbers are shown only to the
+// owning club's organizers/staff (and super admins): everyone else, signed out or
+// another club, gets the laps and names without the tag numbers.
 router.get("/timing/crossings/:motoId", async (req, res) => {
   const motoId = Number(req.params.motoId);
   const staffCId = getStaffClubId(res);
   if (!await checkMotoClubAccess(motoId, staffCId)) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
+  const showTagNumbers = callerOwnsClub(res, await clubIdForMoto(motoId));
   const crossings = await db
     .select({
       id: lapCrossingsTable.id,
@@ -1916,7 +1926,7 @@ router.get("/timing/crossings/:motoId", async (req, res) => {
       const lastName = c.lastName ?? nameByRfid.get(c.rfidNumber)?.lastName ?? null;
       return {
         id: c.id,
-        rfidNumber: c.rfidNumber,
+        rfidNumber: showTagNumbers ? c.rfidNumber : null,
         riderId: c.riderId,
         crossingTime: c.crossingTime.toISOString(),
         lapNumber: c.lapNumber,

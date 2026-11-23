@@ -6,6 +6,7 @@ import { fulfillRmTrackr } from "../lib/rmTrackr";
 import { splitRegistrationTag } from "../lib/eventTimingTags";
 import { paidAddonsByRegistration } from "../lib/addonPayments";
 import { addRiderTransponderIfFree, listTranspondersForRiders } from "../lib/riderTransponders";
+import { riderTiedToClub, RIDER_NOT_IN_CLUB_ERROR } from "../lib/clubRiderAccess";
 
 const router = Router();
 
@@ -177,6 +178,12 @@ router.post("/events/:eventId/checkins", async (req, res) => {
   if (!await checkEventOwnership(eventId, getStaffClubId(res), res)) return;
   const { riderId, rfidNumber, bibNumber, checkedIn } = req.body;
   if (!riderId) return res.status(400).json({ error: "Pick a rider first." });
+  // Only the club's own riders (added by it or entered in its events): a check-in
+  // can also put a tag on the rider's profile.
+  const staffCId = getStaffClubId(res);
+  if (staffCId !== null && !(await riderTiedToClub(riderId, staffCId))) {
+    return res.status(403).json({ error: RIDER_NOT_IN_CLUB_ERROR });
+  }
   // `checkedIn: false` un-checks the rider (e.g. dragging a pool rider to the trash
   // in Motos). Any other value, including omitted, checks the rider in. Matches the
   // local server.

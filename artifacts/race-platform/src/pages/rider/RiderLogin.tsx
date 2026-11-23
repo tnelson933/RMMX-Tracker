@@ -1,7 +1,7 @@
 import { useState, useEffect, type ReactNode } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Mail, Lock, Eye, EyeOff, AlertCircle, CheckCircle2, ArrowRight, Clock, BarChart2, Bell, Loader2 } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, AlertCircle, CheckCircle2, ArrowRight, Clock, BarChart2, Bell, Loader2, KeyRound } from "lucide-react";
 import { riderApi } from "@/lib/rider-api";
 import { useRiderAuth } from "@/contexts/RiderAuthContext";
 
@@ -43,10 +43,64 @@ function PrimaryButton({ busy, disabled, children }: { busy: boolean; disabled?:
   );
 }
 
+/**
+ * After creating an account (or signing in before confirming): the 6-digit code
+ * emailed to the account. Until it's entered the account sees no rider profiles.
+ */
+function VerifyEmailStep({ email, onVerified, onSignOut }: { email: string; onVerified: () => void; onSignOut: () => void }) {
+  const [code, setCode] = useState("");
+  const [resent, setResent] = useState(false);
+  const verify = useMutation({
+    mutationFn: () => riderApi.verifyEmail(code),
+    onSuccess: onVerified,
+  });
+  const resend = useMutation({
+    mutationFn: () => riderApi.resendVerification(),
+    onMutate: () => { setResent(false); verify.reset(); },
+    onSuccess: () => { setResent(true); setCode(""); },
+  });
+  const error = verify.error ?? resend.error;
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="font-heading font-extrabold uppercase text-[22px] text-white">Check your email</h2>
+        <p className="text-[15px] leading-[1.55] text-[#C8C8C8] mt-1">
+          We sent a 6-digit code to <span className="font-bold text-white break-all">{email}</span>. Enter it to confirm this is your email. Your riders, results and race alerts appear once it's confirmed.
+        </p>
+      </div>
+      <form onSubmit={(e) => { e.preventDefault(); verify.mutate(); }} className="space-y-3">
+        <Field icon={<KeyRound size={16} />}>
+          <input aria-label="6-digit code" inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code" maxLength={7}
+            className={`${inputCls} tracking-[6px] font-bold`} autoFocus
+            value={code} onChange={(e) => { setCode(e.target.value.replace(/[^\d]/g, "").slice(0, 6)); verify.reset(); }} required />
+        </Field>
+        {error && <ErrorLine message={(error as Error).message} />}
+        {resent && !error && (
+          <p className="flex items-start gap-2 text-[14px] text-white">
+            <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-[#22c55e]" />
+            New code sent. It expires in 15 minutes; earlier codes no longer work.
+          </p>
+        )}
+        <PrimaryButton busy={verify.isPending} disabled={code.length !== 6}>Verify <ArrowRight size={19} /></PrimaryButton>
+      </form>
+      <p className="text-[14px] leading-[1.55] text-[#A8A8A8]">
+        Didn't get it? Check your spam folder, or{" "}
+        <button type="button" onClick={() => resend.mutate()} disabled={resend.isPending}
+          className="font-bold text-white underline underline-offset-2 disabled:opacity-50">
+          {resend.isPending ? "sending…" : "resend the code"}
+        </button>.
+      </p>
+      <button type="button" onClick={onSignOut} className="w-full text-center min-h-[44px] text-[15px] font-bold text-white hover:underline underline-offset-2">
+        Wrong email? Sign out
+      </button>
+    </div>
+  );
+}
+
 export default function RiderLogin() {
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
-  const { isAuthenticated } = useRiderAuth();
+  const { isAuthenticated, needsVerification, account } = useRiderAuth();
   const search = useSearch();
 
   // ?forgot=1 (from an expired reset link) opens straight to the reset form.
@@ -129,7 +183,19 @@ export default function RiderLogin() {
         </div>
 
         <div className="mt-7 w-full rounded-2xl border border-[#3A3A3A] bg-[#242424]/95 p-5 sm:p-6 shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
-          {mode === "forgot" ? (
+          {needsVerification && account ? (
+            <VerifyEmailStep
+              email={account.email}
+              onVerified={afterAuth}
+              onSignOut={async () => {
+                await riderApi.logout().catch(() => {});
+                queryClient.setQueryData(["rider-auth-me"], null);
+                queryClient.removeQueries({ queryKey: ["rider-auth-me"] });
+                setPassword(""); setConfirm(""); setFromRegister(false);
+                switchMode("login");
+              }}
+            />
+          ) : mode === "forgot" ? (
             <div className="space-y-4">
               <div>
                 <h2 className="font-heading font-extrabold uppercase text-[22px] text-white">Forgot your password?</h2>

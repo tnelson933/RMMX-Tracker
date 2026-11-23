@@ -264,3 +264,28 @@ export async function sendSupportUpdateEmail(opts: {
   for (const to of opts.to) ok = (await sendEmail(to, opts.subject, html)).ok && ok;
   return { ok };
 }
+
+/**
+ * The 6-digit code a new rider account types to prove it owns its email.
+ * Until it does, the account sees no rider profiles (riderAccess).
+ */
+export async function sendRiderVerificationCodeEmail(opts: {
+  to: string;
+  code: string;
+  appUrl: string;
+}): Promise<{ ok: boolean; reason?: string }> {
+  const { to, code, appUrl } = opts;
+  const html = brandedEmailHtml({
+    appUrl,
+    preheader: `Your RM Roost code is ${code}. It expires in 15 minutes.`,
+    eyebrow: "Confirm your email",
+    heading: "Your RM Roost code",
+    paragraphs: [
+      "Enter this code in the RM Roost app or on the website to confirm this is your email. Your rider profiles, results and race alerts appear once it's confirmed.",
+    ],
+    extraHtml: `<p style="margin:8px 0 20px;font-family:'Barlow','Helvetica Neue',Arial,sans-serif;font-size:36px;font-weight:800;letter-spacing:10px;color:#1a1a1a;text-align:center;">${esc(code)}</p>`,
+    button: { label: "Open RM Roost", url: `${appUrl}/rider/login` },
+    note: "This code expires in 15 minutes. If you didn't create an RM Roost account, you can ignore this email; nobody gets access without the code.",
+  });
+  return sendEmail(to, `${code} is your RM Roost code`, html);
+}

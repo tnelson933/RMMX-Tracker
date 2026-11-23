@@ -19,6 +19,7 @@ import { and, eq, inArray, ne } from "drizzle-orm";
 import { logger } from "./logger";
 import { sendPushNotifications } from "./push";
 import { accountIdsForRiders } from "./riderAccess";
+import { followsThatCount } from "./followVisibility";
 import { isEventLive } from "./videoRelay";
 import {
   alertFollowersForMoto, isFresh, lineupRiderIds, nextUpMotoIds,
@@ -60,9 +61,10 @@ export const dbRaceStartDeps: RaceStartDeps = {
   },
   async followers(riderIds) {
     if (!riderIds.length) return [];
-    return db.select({ accountId: riderFollowsTable.riderAccountId, riderId: riderFollowsTable.riderId })
+    // Follows of private profiles alert nobody but the rider's own managers.
+    return followsThatCount(await db.select({ accountId: riderFollowsTable.riderAccountId, riderId: riderFollowsTable.riderId })
       .from(riderFollowsTable)
-      .where(and(inArray(riderFollowsTable.riderId, riderIds), eq(riderFollowsTable.raceAlerts, true)));
+      .where(and(inArray(riderFollowsTable.riderId, riderIds), eq(riderFollowsTable.raceAlerts, true))));
   },
   async ownAccounts(riderIds) {
     const map = new Map<number, number[]>();

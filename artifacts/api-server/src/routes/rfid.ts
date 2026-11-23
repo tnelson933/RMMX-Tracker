@@ -1,11 +1,12 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { rfidAssignmentsTable, ridersTable, checkinsTable, eventsTable, practiceCrossingsTable, lapCrossingsTable, raceResultsTable, motosTable, registrationsTable } from "@workspace/db";
+import { rfidAssignmentsTable, ridersTable, checkinsTable, eventsTable, practiceCrossingsTable, practiceSessionsTable, lapCrossingsTable, raceResultsTable, motosTable, registrationsTable } from "@workspace/db";
 import { eq, and, inArray, isNull, isNotNull, asc, or, gt, sql } from "drizzle-orm";
 import { formatLapTime } from "./timing";
 import { normalizeActiveTransponderIdentifier } from "../lib/riderTimingIdentity";
 import { fulfillRmTrackr } from "../lib/rmTrackr";
 import { addRiderTransponder, addRiderTransponderIfFree } from "../lib/riderTransponders";
+import { riderTiedToClub, RIDER_NOT_IN_CLUB_ERROR } from "../lib/clubRiderAccess";
 
 const router = Router();
 
@@ -14,21 +15,6 @@ function getStaffClubId(res: any): number | null {
   return typeof v === "number" ? v : null;
 }
 
-/**
- * True when the rider is visible to this club: added by the club (riders.club_id)
- * or registered for any of the club's events. Mirrors getClubRiderIds in riders.ts.
- */
-async function riderBelongsToClub(riderId: number, clubId: number): Promise<boolean> {
-  const [direct] = await db.select({ id: ridersTable.id }).from(ridersTable)
-    .where(and(eq(ridersTable.id, riderId), eq(ridersTable.clubId, clubId)))
-    .limit(1);
-  if (direct) return true;
-  const [reg] = await db.select({ id: registrationsTable.id }).from(registrationsTable)
-    .innerJoin(eventsTable, eq(registrationsTable.eventId, eventsTable.id))
-    .where(and(eq(registrationsTable.riderId, riderId), eq(eventsTable.clubId, clubId)))
-    .limit(1);
-  return !!reg;
-}
 
 router.get("/rfid", async (req, res) => {
   const { eventId, assignmentType } = req.query;
@@ -140,16 +126,24 @@ router.post("/rfid", async (req, res) => {
     return res.status(400).json({ error: "This link looks broken. Go back and open it again from the list." });
   }
 
-  // Staff: verify the event belongs to their club
+  // Staff/organizers: the event must belong to their club.
   const staffCId = getStaffClubId(res);
-  if (staffCId !== null && numEventId) {
+  let eventClubId: number | null = null;
+  if (numEventId) {
     const [evt] = await db.select({ clubId: eventsTable.clubId }).from(eventsTable).where(eq(eventsTable.id, numEventId));
-    if (!evt || evt.clubId !== staffCId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
+    if (!evt) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Refresh the page and try again." });
+    if (staffCId !== null && evt.clubId !== staffCId) return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
+    eventClubId = evt.clubId;
   }
-  // No event: the assignment lands on the rider profile, so the rider must belong to the club.
-  if (staffCId !== null && !numEventId && !(await riderBelongsToClub(numRiderId, staffCId))) {
-    return res.status(403).json({ error: "Your account doesn't have access to this. If it should, ask your club's owner to check your role on the Team page." });
+  // The tag also lands on the rider's profile, so (with or without an event) the
+  // rider must be one of the club's riders: added by it or entered in its events.
+  if (staffCId !== null && !(await riderTiedToClub(numRiderId, staffCId))) {
+    return res.status(403).json({ error: RIDER_NOT_IN_CLUB_ERROR });
   }
+  // Backfilling unidentified reads only touches this club's motos and practices:
+  // the event's club, else the caller's. A super admin without an event uses the
+  // rider's own club, or skips the backfill.
+  let backfillClubId: number | null = eventClubId ?? staffCId;
 
   if (isActiveTransponder) {
     const activeTransponderNumber = normalizeActiveTransponderIdentifier(rfidNumber);
@@ -272,29 +266,43 @@ router.post("/rfid", async (req, res) => {
   const riders = await db.select().from(ridersTable).where(eq(ridersTable.id, numRiderId));
   const rider = riders[0];
 
-  // Backfill any practice crossings that recorded this RFID but had no rider identity at the time
-  if (rider) {
+  if (backfillClubId === null && rider?.clubId != null) backfillClubId = rider.clubId;
+
+  // Backfill this club's practice crossings that recorded this RFID but had no
+  // rider identity at the time. Other clubs' sessions are never touched: the same
+  // tag number may belong to someone else there.
+  if (rider && backfillClubId !== null) {
     const riderName = `${rider.firstName} ${rider.lastName}`.trim();
+    const clubSessions = db.select({ id: practiceSessionsTable.id }).from(practiceSessionsTable)
+      .where(eq(practiceSessionsTable.clubId, backfillClubId));
     await db.update(practiceCrossingsTable)
       .set({ riderId: numRiderId, riderName, bibNumber: rider.bibNumber ?? null })
       .where(and(
         eq(practiceCrossingsTable.rfidNumber, rfidNumber),
         isNull(practiceCrossingsTable.riderId),
+        inArray(practiceCrossingsTable.sessionId, clubSessions),
       ));
   }
 
-  // Backfill race lap_crossings and race_results for this RFID
-  if (rider) {
+  // Backfill race lap_crossings and race_results for this RFID: only the
+  // assignment's event, or (no event) this club's events. Matching on the tag
+  // alone used to stamp and re-rank other clubs' motos.
+  if (rider && backfillClubId !== null) {
+    const scope = numEventId
+      ? eq(lapCrossingsTable.eventId, numEventId)
+      : inArray(lapCrossingsTable.eventId,
+        db.select({ id: eventsTable.id }).from(eventsTable).where(eq(eventsTable.clubId, backfillClubId)));
+    const unidentifiedWhere = and(eq(lapCrossingsTable.rfidNumber, rfidNumber), isNull(lapCrossingsTable.riderId), scope);
     // Find unidentified race crossings for this tag
     const unidentified = await db.select()
       .from(lapCrossingsTable)
-      .where(and(eq(lapCrossingsTable.rfidNumber, rfidNumber), isNull(lapCrossingsTable.riderId)));
+      .where(unidentifiedWhere);
 
     if (unidentified.length > 0) {
-      // Stamp riderId onto all unidentified crossings for this tag
+      // Stamp riderId onto the unidentified crossings for this tag in scope
       await db.update(lapCrossingsTable)
         .set({ riderId: numRiderId })
-        .where(and(eq(lapCrossingsTable.rfidNumber, rfidNumber), isNull(lapCrossingsTable.riderId)));
+        .where(unidentifiedWhere);
 
       // For each affected moto, upsert race_results and recalculate positions
       const affectedMotoIds = [...new Set(unidentified.map(c => c.motoId))];

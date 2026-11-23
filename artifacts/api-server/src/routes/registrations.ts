@@ -18,6 +18,7 @@ import { ORGANIZER_NO_STRIPE, organizerCardError, riderCardError } from "../lib/
 import { checkinSellPrices, listClubSellItems } from "../lib/sellItems";
 import { RM_TRACKR_NAME, RM_TRACKR_OPTION_ID } from "@workspace/db";
 import { canManageRider } from "../lib/riderAccess";
+import { ridersTiedToClub, riderTiedToClub, scopeFromResponse, RIDER_NOT_IN_CLUB_ERROR } from "../lib/clubRiderAccess";
 import { profileMatchingName } from "../lib/registrationIdentity";
 import { riderMobileTokensTable } from "@workspace/db";
 import { reminderAvailability, reminderStatusText, rentalReplacementCharge, sendRentalReminders, unreturnedRentals, type ReminderStatus } from "../lib/rentalReminders";
@@ -262,13 +263,20 @@ router.get("/public/riders/lookup", async (req, res) => {
   // or manages the profile (riderAccess). Anyone else (not signed in, or another
   // account) learns nothing, not even whether the email has a profile: they type
   // every detail, and the server only fills what a profile doesn't have yet.
+  // Organizers and staff only see riders tied to their own club (added by it or
+  // entered in its events); super admins see everyone. A rider from elsewhere
+  // registering for this club's event types their details like anyone else.
   const isOrganizer = !!(req.session as any)?.userId;
-  const callerAccount = isOrganizer ? null : await requestRiderAccount(req);
+  const scope = isOrganizer ? scopeFromResponse(res) : { kind: "none" as const };
+  const clubVisible = scope.kind === "all"
+    ? new Set(sameEmail.map(r => r.id))
+    : scope.kind === "club" ? await ridersTiedToClub(sameEmail.map(r => r.id), scope.clubId) : new Set<number>();
+  const callerAccount = await requestRiderAccount(req);
   const managed = new Set<number>();
   if (callerAccount) {
-    for (const r of sameEmail) if (await canManageRider(callerAccount, r)) managed.add(r.id);
+    for (const r of sameEmail) if (!clubVisible.has(r.id) && await canManageRider(callerAccount, r)) managed.add(r.id);
   }
-  const canSee = (riderId: number) => isOrganizer || managed.has(riderId);
+  const canSee = (riderId: number) => clubVisible.has(riderId) || managed.has(riderId);
   const riders = sameEmail.filter(r => canSee(r.id));
   if (!riders.length) return res.json({ found: false, count: 0, riders: [] });
 
@@ -497,9 +505,18 @@ router.post("/events/:eventId/registrations", async (req, res) => {
     if ("error" in resolution) return res.status(resolution.status).json({ error: resolution.error });
     const profileFields = submittedRiderProfile(req.body, normalizedTransponderNumber);
     if (resolution.rider) {
+      // A rider who isn't one of this club's yet (matched by email from another
+      // club) gets only the blanks filled, like public registration: one club
+      // must not rewrite another club's rider profile. The values still go on
+      // this registration.
+      const eventClubId = eventData?.clubId ?? null;
+      const clubsOwnRider = res.locals.callerIsSuperAdmin === true
+        || (eventClubId != null && await riderTiedToClub(resolution.rider.id, eventClubId));
       // A rider may own several transponders: a new number joins their list
       // instead of replacing the saved one.
-      const fieldsToSave = keepSavedTimingNumbers(resolution.rider, profileFields);
+      const fieldsToSave = clubsOwnRider
+        ? keepSavedTimingNumbers(resolution.rider, profileFields)
+        : fillOnlyEmptyProfileFields(resolution.rider, profileFields);
       if (Object.keys(fieldsToSave).length > 0) {
         const [updated] = await db.update(ridersTable)
           .set(fieldsToSave)
@@ -509,8 +526,8 @@ router.post("/events/:eventId/registrations", async (req, res) => {
       } else {
         rider = resolution.rider;
       }
-      if (profileFields.mylapsTransponderId) await addRiderTransponderIfFree(rider.id, profileFields.mylapsTransponderId, "trackr");
-      if (profileFields.rfidNumber) await addRiderTransponderIfFree(rider.id, profileFields.rfidNumber, "rfid");
+      if (clubsOwnRider && profileFields.mylapsTransponderId) await addRiderTransponderIfFree(rider.id, profileFields.mylapsTransponderId, "trackr");
+      if (clubsOwnRider && profileFields.rfidNumber) await addRiderTransponderIfFree(rider.id, profileFields.rfidNumber, "rfid");
       resolvedRiderId = rider.id;
     } else {
       if (!firstName || !lastName) {
@@ -661,6 +678,16 @@ router.patch("/registrations/:registrationId", async (req, res) => {
     if (!await checkEventOwnership(before.eventId, getStaffClubId(res), res)) return;
   } else {
     return res.status(404).json({ error: "That item couldn't be found. It may have been deleted. Refresh the page and try again." });
+  }
+  // Re-pointing an entry at another rider: only one of this club's riders.
+  if (newRiderId !== undefined && newRiderId !== before.riderId) {
+    const staffCId = getStaffClubId(res);
+    if (newRiderId == null || !Number.isInteger(Number(newRiderId)) || Number(newRiderId) <= 0) {
+      return res.status(400).json({ error: "Pick a rider first." });
+    }
+    if (staffCId !== null && !(await riderTiedToClub(newRiderId, staffCId))) {
+      return res.status(403).json({ error: RIDER_NOT_IN_CLUB_ERROR });
+    }
   }
 
   const [reg] = await db.update(registrationsTable).set(updates as any).where(eq(registrationsTable.id, id)).returning();

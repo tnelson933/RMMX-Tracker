@@ -5,7 +5,10 @@ import { riderApi, type RiderAccount } from "@/lib/rider-api";
 interface RiderAuthContextType {
   account: RiderAccount | null;
   isLoading: boolean;
+  /** Signed in with a verified email. */
   isAuthenticated: boolean;
+  /** Signed in, but the email isn't confirmed yet: the sign-in page asks for the code. */
+  needsVerification: boolean;
   invalidate: () => void;
 }
 
@@ -24,7 +27,9 @@ export function RiderAuthProvider({ children }: { children: ReactNode }) {
   const value: RiderAuthContextType = {
     account: account ?? null,
     isLoading,
-    isAuthenticated: !!account,
+    // Older servers don't send emailVerified: treat that as verified.
+    isAuthenticated: !!account && account.emailVerified !== false,
+    needsVerification: !!account && account.emailVerified === false,
     invalidate: () => queryClient.invalidateQueries({ queryKey: ["rider-auth-me"] }),
   };
 

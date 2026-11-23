@@ -27,7 +27,16 @@ export interface RiderAccount {
   id: number;
   email: string;
   mobileToken: string;
+  /**
+   * False until the 6-digit code emailed to the account is entered. An unverified
+   * account sees no rider profiles; the sign-in screen asks for the code.
+   * Servers before this field read as verified.
+   */
+  emailVerified: boolean;
 }
+
+/** The server's emailVerified (missing on older servers = verified). */
+const verifiedFrom = (data: any): boolean => data?.emailVerified !== false;
 
 export interface RiderProfile {
   id: number;
@@ -95,13 +104,21 @@ interface AuthContextType {
   setSelectedProfileIds: (ids: number[]) => Promise<void>;
   bikeInfoMap: Record<number, Partial<BikeInfo>>;
   setBikeInfo: (profileId: number, info: Partial<BikeInfo>) => Promise<void>;
+  /** Signed in with a verified email. */
   isAuthenticated: boolean;
+  /** Signed in, but the email isn't confirmed yet: the sign-in screen shows the code step. */
+  needsVerification: boolean;
   isLoading: boolean;
   biometricEnabled: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  loginWithBiometric: () => Promise<void>;
-  /** Resolves with the number of rider profiles the new account links to. */
-  register: (email: string, password: string) => Promise<number>;
+  /** Resolves true when the account's email is verified (false: show the code step). */
+  login: (email: string, password: string) => Promise<boolean>;
+  loginWithBiometric: () => Promise<boolean>;
+  /** linkedProfiles: rider profiles the new account links to (-1 = unknown until the email is verified). */
+  register: (email: string, password: string) => Promise<{ linkedProfiles: number; emailVerified: boolean }>;
+  /** Confirm the email with the emailed code; resolves with the number of linked rider profiles. */
+  verifyEmail: (code: string) => Promise<number>;
+  /** Email a new code (the server allows 1 a minute, 5 an hour). */
+  resendVerification: () => Promise<void>;
   logout: () => Promise<void>;
   refreshProfiles: () => Promise<void>;
   riderFetch: (path: string, options?: RequestInit) => Promise<Response>;
@@ -308,14 +325,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (res.status === 401 || res.status === 403) return { account: null, unreachable: false };
       if (!res.ok) return { account: null, unreachable: true };
       const data = await res.json();
-      return { account: { id: data.id, email: data.email, mobileToken: token }, unreachable: false };
+      return { account: { id: data.id, email: data.email, mobileToken: token, emailVerified: verifiedFrom(data) }, unreachable: false };
     } catch {
       return { account: null, unreachable: true };
     }
   }
 
   const rememberAccount = (acc: RiderAccount) =>
-    AsyncStorage.setItem(ACCOUNT_CACHE_KEY, JSON.stringify({ id: acc.id, email: acc.email })).catch(() => {});
+    AsyncStorage.setItem(ACCOUNT_CACHE_KEY, JSON.stringify({ id: acc.id, email: acc.email, emailVerified: acc.emailVerified })).catch(() => {});
 
   useEffect(() => {
     async function init() {
@@ -342,7 +359,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         ? await AsyncStorage.getItem(ACCOUNT_CACHE_KEY).then(v => (v ? JSON.parse(v) : null)).catch(() => null)
         : null;
       if (token && cached && typeof cached.id === "number" && typeof cached.email === "string") {
-        applyAccount({ id: cached.id, email: cached.email, mobileToken: token });
+        applyAccount({ id: cached.id, email: cached.email, mobileToken: token, emailVerified: cached.emailVerified !== false });
         const [profRaw, selRaw] = await Promise.all([
           AsyncStorage.getItem(PROFILES_CACHE_KEY).catch(() => null),
           AsyncStorage.getItem(SELECTED_IDS_KEY).catch(() => null),
@@ -365,8 +382,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (acc) {
           applyAccount(acc);
           void rememberAccount(acc);
-          await loadProfiles(token);
-          void tryRegisterPushToken(token);
+          if (acc.emailVerified) {
+            await loadProfiles(token);
+            void tryRegisterPushToken(token);
+          } else {
+            setProfiles([]);
+          }
         } else if (unreachable) {
           setProfilesStatus(prev => (prev === "loaded" ? prev : "failed"));
         } else {
@@ -384,8 +405,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (acc) {
           applyAccount(acc);
           void rememberAccount(acc);
-          await loadProfiles(token);
-          void tryRegisterPushToken(token);
+          if (acc.emailVerified) {
+            await loadProfiles(token);
+            void tryRegisterPushToken(token);
+          }
         } else if (unreachable) {
           // No signal (common at a track) or the server is down: stay signed in as
           // the remembered account and let each screen show its own retry. Builds
@@ -393,7 +416,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // with the token kept for the next launch.
           const cached = await AsyncStorage.getItem(ACCOUNT_CACHE_KEY).then(v => (v ? JSON.parse(v) : null)).catch(() => null);
           if (cached && typeof cached.id === "number" && typeof cached.email === "string") {
-            applyAccount({ id: cached.id, email: cached.email, mobileToken: token });
+            applyAccount({ id: cached.id, email: cached.email, mobileToken: token, emailVerified: cached.emailVerified !== false });
             setProfilesStatus("failed");
           }
         } else {
@@ -417,10 +440,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => sub.remove();
   }, [profilesStatus, account?.mobileToken]);
 
-  async function login(email: string, password: string): Promise<void> {
+  async function login(email: string, password: string): Promise<boolean> {
     const data = await postJson(`${BASE_URL}/api/rider/auth/login`,
       { email: email.trim().toLowerCase(), password }, "Sign-in failed");
-    const acc: RiderAccount = { id: data.id, email: data.email, mobileToken: data.mobileToken };
+    const acc: RiderAccount = { id: data.id, email: data.email, mobileToken: data.mobileToken, emailVerified: verifiedFrom(data) };
     await AsyncStorage.setItem(TOKEN_KEY, data.mobileToken);
     void rememberAccount(acc);
     setProfilesStatus("loading");
@@ -430,11 +453,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await secureSet(BIOMETRIC_EMAIL_SKEY, email.trim().toLowerCase());
       await secureSet(BIOMETRIC_PASS_SKEY, password);
     }
+    // Unverified: nothing to load until the code is entered (verifyEmail loads it).
+    if (!acc.emailVerified) return false;
     void loadProfiles(data.mobileToken);
     void tryRegisterPushToken(data.mobileToken);
+    return true;
   }
 
-  async function loginWithBiometric(): Promise<void> {
+  async function loginWithBiometric(): Promise<boolean> {
     if (Platform.OS === "web") throw new Error("Biometric login is not supported on web");
     const LocalAuth = await import("expo-local-authentication");
     const hasHardware = await LocalAuth.hasHardwareAsync();
@@ -452,20 +478,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const pass = await secureGet(BIOMETRIC_PASS_SKEY);
     if (!email || !pass) throw new Error("No saved credentials — please sign in with your password first");
 
-    await login(email, pass);
+    return login(email, pass);
   }
 
-  async function register(email: string, password: string): Promise<number> {
+  async function register(email: string, password: string): Promise<{ linkedProfiles: number; emailVerified: boolean }> {
     const data = await postJson(`${BASE_URL}/api/rider/auth/register`,
       { email: email.trim().toLowerCase(), password }, "Couldn't create your account");
-    const acc: RiderAccount = { id: data.id, email: data.email, mobileToken: data.mobileToken };
+    const acc: RiderAccount = { id: data.id, email: data.email, mobileToken: data.mobileToken, emailVerified: verifiedFrom(data) };
     await AsyncStorage.setItem(TOKEN_KEY, data.mobileToken);
     void rememberAccount(acc);
     setProfilesStatus("loading");
     applyAccount(acc);
+    if (!acc.emailVerified) return { linkedProfiles: -1, emailVerified: false };
     void loadProfiles(data.mobileToken);
     void tryRegisterPushToken(data.mobileToken);
+    return { linkedProfiles: typeof data.linkedProfiles === "number" ? data.linkedProfiles : -1, emailVerified: true };
+  }
+
+  /** POST to a signed-in auth endpoint and return its JSON, with plain-language errors. */
+  async function postAuthed(path: string, body: unknown, fallback: string): Promise<any> {
+    let res: Response;
+    try {
+      res = await riderFetch(path, { method: "POST", body: JSON.stringify(body ?? {}) });
+    } catch {
+      throw new Error(NETWORK_ERROR_MESSAGE);
+    }
+    if (res.status >= 500) throw new Error(serverErrorMessage(res.status));
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      throw new Error(res.ok ? NETWORK_ERROR_MESSAGE : `${fallback} (error ${res.status}).`);
+    }
+    if (!res.ok) throw new Error(data?.error ?? `${fallback} (error ${res.status}).`);
+    return data;
+  }
+
+  async function verifyEmail(code: string): Promise<number> {
+    const current = account;
+    if (!current) throw new Error("You're signed out. Sign in again, then try once more.");
+    const data = await postAuthed("/api/rider/auth/verify-email", { code }, "Couldn't check that code");
+    const acc: RiderAccount = { ...current, emailVerified: true };
+    void rememberAccount(acc);
+    setProfilesStatus("loading");
+    applyAccount(acc);
+    void loadProfiles(acc.mobileToken);
+    void tryRegisterPushToken(acc.mobileToken);
     return typeof data.linkedProfiles === "number" ? data.linkedProfiles : -1;
+  }
+
+  async function resendVerification(): Promise<void> {
+    await postAuthed("/api/rider/auth/verify-email/resend", {}, "Couldn't send a new code");
   }
 
   async function logout(): Promise<void> {
@@ -580,12 +643,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSelectedProfileIds,
         bikeInfoMap,
         setBikeInfo,
-        isAuthenticated: !!account,
+        isAuthenticated: !!account && account.emailVerified,
+        needsVerification: !!account && !account.emailVerified,
         isLoading,
         biometricEnabled,
         login,
         loginWithBiometric,
         register,
+        verifyEmail,
+        resendVerification,
         logout,
         refreshProfiles,
         riderFetch,

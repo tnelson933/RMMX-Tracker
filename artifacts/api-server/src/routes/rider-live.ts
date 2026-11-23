@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, riderAccountsTable, ridersTable, riderFollowsTable } from "@workspace/db";
-import { and, eq, inArray } from "drizzle-orm";
+import { db, riderAccountsTable, ridersTable } from "@workspace/db";
+import { eq, inArray } from "drizzle-orm";
 import { requireRiderAuth } from "./rider-portal";
 import { canManageRider, managedRiderIds } from "../lib/riderAccess";
 import { effectiveVisibility } from "../lib/riderResume";
@@ -82,12 +82,10 @@ router.get("/rider/live/:riderId", requireRiderAuth, async (req, res) => {
   const rider = await loadRider(req.params.riderId);
   if (!rider) return res.status(404).json({ error: NOT_FOUND });
   const status = riderLiveStatus(rider.id);
-  let canWatch = effectiveVisibility(rider, new Date().toISOString().slice(0, 10)) === "public";
-  if (!canWatch) {
-    const [follow] = await db.select({ id: riderFollowsTable.id }).from(riderFollowsTable)
-      .where(and(eq(riderFollowsTable.riderId, rider.id), eq(riderFollowsTable.riderAccountId, account.id)));
-    canWatch = !!follow || await canManageRider(account, rider);
-  }
+  // A private profile's video is for the rider's own managers only; following
+  // it (a follow made while it was public) gives no access (lib/followVisibility.ts).
+  const canWatch = effectiveVisibility(rider, new Date().toISOString().slice(0, 10)) === "public"
+    || await canManageRider(account, rider);
   return res.json({
     riderId: rider.id,
     name: `${rider.firstName} ${rider.lastName}`.trim(),

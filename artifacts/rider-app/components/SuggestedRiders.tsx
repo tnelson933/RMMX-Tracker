@@ -44,7 +44,12 @@ export function SuggestedRiders({ refreshKey, onFollowed }: { refreshKey: number
     const undo = () => setFollowed(prev => { const n = new Set(prev); n.delete(id); return n; });
     try {
       const r = await riderFetch(`/api/rider/follows/${id}`, { method: "POST" });
-      if (!r.ok) { undo(); Alert.alert("Couldn't follow", `Try again (error ${r.status}).`); }
+      if (!r.ok) {
+        undo();
+        // A rider whose profile turned private since the list loaded answers 403 with a message.
+        const message = r.status === 403 ? ((await r.json().catch(() => null))?.error as string | undefined) : undefined;
+        Alert.alert("Couldn't follow", message ?? `Try again (error ${r.status}).`);
+      }
       else onFollowed?.();
     } catch {
       undo();

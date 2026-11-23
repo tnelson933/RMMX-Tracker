@@ -38,10 +38,54 @@ app.use(
   }),
 );
 
+// Cross-origin browser access (with cookies) only for our own sites. Requests
+// without an Origin header (rider app, desktop app and local server, RM Connect,
+// curl) aren't browser cross-origin requests and are unaffected. A refused
+// origin just gets no Access-Control-Allow-Origin, so its page can't read replies.
+const allowedOrigins = buildAllowedOrigins();
+const DEV_ORIGIN = /^http:\/\/(rmtracker\.localhost|localhost|127\.0\.0\.1)(:\d+)?$/;
+export function isAllowedOrigin(origin: string): boolean {
+  if (allowedOrigins.has(origin)) return true;
+  return process.env.NODE_ENV !== "production" && DEV_ORIGIN.test(origin);
+}
+function buildAllowedOrigins(): Set<string> {
+  const origins = new Set([
+    "https://www.rmroost.com",
+    "https://rmroost.com",
+    "https://rm-tracker-production-9c47.up.railway.app",
+  ]);
+  const add = (value: string | undefined) => {
+    if (!value) return;
+    try { origins.add(new URL(value.includes("://") ? value : `https://${value}`).origin); } catch { /* not a URL */ }
+  };
+  add(process.env.APP_URL);
+  add(process.env.RAILWAY_PUBLIC_DOMAIN);
+  // Replit (current production) serves the site from its own domains too.
+  for (const d of (process.env.REPLIT_DOMAINS ?? "").split(",")) add(d.trim());
+  for (const o of (process.env.CORS_EXTRA_ORIGINS ?? "").split(",")) add(o.trim());
+  return origins;
+}
+
 app.use(cors({
-  origin: true,
+  origin: (origin, callback) => callback(null, !origin || isAllowedOrigin(origin)),
   credentials: true,
 }));
+
+// Standard security headers. No Content-Security-Policy: Stripe, video and
+// fonts load from other origins and a strict policy would break them.
+// Pages other sites (and the rider app's web build) show in a frame stay
+// frameable: the event/series widgets, Watch Live, live leaderboards, the
+// rider live/phone camera pages and the in-app PDF viewer.
+const FRAMEABLE_PATH = /^\/(widget|watch|live|rider-live|phone-live|pdf-view)(\/|$)/i;
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  if (!FRAMEABLE_PATH.test(req.path)) {
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
+    res.setHeader("Content-Security-Policy", "frame-ancestors 'self'");
+  }
+  next();
+});
 
 // Artifact workflow readiness probes the service root. Keep it lightweight so
 // the API remains routable to the website after restarts and publishes.
@@ -120,7 +164,11 @@ app.use(
         ? process.env.COOKIE_SECURE === "true"
         : process.env.NODE_ENV === "production",
       httpOnly: true,
+      // Not sent on cross-site POSTs, iframes or fetches (CSRF); still sent when
+      // following a link to the site. The web app and its /api are one site.
+      sameSite: "lax",
       // No global maxAge — login route sets it based on rememberMe choice
+      // (30 days, or a browser-session cookie); the store expires idle sessions.
     },
   })
 );

@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { RiderAvatar } from "@/components/rider/RacerPhotos";
 import { Link } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, Search } from "lucide-react";
+import { ChevronRight, Lock, Search } from "lucide-react";
 
 import { RiderLayout } from "@/components/layout/RiderLayout";
 import { PosBadge } from "@/components/rider/insights";
@@ -102,7 +102,13 @@ export default function RiderFollowing() {
               {follows!.following.map(f => (
                 <div key={f.riderId} className="flex items-center gap-3 px-4 py-3">
                   <RiderAvatar url={f.avatarUrl} name={f.name} size={36} />
-                  <Link href={`/rider/racer/${f.riderId}`} className="flex-1 text-[15px] font-semibold text-white hover:underline">{f.name}</Link>
+                  <Link href={`/rider/racer/${f.riderId}`} className="min-w-0 flex-1 hover:underline">
+                    <span className="block truncate text-[15px] font-semibold text-white">{f.name}</span>
+                    {/* A private profile you follow gives no results, alerts or video until it's made public. */}
+                    {(f as typeof f & { privateProfile?: boolean }).privateProfile ? (
+                      <span className="flex items-center gap-1 text-[13px] text-[#A8A8A8]"><Lock size={12} /> Private profile</span>
+                    ) : null}
+                  </Link>
                   <Button size="sm" variant="ghost" className={OUTLINE_BTN} disabled={toggle.isPending} onClick={() => toggle.mutate({ id: f.riderId, follow: false })}>Unfollow</Button>
                 </div>
               ))}

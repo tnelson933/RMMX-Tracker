@@ -1,20 +1,40 @@
 import { db, ridersTable, riderAccountsTable, riderProfileManagersTable } from "@workspace/db";
-import { and, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
 
 /**
  * Which rider profiles a rider account may manage:
  *  - the owner: the account whose email matches riders.email (the original rule), and
  *  - managers: accounts invited by email in rider_profile_managers (second parent, coach).
  *
- * Every rider-portal ownership check goes through here so the two rules can't drift.
+ * Both rules only count for an account that has verified its email
+ * (rider_accounts.email_verified_at). Anyone can create an account with any email,
+ * so an unverified account owns and manages nothing: it signs in, sees no
+ * profiles, and is asked for the code emailed to it.
+ *
+ * Every rider-portal ownership check goes through here so the rules can't drift.
  */
 
-type Account = { id: number; email: string };
+/**
+ * The signed-in rider account. Pass emailVerifiedAt when the caller loaded it
+ * (a full row); when it's left out, it is read from the database here.
+ */
+type Account = { id: number; email: string; emailVerifiedAt?: Date | null };
+/** ownsRider is synchronous, so it needs the verification already loaded. */
+type VerifiedStateAccount = { id: number; email: string; emailVerifiedAt: Date | null };
 
 const norm = (e: string) => e.trim().toLowerCase();
 
-/** IDs of every rider profile this account owns or manages. */
+/** True when the account has proved it owns its email. */
+export async function isEmailVerified(account: Account): Promise<boolean> {
+  if (account.emailVerifiedAt !== undefined) return account.emailVerifiedAt != null;
+  const [row] = await db.select({ at: riderAccountsTable.emailVerifiedAt }).from(riderAccountsTable)
+    .where(eq(riderAccountsTable.id, account.id));
+  return row?.at != null;
+}
+
+/** IDs of every rider profile this account owns or manages (none until its email is verified). */
 export async function managedRiderIds(account: Account): Promise<number[]> {
+  if (!(await isEmailVerified(account))) return [];
   const email = norm(account.email);
   const owned = await db.select({ id: ridersTable.id }).from(ridersTable)
     .where(sql`LOWER(${ridersTable.email}) = ${email}`);
@@ -23,14 +43,16 @@ export async function managedRiderIds(account: Account): Promise<number[]> {
   return [...new Set([...owned.map(r => r.id), ...managed.map(r => r.id)])];
 }
 
-/** True when the account owns (email match) this rider. */
-export function ownsRider(account: Account, rider: { email: string | null }): boolean {
-  return !!rider.email && norm(rider.email) === norm(account.email);
+/** True when the account owns (verified email match) this rider. */
+export function ownsRider(account: VerifiedStateAccount, rider: { email: string | null }): boolean {
+  return account.emailVerifiedAt != null && !!rider.email && norm(rider.email) === norm(account.email);
 }
 
 /** True when the account owns or manages this rider. Links a pending invite to the account on first use. */
 export async function canManageRider(account: Account, rider: { id: number; email: string | null }): Promise<boolean> {
-  if (ownsRider(account, rider)) return true;
+  const verified = await isEmailVerified(account);
+  if (!verified) return false;
+  if (ownsRider({ ...account, emailVerifiedAt: account.emailVerifiedAt ?? new Date() }, rider)) return true;
   const email = norm(account.email);
   const [row] = await db.select({ id: riderProfileManagersTable.id, riderAccountId: riderProfileManagersTable.riderAccountId })
     .from(riderProfileManagersTable)
@@ -51,8 +73,8 @@ export async function managedRiderWhere(account: Account): Promise<SQL> {
 }
 
 /**
- * Each rider's app accounts: the account with the rider's email, plus invited
- * managers. Same matching as accountIdsForRiders, kept per rider (for
+ * Each rider's app accounts (verified ones only): the account with the rider's
+ * email, plus invited managers. Same matching as accountIdsForRiders, kept per rider (for
  * reminders that report who was reached).
  */
 export async function accountIdsByRider(riderIds: number[]): Promise<Map<number, number[]>> {
@@ -66,8 +88,10 @@ export async function accountIdsByRider(riderIds: number[]): Promise<Map<number,
     ...managers.map(m => m.email?.trim().toLowerCase()).filter((e): e is string => !!e),
   ])];
   const accounts = emails.length
-    ? await db.select({ id: riderAccountsTable.id, email: riderAccountsTable.email }).from(riderAccountsTable).where(inArray(sql`LOWER(${riderAccountsTable.email})`, emails))
+    ? await db.select({ id: riderAccountsTable.id, email: riderAccountsTable.email }).from(riderAccountsTable)
+      .where(and(inArray(sql`LOWER(${riderAccountsTable.email})`, emails), isNotNull(riderAccountsTable.emailVerifiedAt)))
     : [];
+  const verifiedIds = await verifiedAccountIds(managers.map(m => m.accountId));
   const idByEmail = new Map(accounts.map(a => [a.email.trim().toLowerCase(), a.id]));
   const add = (riderId: number, accountId: number | null | undefined) => {
     if (accountId == null) return;
@@ -76,7 +100,7 @@ export async function accountIdsByRider(riderIds: number[]): Promise<Map<number,
   };
   for (const r of riders) add(r.id, r.email ? idByEmail.get(r.email.trim().toLowerCase()) : undefined);
   for (const m of managers) {
-    add(m.riderId, m.accountId);
+    if (m.accountId != null && verifiedIds.has(m.accountId)) add(m.riderId, m.accountId);
     add(m.riderId, m.email ? idByEmail.get(m.email.trim().toLowerCase()) : undefined);
   }
   return result;
@@ -91,7 +115,18 @@ export async function accountIdsForRiders(riderIds: number[]): Promise<number[]>
     .from(riderProfileManagersTable).where(inArray(riderProfileManagersTable.riderId, riderIds));
   const allEmails = [...new Set([...emails, ...managers.map(m => m.email)])];
   const byEmail = allEmails.length
-    ? await db.select({ id: riderAccountsTable.id }).from(riderAccountsTable).where(inArray(sql`LOWER(${riderAccountsTable.email})`, allEmails))
+    ? await db.select({ id: riderAccountsTable.id }).from(riderAccountsTable)
+      .where(and(inArray(sql`LOWER(${riderAccountsTable.email})`, allEmails), isNotNull(riderAccountsTable.emailVerifiedAt)))
     : [];
-  return [...new Set([...byEmail.map(a => a.id), ...managers.map(m => m.accountId).filter((id): id is number => id != null)])];
+  const verifiedManagers = await verifiedAccountIds(managers.map(m => m.accountId));
+  return [...new Set([...byEmail.map(a => a.id), ...verifiedManagers])];
+}
+
+/** Which of these account ids have verified their email (unverified accounts get no rider alerts). */
+async function verifiedAccountIds(ids: Array<number | null>): Promise<Set<number>> {
+  const wanted = [...new Set(ids.filter((id): id is number => id != null))];
+  if (wanted.length === 0) return new Set();
+  const rows = await db.select({ id: riderAccountsTable.id }).from(riderAccountsTable)
+    .where(and(inArray(riderAccountsTable.id, wanted), isNotNull(riderAccountsTable.emailVerifiedAt)));
+  return new Set(rows.map(r => r.id));
 }

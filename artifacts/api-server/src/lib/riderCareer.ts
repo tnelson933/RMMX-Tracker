@@ -10,6 +10,7 @@ import { visiblePhotos } from "./riderPhotos";
 import { sendPushNotifications } from "./push";
 import { logger } from "./logger";
 import { claimNotification, pendingResultNotifications, releaseNotification } from "./resultsNotify";
+import { followsThatCount } from "./followVisibility";
 
 const FINISH_SENTINEL = 999;
 
@@ -230,8 +231,9 @@ export async function notifyFollowersOfResults(eventId: number): Promise<void> {
     const release = async () => { for (const id of claimed) await releaseNotification(eventId, id, "follow_push", pending.sent.get(id)); };
 
     try {
-      const follows = await db.select({ accountId: riderFollowsTable.riderAccountId, riderId: riderFollowsTable.riderId })
-        .from(riderFollowsTable).where(inArray(riderFollowsTable.riderId, claimed));
+      // Follows of private profiles get no results push (the rider's own managers still do).
+      const follows = await followsThatCount(await db.select({ accountId: riderFollowsTable.riderAccountId, riderId: riderFollowsTable.riderId })
+        .from(riderFollowsTable).where(inArray(riderFollowsTable.riderId, claimed)));
       if (follows.length === 0) return;
       const byAccount = new Map<number, number[]>();
       for (const f of follows) byAccount.set(f.accountId, [...(byAccount.get(f.accountId) ?? []), f.riderId]);

@@ -136,6 +136,15 @@ const STAFF_RULES: RouteRule[] = [
 ];
 
 /**
+ * The path as access rules see it. Express matches routes case-insensitively,
+ * so every access check compares the lower-cased path; otherwise
+ * /events/5/Registrations would reach the route but skip its rule.
+ */
+export function normalizeAccessPath(path: string): string {
+  return path.toLowerCase();
+}
+
+/**
  * Staff branch of accessControlMiddleware: enforce per-permission rules and
  * scope the request to the staff member's club.
  */
@@ -156,9 +165,13 @@ export function applyStaffRules(
   // Route handlers read res.locals.staffClubId as the club this caller is limited to.
   res.locals.staffClubId = user.clubId;
 
+  // Express routing ignores case (/events/5/Registrations reaches the registrations
+  // route), so the rules must too: match on the lower-cased path.
+  const matchPath = normalizeAccessPath(path);
+
   // First rule whose pattern matches AND whose method list (if any) includes this method wins.
   for (const rule of STAFF_RULES) {
-    if (!rule.pattern.test(path)) continue;
+    if (!rule.pattern.test(matchPath)) continue;
     if (rule.methods && !rule.methods.includes(method as HttpMethod)) continue;
 
     if (rule.permissions === null) return res.status(403).json({ error: "Your staff role doesn't include this. Ask your club's organizer to add it on the Staff page." });

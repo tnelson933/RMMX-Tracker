@@ -40,7 +40,7 @@ import {
 } from "../lib/riderTimingIdentity";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { db } from "@workspace/db";
-import { sendEmail } from "../lib/email";
+import { sendEmail, sendRiderVerificationCodeEmail } from "../lib/email";
 import { brandedEmailHtml } from "../lib/emailLayout";
 import {
   riderAccountsTable,
@@ -73,6 +73,10 @@ import {
 } from "@workspace/db";
 import { eq, desc, asc, or, and, ne, inArray, sql, ilike, isNull, isNotNull } from "drizzle-orm";
 import { canManageRider, managedRiderIds, managedRiderWhere, ownsRider } from "../lib/riderAccess";
+import {
+  checkCode, codeCheckMessage, CODE_TTL_MS, generateCode, hashCode, MAX_CODE_ATTEMPTS, normalizeCode,
+  resetEmailSendsByAddress, resetEmailSendsByEmail, verificationCodeSends, waitText,
+} from "../lib/emailVerification";
 import { EXPO_PUSH_TOKEN_RE } from "../lib/push";
 import { eventsTimingTags, type TimingTags } from "../lib/eventTimingTags";
 import { ageOn, BIO_MAX, effectiveVisibility, PLATE_COLORS } from "../lib/riderResume";
@@ -325,6 +329,8 @@ router.post("/rider/auth/register", async (req, res) => {
   }
 
   const hash = await bcrypt.hash(String(password), 12);
+  // New accounts start unverified: they own no rider profiles until they type the
+  // code emailed to them (riderAccess), so knowing a rider's email isn't enough.
   const [account] = await db.insert(riderAccountsTable).values({ email: normalized, passwordHash: hash }).returning();
 
   (req.session as any).riderAccountId = account.id;
@@ -333,12 +339,98 @@ router.post("/rider/auth/register", async (req, res) => {
   const mobileToken = generateMobileToken();
   await db.insert(riderMobileTokensTable).values({ riderAccountId: account.id, token: mobileToken });
 
-  // How many rider profiles this email already links to. Zero usually means the
-  // rider registered for races with a different email (or mistyped this one), so
-  // the app warns them right away instead of showing empty screens.
-  const linkedProfiles = (await managedRiderIds({ id: account.id, email: account.email })).length;
+  await sendVerificationCode(account);
 
-  return res.json({ id: account.id, email: account.email, createdAt: account.createdAt.toISOString(), mobileToken, linkedProfiles });
+  // No linkedProfiles until the email is verified: the count would tell a stranger
+  // whether a rider uses this email. (Older apps read a missing count as "unknown"
+  // and skip their "no rider profiles" warning; /verify-email returns it.)
+  return res.json({ ...accountJson(account), mobileToken, codeSent: true });
+});
+
+/** Where the rider website lives, for links in emails. */
+function riderSiteUrl(): string {
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
+  const domains = process.env.REPLIT_DOMAINS;
+  if (domains) return `https://${domains.split(",")[0]}`;
+  return "http://localhost:80";
+}
+
+/** The code is printed to the server log for local testing only, never in production. */
+const LOG_CODES_FOR_DEV = process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test";
+
+/**
+ * Email a fresh 6-digit code (replacing any earlier one) unless this account has
+ * had one in the last minute or 5 in the last hour. Returns how long to wait when limited.
+ */
+async function sendVerificationCode(account: { id: number; email: string }): Promise<{ sent: boolean; waitMs: number }> {
+  const waitMs = verificationCodeSends.take(String(account.id));
+  if (waitMs > 0) return { sent: false, waitMs };
+  const code = generateCode();
+  await db.update(riderAccountsTable).set({
+    emailVerifyCodeHash: hashCode(account.id, code),
+    emailVerifyExpiresAt: new Date(Date.now() + CODE_TTL_MS),
+    emailVerifyAttempts: 0,
+  }).where(eq(riderAccountsTable.id, account.id));
+  if (LOG_CODES_FOR_DEV) console.info(`[email] DEV ONLY: rider account ${account.id} verification code ${code}`);
+  await sendRiderVerificationCodeEmail({ to: account.email, code, appUrl: riderSiteUrl() });
+  return { sent: true, waitMs: 0 };
+}
+
+/** The account answer every sign-in path returns (the mobile app keys off these fields). */
+function accountJson(account: { id: number; email: string; createdAt: Date; emailVerifiedAt: Date | null }) {
+  return { id: account.id, email: account.email, createdAt: account.createdAt.toISOString(), emailVerified: account.emailVerifiedAt != null };
+}
+
+// POST /rider/auth/verify-email { code } - confirm the signed-in account's email with the emailed code.
+router.post("/rider/auth/verify-email", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const [current] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!current) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
+  if (current.emailVerifiedAt) {
+    return res.json({ ok: true, emailVerified: true, linkedProfiles: (await managedRiderIds(current)).length });
+  }
+  const code = normalizeCode(req.body?.code);
+  if (!code) return res.status(400).json({ error: "Enter the 6-digit code from the email we sent you." });
+
+  // Use up one try before checking, so parallel guesses can't get past the limit.
+  const [reserved] = await db.update(riderAccountsTable)
+    .set({ emailVerifyAttempts: sql`${riderAccountsTable.emailVerifyAttempts} + 1` })
+    .where(and(
+      eq(riderAccountsTable.id, current.id),
+      isNotNull(riderAccountsTable.emailVerifyCodeHash),
+      sql`${riderAccountsTable.emailVerifyAttempts} < ${MAX_CODE_ATTEMPTS}`,
+    ))
+    .returning();
+  const result = reserved
+    ? checkCode({ accountId: reserved.id, codeHash: reserved.emailVerifyCodeHash, expiresAt: reserved.emailVerifyExpiresAt, attempts: reserved.emailVerifyAttempts }, code)
+    : { ok: false as const, reason: current.emailVerifyCodeHash ? "locked" as const : "none" as const };
+  if (!result.ok) {
+    return res.status(400).json({ error: codeCheckMessage(result), reason: result.reason });
+  }
+
+  const [verified] = await db.update(riderAccountsTable).set({
+    emailVerifiedAt: new Date(),
+    emailVerifyCodeHash: null,
+    emailVerifyExpiresAt: null,
+    emailVerifyAttempts: 0,
+  }).where(eq(riderAccountsTable.id, current.id)).returning();
+  // Profiles linked to this email now appear. Zero usually means the rider entered
+  // races with a different email, so the app can say so.
+  return res.json({ ok: true, emailVerified: true, linkedProfiles: (await managedRiderIds(verified)).length });
+});
+
+// POST /rider/auth/verify-email/resend - email a new code (1 a minute, 5 an hour).
+router.post("/rider/auth/verify-email/resend", requireRiderAuth, async (req, res) => {
+  const riderAccountId = (req.session as any).riderAccountId;
+  const [current] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
+  if (!current) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
+  if (current.emailVerifiedAt) return res.json({ ok: true, emailVerified: true });
+  const { sent, waitMs } = await sendVerificationCode(current);
+  if (!sent) {
+    res.setHeader("Retry-After", String(Math.ceil(waitMs / 1000)));
+    return res.status(429).json({ error: `We just sent a code. ${waitText(waitMs)} before asking for another, and check your spam folder.` });
+  }
+  return res.json({ ok: true, emailVerified: false, codeSent: true });
 });
 
 // POST /rider/auth/login
@@ -351,23 +443,12 @@ router.post("/rider/auth/login", async (req, res) => {
   if (rejectIfThrottled(req, res, "rider", email)) return;
   const normalized = String(email).toLowerCase().trim();
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.email, normalized));
-  if (!account) {
+  // One answer for an unknown email and a wrong password, so sign-in can't be used
+  // to find out who has an account. (A bcrypt compare runs either way for the same timing.)
+  const valid = await bcrypt.compare(String(password), account?.passwordHash ?? DUMMY_PASSWORD_HASH);
+  if (!account || !valid) {
     recordFailedLogin(req, "rider", email);
-    // Point organizers who landed on the rider login to the right place.
-    const [organizer] = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.email, normalized));
-    return res.status(401).json({
-      error: organizer
-        ? `${normalized} is an organizer account, not a rider account. Use Organizer Login instead, or create a separate rider account.`
-        : `There's no rider account for ${normalized}. Check the spelling, or choose "Create account" to sign up.`,
-    });
-  }
-
-  const valid = await bcrypt.compare(String(password), account.passwordHash);
-  if (!valid) {
-    recordFailedLogin(req, "rider", email);
-    return res.status(401).json({
-      error: "That password doesn't match this account. Check that Caps Lock is off, or use \"Forgot password\" to reset it.",
-    });
+    return res.status(401).json({ error: RIDER_LOGIN_FAILED });
   }
 
   clearFailedLogins("rider", email);
@@ -377,8 +458,20 @@ router.post("/rider/auth/login", async (req, res) => {
   const mobileToken = generateMobileToken();
   await db.insert(riderMobileTokensTable).values({ riderAccountId: account.id, token: mobileToken });
 
-  return res.json({ id: account.id, email: account.email, createdAt: account.createdAt.toISOString(), mobileToken });
+  // Not verified yet: send a code now unless one is still waiting to be used.
+  let codeSent = false;
+  if (!account.emailVerifiedAt) {
+    const pending = !!account.emailVerifyCodeHash && !!account.emailVerifyExpiresAt
+      && account.emailVerifyExpiresAt.getTime() > Date.now() && account.emailVerifyAttempts < MAX_CODE_ATTEMPTS;
+    codeSent = pending || (await sendVerificationCode(account)).sent;
+  }
+
+  return res.json({ ...accountJson(account), mobileToken, ...(account.emailVerifiedAt ? {} : { codeSent }) });
 });
+
+const RIDER_LOGIN_FAILED = "Your email or password is incorrect. Check the spelling and that Caps Lock is off, or use \"Forgot password\" to reset it. Organizers sign in on Organizer Login.";
+// Compared when the email has no account, so that answer takes as long as a wrong password.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync("not-a-real-password", 12);
 
 // In-memory store for rider password reset tokens (expires in 1 hour)
 const riderResetTokens = new Map<string, { riderAccountId: number; expiresAt: Date }>();
@@ -390,11 +483,27 @@ function getRiderAppUrl(): string {
   return "http://localhost:80";
 }
 
+/** The caller's address for send limits (the proxy's view plus Cloudflare's visitor address). */
+function callerAddress(req: any): string {
+  const cf = req.headers["cf-connecting-ip"];
+  return `${req.ip ?? "unknown"}|${typeof cf === "string" ? cf.trim() : ""}`;
+}
+
 // POST /rider/auth/forgot-password
 router.post("/rider/auth/forgot-password", async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: "Enter an email address." });
   const normalized = String(email).toLowerCase().trim();
+
+  // Limited per email (1 a minute, 5 an hour) and per caller, whether or not the
+  // account exists, so it can't flood an inbox or reveal who has an account.
+  const waitMs = Math.max(resetEmailSendsByAddress.waitMs(callerAddress(req)), resetEmailSendsByEmail.waitMs(`rider:${normalized}`));
+  if (waitMs > 0) {
+    res.setHeader("Retry-After", String(Math.ceil(waitMs / 1000)));
+    return res.status(429).json({ error: `A reset email was just requested. ${waitText(waitMs)}, then try again, and check your spam folder.` });
+  }
+  resetEmailSendsByAddress.take(callerAddress(req));
+  resetEmailSendsByEmail.take(`rider:${normalized}`);
 
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.email, normalized));
 
@@ -432,7 +541,10 @@ router.post("/rider/auth/reset-password", async (req, res) => {
   }
 
   const hash = await bcrypt.hash(String(password), 12);
-  await db.update(riderAccountsTable).set({ passwordHash: hash }).where(eq(riderAccountsTable.id, record.riderAccountId));
+  // The link came to the account's email, so opening it also proves the email is theirs.
+  await db.update(riderAccountsTable)
+    .set({ passwordHash: hash, emailVerifiedAt: sql`COALESCE(${riderAccountsTable.emailVerifiedAt}, now())` })
+    .where(eq(riderAccountsTable.id, record.riderAccountId));
   riderResetTokens.delete(String(token));
   // Signed-in phones may belong to whoever caused the reset: sign them all out.
   await revokeMobileTokens(record.riderAccountId, null);
@@ -493,7 +605,7 @@ router.get("/rider/auth/me", async (req, res) => {
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
   if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
 
-  return res.json({ id: account.id, email: account.email, createdAt: account.createdAt.toISOString() });
+  return res.json(accountJson(account));
 });
 
 // GET /rider/auth/mobile-me — Bearer token auth check for mobile app startup
@@ -501,7 +613,7 @@ router.get("/rider/auth/mobile-me", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
   if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
-  return res.json({ id: account.id, email: account.email, createdAt: account.createdAt.toISOString() });
+  return res.json(accountJson(account));
 });
 
 // POST /rider/push-token — register Expo push token for the authenticated rider account
@@ -1699,6 +1811,12 @@ router.post("/rider/profiles", requireRiderAuth, async (req, res) => {
   const riderAccountId = (req.session as any).riderAccountId;
   const [account] = await db.select().from(riderAccountsTable).where(eq(riderAccountsTable.id, riderAccountId));
   if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
+  // A new profile takes the account's email, which makes the account its owner:
+  // only once that email is proven (otherwise a stranger could add riders to
+  // someone else's family).
+  if (!account.emailVerifiedAt) {
+    return res.status(403).json({ error: "Confirm your email first: enter the 6-digit code we emailed you, then add riders.", reason: "email_unverified" });
+  }
 
   const { firstName, lastName, phone, dateOfBirth, bibNumber, amaNumber,
     bikeManufacturer, bikeModel, bikeYear, sponsors, streetAddress, city, homeState, zip, myLapsTransponderNumber } = req.body;

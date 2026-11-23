@@ -9,6 +9,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { logger } from "./logger";
 import { sendPushNotifications } from "./push";
 import { accountIdsForRiders } from "./riderAccess";
+import { followsThatCount } from "./followVisibility";
 import { getLiveRiderIds, onCameraStarted, riderLiveStatus, stopRiderStream } from "./videoRelay";
 import { loadGoLiveWindow } from "./riderRace";
 
@@ -50,8 +51,9 @@ export async function alertFollowersRiderLive(riderId: number): Promise<number> 
   const [rider] = await db.select({ firstName: ridersTable.firstName, lastName: ridersTable.lastName })
     .from(ridersTable).where(eq(ridersTable.id, riderId));
   if (!rider) return 0;
-  const follows = await db.select({ accountId: riderFollowsTable.riderAccountId }).from(riderFollowsTable)
-    .where(and(eq(riderFollowsTable.riderId, riderId), eq(riderFollowsTable.raceAlerts, true)));
+  // Follows of a private profile alert nobody (its own accounts are skipped below anyway).
+  const follows = await followsThatCount(await db.select({ accountId: riderFollowsTable.riderAccountId, riderId: riderFollowsTable.riderId }).from(riderFollowsTable)
+    .where(and(eq(riderFollowsTable.riderId, riderId), eq(riderFollowsTable.raceAlerts, true))));
   const own = new Set(await accountIdsForRiders([riderId]));
   const accountIds = [...new Set(follows.map(f => f.accountId))].filter(id => !own.has(id));
   if (!accountIds.length) return 0;

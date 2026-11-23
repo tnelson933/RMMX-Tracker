@@ -2,7 +2,7 @@ import type { Request, Response, NextFunction } from "express";
 import { db } from "@workspace/db";
 import { usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { applyStaffRules } from "./staffPermissions";
+import { applyStaffRules, normalizeAccessPath } from "./staffPermissions";
 
 /**
  * Default-deny access control for everything mounted under /api.
@@ -57,14 +57,18 @@ export const PUBLIC_RULES: PublicRule[] = [
   { pattern: /^\/practice\/\d+\/live$/, methods: READ, reason: "practice live SSE (handler: own club, or a rider account's own riders only)" },
   { pattern: /^\/storage\/(objects|public-objects|uploads)\//, methods: READ, reason: "images and logos" },
 
-  // Timing hardware ingest. Not yet authenticated: tracked separately (audit S11).
-  { pattern: /^\/timing\/(crossing|impinj-crossing|zebra-crossing|active\/crossing|ping)$/, methods: ["POST"], reason: "reader ingest (S11 pending)" },
+  // Timing hardware ingest (audit S11). The handlers verify a reader token
+  // (Bearer) or organizer session through lib/ingestAuth: a credential for another
+  // club gets 403; none (older RM Connect / bridges, hand-programmed facility URLs)
+  // is logged as timing_ingest_unauthenticated and refused once TIMING_INGEST_ENFORCE
+  // (or the club's timing_ingest_auth) is set to enforce.
+  { pattern: /^\/timing\/(crossing|impinj-crossing|zebra-crossing|active\/crossing|ping)$/, methods: ["POST"], reason: "reader ingest (credential checked in handler; enforced by TIMING_INGEST_ENFORCE)" },
   { pattern: /^\/timing\/readers\/[^/]+\/(crossing|active\/crossing|ping)$/, methods: ["POST"], reason: "per-reader token ingest (token checked in handler)" },
   { pattern: /^\/timing\/readers\/[^/]+\/scanner$/, methods: READ, reason: "hand scanner page: name, placement, server clock (token checked in handler)" },
   { pattern: /^\/scanner\/pair$/, methods: ["POST"], reason: "hand scanner pairing (6-digit code checked in handler)" },
   { pattern: /^\/support\/tickets\/\d+\/email-decision$/, methods: ["GET", "POST"], reason: "emailed approve/decline link for a support ticket (single-use token checked in handler)" },
   { pattern: /^\/twilio\/sms$/, methods: ["POST"], reason: "Twilio's incoming-text webhook for support-alert replies (Twilio signature and alert-list number checked in handler)" },
-  { pattern: /^\/practice\/(\d+|active)\/crossing$/, methods: ["POST"], reason: "practice reader ingest (S11 pending)" },
+  { pattern: /^\/practice\/(\d+|active)\/crossing$/, methods: ["POST"], reason: "practice reader ingest (credential checked in handler; enforced by TIMING_INGEST_ENFORCE)" },
 ];
 
 const BEARER_SYNC_ROUTE = /^\/clubs\/\d+\/(sync|sync-pull|desktop-push)$/;
@@ -73,11 +77,14 @@ const BEARER_LAPTOP_ROUTE = /^\/connector\/laptop\//;
 
 export function isPublicRoute(path: string, method: string): boolean {
   const m = method.toUpperCase() as HttpMethod;
-  return PUBLIC_RULES.some(r => r.pattern.test(path) && (!r.methods || r.methods.includes(m)));
+  const p = normalizeAccessPath(path);
+  return PUBLIC_RULES.some(r => r.pattern.test(p) && (!r.methods || r.methods.includes(m)));
 }
 
 export async function accessControlMiddleware(req: Request, res: Response, next: NextFunction) {
-  const path = req.path;
+  // Lower-cased because Express routes ignore case: every check below (bearer
+  // routes, the mirror block, staff rules) must see /Auth/Offline-Token as /auth/offline-token.
+  const path = normalizeAccessPath(req.path);
   const method = req.method.toUpperCase();
   if (method === "OPTIONS") return next();
 

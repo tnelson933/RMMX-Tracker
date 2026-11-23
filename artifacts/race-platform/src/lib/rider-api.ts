@@ -35,6 +35,10 @@ export interface RiderAccount {
   id: number;
   email: string;
   createdAt: string;
+  /** False until the 6-digit emailed code is entered; an unverified account sees no rider profiles. */
+  emailVerified?: boolean;
+  /** Sign-in/register only: a code was emailed (or one is still waiting). */
+  codeSent?: boolean;
 }
 
 export interface RiderCardData {
@@ -364,6 +368,14 @@ export const riderApi = {
 
   me: (): Promise<RiderAccount> =>
     apiFetch("/rider/auth/me"),
+
+  /** Confirm the account's email with the emailed 6-digit code. */
+  verifyEmail: (code: string): Promise<{ ok: boolean; emailVerified: boolean; linkedProfiles?: number }> =>
+    apiFetch("/rider/auth/verify-email", { method: "POST", body: JSON.stringify({ code }) }),
+
+  /** Email a new code (limited to 1 a minute, 5 an hour). */
+  resendVerification: (): Promise<{ ok: boolean; emailVerified: boolean }> =>
+    apiFetch("/rider/auth/verify-email/resend", { method: "POST" }),
 
   profiles: (): Promise<RiderProfile[]> =>
     apiFetch("/rider/profiles"),

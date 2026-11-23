@@ -179,6 +179,11 @@ export function RacerBody({ data, riderId, onToggle, pending, publicPage = false
           <Link href={`/rider/racer/${riderId}`}><Button>Follow</Button></Link>
         ) : data.isManager ? (
           <Link href={`/rider/portal/${riderId}?tab=profile`}><Button variant="ghost" className={OUTLINE_BTN}>Edit profile</Button></Link>
+        ) : data.visibility === "private" ? (
+          // Private profiles can't be followed; an older follow can still be removed.
+          data.following ? (
+            <Button onClick={onToggle} disabled={pending} variant="ghost" className={OUTLINE_BTN}>Unfollow</Button>
+          ) : null
         ) : (
           <Button onClick={onToggle} disabled={pending} variant={data.following ? "ghost" : "default"} className={data.following ? OUTLINE_BTN : undefined} aria-pressed={data.following}>
             {data.following ? "Following" : "Follow"}
@@ -188,6 +193,11 @@ export function RacerBody({ data, riderId, onToggle, pending, publicPage = false
 
       {publicPage ? null : <RiderLiveLink riderId={riderId} />}
 
+      {!publicPage && !data.isManager && data.visibility === "private" && (
+        <p className="flex items-center gap-2 rounded-lg bg-[#2E2E2E] px-4 py-3 text-[14px] text-[#A8A8A8]">
+          <Lock size={15} /> This rider's profile is private. Ask their parent or guardian to make it public.
+        </p>
+      )}
       {data.isManager && data.visibility === "private" && (
         <p className="flex items-center gap-2 rounded-lg bg-[#2E2E2E] px-4 py-3 text-[14px] text-[#A8A8A8]">
           <Lock size={15} /> Private profile. Other riders see published results only, not the bio or home state.

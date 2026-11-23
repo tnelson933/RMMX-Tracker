@@ -7,6 +7,7 @@ import { loadCareerStats, loadRacerResume, loadResultsFeed, searchPublicRiders }
 import { buildRacerProfile, loadProfileRider } from "../lib/racerProfileView";
 import { checkPhoto, photoKind, visiblePhotos } from "../lib/riderPhotos";
 import { saveUpload } from "../lib/uploadStore";
+import { PRIVATE_PROFILE_FOLLOW_ERROR, privateRiderIds } from "../lib/followVisibility";
 
 /**
  * Rider career stats, profile managers (multiple accounts per rider) and following.
@@ -17,7 +18,7 @@ const router = Router();
 async function currentAccount(req: any) {
   const id = (req.session as any).riderAccountId as number | undefined;
   if (!id) return null;
-  const [account] = await db.select({ id: riderAccountsTable.id, email: riderAccountsTable.email })
+  const [account] = await db.select({ id: riderAccountsTable.id, email: riderAccountsTable.email, emailVerifiedAt: riderAccountsTable.emailVerifiedAt })
     .from(riderAccountsTable).where(eq(riderAccountsTable.id, id));
   return account ?? null;
 }
@@ -118,7 +119,9 @@ router.delete("/rider/profiles/:riderId/managers/:managerId", requireRiderAuth, 
   const [row] = await db.select().from(riderProfileManagersTable)
     .where(and(eq(riderProfileManagersTable.id, Number(req.params.managerId)), eq(riderProfileManagersTable.riderId, rider.id)));
   if (!row) return res.status(404).json({ error: "This manager couldn't be found. It may have been deleted. Refresh the page and try again." });
-  const isSelf = row.riderAccountId === account.id || row.invitedEmail === account.email.trim().toLowerCase();
+  // An unverified account has no invites to leave (riderAccess).
+  const isSelf = account.emailVerifiedAt != null
+    && (row.riderAccountId === account.id || row.invitedEmail === account.email.trim().toLowerCase());
   if (!ownsRider(account, rider) && !isSelf) return res.status(403).json({ error: "This rider profile isn't on your account. Sign in with the account that owns it, or ask the owner to add you as a manager." });
   await db.delete(riderProfileManagersTable).where(eq(riderProfileManagersTable.id, row.id));
   return res.json({ ok: true });
@@ -157,7 +160,8 @@ router.get("/rider/riders/:riderId/public", requireRiderAuth, async (req, res) =
   // The same builder as the public share page (lib/racerProfileView.ts).
   const profile = await buildRacerProfile(rider, isManager);
   if (!profile) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
-  return res.json({ ...profile, following: follow.length > 0 });
+  // Private profiles can be followed only by their own managers (lib/followVisibility.ts).
+  return res.json({ ...profile, following: follow.length > 0, canFollow: isManager || profile.visibility === "public" });
 });
 
 router.get("/rider/follows", requireRiderAuth, async (req, res) => {
@@ -172,10 +176,17 @@ router.get("/rider/follows", requireRiderAuth, async (req, res) => {
     .where(eq(riderFollowsTable.riderAccountId, account.id));
   const mine = new Set(await managedRiderIds(account));
   const today = new Date().toISOString().slice(0, 10);
-  return res.json({ following: rows.map(r => ({
-    riderId: r.riderId, name: `${r.firstName} ${r.lastName}`.trim(), since: r.since.toISOString(), raceAlerts: r.raceAlerts,
-    avatarUrl: visiblePhotos(r, mine.has(r.riderId), today).avatarUrl,
-  })) });
+  const hidden = await privateRiderIds(rows.map(r => r.riderId));
+  return res.json({ following: rows.map(r => {
+    // A follow of a private profile you don't manage stays listed but gives nothing.
+    const privateProfile = hidden.has(r.riderId) && !mine.has(r.riderId);
+    return {
+      riderId: r.riderId, name: `${r.firstName} ${r.lastName}`.trim(), since: r.since.toISOString(),
+      raceAlerts: privateProfile ? false : r.raceAlerts,
+      privateProfile,
+      avatarUrl: visiblePhotos(r, mine.has(r.riderId), today).avatarUrl,
+    };
+  }) });
 });
 
 router.post("/rider/follows/:riderId", requireRiderAuth, async (req, res) => {
@@ -183,6 +194,9 @@ router.post("/rider/follows/:riderId", requireRiderAuth, async (req, res) => {
   if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const rider = await loadRider(Number(req.params.riderId));
   if (!rider) return res.status(404).json({ error: "This rider couldn't be found. It may have been deleted. Refresh the page and try again." });
+  if ((await privateRiderIds([rider.id])).has(rider.id) && !(await canManageRider(account, rider))) {
+    return res.status(403).json({ error: PRIVATE_PROFILE_FOLLOW_ERROR, code: "private_profile" });
+  }
   await db.insert(riderFollowsTable).values({ riderAccountId: account.id, riderId: rider.id }).onConflictDoNothing();
   return res.status(201).json({ ok: true, following: true });
 });
@@ -213,8 +227,11 @@ router.get("/rider/feed", requireRiderAuth, async (req, res) => {
   const account = await currentAccount(req);
   if (!account) return res.status(401).json({ error: "You're signed out. Sign in again, then try once more." });
   const mine = await managedRiderIds(account);
-  const followed = (await db.select({ riderId: riderFollowsTable.riderId }).from(riderFollowsTable)
+  const followedAll = (await db.select({ riderId: riderFollowsTable.riderId }).from(riderFollowsTable)
     .where(eq(riderFollowsTable.riderAccountId, account.id))).map(f => f.riderId);
+  // Followed private profiles add nothing to the feed (your own riders always do).
+  const hidden = await privateRiderIds(followedAll);
+  const followed = followedAll.filter(id => !hidden.has(id));
   const items = await loadResultsFeed([...new Set([...mine, ...followed])], 30);
   const mineSet = new Set(mine);
   // Your own riders show their headshot even when their profile is private.
