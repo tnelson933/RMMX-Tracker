@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, jsonb, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, jsonb, timestamp, boolean, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { eventsTable } from "./events";
@@ -40,7 +40,10 @@ export const motosTable = pgTable("motos", {
   announcerSequence: integer("announcer_sequence").notNull().default(0),
   announcerFinishedAt: timestamp("announcer_finished_at", { withTimezone: true }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  // deploy/migrations/0048-race-day-indexes.sql
+  index("motos_event_idx").on(table.eventId, table.motoNumber),
+]);
 
 export const insertMotoSchema = createInsertSchema(motosTable).omit({ id: true, createdAt: true });
 export type InsertMoto = z.infer<typeof insertMotoSchema>;

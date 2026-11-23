@@ -22,6 +22,8 @@ export const lapCrossingsTable = pgTable("lap_crossings", {
     .on(table.motoId, table.lapNumber, table.crossingTime, table.id),
   index("lap_crossings_moto_rfid_crossing_idx")
     .on(table.motoId, table.rfidNumber, table.crossingTime),
+  // deploy/migrations/0048-race-day-indexes.sql: event-wide lookups and clean-up.
+  index("lap_crossings_event_idx").on(table.eventId),
 ]);
 
 export type LapCrossing = typeof lapCrossingsTable.$inferSelect;

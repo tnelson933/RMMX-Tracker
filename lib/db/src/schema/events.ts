@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, numeric, timestamp, jsonb, doublePrecision } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean, numeric, timestamp, jsonb, doublePrecision, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { clubsTable } from "./clubs";
@@ -85,7 +85,10 @@ export const eventsTable = pgTable("events", {
   /** When the "finalize your results" reminder went to the organizers (once). */
   finalizeReminderSentAt: timestamp("finalize_reminder_sent_at", { withTimezone: true }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  // deploy/migrations/0048-race-day-indexes.sql
+  index("events_club_date_idx").on(table.clubId, table.date),
+]);
 
 export const insertEventSchema = createInsertSchema(eventsTable).omit({ id: true, createdAt: true });
 export type InsertEvent = z.infer<typeof insertEventSchema>;

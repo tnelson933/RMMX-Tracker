@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, numeric, timestamp, boolean, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, numeric, timestamp, boolean, jsonb, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { eventsTable } from "./events";
@@ -54,7 +54,11 @@ export const registrationsTable = pgTable("registrations", {
   cancellationSource: text("cancellation_source"),
   refundVerifiedAt: timestamp("refund_verified_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  // deploy/migrations/0048-race-day-indexes.sql
+  index("registrations_event_idx").on(table.eventId),
+  index("registrations_rider_idx").on(table.riderId),
+]);
 
 export const insertRegistrationSchema = createInsertSchema(registrationsTable).omit({ id: true, createdAt: true });
 export type InsertRegistration = z.infer<typeof insertRegistrationSchema>;

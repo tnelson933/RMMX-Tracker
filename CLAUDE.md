@@ -111,5 +111,10 @@ development only. All commands run from the repo root (`RM-Tracker/`).
   on its own (open handles). Connector tests (`node test.mjs`) pass.
   Set `DATABASE_URL` to the local database first: several lib tests import `@workspace/db`.
   Offline server tests (SQLite, run under Electron as Node): `node scripts/test-local-server.mjs`.
+- Rider app over-the-air updates: publish only with
+  `pnpm --filter @workspace/rider-app run publish:update -- "What changed"`
+  (`artifacts/rider-app/scripts/publish-update.mjs`). It builds with a clean environment,
+  refuses a bundle containing a test address (the 2026-11-04 broken update) and publishes
+  exactly the checked bundles. `--dry-run` builds and checks without publishing.
 - The package `dev`/`start`/`test:browser` scripts are POSIX/Replit-specific. Use the
   root `dev:*` scripts here and leave the originals as they are for Replit.
