@@ -58,7 +58,14 @@ const staticDir = process.env.STATIC_FILES_DIR;
 if (staticDir) {
   const resolvedStatic = path.resolve(staticDir);
   app.use(express.static(resolvedStatic));
-  app.use((_req, res) => {
+  app.use((req, res) => {
+    // A missing code file (an old window asking for a chunk from the previous
+    // build) gets a real 404, not the page HTML: the site's stale-chunk reload
+    // then recovers cleanly instead of failing on a MIME-type error first.
+    if (req.path.startsWith("/assets/")) {
+      res.status(404).type("text/plain").send("Not found");
+      return;
+    }
     res.sendFile(path.join(resolvedStatic, "index.html"));
   });
 }
