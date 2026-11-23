@@ -1,0 +1,210 @@
+# Continuous integration for every push and pull request.
+# Release workflows (connector-release.yml, desktop-release.yml) are tag-triggered
+# and independent of this file.
+#
+# No secrets are used: every job runs against a throwaway Postgres service
+# container (trust auth, reachable only from the runner) and never against
+# production. Local-only safety guards in scripts/ci/* refuse non-local hosts.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Electron's postinstall downloads a ~100 MB binary that no CI job needs.
+  ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+  # The local server and desktop default to the production cloud; never let a test reach it.
+  CLOUD_URL: "http://127.0.0.1:9"
+
+jobs:
+  typecheck:
+    name: Typecheck (libs + every artifact)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4 # version from package.json "packageManager" (pnpm 10.26.1)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24" # matches deploy/Dockerfile.railway and the release workflows
+          cache: pnpm
+      # Not --ignore-scripts: install scripts are already limited to
+      # pnpm-workspace.yaml "onlyBuiltDependencies" (esbuild, better-sqlite3, ...).
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+
+  unit-tests:
+    name: Unit tests (api-server, race-platform, rider-insights, desktop, rider-app)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: rmroost_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres@localhost:5432/rmroost_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Same order as a new environment: deploy/migrations assume the base schema
+      # exists (0001 starts from the Replit production schema), so Drizzle creates
+      # it from empty first and the reviewed migrations run on top.
+      - name: Create schema (drizzle-kit push on the empty database)
+        run: pnpm --filter @workspace/db run push
+      - name: Apply migrations
+        run: node scripts/migrate.mjs
+      - name: api-server lib + middleware, race-platform lib
+        working-directory: scripts
+        # --test-force-exit: some suites leave open handles (sockets, timers).
+        # Two videoRelay tests depend on wall-clock sleeps and are flaky on slow
+        # machines; they are skipped by name. Remove the pattern once they wait on events.
+        run: >-
+          ./node_modules/.bin/tsx --test --test-force-exit
+          --test-skip-pattern="late joiner starts at the latest keyframe|dropped broadcaster keeps its viewers"
+          ../artifacts/api-server/src/lib/*.test.ts
+          ../artifacts/api-server/src/middleware/*.test.ts
+          ../artifacts/race-platform/src/lib/*.test.ts
+      - name: rider-insights, desktop sync schedule, rider-app lib (no database)
+        working-directory: scripts
+        run: >-
+          ./node_modules/.bin/tsx --test --test-force-exit
+          ../lib/rider-insights/src/*.test.ts
+          ../artifacts/desktop/src/*.test.ts
+          ../artifacts/rider-app/lib/*.test.ts
+
+  migration-rehearsal:
+    name: Migration rehearsal (from empty, re-run, drift)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Builds a Drizzle-only database and a Drizzle + migrations database, runs
+      # scripts/migrate.mjs twice (second run must be a no-op), re-applies every
+      # file (they must be re-runnable), and fails on schema the Drizzle schema
+      # doesn't declare. See the script header for why not `drizzle-kit push --strict`.
+      - name: Rehearse migrations
+        run: node scripts/ci/migration-rehearsal.mjs
+        env:
+          ADMIN_DATABASE_URL: postgres://postgres@localhost:5432/postgres
+
+  desktop-sync-integration:
+    name: Desktop sync push keeps every class entry (API + Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: rmroost_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres@localhost:5432/rmroost_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @workspace/db run push
+      - run: node scripts/migrate.mjs
+      - name: Build the API bundle (same as deploy/Dockerfile.railway)
+        working-directory: artifacts/api-server
+        run: node build.mjs
+      - name: Push two class entries for one rider through desktop-push
+        run: node scripts/ci/desktop-sync-class-entries.mjs
+
+  local-server-tests:
+    name: Offline server tests (SQLite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          # The local server runs inside the desktop app, i.e. Electron 33's
+          # embedded Node 20, so test on Node 20. pnpm install builds
+          # better-sqlite3 for this Node (prebuild or node-gyp; build tools are
+          # preinstalled on ubuntu-latest).
+          node-version: "20"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Plain Node instead of scripts/test-local-server.mjs (Electron as Node,
+      # Windows-machine-specific store path).
+      - run: node scripts/ci/test-local-server.mjs
+
+  browser-tests:
+    name: Browser tests (Playwright, mocked API)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        working-directory: artifacts/race-platform
+        run: pnpm exec playwright install --with-deps chromium
+      # playwright.config.ts starts the Vite dev server itself (port 4174) and
+      # every spec mocks /api. One worker: parallel first loads overwhelm the
+      # dev server's on-demand transforms and time out page.goto.
+      - name: Run Playwright (desktop + phone projects)
+        working-directory: artifacts/race-platform
+        run: pnpm exec playwright test --workers=1
+      - name: Upload traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: artifacts/race-platform/test-results/
+          retention-days: 7

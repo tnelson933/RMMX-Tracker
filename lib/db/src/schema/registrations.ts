@@ -58,6 +58,8 @@ export const registrationsTable = pgTable("registrations", {
   // deploy/migrations/0048-race-day-indexes.sql
   index("registrations_event_idx").on(table.eventId),
   index("registrations_rider_idx").on(table.riderId),
+  // deploy/migrations/0008-registration-payments.sql (Stripe webhook lookup).
+  index("registrations_stripe_session_idx").on(table.stripeSessionId),
 ]);
 
 export const insertRegistrationSchema = createInsertSchema(registrationsTable).omit({ id: true, createdAt: true });
