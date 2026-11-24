@@ -27,7 +27,9 @@ function TabIcon({ focused, color, sf, feather }: { focused: boolean; color: str
 function NativeTabLayout() {
   const colors = useColors();
   // The native tab bar has no press listener: a light tap when the shown tab changes.
-  const tab = useSegments()[1] ?? "index";
+  // Typed routes narrow the segment tuple differently per environment; read it as a plain list.
+  const segments: readonly string[] = useSegments();
+  const tab = segments[1] ?? "index";
   const lastTab = useRef(tab);
   useEffect(() => {
     if (lastTab.current !== tab) haptics.light();
