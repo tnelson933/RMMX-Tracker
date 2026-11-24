@@ -29,6 +29,9 @@ import { eventTimingTags, timingTagsLabel } from "@/components/organizer/timingT
 import { DEFAULT_QUICK_CHECKIN_REQUIREMENTS, QuickCheckinRequirementsDialog, quickCheckinRequirementsSummary, toQuickCheckinRequirements } from "@/components/organizer/QuickCheckinRequirements";
 import { errorText } from "@/lib/friendlyErrors";
 
+/** The desktop app (Electron) serves this page from its offline server. */
+const IS_DESKTOP = typeof window !== "undefined" && typeof (window as unknown as { electronAPI?: unknown }).electronAPI !== "undefined";
+
 const TIME_OPTIONS: string[] = [];
 for (let h = 0; h < 24; h++) {
   for (let m = 0; m < 60; m += 15) {
@@ -605,7 +608,8 @@ export default function EventDetail() {
         paymentEnabled: data.paymentEnabled,
         requireAma: data.requireAma,
         noDuplicateBibs: data.noDuplicateBibs,
-        isTest: data.isTest,
+        // Not sent from the desktop app: its offline server doesn't store it.
+        ...(IS_DESKTOP ? {} : { isTest: data.isTest }),
         requireClubId: data.requireClubId,
         requireWaiver: data.requireWaiver,
         requireLiabilityWaiver: data.requireLiabilityWaiver,
@@ -889,7 +893,14 @@ export default function EventDetail() {
                         )}
                       />
                     </div>
-                    {/* Test event: off every public list and search; a direct link still opens it. */}
+                    {/* Test event: off every public list and search; a direct link still opens it.
+                        Cloud-only: the desktop's offline server and sync don't carry it, so the
+                        desktop shows where to change it instead of a switch that wouldn't stick. */}
+                    {IS_DESKTOP ? (
+                      <p className="text-xs text-muted-foreground">
+                        To hide this event from the public as a test event, open it on rmroost.com and tick "Test event".
+                      </p>
+                    ) : (
                     <FormField
                       control={form.control}
                       name="isTest"
@@ -907,6 +918,7 @@ export default function EventDetail() {
                         </FormItem>
                       )}
                     />
+                    )}
                     {/* Multi-day toggle + end date */}
                     <FormField
                       control={form.control}
