@@ -13,6 +13,9 @@ import {
   Text,
   View,
 } from "react-native";
+import { PressableScale } from "@/components/PressableScale";
+import { EventPageSkeleton } from "@/components/Skeleton";
+import { haptics } from "@/lib/haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useRiderAuth } from "@/context/AuthContext";
@@ -210,6 +213,7 @@ export default function EventDetailScreen() {
   }, [loading, schedule, scheduleY]);
 
   const onRefresh = useCallback(async () => {
+    haptics.selection();
     setRefreshing(true);
     await load();
     setRefreshing(false);
@@ -374,8 +378,14 @@ export default function EventDetailScreen() {
 
   if (loading) {
     return (
-      <View style={[s.container, { alignItems: "center", justifyContent: "center" }]}>
-        <ActivityIndicator color={colors.primaryText} size="large" />
+      <View style={s.container}>
+        <View style={s.topBar}>
+          <Pressable style={s.backBtn} onPress={() => goBack(router)} accessibilityRole="button" accessibilityLabel="Back to events" hitSlop={8}>
+            <Feather name="chevron-left" size={20} color={colors.primaryText} />
+            <Text style={s.backText}>Events</Text>
+          </Pressable>
+        </View>
+        <EventPageSkeleton />
       </View>
     );
   }
@@ -733,15 +743,15 @@ export default function EventDetailScreen() {
             )}
 
             {isAuthenticated ? (
-              <Pressable style={s.primaryBtn} onPress={() => startRegistration(router, event.id)}>
+              <PressableScale style={s.primaryBtn} onPress={() => startRegistration(router, event.id)} accessibilityRole="button">
                 <Text style={s.btnText}>{myRegistrations.length > 0 ? "Add another class" : "Register now"}</Text>
                 <Feather name="arrow-right" size={18} color="#fff" />
-              </Pressable>
+              </PressableScale>
             ) : (
               <>
-                <Pressable style={s.mutedBtn} onPress={() => router.push("/login" as any)}>
+                <PressableScale style={s.mutedBtn} onPress={() => router.push("/login" as any)} accessibilityRole="button">
                   <Text style={[s.btnText, { color: colors.mutedForeground }]}>Sign in to Register</Text>
-                </Pressable>
+                </PressableScale>
                 <Text style={{ marginTop: 8, fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center" }}>
                   Create a free rider account to register for this event.
                 </Text>

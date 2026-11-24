@@ -33,6 +33,8 @@ async function buildAll() {
     external: [
       "*.node",
       "sharp",
+      // Native renderer for link-preview share cards (prebuilt per-platform binaries).
+      "@resvg/resvg-js",
       "better-sqlite3",
       "sqlite3",
       "canvas",

@@ -20,6 +20,7 @@ import { ActivityIndicator, Platform, StyleSheet, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { useReducedMotion } from "react-native-reanimated";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { RockyLauncher } from "@/components/RockyLauncher";
@@ -181,6 +182,12 @@ function RootLayoutNav() {
     return () => clearTimeout(t);
   }, [isLoading]);
 
+  // Pushes slide in from the right on both platforms; full-screen flows (live video,
+  // registration, Rocky) rise from the bottom. Reduce motion: cross-fades only.
+  const reduceMotion = useReducedMotion();
+  const push = reduceMotion ? "fade" : "slide_from_right";
+  const rise = reduceMotion ? "fade" : "slide_from_bottom";
+
   useNotificationNavigation(!isLoading && isAuthenticated);
   useOtaUpdates();
 
@@ -196,16 +203,16 @@ function RootLayoutNav() {
 
   return (
     <>
-    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
+    <Stack screenOptions={{ headerShown: false, animation: push, contentStyle: { backgroundColor: colors.background } }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false, animation: "fade" }} />
-      <Stack.Screen name="mechanic" options={{ headerShown: false, animation: "slide_from_bottom" }} />
+      <Stack.Screen name="mechanic" options={{ headerShown: false, animation: rise }} />
       <Stack.Screen name="event/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="live/index" options={{ headerShown: false }} />
-      <Stack.Screen name="live/[eventId]" options={{ headerShown: false, animation: "slide_from_bottom" }} />
-      <Stack.Screen name="live/rider/[riderId]" options={{ headerShown: false, animation: "slide_from_bottom" }} />
-      <Stack.Screen name="go-live/[riderId]" options={{ headerShown: false, animation: "slide_from_bottom", gestureEnabled: false }} />
-      <Stack.Screen name="register/[eventId]" options={{ headerShown: false, animation: "slide_from_bottom" }} />
+      <Stack.Screen name="live/[eventId]" options={{ headerShown: false, animation: rise }} />
+      <Stack.Screen name="live/rider/[riderId]" options={{ headerShown: false, animation: rise }} />
+      <Stack.Screen name="go-live/[riderId]" options={{ headerShown: false, animation: rise, gestureEnabled: false }} />
+      <Stack.Screen name="register/[eventId]" options={{ headerShown: false, animation: rise }} />
       <Stack.Screen name="result/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="rider/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="rider/new" options={{ headerShown: false }} />

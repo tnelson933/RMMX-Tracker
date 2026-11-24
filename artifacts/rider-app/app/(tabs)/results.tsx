@@ -14,6 +14,13 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Animated, {
+  Easing, LinearTransition, ReduceMotion, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withSequence, withTiming,
+} from "react-native-reanimated";
+import { useRiderAuth } from "@/context/AuthContext";
+import { haptics } from "@/lib/haptics";
+import { CardListSkeleton, LeaderboardSkeleton } from "@/components/Skeleton";
+import { PressableScale } from "@/components/PressableScale";
 
 import { BrandBar } from "@/components/BrandBar";
 import { fmtDateShared as fmtDate, fmtLap } from "@/components/RaceSubScreens";
@@ -580,6 +587,114 @@ function LiveFastestLapsView({
   );
 }
 
+// ─── Leaderboard row ──────────────────────────────────────────────────────────
+
+const POS_FLASH_IN = { duration: 120 };
+const POS_FLASH_OUT = { duration: 220 };
+/** Rows slide to their new place between refreshes; instant with reduce motion. */
+const ROW_REORDER = LinearTransition.duration(280).easing(Easing.bezier(0.77, 0, 0.175, 1)).reduceMotion(ReduceMotion.System);
+
+/**
+ * One leaderboard row. When the rider's position changes between refreshes the
+ * row slides to its new place (layout transition on the UI thread) and the
+ * position flashes green (gained) or red (lost) for ~600 ms. The flash is a
+ * colour change, so it stays on with reduce motion; the slide does not.
+ */
+const LeaderRow = React.memo(function LeaderRow({
+  entry, index, isLive, colors, onOpen, isOwnRider,
+}: {
+  entry: PublicLeaderEntry;
+  index: number;
+  isLive: boolean;
+  colors: ReturnType<typeof useColors>;
+  onOpen?: (entry: PublicLeaderEntry) => void;
+  isOwnRider: boolean;
+}) {
+  const isDNF = !!entry.dnf;
+  const isDNS = !!entry.dns;
+  const pos   = isDNS ? "DNS" : isDNF ? "DNF" : entry.position != null ? `P${entry.position}` : `${index + 1}`;
+  const isP1  = entry.position === 1 && !isDNF && !isDNS;
+  const posColor = isP1 ? "#f59e0b" : colors.mutedForeground;
+  const canTapLaps = !!entry.riderId && !isDNS && !!onOpen;
+
+  // Flash: 0 = none, 1 = full. `gained` picks the colour.
+  const flash = useSharedValue(0);
+  const gained = useSharedValue(1);
+  const prevPos = useRef(entry.position);
+  useEffect(() => {
+    const before = prevPos.current;
+    prevPos.current = entry.position;
+    if (!isLive || before == null || entry.position == null || before === entry.position) return;
+    const up = entry.position < before;
+    gained.set(up ? 1 : 0);
+    flash.set(withSequence(withTiming(1, POS_FLASH_IN), withDelay(260, withTiming(0, POS_FLASH_OUT))));
+    if (isOwnRider) haptics.light();
+  }, [entry.position, isLive, isOwnRider]);
+  const flashStyle = useAnimatedStyle(() => ({
+    backgroundColor: gained.get() === 1
+      ? `rgba(34,197,94,${0.32 * flash.get()})`
+      : `rgba(239,68,68,${0.32 * flash.get()})`,
+  }));
+
+  return (
+    <Animated.View layout={ROW_REORDER}>
+      <Pressable
+        onPress={canTapLaps ? () => onOpen!(entry) : undefined}
+        accessibilityRole={canTapLaps ? "button" : undefined}
+        accessibilityLabel={`${pos}, ${entry.riderName}${entry.gap && entry.gap !== "Leader" ? `, ${entry.gap}` : ""}`}
+        style={({ pressed }) => ({
+          flexDirection: "row", alignItems: "center", gap: 14,
+          paddingHorizontal: 20, paddingVertical: 11,
+          borderBottomWidth: 1, borderBottomColor: colors.border + "55",
+          backgroundColor: pressed && canTapLaps ? colors.muted : "transparent",
+        })}
+      >
+        <Animated.View style={[{ width: 44, alignItems: "center", borderRadius: 8, paddingVertical: 2 }, flashStyle]}>
+          <Text style={{ fontVariant: ["tabular-nums"], fontSize: 16, fontWeight: "800", color: posColor, fontFamily: "Roboto_700Bold" }}>{pos}</Text>
+          {isLive && !isDNS && !isDNF && entry.laps > 0 && (
+            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
+              {entry.laps}L
+            </Text>
+          )}
+        </Animated.View>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontVariant: ["tabular-nums"], fontSize: 14, fontWeight: "500", color: canTapLaps ? colors.primaryText : colors.foreground, fontFamily: "Roboto_500Medium" }}>
+            {entry.riderName}
+          </Text>
+          {entry.bibNumber && (
+            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 }}>
+              #{entry.bibNumber}
+            </Text>
+          )}
+        </View>
+        <View style={{ alignItems: "flex-end", gap: 2 }}>
+          {entry.totalTime && !isDNS && (
+            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 13, fontWeight: "600", color: colors.foreground, fontFamily: "Roboto_600SemiBold" }}>
+              {entry.totalTime}
+            </Text>
+          )}
+          {entry.gap === "Leader" && !isDNS && !isDNF && (
+            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, color: "#f59e0b", fontFamily: "Roboto_600SemiBold" }}>Leader</Text>
+          )}
+          {entry.gap && entry.gap !== "Leader" && !isDNS && !isDNF && (
+            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>{entry.gap}</Text>
+          )}
+          {canTapLaps && (
+            <Feather name="chevron-right" size={11} color={colors.mutedForeground + "80"} />
+          )}
+        </View>
+      </Pressable>
+    </Animated.View>
+  );
+});
+
+/** Stable key for a leaderboard row across refreshes (rows move; index keys would not). */
+function leaderKey(entry: PublicLeaderEntry, i: number): string {
+  if (entry.riderId != null) return `r${entry.riderId}`;
+  if (entry.bibNumber) return `b${entry.bibNumber}`;
+  return `n${entry.riderName}-${i}`;
+}
+
 function PublicMotoSheet({
   moto,
   onClose,
@@ -598,6 +713,10 @@ function PublicMotoSheet({
   const [selectedLeader, setSelectedLeader] = useState<PublicLeaderEntry | null>(null);
   const [liveView, setLiveView] = useState<LiveMotoView>("timing");
   const { top: topInset } = useSafeAreaInsets();
+  const { profiles } = useRiderAuth();
+  const ownRiderIds = React.useMemo(() => new Set(profiles.map(p => p.id)), [profiles]);
+  const openLeader = useCallback((entry: PublicLeaderEntry) => setSelectedLeader(entry), []);
+  const changeLiveView = useCallback((v: LiveMotoView) => { haptics.light(); setLiveView(v); }, []);
   // Whichever is further along: the schedule's status (refreshed by the screen
   // behind this sheet) or the one in this sheet's own latest results.
   const status = (MOTO_STATUS_ORDER[detail?.status ?? ""] ?? -1) > (MOTO_STATUS_ORDER[moto.status] ?? -1) ? detail!.status : moto.status;
@@ -616,6 +735,16 @@ function PublicMotoSheet({
   // Reload when the moto goes live; then every 5 s while live and on screen.
   useEffect(() => { void fetchDetail(); }, [fetchDetail, isLive]);
   useVisibleInterval(fetchDetail, 5000, isLive);
+
+  // Finished but not yet official: check now and then, so the sheet turns
+  // official (with a success haptic) while the rider is looking at it.
+  const official = (detail as { resultsOfficial?: boolean } | null)?.resultsOfficial;
+  useVisibleInterval(fetchDetail, 20_000, status === "completed" && official === false);
+  const prevOfficial = useRef(official);
+  useEffect(() => {
+    if (prevOfficial.current === false && official === true) haptics.success();
+    prevOfficial.current = official;
+  }, [official]);
 
   const lineupRows: PublicLineupEntry[] = detail?.lineup?.length
     ? detail.lineup
@@ -692,7 +821,7 @@ function PublicMotoSheet({
         </View>
 
         {isLive && (
-          <LiveMotoTabs activeView={liveView} onChange={setLiveView} colors={colors} />
+          <LiveMotoTabs activeView={liveView} onChange={changeLiveView} colors={colors} />
         )}
 
         <ScrollView
@@ -700,11 +829,7 @@ function PublicMotoSheet({
           contentContainerStyle={isLive ? { paddingBottom: bottomInset + 28 } : undefined}
           showsVerticalScrollIndicator={false}
         >
-          {fetching && (
-            <View style={{ paddingVertical: 44, alignItems: "center" }}>
-              <ActivityIndicator color={colors.primaryText} />
-            </View>
-          )}
+          {fetching && <LeaderboardSkeleton rows={8} />}
 
           {/* SCHEDULED → Rider Lineup */}
           {!fetching && isScheduled && (
@@ -791,62 +916,17 @@ function PublicMotoSheet({
               ) : isLive && liveView === "fastest" ? (
                 <LiveFastestLapsView analytics={detail.analytics} colors={colors} />
               ) : (
-                detail.leaderboard.map((entry, i) => {
-                  const isDNF = !!entry.dnf;
-                  const isDNS = !!entry.dns;
-                  const pos   = isDNS ? "DNS" : isDNF ? "DNF" : entry.position != null ? `P${entry.position}` : `${i + 1}`;
-                  const isP1  = entry.position === 1 && !isDNF && !isDNS;
-                  const posColor = isP1 ? "#f59e0b" : colors.mutedForeground;
-                  const canTapLaps = !!entry.riderId && !isDNS;
-
-                  return (
-                    <Pressable
-                      key={i}
-                      onPress={canTapLaps ? () => setSelectedLeader(entry) : undefined}
-                      style={({ pressed }) => ({
-                        flexDirection: "row", alignItems: "center", gap: 14,
-                        paddingHorizontal: 20, paddingVertical: 11,
-                        borderBottomWidth: 1, borderBottomColor: colors.border + "55",
-                        opacity: pressed && canTapLaps ? 0.7 : 1,
-                      })}
-                    >
-                      <View style={{ width: 40, alignItems: "center" }}>
-                        <Text style={{ fontVariant: ["tabular-nums"], fontSize: 16, fontWeight: "800", color: posColor, fontFamily: "Roboto_700Bold" }}>{pos}</Text>
-                        {isLive && !isDNS && !isDNF && entry.laps > 0 && (
-                          <Text style={{ fontVariant: ["tabular-nums"], fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
-                            {entry.laps}L
-                          </Text>
-                        )}
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontVariant: ["tabular-nums"], fontSize: 14, fontWeight: "500", color: canTapLaps ? colors.primaryText : colors.foreground, fontFamily: "Roboto_500Medium" }}>
-                          {entry.riderName}
-                        </Text>
-                        {entry.bibNumber && (
-                          <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 }}>
-                            #{entry.bibNumber}
-                          </Text>
-                        )}
-                      </View>
-                      <View style={{ alignItems: "flex-end", gap: 2 }}>
-                        {entry.totalTime && !isDNS && (
-                          <Text style={{ fontVariant: ["tabular-nums"], fontSize: 13, fontWeight: "600", color: colors.foreground, fontFamily: "Roboto_600SemiBold" }}>
-                            {entry.totalTime}
-                          </Text>
-                        )}
-                        {entry.gap === "Leader" && !isDNS && !isDNF && (
-                          <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, color: "#f59e0b", fontFamily: "Roboto_600SemiBold" }}>Leader</Text>
-                        )}
-                        {entry.gap && entry.gap !== "Leader" && !isDNS && !isDNF && (
-                          <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>{entry.gap}</Text>
-                        )}
-                        {canTapLaps && (
-                          <Feather name="chevron-right" size={11} color={colors.mutedForeground + "80"} />
-                        )}
-                      </View>
-                    </Pressable>
-                  );
-                })
+                detail.leaderboard.map((entry, i) => (
+                  <LeaderRow
+                    key={leaderKey(entry, i)}
+                    entry={entry}
+                    index={i}
+                    isLive={isLive}
+                    colors={colors}
+                    onOpen={openLeader}
+                    isOwnRider={entry.riderId != null && ownRiderIds.has(entry.riderId)}
+                  />
+                ))
               )}
               {detail && (!isLive || liveView === "timing") ? <SectorsCard detail={detail} colors={colors} /> : null}
             </>
@@ -879,6 +959,7 @@ function EventScheduleScreen({
 }) {
   const bottomSpace = useBottomSpace();
   const { top: topInset } = useSafeAreaInsets();
+  const reduceMotion = useReducedMotion();
   const [detail, setDetail]         = useState<PublicEventDetail | null>(null);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -908,6 +989,7 @@ function EventScheduleScreen({
   useVisibleInterval(load, 15_000, isLive);
 
   const onRefresh = useCallback(async () => {
+    haptics.selection();
     setRefreshing(true);
     await load();
   }, [load]);
@@ -990,9 +1072,7 @@ function EventScheduleScreen({
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
       >
         {loading ? (
-          <View style={{ paddingVertical: 60, alignItems: "center" }}>
-            <ActivityIndicator color={colors.primaryText} />
-          </View>
+          <CardListSkeleton count={6} style={{ paddingTop: 16 }} />
         ) : motos.length === 0 ? (
           <View style={{ paddingVertical: 60, alignItems: "center", gap: 8, paddingHorizontal: 32 }}>
             <Feather name="clock" size={32} color={colors.mutedForeground} />
@@ -1017,18 +1097,19 @@ function EventScheduleScreen({
               const chip = chipFor(moto.status);
               const hasLineup = moto.lineup.length > 0;
               return (
-                <Pressable
+                <PressableScale
                   key={moto.motoId}
                   onPress={() => setSelectedMoto(moto)}
-                  style={({ pressed }) => ({
+                  accessibilityRole="button"
+                  scaleTo={0.98}
+                  style={{
                     marginHorizontal: 16, marginBottom: 6, borderRadius: 10,
                     backgroundColor: colors.card,
                     borderWidth: live ? 1.5 : 1,
                     borderColor: live ? colors.primary : colors.border,
                     padding: 12,
                     flexDirection: "row", alignItems: "center", gap: 10,
-                    opacity: pressed ? 0.78 : 1,
-                  })}
+                  }}
                 >
                   {/* Badge */}
                   <View style={{
@@ -1069,7 +1150,7 @@ function EventScheduleScreen({
                     </View>
                     <Feather name="chevron-right" size={14} color={colors.mutedForeground} />
                   </View>
-                </Pressable>
+                </PressableScale>
               );
             })}
             <View style={{ height: bottomSpace }} />
@@ -1081,7 +1162,7 @@ function EventScheduleScreen({
       <Modal
         visible={selectedMoto != null}
         transparent
-        animationType="slide"
+        animationType={reduceMotion ? "fade" : "slide"}
         onRequestClose={() => setSelectedMoto(null)}
       >
         {selectedMoto && (
@@ -1138,14 +1219,15 @@ function SeriesCard({
   onPress: () => void;
 }) {
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
-      style={({ pressed }) => ({
+      accessibilityRole="button"
+      style={{
         marginHorizontal: 16, marginBottom: 10, borderRadius: 12,
         backgroundColor: colors.card,
         borderWidth: 1, borderColor: colors.border,
-        overflow: "hidden", opacity: pressed ? 0.78 : 1,
-      })}
+        overflow: "hidden",
+      }}
     >
       <View style={{ padding: 14 }}>
         <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 8 }}>
@@ -1187,7 +1269,7 @@ function SeriesCard({
           <Feather name="chevron-right" size={18} color={colors.mutedForeground} style={{ marginTop: 2 }} />
         </View>
       </View>
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -1205,6 +1287,7 @@ function SeriesStandingsScreen({
   bottomInset: number;
 }) {
   const { top: topInset } = useSafeAreaInsets();
+  const reduceMotion = useReducedMotion();
   const bottomSpace = useBottomSpace();
   const [rows, setRows] = useState<SeriesStandingRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1225,7 +1308,7 @@ function SeriesStandingsScreen({
 
   useEffect(() => { void load(); }, [load]);
 
-  const onRefresh = useCallback(async () => { setRefreshing(true); await load(); }, [load]);
+  const onRefresh = useCallback(async () => { haptics.selection(); setRefreshing(true); await load(); }, [load]);
 
   const toggleClass = (cls: string) => setExpandedClasses(prev => {
     const next = new Set(prev);
@@ -1300,9 +1383,7 @@ function SeriesStandingsScreen({
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
       >
         {loading ? (
-          <View style={{ paddingVertical: 80, alignItems: "center" }}>
-            <ActivityIndicator color={colors.primaryText} />
-          </View>
+          <CardListSkeleton count={5} style={{ paddingTop: 16 }} />
         ) : byClass.length === 0 ? (
           <View style={{ paddingVertical: 80, alignItems: "center", paddingHorizontal: 32, gap: 10 }}>
             <Feather name="inbox" size={36} color={colors.mutedForeground + "60"} />
@@ -1399,7 +1480,7 @@ function SeriesStandingsScreen({
       <Modal
         visible={!!selectedRider}
         transparent
-        animationType="slide"
+        animationType={reduceMotion ? "fade" : "slide"}
         onRequestClose={() => setSelectedRider(null)}
       >
         <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.52)" }}>
@@ -1688,7 +1769,9 @@ export default function ResultsScreen() {
             return (
               <Pressable
                 key={t}
-                onPress={() => setTab(t)}
+                onPress={() => { if (t !== tab) haptics.light(); setTab(t); }}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: active }}
                 style={{
                   flex: 1, paddingVertical: 9, borderRadius: 999, alignItems: "center",
                   backgroundColor: active ? colors.primary : "transparent",
@@ -1776,7 +1859,7 @@ export default function ResultsScreen() {
                   accessibilityRole="tab"
                   accessibilityState={{ selected: active }}
                   accessibilityLabel={k === "live" ? `Live, ${liveEvents.length} running` : `Past, ${pastEvents.length} events`}
-                  onPress={() => setPickedSide(k)}
+                  onPress={() => { if (k !== side) haptics.light(); setPickedSide(k); }}
                   style={{
                     flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
                     paddingVertical: 8, borderRadius: 999, borderWidth: 1.5,
@@ -1803,12 +1886,10 @@ export default function ResultsScreen() {
       {/* ── RACES TAB ─────────────────────────────────────────────────────────── */}
       {tab === "races" && (
         <ScrollView
-          refreshControl={<RefreshControl refreshing={eventsRefreshing} onRefresh={async () => { setEventsRefreshing(true); await loadEvents(racesDebouncedQ); }} tintColor={colors.primary} />}
+          refreshControl={<RefreshControl refreshing={eventsRefreshing} onRefresh={async () => { haptics.selection(); setEventsRefreshing(true); await loadEvents(racesDebouncedQ); }} tintColor={colors.primary} />}
         >
           {eventsLoading ? (
-            <View style={{ paddingVertical: 80, alignItems: "center" }}>
-              <ActivityIndicator color={colors.primaryText} />
-            </View>
+            <CardListSkeleton kind="event" count={5} style={{ paddingTop: 20 }} />
           ) : (
             <>
               {shown.length > 0 ? (
@@ -1866,12 +1947,10 @@ export default function ResultsScreen() {
       {/* ── SERIES TAB ────────────────────────────────────────────────────────── */}
       {tab === "series" && (
         <ScrollView
-          refreshControl={<RefreshControl refreshing={seriesRefreshing} onRefresh={async () => { setSeriesRefreshing(true); await loadSeries(seriesDebouncedQ); }} tintColor={colors.primary} />}
+          refreshControl={<RefreshControl refreshing={seriesRefreshing} onRefresh={async () => { haptics.selection(); setSeriesRefreshing(true); await loadSeries(seriesDebouncedQ); }} tintColor={colors.primary} />}
         >
-          {seriesLoading ? (
-            <View style={{ paddingVertical: 80, alignItems: "center" }}>
-              <ActivityIndicator color={colors.primaryText} />
-            </View>
+          {seriesLoading && seriesList.length === 0 ? (
+            <CardListSkeleton kind="event" count={4} style={{ paddingTop: 20 }} />
           ) : filteredSeries.length === 0 ? (
             <View style={{ paddingVertical: 80, alignItems: "center", paddingHorizontal: 32, gap: 8 }}>
               <Feather name="award" size={36} color={colors.mutedForeground + "60"} />

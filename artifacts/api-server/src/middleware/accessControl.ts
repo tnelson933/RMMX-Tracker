@@ -35,6 +35,7 @@ export const PUBLIC_RULES: PublicRule[] = [
   { pattern: /^\/healthz\/deep$/, methods: READ, reason: "uptime monitor: database ok/fail and timing only (rate limited in handler)" },
   { pattern: /^\/auth(\/|$)/, reason: "login, setup, me" },
   { pattern: /^\/rider(\/|$)/, reason: "rider portal + mobile app (rider auth in handlers)" },
+  { pattern: /^\/public\/og\/(event|racer)\/\d{1,9}\.png$/, methods: READ, reason: "link-preview share cards: events that aren't drafts or tests, public racer profiles only (private profiles 404)" },
   { pattern: /^\/public(\/|$)/, reason: "public website and registration" },
   { pattern: /^\/account-deletion-request$/, methods: ["POST"], reason: "public account deletion request" },
   { pattern: /^\/app-errors$/, methods: ["POST"], reason: "rider app JS error reports: allowlisted fields, size-capped, rate limited in handler, logged only" },

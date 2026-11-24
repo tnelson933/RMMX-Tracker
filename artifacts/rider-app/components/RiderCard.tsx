@@ -11,6 +11,7 @@ import { Feather } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
 import { Pressable, Text, View } from "react-native";
+import { PressableScale } from "@/components/PressableScale";
 import Svg, { Circle, Polyline } from "react-native-svg";
 
 import { NumberPlate } from "@/components/NumberPlate";
@@ -65,20 +66,21 @@ function Tile({ title, onPress, children, colors, a11y }: {
   title: string; onPress: () => void; children: React.ReactNode; colors: Colors; a11y: string;
 }) {
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={a11y}
-      style={({ pressed }) => ({
+      scaleTo={0.95}
+      style={{
         flex: 1, minHeight: 112, borderRadius: 12, padding: 9, gap: 6,
-        backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border, opacity: pressed ? 0.75 : 1,
-      })}
+        backgroundColor: colors.muted, borderWidth: 1, borderColor: colors.border,
+      }}
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
         <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={{ flex: 1, fontSize: 10, lineHeight: 12, fontFamily: fonts.display, letterSpacing: 0, textTransform: "uppercase", color: colors.mutedForeground }}>{title}</Text>
       </View>
       <View style={{ flex: 1, justifyContent: "space-between", gap: 4 }}>{children}</View>
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -132,15 +134,15 @@ export function RiderCard({ profile, selected, isOnlyOne, onToggle }: {
 
   if (!selected) {
     return (
-      <Pressable
+      <PressableScale
         onPress={onToggle}
         accessibilityRole="checkbox"
         accessibilityState={{ checked: false }}
         accessibilityLabel={checkLabel}
-        style={({ pressed }) => ({
+        style={{
           flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 10,
-          borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, opacity: pressed ? 0.8 : 1,
-        })}
+          borderRadius: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card,
+        }}
       >
         {ident}
         <View style={{ flex: 1 }}>
@@ -151,7 +153,7 @@ export function RiderCard({ profile, selected, isOnlyOne, onToggle }: {
           ) : null}
         </View>
         <Check on={false} colors={colors} />
-      </Pressable>
+      </PressableScale>
     );
   }
 

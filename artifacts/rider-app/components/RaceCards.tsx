@@ -1,7 +1,8 @@
 import { Feather } from "@expo/vector-icons";
 import { RiderAvatar } from "@/components/RiderPhoto";
 import React from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
+import { PressableScale } from "@/components/PressableScale";
 import { PositionBadge, podiumColor } from "@/components/RaceStats";
 import { useColors } from "@/hooks/useColors";
 import { displayDate } from "@/lib/format";
@@ -68,13 +69,14 @@ export function ResultCard({
   const colors = useColors();
   const edge = podiumColor(position) ?? (position != null ? colors.primary : colors.border);
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
       disabled={!onPress}
-      style={({ pressed }) => ({
+      accessibilityRole={onPress ? "button" : undefined}
+      style={{
         marginHorizontal: 16, marginBottom: 10, borderRadius: 16, backgroundColor: colors.card,
-        borderWidth: 1, borderColor: colors.border, overflow: "hidden", opacity: pressed ? 0.8 : 1,
-      })}
+        borderWidth: 1, borderColor: colors.border, overflow: "hidden",
+      }}
     >
       <View style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, backgroundColor: edge }} />
       <View style={{ flexDirection: "row", alignItems: "center", gap: 12, padding: 14, paddingLeft: 16 }}>
@@ -126,7 +128,7 @@ export function ResultCard({
         ) : null}
       </View>
       {footer}
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -152,14 +154,15 @@ export function EventCard({
   const colors = useColors();
   const live = status === "live";
   return (
-    <Pressable
+    <PressableScale
       onPress={onPress}
-      style={({ pressed }) => ({
+      accessibilityRole="button"
+      style={{
         marginHorizontal: 16, marginBottom: 10, borderRadius: 16, backgroundColor: colors.card,
         borderWidth: live || registered ? 1.5 : 1,
         borderColor: live ? colors.primary : registered ? colors.primary : colors.border,
-        padding: 12, flexDirection: "row", gap: 12, alignItems: "center", opacity: pressed ? 0.8 : 1,
-      })}
+        padding: 12, flexDirection: "row", gap: 12, alignItems: "center",
+      }}
     >
       <DateBlock iso={dateIso} />
       <View style={{ flex: 1, gap: 5 }}>
@@ -192,7 +195,7 @@ export function EventCard({
         </View>
       </View>
       <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
-    </Pressable>
+    </PressableScale>
   );
 }
 

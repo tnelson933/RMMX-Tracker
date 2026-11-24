@@ -55,6 +55,7 @@ import cardReadersRouter from "./card-readers";
 import raceGasRouter from "./race-gas";
 import registrationFeeRouter from "./registration-fee";
 import appErrorsRouter from "./app-errors";
+import shareMetaRouter from "./share-meta";
 
 const router: IRouter = Router();
 
@@ -114,5 +115,6 @@ router.use(cardReadersRouter);
 router.use(raceGasRouter);
 router.use(registrationFeeRouter);
 router.use(appErrorsRouter);
+router.use(shareMetaRouter);
 
 export default router;

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { OfficialResultsBadge } from "@/components/OfficialResultsBadge";
 import { Link, useLocation } from "wouter";
 import {
@@ -13,10 +13,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Calendar, MapPin, Trophy, ChevronRight, Radio,
-  Flag, Clock, Activity, AlertCircle, CheckCircle,
-  Download, Monitor, Apple, ChevronDown, Navigation, LocateFixed,
+  Flag, Clock, Activity, CheckCircle, Bell, Timer,
+  Download, Monitor, Apple, ChevronDown, Navigation,
   Search, X,
 } from "lucide-react";
+import { StoreButtons } from "@/components/AppStoreButtons";
 import { format, parseISO } from "date-fns";
 import { formatEventDatesFull } from "@/lib/eventDates";
 import { useUserLocation } from "@/hooks/useUserLocation";
@@ -28,51 +29,10 @@ const FALLBACK_BASE = `https://github.com/tnelson933/RMMX-Tracker/releases/downl
 const CONNECTOR_FALLBACK_TAG = "connector-v1.0.16";
 const CONNECTOR_FALLBACK_BASE = `https://github.com/tnelson933/RMMX-Tracker/releases/download/${CONNECTOR_FALLBACK_TAG}`;
 
-type Tab = "today" | "upcoming" | "past";
-
 function registrationBadge(status: string) {
   if (status === "registration_open") return { label: "REG. OPEN", className: "bg-green-600 text-white" };
   if (status === "registration_closed") return { label: "REG. CLOSED", className: "bg-yellow-600 text-white" };
   return { label: status.replace(/_/g, " ").toUpperCase(), className: "bg-muted text-muted-foreground" };
-}
-
-function StateChips({
-  states,
-  selected,
-  onSelect,
-}: {
-  states: string[];
-  selected: string;
-  onSelect: (s: string) => void;
-}) {
-  if (!states.length) return null;
-  return (
-    <div className="flex flex-wrap gap-2 mb-6">
-      <button
-        onClick={() => onSelect("all")}
-        className={`min-h-[38px] px-[18px] rounded-full text-sm font-heading font-bold uppercase tracking-[0.5px] border-2 transition-colors ${
-          selected === "all"
-            ? "border-[#242424] bg-[#F2F2F2] text-[#242424]"
-            : "border-[#8C8C8C] bg-white text-[#333] hover:bg-[#F2F2F2] hover:border-[#333]"
-        }`}
-      >
-        All States
-      </button>
-      {states.map(s => (
-        <button
-          key={s}
-          onClick={() => onSelect(s)}
-          className={`min-h-[38px] px-[18px] rounded-full text-sm font-heading font-bold uppercase tracking-[0.5px] border-2 transition-colors ${
-            selected === s
-              ? "border-[#242424] bg-[#F2F2F2] text-[#242424]"
-              : "border-[#8C8C8C] bg-white text-[#333] hover:bg-[#F2F2F2] hover:border-[#333]"
-          }`}
-        >
-          {s}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 function TodayCard({ event }: { event: UpcomingEventItem }) {
@@ -218,7 +178,7 @@ function UpcomingCard({ event, distanceMi }: { event: UpcomingEventItem; distanc
 
 function PastCard({ result }: { result: RecentResultItem }) {
   return (
-    <Link href={`/results/${result.eventId}`}>
+    <Link href={`/results/${result.eventId}`} className="block min-w-0">
       <Card className="hover-elevate cursor-pointer hover:border-primary transition-colors h-full group">
         <CardContent className="p-0">
           <div className="bg-muted p-4 border-b">
@@ -230,14 +190,14 @@ function PastCard({ result }: { result: RecentResultItem }) {
                 {result.state}
               </div>
             </div>
-            <div className="flex items-center text-sm text-muted-foreground gap-4 mt-2">
-              <span className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center text-sm text-muted-foreground gap-x-4 gap-y-1 mt-2 min-w-0">
+              <span className="flex items-center gap-1.5 whitespace-nowrap">
                 <Calendar size={13} />
                 {format(parseISO(result.date.substring(0, 10)), "MMM d, yyyy")}
               </span>
               {(result.trackName || result.location) && (
-                <span className="flex items-center gap-1.5 truncate">
-                  <MapPin size={13} />
+                <span className="flex items-center gap-1.5 min-w-0 max-w-full">
+                  <MapPin size={13} className="shrink-0" />
                   <span className="truncate">
                     {result.trackName
                       ? result.location
@@ -248,8 +208,8 @@ function PastCard({ result }: { result: RecentResultItem }) {
                 </span>
               )}
               {result.clubName && (
-                <span className="flex items-center gap-1.5 truncate">
-                  <Trophy size={13} />
+                <span className="flex items-center gap-1.5 min-w-0 max-w-full">
+                  <Trophy size={13} className="shrink-0" />
                   <span className="truncate">{result.clubName}</span>
                 </span>
               )}
@@ -273,14 +233,82 @@ function PastCard({ result }: { result: RecentResultItem }) {
   );
 }
 
+/** A section title with the brand's slanted red bar, and an optional link on the right. */
+function SectionHeader({ id, title, count, action }: { id: string; title: string; count?: number; action?: React.ReactNode }) {
+  return (
+    <div className="flex items-end justify-between gap-3 mb-5">
+      <h2 id={id} className="flex items-center gap-3 font-heading font-extrabold uppercase text-[22px] sm:text-[30px] leading-none text-[#242424] min-w-0">
+        <span className="w-[6px] h-[1.1em] bg-primary -skew-x-[18deg]" aria-hidden />
+        {title}
+        {count != null && count > 0 && (
+          <span className="text-sm font-bold bg-[#F2F2F2] text-[#555] rounded-full px-2.5 py-1 leading-none">{count}</span>
+        )}
+      </h2>
+      {action}
+    </div>
+  );
+}
+
+const chipClass = (selected: boolean) =>
+  `shrink-0 min-h-[38px] px-[18px] rounded-full text-sm font-heading font-bold uppercase tracking-[0.5px] border-2 transition-colors ${
+    selected
+      ? "border-[#242424] bg-[#F2F2F2] text-[#242424]"
+      : "border-[#8C8C8C] bg-white text-[#333] hover:bg-[#F2F2F2] hover:border-[#333]"
+  }`;
+
+const UPCOMING_PREVIEW = 6;
+const RESULTS_PREVIEW = 6;
+
+function CardSkeletons({ n }: { n: number }) {
+  return (
+    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4" role="status" aria-label="Loading">
+      {[...Array(n)].map((_, i) => <div key={i} className="h-40 bg-muted rounded-md animate-pulse" />)}
+    </div>
+  );
+}
+
+function EmptyNote({ icon: Icon, title, children }: { icon: typeof Clock; title: string; children?: React.ReactNode }) {
+  return (
+    <div className="py-10 px-4 text-center bg-muted/40 rounded-lg border border-dashed">
+      <Icon className="mx-auto mb-3 text-muted-foreground opacity-30" size={36} aria-hidden />
+      <p className="font-heading font-bold uppercase text-muted-foreground">{title}</p>
+      {children}
+    </div>
+  );
+}
+
+function DownloadRow({ title, text, links }: { title: string; text: string; links: { macArm: string; macX64: string; windows: string } }) {
+  const btn = "font-heading uppercase tracking-wider gap-1.5 h-9 px-4 text-xs";
+  return (
+    <div className="rounded-[12px] border-2 border-[#ECECEC] bg-white p-5 flex flex-col gap-3">
+      <div>
+        <h3 className="font-heading font-bold uppercase text-[17px] text-[#242424] flex items-center gap-2">
+          <Download size={16} className="text-primary" aria-hidden /> {title}
+        </h3>
+        <p className="text-sm text-muted-foreground mt-1">{text}</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button asChild variant="outline" size="sm" className={btn}>
+          <a href={links.macArm} title="macOS Apple Silicon (M1/M2/M3)"><Apple size={13} aria-hidden /> Mac (Apple Silicon)</a>
+        </Button>
+        <Button asChild variant="outline" size="sm" className={btn}>
+          <a href={links.macX64} title="macOS Intel"><Apple size={13} aria-hidden /> Mac (Intel)</a>
+        </Button>
+        <Button asChild variant="outline" size="sm" className={btn}>
+          <a href={links.windows} title="Windows 10/11"><Monitor size={13} aria-hidden /> Windows</a>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<Tab>("today");
-  const [showDownloads, setShowDownloads] = useState(false);
-  const [showConnectorDownloads, setShowConnectorDownloads] = useState(false);
   const [selectedState, setSelectedState] = useState("all");
+  const [pastState, setPastState] = useState("all");
   const [nearMe, setNearMe] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [regFilter, setRegFilter] = useState<"all" | "registration_open" | "registration_closed">("all");
+  const [showAllUpcoming, setShowAllUpcoming] = useState(false);
   const userLocation = useUserLocation();
   const [downloads, setDownloads] = useState({
     macArm:  `${FALLBACK_BASE}/RM-Tracker-arm64.dmg`,
@@ -309,9 +337,9 @@ export default function Home() {
   }, []);
 
   const { data: upcomingAll, isLoading: upcomingLoading } = useListUpcomingEvents({ query: { refetchInterval: 30_000 } as any });
-  const { data: states, isLoading: statesLoading } = useListStates();
+  const { data: states } = useListStates();
   const { data: recentResults, isLoading: pastLoading } = useListRecentResults({
-    state: selectedState === "all" ? undefined : selectedState,
+    state: pastState === "all" ? undefined : pastState,
     limit: 100,
   } as any);
 
@@ -326,30 +354,8 @@ export default function Home() {
   };
   const todayEvents = upcomingAll?.filter(isToday) ?? [];
   const futureEvents = upcomingAll?.filter(e => !isToday(e)) ?? [];
-
-  const todayStates = [...new Set(todayEvents.map(e => (e.state ?? "").trim()).filter(Boolean))].sort();
   const futureStates = [...new Set(futureEvents.map(e => (e.state ?? "").trim()).filter(Boolean))].sort();
   const pastStates = states?.map(s => s.state) ?? [];
-
-  // Auto-select today tab if there are events today, else upcoming or past —
-  // on first load only, so the 30-second refresh never moves the viewer off their tab.
-  const tabChosen = useRef(false);
-  useEffect(() => {
-    if (!upcomingAll || tabChosen.current) return;
-    tabChosen.current = true;
-    if (todayEvents.length > 0) setActiveTab("today");
-    else if (futureEvents.length > 0) setActiveTab("upcoming");
-    else setActiveTab("past");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [upcomingAll]);
-
-  // Reset filters when switching tabs (keep search query across tabs)
-  const switchTab = (t: Tab) => {
-    setActiveTab(t);
-    setSelectedState("all");
-    setRegFilter("all");
-    setNearMe(false);
-  };
 
   // Search helper — matches name, location, trackName, state, clubName
   const matchesSearch = (fields: (string | null | undefined)[], q: string) => {
@@ -375,13 +381,10 @@ export default function Home() {
     });
   }, [futureEvents, userLocation]);
 
-  const filteredToday = useMemo(() => {
-    let result = selectedState === "all" ? todayEvents : todayEvents.filter(e => (e.state ?? "").trim() === selectedState);
-    if (searchQuery.trim()) {
-      result = result.filter(e => matchesSearch([e.name, e.location, (e as any).trackName, e.state, e.clubName], searchQuery));
-    }
-    return result;
-  }, [todayEvents, selectedState, searchQuery]);
+  const filteredToday = useMemo(
+    () => todayEvents.filter(e => matchesSearch([e.name, e.location, (e as any).trackName, e.state, e.clubName], searchQuery)),
+    [todayEvents, searchQuery],
+  );
 
   const filteredFuture = useMemo(() => {
     let result = nearMe
@@ -406,44 +409,41 @@ export default function Home() {
     );
   }, [recentResults, searchQuery]);
 
-  const tabs: { key: Tab; label: string; count?: number }[] = [
-    { key: "today", label: "Today", count: todayEvents.length },
-    { key: "upcoming", label: "Upcoming", count: futureEvents.length },
-    { key: "past", label: "Past Results" },
-  ];
+  const upcomingShown = showAllUpcoming ? filteredFuture : filteredFuture.slice(0, UPCOMING_PREVIEW);
+  const searching = searchQuery.trim().length > 0;
 
   return (
-    <div className="flex flex-col gap-12 pb-16">
-      {/* Hero — brand charcoal with topo texture and red rule */}
+    <div className="flex flex-col gap-12 sm:gap-14 pb-16">
+      {/* Hero — brand charcoal with topo texture and red rule. Kept short on phones so races show above the fold. */}
       <section className="relative overflow-hidden bg-[#242424] text-white border-b-[3px] border-primary">
         <div
           aria-hidden
           className="absolute inset-0 opacity-[0.18] mix-blend-screen bg-cover bg-center"
           style={{ backgroundImage: `url(${import.meta.env.BASE_URL}brand/topo.jpg)` }}
         />
-        <div className="container mx-auto px-4 relative z-10 py-14 sm:py-20">
+        <div className="container mx-auto px-4 relative z-10 py-7 sm:py-14">
           <div className="max-w-3xl">
-            <div className="flex items-center gap-3 mb-5">
+            <div className="flex items-center gap-3 mb-3 sm:mb-5">
               <span className="w-[6px] self-stretch bg-primary -skew-x-[18deg]" aria-hidden />
-              <span className="font-heading font-bold text-sm uppercase tracking-[2px] text-[#BDBDBD]">
-                Race timing &middot; Results &middot; Series points
+              <span className="font-heading font-bold text-xs sm:text-sm uppercase tracking-[2px] text-[#BDBDBD]">
+                Live timing &middot; Results &middot; Series points
               </span>
             </div>
-            <h1 className="font-heading font-extrabold uppercase text-[34px] sm:text-[56px] leading-[1] tracking-normal mb-5">
+            <h1 className="font-heading font-extrabold uppercase text-[30px] sm:text-[52px] leading-[1] tracking-normal mb-3 sm:mb-5">
               Precision timing.<br />
-              <span className="inline-block bg-primary text-white px-3 mt-2 -skew-x-[8deg]"><span className="inline-block skew-x-[8deg]">Official results.</span></span>
+              <span className="inline-block bg-primary text-white px-3 mt-1.5 sm:mt-2 -skew-x-[8deg]"><span className="inline-block skew-x-[8deg]">Official results.</span></span>
             </h1>
-            <p className="text-base sm:text-lg leading-[1.7] text-white/80 mb-8 max-w-2xl">
-              The race operations platform for club organizers and riders. Live tracking, automated lineups, and instant results.
+            <p className="text-[15px] sm:text-lg leading-[1.6] text-white/80 mb-5 sm:mb-8 max-w-2xl">
+              Find a race, register, follow it live and see the results the moment the moto ends.
             </p>
-            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-              <Link href="/results" className="w-full sm:w-auto">
-                <Button size="lg" className="w-full sm:w-auto min-h-[52px] px-10 text-base">
+            <div className="grid grid-cols-2 sm:flex gap-3 sm:gap-4">
+              <Link href="/results" className="sm:w-auto">
+                <Button size="lg" className="w-full sm:w-auto min-h-[48px] sm:min-h-[52px] px-4 sm:px-10 text-sm sm:text-base">
                   Browse Results
                 </Button>
               </Link>
-              <Link href="/leaderboard" className="w-full sm:w-auto">
-                <Button size="lg" variant="outline" className="w-full sm:w-auto min-h-[52px] px-10 text-base bg-transparent border-2 border-white/80 text-white hover:bg-white/10 hover:text-white">
+              <Link href="/leaderboard" className="sm:w-auto">
+                <Button size="lg" variant="outline" className="w-full sm:w-auto min-h-[48px] sm:min-h-[52px] px-4 sm:px-10 text-sm sm:text-base bg-transparent border-2 border-white/80 text-white hover:bg-white/10 hover:text-white">
                   Series Standings
                 </Button>
               </Link>
@@ -452,174 +452,107 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Events Section — tabbed */}
-      <section className="container mx-auto px-4">
-        <h2 className="sr-only">Races</h2>
-
-        {/* Search bar */}
-        <div className="relative mb-5">
-          <Search size={20} className="absolute left-5 top-1/2 -translate-y-1/2 text-[#333] pointer-events-none" />
+      {/* Search across today, upcoming and results */}
+      <div className="container mx-auto px-4 -mb-4 sm:-mb-6">
+        <div className="relative max-w-3xl">
+          <Search size={20} className="absolute left-4 sm:left-5 top-1/2 -translate-y-1/2 text-[#333] pointer-events-none" aria-hidden />
           <input
-            type="text"
+            type="search"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search by race name, track, city or state…"
-            aria-label="Search races"
-            className="w-full h-[52px] pl-12 pr-12 rounded-full border-2 border-[#8C8C8C] bg-white text-base text-[#333] placeholder:text-[#707070] focus:outline-none focus:border-[#242424] transition-colors"
+            placeholder="Search races, tracks, states"
+            aria-label="Search races by name, track, city, state or club"
+            className="w-full h-[52px] pl-11 sm:pl-12 pr-11 rounded-full border-2 border-[#8C8C8C] bg-white text-base text-[#333] placeholder:text-[#707070] focus:outline-none focus:border-[#242424] transition-colors [&::-webkit-search-cancel-button]:hidden"
           />
           {searchQuery && (
             <button
+              type="button"
               onClick={() => setSearchQuery("")}
-              className="absolute right-5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+              aria-label="Clear search"
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground transition-colors"
             >
-              <X size={15} />
+              <X size={16} />
             </button>
           )}
         </div>
+      </div>
 
-        {/* Tab bar */}
-        <div className="flex items-end gap-0 border-b-2 border-[#ECECEC] mb-6 overflow-x-auto scrollbar-none -mx-4 px-4 sm:mx-0 sm:px-0">
-          {tabs.map(tab => (
-            <button
-              key={tab.key}
-              onClick={() => switchTab(tab.key)}
-              className={`relative shrink-0 px-4 sm:px-6 py-3 font-heading font-bold uppercase tracking-[2px] text-[15px] transition-colors flex items-center gap-2 ${
-                activeTab === tab.key
-                  ? "text-[#242424] border-b-[3px] border-primary -mb-[2px] bg-transparent"
-                  : "text-[#707070] hover:text-[#242424]"
-              }`}
-            >
-              {tab.key === "today" && (
-                <span className="relative flex h-2 w-2">
-                  {todayEvents.length > 0 && (
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
-                  )}
-                  <span className={`relative inline-flex rounded-full h-2 w-2 ${todayEvents.length > 0 ? "bg-red-500" : "bg-muted-foreground/30"}`} />
-                </span>
-              )}
-              {tab.label}
-              {tab.count !== undefined && tab.count > 0 && (
-                <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${
-                  activeTab === tab.key ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
-                }`}>
-                  {tab.count}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {/* State chips + Near Me button */}
-        {activeTab === "today" && (
-          <StateChips states={todayStates} selected={selectedState} onSelect={setSelectedState} />
-        )}
-        {activeTab === "upcoming" && (
-          <div className="flex flex-wrap items-center gap-3 mb-6">
-            {/* Near Me toggle */}
-            <button
-              onClick={() => {
-                if (!nearMe && userLocation.status === "denied") userLocation.retry();
-                setNearMe(v => !v);
-              }}
-              className={`flex items-center gap-1.5 min-h-[38px] px-[18px] rounded-full text-sm font-heading font-bold uppercase tracking-[0.5px] border-2 transition-colors ${
-                nearMe
-                  ? "border-[#242424] bg-[#F2F2F2] text-[#242424]"
-                  : "border-[#8C8C8C] bg-white text-[#333] hover:bg-[#F2F2F2] hover:border-[#333]"
-              }`}
-            >
-              <Navigation size={13} />
-              Near Me
-            </button>
-            {/* Divider */}
-            {futureStates.length > 0 && <span className="text-border hidden sm:block">|</span>}
-            {/* State chips inline */}
-            {futureStates.map(s => (
-              <button
-                key={s}
-                onClick={() => setSelectedState(sel => sel === s ? "all" : s)}
-                className={`min-h-[38px] px-[18px] rounded-full text-sm font-heading font-bold uppercase tracking-[0.5px] border-2 transition-colors ${
-                  selectedState === s
-                    ? "border-[#242424] bg-[#F2F2F2] text-[#242424]"
-                    : "border-[#8C8C8C] bg-white text-[#333] hover:bg-[#F2F2F2] hover:border-[#333]"
-                }`}
-              >
-                {s}
-              </button>
-            ))}
-            {selectedState !== "all" && (
-              <button
-                onClick={() => setSelectedState("all")}
-                className="px-3 py-1 rounded-full text-sm font-heading font-bold uppercase tracking-wider border border-border text-muted-foreground hover:border-primary hover:text-primary transition-colors"
-              >
-                All States
-              </button>
-            )}
-            {/* Divider */}
-            {<span className="text-border hidden sm:block">|</span>}
-            {/* Registration status filter */}
-            {(["all", "registration_open", "registration_closed"] as const).map(val => (
-              <button
-                key={val}
-                onClick={() => setRegFilter(val)}
-                className={`min-h-[38px] px-[18px] rounded-full text-sm font-heading font-bold uppercase tracking-[0.5px] border-2 transition-colors ${
-                  regFilter === val
-                    ? "border-[#242424] bg-[#F2F2F2] text-[#242424]"
-                    : "border-[#8C8C8C] bg-white text-[#333] hover:bg-[#F2F2F2] hover:border-[#333]"
-                }`}
-              >
-                {val === "all" ? "All" : val === "registration_open" ? "Reg. Open" : "Reg. Closed"}
-              </button>
-            ))}
-            {/* Location status hint */}
-            {nearMe && userLocation.status === "granted" && (
-              <span className="text-xs text-muted-foreground flex items-center gap-1 ml-1">
-                <Navigation size={11} /> Sorted closest first
-              </span>
-            )}
-            {nearMe && (userLocation.status === "denied" || userLocation.status === "unavailable") && (
-              <span className="text-xs text-muted-foreground ml-1">Enable location for distance sorting</span>
-            )}
-          </div>
-        )}
-        {activeTab === "past" && (
-          <StateChips states={pastStates} selected={selectedState} onSelect={setSelectedState} />
-        )}
-
-        {/* TODAY content */}
-        {activeTab === "today" && (
-          upcomingLoading ? (
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[...Array(3)].map((_, i) => <div key={i} className="h-40 bg-muted rounded-md animate-pulse" />)}
-            </div>
-          ) : filteredToday.length ? (
+      {/* 1. Racing today */}
+      {(todayEvents.length > 0 || (searching && filteredToday.length > 0)) && (
+        <section className="container mx-auto px-4" aria-labelledby="home-today">
+          <SectionHeader
+            id="home-today"
+            title="Racing today"
+            count={filteredToday.length}
+          />
+          {filteredToday.length ? (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredToday.map(e => <TodayCard key={e.eventId} event={e} />)}
             </div>
           ) : (
-            <div className="py-16 text-center bg-muted/40 rounded-lg border border-dashed">
-              <Radio className="mx-auto mb-3 text-muted-foreground opacity-30" size={44} />
-              <p className="font-heading font-bold uppercase text-muted-foreground">
-                {searchQuery.trim() ? `No events today matching "${searchQuery}"` : "No events today"}
-              </p>
-              <p className="text-sm text-muted-foreground mt-1">
-                {selectedState !== "all" ? `No events in ${selectedState} today. ` : ""}Check the upcoming tab for what's next.
-              </p>
-              {searchQuery.trim() && (
-                <Button variant="link" className="mt-1 text-primary" onClick={() => setSearchQuery("")}>Clear search</Button>
-              )}
-            </div>
-          )
+            <EmptyNote icon={Radio} title={`No races today matching "${searchQuery}"`} />
+          )}
+        </section>
+      )}
+
+      {/* 2. Upcoming races, with Register */}
+      <section className="container mx-auto px-4" aria-labelledby="home-upcoming">
+        <SectionHeader id="home-upcoming" title="Upcoming races" count={futureEvents.length} />
+
+        {futureEvents.length > 0 && (
+          <div className="flex items-center gap-2 mb-5 overflow-x-auto hide-scrollbar sm:flex-wrap -mx-4 px-4 sm:mx-0 sm:px-0 pb-1">
+            <button
+              type="button"
+              aria-pressed={nearMe}
+              onClick={() => {
+                if (!nearMe && userLocation.status === "denied") userLocation.retry();
+                setNearMe(v => !v);
+              }}
+              className={`flex items-center gap-1.5 ${chipClass(nearMe)}`}
+            >
+              <Navigation size={13} aria-hidden />
+              Near Me
+            </button>
+            {(["registration_open", "registration_closed"] as const).map(val => (
+              <button
+                key={val}
+                type="button"
+                aria-pressed={regFilter === val}
+                onClick={() => setRegFilter(f => f === val ? "all" : val)}
+                className={chipClass(regFilter === val)}
+              >
+                {val === "registration_open" ? "Reg. Open" : "Reg. Closed"}
+              </button>
+            ))}
+            {futureStates.length > 1 && <span className="shrink-0 w-px h-6 bg-border mx-1" aria-hidden />}
+            {futureStates.length > 1 && futureStates.map(s => (
+              <button
+                key={s}
+                type="button"
+                aria-pressed={selectedState === s}
+                onClick={() => setSelectedState(sel => sel === s ? "all" : s)}
+                className={chipClass(selectedState === s)}
+              >
+                {s}
+              </button>
+            ))}
+            {nearMe && userLocation.status === "granted" && (
+              <span className="shrink-0 text-xs text-muted-foreground flex items-center gap-1 ml-1">
+                <Navigation size={11} aria-hidden /> Closest first
+              </span>
+            )}
+            {nearMe && (userLocation.status === "denied" || userLocation.status === "unavailable") && (
+              <span className="shrink-0 text-xs text-muted-foreground ml-1">Turn on location to sort by distance</span>
+            )}
+          </div>
         )}
 
-        {/* UPCOMING content */}
-        {activeTab === "upcoming" && (
-          upcomingLoading ? (
+        {upcomingLoading ? (
+          <CardSkeletons n={3} />
+        ) : upcomingShown.length ? (
+          <>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[...Array(3)].map((_, i) => <div key={i} className="h-40 bg-muted rounded-md animate-pulse" />)}
-            </div>
-          ) : filteredFuture.length ? (
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredFuture.map(e => (
+              {upcomingShown.map(e => (
                 <UpcomingCard
                   key={e.eventId}
                   event={e}
@@ -627,157 +560,138 @@ export default function Home() {
                 />
               ))}
             </div>
-          ) : (
-            <div className="py-16 text-center bg-muted/40 rounded-lg border border-dashed">
-              <Clock className="mx-auto mb-3 text-muted-foreground opacity-30" size={44} />
-              <p className="font-heading font-bold uppercase text-muted-foreground">
-                {nearMe ? "No upcoming events near you" : "No upcoming events scheduled"}
-              </p>
-              {(selectedState !== "all" || nearMe) && (
-                <div className="flex items-center justify-center gap-3 mt-2">
-                  {nearMe && (
-                    <Button variant="link" className="text-primary" onClick={() => setNearMe(false)}>
-                      Show all locations
-                    </Button>
-                  )}
-                  {selectedState !== "all" && (
-                    <Button variant="link" className="text-primary" onClick={() => setSelectedState("all")}>
-                      Clear state filter
-                    </Button>
-                  )}
-                </div>
-              )}
-            </div>
-          )
-        )}
-
-        {/* PAST content */}
-        {activeTab === "past" && (
-          pastLoading || statesLoading ? (
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[...Array(6)].map((_, i) => <div key={i} className="h-40 bg-muted rounded-md animate-pulse" />)}
-            </div>
-          ) : filteredPast.length ? (
-            <>
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredPast.map((r, i) => <PastCard key={`${r.eventId}-${i}`} result={r} />)}
-              </div>
+            {filteredFuture.length > UPCOMING_PREVIEW && (
               <div className="text-center mt-6">
-                <Link href="/results">
-                  <Button variant="outline" className="font-heading uppercase tracking-wider">
-                    View All Results <ChevronRight size={16} className="ml-1" />
-                  </Button>
-                </Link>
+                <Button variant="outline" className="font-heading uppercase tracking-wider" onClick={() => setShowAllUpcoming(v => !v)} aria-expanded={showAllUpcoming}>
+                  {showAllUpcoming ? "Show fewer" : `Show all ${filteredFuture.length} upcoming races`}
+                  <ChevronDown size={16} className={`ml-1 transition-transform ${showAllUpcoming ? "rotate-180" : ""}`} aria-hidden />
+                </Button>
               </div>
-            </>
-          ) : (
-            <div className="py-16 text-center bg-muted/40 rounded-lg border border-dashed">
-              <Trophy className="mx-auto mb-3 text-muted-foreground opacity-30" size={44} />
-              <p className="font-heading font-bold uppercase text-muted-foreground">
-                {searchQuery.trim() ? `No results matching "${searchQuery}"` : selectedState !== "all" ? `No results found for ${selectedState}` : "No results yet"}
-              </p>
-              <div className="flex items-center justify-center gap-3 mt-2 flex-wrap">
-                {searchQuery.trim() && (
-                  <Button variant="link" className="text-primary" onClick={() => setSearchQuery("")}>
-                    Clear search
-                  </Button>
-                )}
-                {selectedState !== "all" && (
-                  <Button variant="link" className="text-primary" onClick={() => setSelectedState("all")}>
-                    Clear state filter
-                  </Button>
-                )}
-              </div>
-            </div>
-          )
+            )}
+          </>
+        ) : (
+          <EmptyNote icon={Clock} title={searching ? `No upcoming races matching "${searchQuery}"` : nearMe ? "No upcoming races near you" : "No upcoming races scheduled yet"}>
+            {(selectedState !== "all" || nearMe || regFilter !== "all" || searching) && (
+              <Button
+                variant="link"
+                className="mt-1 text-primary"
+                onClick={() => { setNearMe(false); setSelectedState("all"); setRegFilter("all"); setSearchQuery(""); }}
+              >
+                Clear filters
+              </Button>
+            )}
+          </EmptyNote>
         )}
       </section>
 
-      {/* CTA */}
-      <section className="container mx-auto px-4 mt-4">
-        <div className="bg-[#1A1A1A] rounded-[12px] border-b-[3px] border-primary p-8 sm:p-10 flex flex-col md:flex-row items-center justify-between gap-8">
-          <div className="text-sidebar-foreground text-center md:text-left">
-            <h2 className="text-[26px] sm:text-3xl font-heading font-extrabold uppercase mb-2">Are you a club organizer?</h2>
-            <p className="text-sidebar-foreground/70 max-w-xl">
-              Access the operations portal to manage your events, riders, check-ins, and live scoring.
-            </p>
+      {/* 3. Latest results */}
+      <section className="container mx-auto px-4" aria-labelledby="home-results">
+        <SectionHeader
+          id="home-results"
+          title="Latest results"
+          action={
+            <Link href="/results" className="shrink-0 text-primary text-sm font-heading font-bold uppercase tracking-[1px] flex items-center gap-1 hover:underline">
+              All results <ChevronRight size={14} aria-hidden />
+            </Link>
+          }
+        />
+        {pastStates.length > 1 && (
+          <div className="flex gap-2 mb-5 overflow-x-auto hide-scrollbar sm:flex-wrap -mx-4 px-4 sm:mx-0 sm:px-0 pb-1">
+            <button type="button" aria-pressed={pastState === "all"} onClick={() => setPastState("all")} className={chipClass(pastState === "all")}>
+              All States
+            </button>
+            {pastStates.map(s => (
+              <button key={s} type="button" aria-pressed={pastState === s} onClick={() => setPastState(s)} className={chipClass(pastState === s)}>
+                {s}
+              </button>
+            ))}
           </div>
-          <Link href="/login">
-            <Button size="lg" className="min-h-[52px] px-10 text-base whitespace-nowrap">
-              Organizer Login
-            </Button>
-          </Link>
+        )}
+        {pastLoading ? (
+          <CardSkeletons n={3} />
+        ) : filteredPast.length ? (
+          <>
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredPast.slice(0, RESULTS_PREVIEW).map((r, i) => <PastCard key={`${r.eventId}-${i}`} result={r} />)}
+            </div>
+            <div className="text-center mt-6">
+              <Link href="/results">
+                <Button variant="outline" className="font-heading uppercase tracking-wider">
+                  View All Results <ChevronRight size={16} className="ml-1" aria-hidden />
+                </Button>
+              </Link>
+            </div>
+          </>
+        ) : (
+          <EmptyNote
+            icon={Trophy}
+            title={searching ? `No results matching "${searchQuery}"` : pastState !== "all" ? `No results yet for ${pastState}` : "No results yet"}
+          >
+            {(searching || pastState !== "all") && (
+              <Button variant="link" className="mt-1 text-primary" onClick={() => { setSearchQuery(""); setPastState("all"); }}>
+                Clear filters
+              </Button>
+            )}
+          </EmptyNote>
+        )}
+      </section>
+
+      {/* 4. The rider app */}
+      <section className="container mx-auto px-4" aria-labelledby="home-app">
+        <div className="relative overflow-hidden bg-[#242424] text-white rounded-[12px] border-b-[3px] border-primary p-6 sm:p-10 grid lg:grid-cols-[1fr_auto] gap-6 lg:gap-10 items-center">
+          <div>
+            <span className="font-heading font-bold text-xs sm:text-sm uppercase tracking-[2px] text-[#BDBDBD]">Free for iPhone and Android</span>
+            <h2 id="home-app" className="font-heading font-extrabold uppercase text-[26px] sm:text-[34px] leading-tight mt-2 mb-3">Get the rider app</h2>
+            <ul className="grid sm:grid-cols-2 gap-x-6 gap-y-2 text-[15px] text-white/85 max-w-xl">
+              {[
+                [Timer, "Live timing and results"],
+                [Bell, "Alerts when your race is up"],
+                [CheckCircle, "Register and check in from your phone"],
+                [Activity, "Follow riders and your series"],
+              ].map(([Icon, text]) => {
+                const I = Icon as typeof Timer;
+                return (
+                  <li key={text as string} className="flex items-center gap-2">
+                    <I size={16} className="text-white/60 shrink-0" aria-hidden /> {text as string}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+          <div className="flex flex-col gap-3 lg:items-end">
+            <StoreButtons />
+            <Link href="/rider-app" className="inline-flex items-center gap-1 text-sm font-semibold text-white/80 hover:text-white">
+              What the app does <ChevronRight size={14} aria-hidden />
+            </Link>
+          </div>
         </div>
+      </section>
 
-        {/* Downloads — two independent rows */}
-        <div className="mt-3 flex flex-col items-center gap-2">
-          {/* Desktop Scoring App */}
-          <div className="flex flex-col items-center gap-2">
-            <button
-              onClick={() => setShowDownloads(v => !v)}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <Download size={12} />
-              Download Desktop Scoring App
-              <ChevronDown size={12} className={`transition-transform duration-200 ${showDownloads ? "rotate-180" : ""}`} />
-            </button>
-            {showDownloads && (
-              <div className="flex flex-wrap justify-center gap-2">
-                <a href={downloads.macArm} title="macOS Apple Silicon (M1/M2/M3)">
-                  <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
-                    <Apple size={13} />
-                    Mac (Apple Silicon)
-                  </Button>
-                </a>
-                <a href={downloads.macX64} title="macOS Intel">
-                  <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
-                    <Apple size={13} />
-                    Mac (Intel)
-                  </Button>
-                </a>
-                <a href={downloads.windows} title="Windows 10/11">
-                  <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
-                    <Monitor size={13} />
-                    Windows
-                  </Button>
-                </a>
-              </div>
-            )}
+      {/* 5. For organizers: login and the race-day software downloads */}
+      <section className="container mx-auto px-4" aria-labelledby="home-organizers">
+        <SectionHeader id="home-organizers" title="For organizers" />
+        <div className="grid lg:grid-cols-3 gap-4">
+          <div className="rounded-[12px] bg-[#F2F2F2] p-5 flex flex-col gap-3">
+            <div>
+              <h3 className="font-heading font-bold uppercase text-[17px] text-[#242424] flex items-center gap-2">
+                <Flag size={16} className="text-primary" aria-hidden /> Run your races on RM Roost
+              </h3>
+              <p className="text-sm text-muted-foreground mt-1">Events, registration, check-in, timing and results for your club.</p>
+            </div>
+            <Link href="/login" className="mt-auto">
+              <Button className="w-full sm:w-auto min-h-[44px] px-8">Organizer Login</Button>
+            </Link>
           </div>
-
-          {/* RM Connect */}
-          <div className="flex flex-col items-center gap-2">
-            <button
-              onClick={() => setShowConnectorDownloads(v => !v)}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <Download size={12} />
-              Download RM Connect (Hardware Bridge)
-              <ChevronDown size={12} className={`transition-transform duration-200 ${showConnectorDownloads ? "rotate-180" : ""}`} />
-            </button>
-            {showConnectorDownloads && (
-              <div className="flex flex-wrap justify-center gap-2">
-                <a href={connectorDownloads.macArm} title="macOS Apple Silicon (M1/M2/M3)">
-                  <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
-                    <Apple size={13} />
-                    Mac (Apple Silicon)
-                  </Button>
-                </a>
-                <a href={connectorDownloads.macX64} title="macOS Intel">
-                  <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
-                    <Apple size={13} />
-                    Mac (Intel)
-                  </Button>
-                </a>
-                <a href={connectorDownloads.windows} title="Windows 10/11">
-                  <Button variant="outline" size="sm" className="font-heading uppercase tracking-wider gap-1.5 h-8 px-4 text-xs">
-                    <Monitor size={13} />
-                    Windows
-                  </Button>
-                </a>
-              </div>
-            )}
-          </div>
+          <DownloadRow
+            title="Desktop Scoring App"
+            text="Score races at the track, with or without internet."
+            links={downloads}
+          />
+          <DownloadRow
+            title="RM Connect"
+            text="Connects your timing hardware to RM Roost."
+            links={connectorDownloads}
+          />
         </div>
       </section>
     </div>

@@ -4,6 +4,7 @@ import * as Location from "expo-location";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ActivityIndicator, AppState, Linking, Pressable, Text, View } from "react-native";
+import { haptics } from "@/lib/haptics";
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 import { useVisibleInterval } from "@/hooks/useVisibleInterval";
@@ -237,6 +238,7 @@ export function QuickCheckinCard() {
           break;
         }
       }
+      if (failed) haptics.error(); else haptics.success();
       setMessage(failed ? { eventId: targets[0].eventId, ok: false, text: failed } : { eventId: targets[0].eventId, ok: true, text: targets.length > 1 ? "Everyone's checked in. See you on the gate!" : "You're checked in. See you on the gate!" });
       await refresh();
     } catch {

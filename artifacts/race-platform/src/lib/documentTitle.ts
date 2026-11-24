@@ -23,6 +23,7 @@ const EXACT: Record<string, string> = {
   "/terms": "Terms and Conditions",
   "/delete-account": "Delete Account",
   "/rider-app": "Rider App",
+  "/get-app": "Get the App",
   "/scan": "Hand Scanner",
   "/pdf-view": "Document",
   "/rider/login": "Rider Login",

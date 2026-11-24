@@ -36,6 +36,8 @@ import { NoProfileLinked } from "@/components/NoProfileLinked";
 import { SeasonView } from "@/components/SeasonView";
 import { EmptyState } from "@/components/EmptyState";
 import { PositionBadge, StatTile } from "@/components/RaceStats";
+import { CardListSkeleton } from "@/components/Skeleton";
+import { haptics } from "@/lib/haptics";
 import { EventCard, ResultCard } from "@/components/RaceCards";
 import { placeLabel } from "@/lib/format";
 
@@ -563,6 +565,7 @@ export default function MyRacesScreen() {
   }, [activeFilter]);
 
   const onRefresh = useCallback(async () => {
+    haptics.selection();
     setRefreshing(true);
     await loadAll();
     setRefreshing(false);
@@ -731,8 +734,9 @@ export default function MyRacesScreen() {
   // ── Main screen ─────────────────────────────────────────────────────────────
 
   function renderContent() {
-    if (loading && !refreshing) {
-      return <View style={{ marginTop: 60, alignItems: "center" }}><ActivityIndicator color={colors.primaryText} /></View>;
+    // First load only: a reload with races already on screen keeps them (no skeleton flash).
+    if (loading && !refreshing && schedule === null) {
+      return <CardListSkeleton kind="event" count={4} style={{ paddingTop: 16 }} />;
     }
     if (error) {
       return <EmptyState icon="alert-circle" title="Couldn't load your races" message={error} primary={{ label: "Try again", icon: "refresh-cw", onPress: onRefresh }} />;
@@ -886,7 +890,9 @@ export default function MyRacesScreen() {
             <Pressable
               key={tab.key}
               style={{ flex: 1, flexDirection: "column", alignItems: "center", justifyContent: "center", paddingVertical: 7, borderRadius: 8, borderWidth: 1, backgroundColor: active ? colors.primary : colors.muted, borderColor: active ? colors.primary : colors.border }}
-              onPress={() => setActiveFilter(tab.key)}
+              onPress={() => { if (tab.key !== activeFilter) haptics.light(); setActiveFilter(tab.key); }}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: active }}
             >
               <Feather name={tab.icon as any} size={11} color={active ? "#fff" : colors.mutedForeground} />
               <Text style={{ fontSize: 10, fontWeight: "700", fontFamily: "Roboto_700Bold", color: active ? "#fff" : colors.mutedForeground, lineHeight: 14, marginTop: 2, textAlign: "center" }}>

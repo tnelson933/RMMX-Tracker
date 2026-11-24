@@ -7,8 +7,6 @@ import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Pressable,
   RefreshControl,
   ScrollView,
   Text,
@@ -37,6 +35,8 @@ import { EmptyState } from "@/components/EmptyState";
 import { PositionBadge } from "@/components/RaceStats";
 import { displayDate, localDateString, placeLabel } from "@/lib/format";
 import { EventCard, ResultCard } from "@/components/RaceCards";
+import { HomeSkeleton } from "@/components/Skeleton";
+import { haptics } from "@/lib/haptics";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -230,6 +230,7 @@ export default function HomeScreen() {
 
   const [feedRefreshKey, setFeedRefreshKey] = useState(0);
   const onRefresh = useCallback(async () => {
+    haptics.selection();
     setRefreshing(true);
     setFeedRefreshKey(k => k + 1);
     // Re-fetch profiles too: one may have linked since sign-in (first race registration).
@@ -365,9 +366,7 @@ export default function HomeScreen() {
         {/* ── Next race: photo hero with a countdown ── */}
         {hasProfile && (
           loading && upcoming.length === 0 && recentResults.length === 0 ? (
-            <View style={{ alignItems: "center", paddingVertical: 40 }}>
-              <ActivityIndicator color={colors.primaryText} size="small" />
-            </View>
+            <HomeSkeleton />
           ) : (
             <View style={{ marginTop: 4 }}>
               <NextRaceHero

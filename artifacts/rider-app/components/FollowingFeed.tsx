@@ -7,6 +7,7 @@ import { useColors } from "@/hooks/useColors";
 import { useRiderAuth } from "@/context/AuthContext";
 import { EmptyState } from "@/components/EmptyState";
 import { ResultCard } from "@/components/RaceCards";
+import { CardListSkeleton } from "@/components/Skeleton";
 
 interface FeedItem {
   riderId: number; riderName: string; riderAvatarUrl?: string | null; eventId: number; eventName: string; eventDate: string;
@@ -38,7 +39,9 @@ export function FollowingFeed({ refreshKey }: { refreshKey: number }) {
           <Text style={{ fontSize: 13, color: colors.primaryText, fontFamily: "Roboto_600SemiBold" }}>Find riders</Text>
         </Pressable>
       </View>
-      {items && items.length === 0 ? (
+      {items === null ? (
+        <CardListSkeleton count={2} />
+      ) : items.length === 0 ? (
         <EmptyState
           variant="compact"
           icon="users"
@@ -47,7 +50,7 @@ export function FollowingFeed({ refreshKey }: { refreshKey: number }) {
           primary={{ label: "Follow", icon: "user-plus", onPress: () => router.push("/follow" as any) }}
         />
       ) : (
-        (items ?? []).map(i => (
+        items.map(i => (
           <ResultCard
             key={`${i.riderId}-${i.eventId}-${i.raceClass}`}
             position={i.bestPosition}

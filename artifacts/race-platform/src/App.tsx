@@ -27,6 +27,7 @@ const PublicRacer = lazyPage(() => import("@/pages/public/PublicRacer"));
 
 // ── Other public pages ──
 const RiderAppLanding = lazyPage(() => import("@/pages/public/RiderAppLanding"));
+const GetApp = lazyPage(() => import("@/pages/public/GetApp"));
 const PhoneLive = lazyPage(() => import("@/pages/public/PhoneLive"));
 const RiderLiveWatch = lazyPage(() => import("@/pages/public/RiderLiveWatch"));
 const Login = lazyPage(() => import("@/pages/public/Login"));
@@ -280,6 +281,9 @@ function Router() {
       </Route>
       <Route path="/rider-app">
         <RouteBoundary><RiderAppLanding /></RouteBoundary>
+      </Route>
+      <Route path="/get-app">
+        <RouteBoundary><GetApp /></RouteBoundary>
       </Route>
       {/* Rider live video: the app's Go Live screen and the viewer (not linked from any public page). */}
       <Route path="/phone-live/:riderId">

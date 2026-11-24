@@ -3,7 +3,10 @@ import { StatusBarBackdrop } from "@/components/StatusBarBackdrop";
 import { useBottomSpace } from "@/hooks/useBottomSpace";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, View } from "react-native";
+import { PressableScale } from "@/components/PressableScale";
+import { ProfileHeaderSkeleton } from "@/components/Skeleton";
+import { haptics } from "@/lib/haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ChartCard, LineChart } from "@/components/charts";
@@ -127,6 +130,8 @@ export default function RacerScreen() {
         // A private profile answers 403 with a message to show as is.
         const message = r.status === 403 ? ((await r.json().catch(() => null))?.error as string | undefined) : undefined;
         Alert.alert(follow ? "Couldn't follow" : "Couldn't unfollow", message ?? `Try again (error ${r.status}).`);
+      } else if (follow) {
+        haptics.success();
       }
     } catch {
       rollback();
@@ -158,16 +163,14 @@ export default function RacerScreen() {
   if (!data || error) {
     return (
       <View style={s.root}>
-        <View style={[s.center, { paddingTop: insets.top }]}>
-          {error ? (
-            <>
-              <Text style={[s.muted, { textAlign: "center" }]}>{error}</Text>
-              <Pressable onPress={() => { void load(); }} style={({ pressed }) => ({ marginTop: 12, opacity: pressed ? 0.6 : 1 })}>
-                <Text style={{ color: colors.primaryText, fontFamily: fonts.semibold, fontSize: 14 }}>Try again</Text>
-              </Pressable>
-            </>
-          ) : <ActivityIndicator color={colors.primaryText} />}
-        </View>
+        {error ? (
+          <View style={[s.center, { paddingTop: insets.top }]}>
+            <Text style={[s.muted, { textAlign: "center" }]}>{error}</Text>
+            <Pressable onPress={() => { void load(); }} style={({ pressed }) => ({ marginTop: 12, opacity: pressed ? 0.6 : 1 })}>
+              <Text style={{ color: colors.primaryText, fontFamily: fonts.semibold, fontSize: 14 }}>Try again</Text>
+            </Pressable>
+          </View>
+        ) : <ProfileHeaderSkeleton topInset={insets.top} />}
         <Pressable onPress={() => goBack(router)} accessibilityRole="button" accessibilityLabel="Back"
           style={({ pressed }) => [s.backBtn, { backgroundColor: colors.muted, opacity: pressed ? 0.6 : 1, top: insets.top + 8 }]}>
           <Feather name="arrow-left" size={18} color={colors.foreground} />
@@ -226,16 +229,16 @@ export default function RacerScreen() {
               {data.followerCount} {data.followerCount === 1 ? "follower" : "followers"}
             </Text>
             {data.isManager ? (
-              <Pressable onPress={() => router.push(`/rider/${data.riderId}` as any)} accessibilityRole="button"
-                style={({ pressed }) => [s.pill, s.pillOutline, { opacity: pressed ? 0.7 : 1 }]}>
+              <PressableScale onPress={() => router.push(`/rider/${data.riderId}` as any)} accessibilityRole="button"
+                style={[s.pill, s.pillOutline]}>
                 <Text style={[s.pillText, { color: colors.foreground }]}>Edit profile</Text>
-              </Pressable>
+              </PressableScale>
             ) : data.visibility === "private" && !data.following ? null : (
               // Private profiles can't be followed; an older follow can still be removed.
-              <Pressable onPress={toggle} accessibilityRole="button" accessibilityState={{ selected: data.following }}
-                style={({ pressed }) => [s.pill, data.following ? s.pillOutline : null, { opacity: pressed ? 0.7 : 1 }]}>
+              <PressableScale onPress={toggle} accessibilityRole="button" accessibilityState={{ selected: data.following }}
+                style={[s.pill, data.following ? s.pillOutline : null]}>
                 <Text style={[s.pillText, data.following ? { color: colors.foreground } : null]}>{data.following ? "Following" : "Follow"}</Text>
-              </Pressable>
+              </PressableScale>
             )}
             {data.sharePath ? (
               <Pressable onPress={() => { void share(); }} accessibilityRole="button" accessibilityLabel="Share this profile" hitSlop={6}
@@ -317,11 +320,11 @@ export default function RacerScreen() {
               <Text style={s.section}>Highlights</Text>
               <View style={{ flexDirection: "row", gap: 8 }}>
                 {resume?.highlights.bestFinish && (
-                  <Pressable style={[s.card, s.hl]} onPress={() => router.push(`/event/${resume.highlights.bestFinish!.eventId}` as any)} accessibilityRole="button">
+                  <PressableScale style={[s.card, s.hl]} onPress={() => router.push(`/event/${resume.highlights.bestFinish!.eventId}` as any)} accessibilityRole="button">
                     <PositionBadge position={resume.highlights.bestFinish.position} size="sm" />
                     <Text style={s.hlLabel}>Best finish</Text>
                     <Text style={s.hlWhere} numberOfLines={2}>{resume.highlights.bestFinish.eventName}</Text>
-                  </Pressable>
+                  </PressableScale>
                 )}
                 {st.bestLap && (
                   <View style={[s.card, s.hl]}>

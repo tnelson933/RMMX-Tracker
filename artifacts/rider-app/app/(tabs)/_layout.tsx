@@ -1,14 +1,15 @@
 import { BlurView } from "expo-blur";
 import { isLiquidGlassAvailable } from "expo-glass-effect";
-import { Tabs } from "expo-router";
+import { Tabs, useSegments } from "expo-router";
 import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
 import { SymbolView } from "expo-symbols";
 import { Feather } from "@expo/vector-icons";
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { Platform, StyleSheet, View } from "react-native";
 
 import { useTheme } from "@/context/ThemeContext";
 import { useColors } from "@/hooks/useColors";
+import { haptics } from "@/lib/haptics";
 
 /** Tab icon with a red race-stripe marker above the active tab. */
 function TabIcon({ focused, color, sf, feather }: { focused: boolean; color: string; sf: string; feather: React.ComponentProps<typeof Feather>["name"] }) {
@@ -25,6 +26,13 @@ function TabIcon({ focused, color, sf, feather }: { focused: boolean; color: str
 
 function NativeTabLayout() {
   const colors = useColors();
+  // The native tab bar has no press listener: a light tap when the shown tab changes.
+  const tab = useSegments()[1] ?? "index";
+  const lastTab = useRef(tab);
+  useEffect(() => {
+    if (lastTab.current !== tab) haptics.light();
+    lastTab.current = tab;
+  }, [tab]);
   return (
     <NativeTabs tintColor={colors.primaryText}>
       <NativeTabs.Trigger name="index">
@@ -59,6 +67,10 @@ function ClassicTabLayout() {
 
   return (
     <Tabs
+      // A light tap when switching tabs (not when re-tapping the current one).
+      screenListeners={({ navigation }) => ({
+        tabPress: () => { if (!navigation.isFocused()) haptics.light(); },
+      })}
       screenOptions={{
         tabBarActiveTintColor: colors.primaryText,
         tabBarInactiveTintColor: colors.mutedForeground,

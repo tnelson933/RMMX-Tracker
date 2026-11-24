@@ -1,6 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import React from "react";
 import { Pressable, Text, View } from "react-native";
+import { PressableScale } from "@/components/PressableScale";
 import { useTheme } from "@/context/ThemeContext";
 import { useColors } from "@/hooks/useColors";
 
@@ -99,7 +100,7 @@ export function StatTile({
     alignItems: "center" as const, borderWidth: 1, borderColor: metal ? metal + "66" : colors.border, overflow: "hidden" as const,
   };
   return onPress ? (
-    <Pressable onPress={onPress} style={({ pressed }) => [style, { opacity: pressed ? 0.75 : 1 }]}>{body}</Pressable>
+    <PressableScale onPress={onPress} accessibilityRole="button" accessibilityLabel={`${label}: ${value}`} scaleTo={0.95} style={style}>{body}</PressableScale>
   ) : (
     <View style={style}>{body}</View>
   );

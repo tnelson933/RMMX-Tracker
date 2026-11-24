@@ -2,6 +2,9 @@ import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, Text, View } from "react-native";
 
+import { PressableScale } from "@/components/PressableScale";
+import { haptics } from "@/lib/haptics";
+
 import { RiderAvatar } from "@/components/RiderPhoto";
 import { fonts } from "@/constants/fonts";
 import { useRiderAuth } from "@/context/AuthContext";
@@ -50,7 +53,7 @@ export function SuggestedRiders({ refreshKey, onFollowed }: { refreshKey: number
         const message = r.status === 403 ? ((await r.json().catch(() => null))?.error as string | undefined) : undefined;
         Alert.alert("Couldn't follow", message ?? `Try again (error ${r.status}).`);
       }
-      else onFollowed?.();
+      else { haptics.success(); onFollowed?.(); }
     } catch {
       undo();
       Alert.alert("Couldn't follow", NETWORK_ERROR_MESSAGE);
@@ -72,12 +75,12 @@ export function SuggestedRiders({ refreshKey, onFollowed }: { refreshKey: number
         {riders.map(r => {
           const isFollowing = followed.has(r.id);
           return (
-            <Pressable key={r.id} onPress={() => router.push(`/racer/${r.id}` as any)} accessibilityRole="button"
+            <PressableScale key={r.id} onPress={() => router.push(`/racer/${r.id}` as any)} accessibilityRole="button"
               accessibilityLabel={`${r.name}. ${r.reason}. Open profile`}
-              style={({ pressed }) => ({
+              style={{
                 width: 150, padding: 12, gap: 6, alignItems: "center", borderRadius: 14, borderWidth: 1,
-                borderColor: colors.border, backgroundColor: colors.card, opacity: pressed ? 0.8 : 1,
-              })}>
+                borderColor: colors.border, backgroundColor: colors.card,
+              }}>
               <RiderAvatar url={r.avatarUrl} name={r.name} size={56} />
               <Text numberOfLines={1} style={{ color: colors.foreground, fontFamily: fonts.bold, fontSize: 14, textAlign: "center" }}>
                 {r.number ? `#${r.number} ` : ""}{r.name}
@@ -85,18 +88,18 @@ export function SuggestedRiders({ refreshKey, onFollowed }: { refreshKey: number
               <Text numberOfLines={2} style={{ minHeight: 30, color: colors.mutedForeground, fontFamily: fonts.regular, fontSize: 11, lineHeight: 15, textAlign: "center" }}>
                 {r.reason}
               </Text>
-              <Pressable onPress={() => { if (!isFollowing) void follow(r.id); }} disabled={isFollowing} accessibilityRole="button"
+              <PressableScale onPress={() => { if (!isFollowing) void follow(r.id); }} disabled={isFollowing} accessibilityRole="button"
                 accessibilityLabel={isFollowing ? `Following ${r.name}` : `Follow ${r.name}`} accessibilityState={{ selected: isFollowing }}
-                style={({ pressed }) => ({
+                scaleTo={0.94}
+                style={{
                   alignSelf: "stretch", alignItems: "center", paddingVertical: 7, borderRadius: 999, borderWidth: 1,
                   borderColor: isFollowing ? colors.border : colors.primary, backgroundColor: isFollowing ? "transparent" : colors.primary,
-                  opacity: pressed ? 0.7 : 1,
-                })}>
+                }}>
                 <Text style={{ color: isFollowing ? colors.foreground : "#FFFFFF", fontFamily: fonts.display, fontSize: 13, textTransform: "uppercase", letterSpacing: 1 }}>
                   {isFollowing ? "Following" : "Follow"}
                 </Text>
-              </Pressable>
-            </Pressable>
+              </PressableScale>
+            </PressableScale>
           );
         })}
       </ScrollView>

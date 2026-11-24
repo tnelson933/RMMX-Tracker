@@ -1,6 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import React from "react";
 import { Pressable, Text, View } from "react-native";
+import { PressableScale } from "@/components/PressableScale";
 import { useColors } from "@/hooks/useColors";
 
 type FeatherName = React.ComponentProps<typeof Feather>["name"];
@@ -51,16 +52,18 @@ export function EmptyState({
           </Text>
         </View>
         {primary && (
-          <Pressable
+          <PressableScale
             onPress={primary.onPress}
-            style={({ pressed }) => ({
+            accessibilityRole="button"
+            hitSlop={6}
+            style={{
               flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.primary,
-              borderRadius: 999, paddingVertical: 8, paddingHorizontal: 12, opacity: pressed ? 0.85 : 1,
-            })}
+              borderRadius: 999, paddingVertical: 8, paddingHorizontal: 12,
+            }}
           >
             <Text style={{ color: "#fff", fontSize: 13, fontFamily: "Barlow_700Bold", letterSpacing: 0.6, textTransform: "uppercase" }}>{primary.label}</Text>
             <Feather name={primary.icon ?? "arrow-right"} size={12} color="#fff" />
-          </Pressable>
+          </PressableScale>
         )}
       </View>
     );
@@ -108,17 +111,17 @@ export function EmptyState({
       </Text>
 
       {primary && (
-        <Pressable
+        <PressableScale
           onPress={primary.onPress}
-          style={({ pressed }) => ({
+          accessibilityRole="button"
+          style={{
             marginTop: 16, flexDirection: "row", alignItems: "center", gap: 8,
             backgroundColor: colors.primary, borderRadius: 999, paddingVertical: 12, paddingHorizontal: 22,
-            opacity: pressed ? 0.85 : 1,
-          })}
+          }}
         >
           <Text style={{ color: "#fff", fontSize: 15, fontFamily: "Barlow_700Bold", letterSpacing: 0.8, textTransform: "uppercase" }}>{primary.label}</Text>
           <Feather name={primary.icon ?? "arrow-right"} size={16} color="#fff" />
-        </Pressable>
+        </PressableScale>
       )}
       {secondary && (
         <Pressable onPress={secondary.onPress} hitSlop={8} style={{ marginTop: 12 }}>

@@ -6,7 +6,8 @@
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, StyleSheet, Text, View } from "react-native";
+import { PressableScale } from "@/components/PressableScale";
 
 import { ChartCard, LineChart } from "@/components/charts";
 import { eventImageUri } from "@/components/RaceReport";
@@ -45,11 +46,11 @@ export function NextRaceHero({
     : null;
   const place = race ? placeLabel(race.eventLocation, race.eventState) : null;
   return (
-    <Pressable
+    <PressableScale
       onPress={race ? onOpen : onFind}
       accessibilityRole="button"
       accessibilityLabel={race ? `Next race: ${race.eventName}, ${label}. Open details.` : "No race booked. Find a race."}
-      style={({ pressed }) => ({ marginHorizontal: 16, borderRadius: 20, overflow: "hidden", minHeight: 210, justifyContent: "flex-end", backgroundColor: "#161616", opacity: pressed ? 0.92 : 1 })}
+      style={{ marginHorizontal: 16, borderRadius: 20, overflow: "hidden", minHeight: 210, justifyContent: "flex-end", backgroundColor: "#161616" }}
     >
       {uri && !photoFailed
         ? <Image source={{ uri }} style={StyleSheet.absoluteFill} resizeMode="cover" onError={() => setPhotoFailed(true)} accessibilityIgnoresInvertColors />
@@ -81,7 +82,7 @@ export function NextRaceHero({
           </View>
         </View>
       </View>
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -106,12 +107,13 @@ export function FormStrip({ history, onOpen }: { history: EventHistory[]; onOpen
         {recent.map(ev => {
           const finished = ev.motos.some(m => !m.dnf && !m.dns);
           return (
-            <Pressable
+            <PressableScale
               key={`${ev.eventId}-${ev.raceClass}-${ev.riderName ?? ""}`}
               onPress={() => onOpen(ev)}
               accessibilityRole="button"
               accessibilityLabel={`${ev.eventName}: ${ev.bestPosition != null ? `best finish P${ev.bestPosition}` : "no finish"}. Open the Race Report.`}
-              style={({ pressed }) => ({ flex: 1, alignItems: "center", gap: 4, opacity: pressed ? 0.7 : 1 })}
+              scaleTo={0.92}
+              style={{ flex: 1, alignItems: "center", gap: 4 }}
             >
               {ev.bestPosition != null
                 ? <PositionBadge position={ev.bestPosition} size="sm" />
@@ -119,7 +121,7 @@ export function FormStrip({ history, onOpen }: { history: EventHistory[]; onOpen
               <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: fonts.medium }} numberOfLines={1}>
                 {displayDate(ev.eventDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
               </Text>
-            </Pressable>
+            </PressableScale>
           );
         })}
       </View>
@@ -181,14 +183,14 @@ export function RockyRow() {
   const colors = useColors();
   const router = useRouter();
   return (
-    <Pressable
+    <PressableScale
       onPress={() => router.push("/mechanic" as any)}
       accessibilityRole="button"
       accessibilityLabel="Ask Rocky, your AI mechanic and riding coach"
-      style={({ pressed }) => ({
+      style={{
         marginHorizontal: 16, flexDirection: "row", alignItems: "center", gap: 12, padding: 12,
-        backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border, opacity: pressed ? 0.8 : 1,
-      })}
+        backgroundColor: colors.card, borderRadius: 14, borderWidth: 1, borderColor: colors.border,
+      }}
     >
       <RockyAvatar size={34} />
       <View style={{ flex: 1 }}>
@@ -196,6 +198,6 @@ export function RockyRow() {
         <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: fonts.regular }}>Setup, maintenance and riding tips</Text>
       </View>
       <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
-    </Pressable>
+    </PressableScale>
   );
 }

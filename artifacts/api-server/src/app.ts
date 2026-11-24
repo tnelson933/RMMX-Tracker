@@ -13,6 +13,7 @@ import { WebhookHandlers, processConnectWebhook } from "./webhookHandlers";
 import { accessControlMiddleware } from "./middleware/accessControl";
 import { ingestObservationMiddleware } from "./middleware/ingestObservation";
 import { noteServerError } from "./lib/serverErrorAlerts";
+import { sharePageHandler } from "./routes/share-meta";
 
 const app: Express = express();
 // The Replit/deployment proxy terminates TLS before requests reach Express.
@@ -193,6 +194,18 @@ if (webDist) {
       else if (rel.startsWith("/assets/")) res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
     },
   }));
+  // Pages people share get their own link preview (title, description, card picture).
+  app.get(/^\/(results|register|watch|live|racer)\/\d{1,9}\/?$/, sharePageHandler(indexHtml));
+  // The rider app's one link (QR codes, flyers): each phone to its own store, anything else to /rider-app.
+  // Store ids match race-platform/src/lib/appStores.ts (rider-app eas.json / app.json).
+  app.get("/get-app", (req, res) => {
+    const ua = String(req.headers["user-agent"] ?? "");
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Vary", "User-Agent");
+    if (/android/i.test(ua)) return res.redirect(302, "https://play.google.com/store/apps/details?id=com.rockymountain.riderapp");
+    if (/iphone|ipad|ipod/i.test(ua)) return res.redirect(302, "https://apps.apple.com/app/id6791718924");
+    return res.redirect(302, "/rider-app");
+  });
   // SPA fallback for client-side routes; unknown /api paths still 404 as JSON above.
   app.get(/^(?!\/api(\/|$)).*/, (_req, res) => {
     res.setHeader("Cache-Control", "no-cache");

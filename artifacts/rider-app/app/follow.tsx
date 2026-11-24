@@ -4,6 +4,8 @@ import { useBottomSpace } from "@/hooks/useBottomSpace";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { PressableScale } from "@/components/PressableScale";
+import { haptics } from "@/lib/haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
@@ -108,6 +110,8 @@ export default function FollowScreen() {
         // A private profile answers 403 with a message to show as is.
         const message = r.status === 403 ? ((await r.json().catch(() => null))?.error as string | undefined) : undefined;
         Alert.alert(follow ? "Couldn't follow" : "Couldn't unfollow", message ?? `Try again (error ${r.status}).`);
+      } else if (follow) {
+        haptics.success();
       }
     } catch {
       rollback();
@@ -230,10 +234,11 @@ function RiderRow({ title, subtitle, following, onToggle, onOpen, colors, avatar
   raceAlerts?: boolean; onRaceAlerts?: (on: boolean) => void;
 }) {
   return (
-    <Pressable onPress={onOpen} style={({ pressed }) => ({
-      flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 12, opacity: pressed ? 0.7 : 1,
-      backgroundColor: colors.card, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
-    })}>
+    <PressableScale onPress={onOpen} scaleTo={0.98} accessibilityRole="button" accessibilityLabel={subtitle ? `${title}, ${subtitle}. Open profile` : `${title}. Open profile`}
+      style={{
+        flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: 12,
+        backgroundColor: colors.card, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border,
+      }}>
       <RiderAvatar url={avatarUrl} name={title} size={36} background={colors.muted} color={colors.mutedForeground} />
       <View style={{ flex: 1 }}>
         <Text style={{ fontSize: 15, color: colors.foreground, fontFamily: "Roboto_600SemiBold" }} numberOfLines={1}>{title}</Text>
@@ -247,13 +252,15 @@ function RiderRow({ title, subtitle, following, onToggle, onOpen, colors, avatar
           <Feather name={raceAlerts ? "bell" : "bell-off"} size={16} color={raceAlerts ? colors.foreground : colors.mutedForeground} />
         </Pressable>
       )}
-      <Pressable onPress={onToggle} hitSlop={6} style={({ pressed }) => ({
-        paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, opacity: pressed ? 0.7 : 1,
-        backgroundColor: following ? "transparent" : colors.primary, borderWidth: 1, borderColor: following ? colors.border : colors.primary,
-      })}>
+      <PressableScale onPress={onToggle} hitSlop={6} scaleTo={0.94} accessibilityRole="button"
+        accessibilityLabel={following ? `Unfollow ${title}` : `Follow ${title}`} accessibilityState={{ selected: following }}
+        style={{
+          paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999,
+          backgroundColor: following ? "transparent" : colors.primary, borderWidth: 1, borderColor: following ? colors.border : colors.primary,
+        }}>
         <Text style={{ fontSize: 13, color: following ? colors.foreground : "#fff", fontFamily: "Roboto_700Bold" }}>{following ? "Following" : "Follow"}</Text>
-      </Pressable>
-    </Pressable>
+      </PressableScale>
+    </PressableScale>
   );
 }
 
