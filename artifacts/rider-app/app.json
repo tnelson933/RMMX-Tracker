@@ -2,16 +2,17 @@
   "expo": {
     "name": "RM Roost",
     "slug": "rider-app",
-    "version": "1.0.24",
+    "version": "1.0.25",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "rider-app",
     "userInterfaceStyle": "automatic",
+    "backgroundColor": "#161616",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/images/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0a0a0a"
+      "backgroundColor": "#161616"
     },
     "ios": {
       "supportsTablet": false,
@@ -27,11 +28,11 @@
         "ITSAppUsesNonExemptEncryption": false,
         "NSFaceIDUsageDescription": "Use Face ID to sign in to RM Roost quickly and securely."
       },
-      "buildNumber": "10"
+      "buildNumber": "11"
     },
     "android": {
       "package": "com.rockymountain.riderapp",
-      "versionCode": 28,
+      "versionCode": 29,
       "googleServicesFile": "./google-services.json",
       "blockedPermissions": [
         "android.permission.ACCESS_BACKGROUND_LOCATION"
