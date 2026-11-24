@@ -14,21 +14,23 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, {
-  Easing, LinearTransition, ReduceMotion, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withSequence, withTiming,
-} from "react-native-reanimated";
+import { useReducedMotion } from "react-native-reanimated";
 import { useRiderAuth } from "@/context/AuthContext";
 import { haptics } from "@/lib/haptics";
 import { CardListSkeleton, LeaderboardSkeleton } from "@/components/Skeleton";
 import { PressableScale } from "@/components/PressableScale";
 
 import { BrandBar } from "@/components/BrandBar";
-import { fmtDateShared as fmtDate, fmtLap } from "@/components/RaceSubScreens";
+import { fmtDateShared as fmtDate } from "@/components/RaceSubScreens";
 import { useColors } from "@/hooks/useColors";
 import { useVisibleInterval } from "@/hooks/useVisibleInterval";
 import { onTabReset } from "@/utils/tabEvents";
 import { EmptyState } from "@/components/EmptyState";
 import { RiderLookupCard } from "@/components/RiderLookupCard";
+import {
+  LineupList, LiveLeaderboard, ResultsStatusLabel, RiderLapSheet as PublicRiderLapSheet,
+  type PublicLeaderEntry, type PublicLineupEntry,
+} from "@/components/LiveLeaderboard";
 import { placeLabel } from "@/lib/format";
 import { EventCard as RaceEventCard } from "@/components/RaceCards";
 import { defaultSide, nextScheduled, splitLivePast } from "@/lib/liveRaces";
@@ -46,12 +48,6 @@ interface BrowseEvent {
   trackName: string;
   status: string;
   clubName: string;
-}
-
-interface PublicLineupEntry {
-  gate: number;
-  riderName: string;
-  bibNumber: string | null;
 }
 
 interface PublicMoto {
@@ -78,21 +74,6 @@ interface PublicEventDetail {
   status: string;
   raceStyle: string;
   motos: PublicMoto[];
-}
-
-interface PublicLeaderEntry {
-  position: number | null;
-  riderId: number | null;
-  riderName: string;
-  bibNumber: string | null;
-  laps: number;
-  lastLap: string | null;
-  totalTime: string | null;
-  gap: string;
-  dnf: boolean | null;
-  dns: boolean | null;
-  /** Present when the course map has split readers. */
-  sectors?: { bestMs: Array<number | null> | null; lastLapMs: Array<number | null> | null } | null;
 }
 
 interface AnalyticsRider {
@@ -154,11 +135,6 @@ interface PublicSeries {
   classes: string[] | null;
 }
 
-interface LapRow {
-  lapNumber: number;
-  lapTimeMs: number;
-}
-
 interface SeriesStandingRow {
   position: number;
   riderId: number;
@@ -209,161 +185,6 @@ async function publicFetch(path: string): Promise<Response> {
 }
 
 // ─── Public Moto Detail Sheet ─────────────────────────────────────────────────
-
-function PublicRiderLapSheet({
-  motoId,
-  riderId,
-  riderName,
-  leaderRiderId,
-  onClose,
-  colors,
-  bottomInset,
-  raceStyle,
-}: {
-  motoId: number;
-  riderId: number;
-  riderName: string;
-  leaderRiderId: number | null;
-  onClose: () => void;
-  colors: ReturnType<typeof useColors>;
-  bottomInset: number;
-  raceStyle?: string | null;
-}) {
-  const [laps, setLaps] = useState<LapRow[]>([]);
-  const [leaderLapMap, setLeaderLapMap] = useState<Map<number, number>>(new Map());
-  const [loading, setLoading] = useState(true);
-  const isLeader = leaderRiderId === riderId;
-
-  useEffect(() => {
-    async function load() {
-      try {
-        const fetches: Promise<Response>[] = [
-          publicFetch(`/api/public/motos/${motoId}/laps/${riderId}`),
-        ];
-        if (leaderRiderId != null && leaderRiderId !== riderId) {
-          fetches.push(publicFetch(`/api/public/motos/${motoId}/laps/${leaderRiderId}`));
-        }
-        const [riderRes, leaderRes] = await Promise.all(fetches);
-        if (riderRes.ok) setLaps(await riderRes.json());
-        if (leaderRes?.ok) {
-          const leaderLaps: LapRow[] = await leaderRes.json();
-          setLeaderLapMap(new Map(leaderLaps.map(l => [l.lapNumber, l.lapTimeMs])));
-        }
-      } catch { /* ignore */ }
-      finally { setLoading(false); }
-    }
-    void load();
-  }, [motoId, riderId, leaderRiderId]);
-
-  const eligibleTimes = laps
-    .filter(lap => (raceStyle !== "motocross" || lap.lapNumber > 1) && lap.lapTimeMs > 0)
-    .map(lap => lap.lapTimeMs);
-  const bestMs = eligibleTimes.length > 0 ? Math.min(...eligibleTimes) : null;
-  const hasLeaderData = isLeader || leaderLapMap.size > 0;
-
-  return (
-    <View style={{ flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.58)" }}>
-      <Pressable style={{ flex: 1 }} onPress={onClose} />
-      <View style={{
-        backgroundColor: colors.card,
-        borderTopLeftRadius: 22, borderTopRightRadius: 22,
-        maxHeight: "82%",
-        paddingBottom: bottomInset + 8,
-      }}>
-        <View style={{ alignItems: "center", paddingTop: 12, paddingBottom: 6 }}>
-          <View style={{ width: 38, height: 4, borderRadius: 2, backgroundColor: colors.border }} />
-        </View>
-        <View style={{
-          paddingHorizontal: 20, paddingBottom: 14,
-          borderBottomWidth: 1, borderBottomColor: colors.border,
-          flexDirection: "row", alignItems: "flex-start", gap: 10,
-        }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 17, fontWeight: "800", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
-              {riderName}
-            </Text>
-            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 }}>
-              Lap Times
-            </Text>
-            {/* Full sheet width: reaches under the close button's column. */}
-            <View style={{ marginRight: -38 }}>
-              <RiderLookupCard riderId={riderId} name={riderName} onBeforeOpen={onClose} />
-            </View>
-          </View>
-          <Pressable onPress={onClose} hitSlop={8} style={{ padding: 4 }} accessibilityRole="button" accessibilityLabel="Close">
-            <Feather name="x" size={20} color={colors.mutedForeground} />
-          </Pressable>
-        </View>
-
-        <ScrollView showsVerticalScrollIndicator={false}>
-          {loading ? (
-            <View style={{ paddingVertical: 44, alignItems: "center" }}>
-              <ActivityIndicator color={colors.primaryText} />
-            </View>
-          ) : laps.length === 0 ? (
-            <View style={{ paddingVertical: 44, alignItems: "center", gap: 8 }}>
-              <Feather name="clock" size={28} color={colors.mutedForeground} />
-              <Text style={{ fontVariant: ["tabular-nums"], fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>No lap data recorded</Text>
-            </View>
-          ) : (
-            <>
-              <View style={{ flexDirection: "row", paddingHorizontal: 20, paddingTop: 14, paddingBottom: 6 }}>
-                <Text style={{ fontVariant: ["tabular-nums"], width: 44, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase" }}>Lap</Text>
-                <Text style={{ fontVariant: ["tabular-nums"], flex: 1, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase" }}>Time</Text>
-                <Text style={{ fontVariant: ["tabular-nums"], width: 80, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", textAlign: "right" }}>
-                  {hasLeaderData ? "+Gap to Leader" : "+Gap to Best"}
-                </Text>
-              </View>
-              {laps.map((lap, i) => {
-                const isBest = (raceStyle !== "motocross" || lap.lapNumber > 1) &&
-                  bestMs !== null && lap.lapTimeMs === bestMs;
-                let gapDisplay: string;
-                if (isLeader) {
-                  gapDisplay = "P1";
-                } else if (hasLeaderData) {
-                  const leaderMs = leaderLapMap.get(lap.lapNumber);
-                  if (leaderMs == null || leaderMs <= 0) {
-                    gapDisplay = "—";
-                  } else {
-                    const diff = lap.lapTimeMs - leaderMs;
-                    gapDisplay = diff <= 0 ? "P1" : `+${fmtLap(diff)}`;
-                  }
-                } else {
-                  const diff = bestMs !== null ? lap.lapTimeMs - bestMs : 0;
-                  gapDisplay = diff === 0 ? "—" : `+${fmtLap(diff)}`;
-                }
-                const isP1 = gapDisplay === "P1";
-                return (
-                  <View
-                    key={i}
-                    style={{
-                      flexDirection: "row", alignItems: "center",
-                      paddingHorizontal: 20, paddingVertical: 11,
-                      borderBottomWidth: 1, borderBottomColor: colors.border + "55",
-                      backgroundColor: isBest ? "#f59e0b0a" : "transparent",
-                    }}
-                  >
-                    <Text style={{ fontVariant: ["tabular-nums"], width: 44, fontSize: 14, fontWeight: "700", color: isBest ? "#f59e0b" : colors.mutedForeground, fontFamily: "Roboto_700Bold" }}>
-                      {lap.lapNumber}
-                    </Text>
-                    <Text style={{ fontVariant: ["tabular-nums"], flex: 1, fontSize: 15, fontWeight: isBest ? "800" : "500", color: isBest ? "#f59e0b" : colors.foreground, fontFamily: isBest ? "Roboto_700Bold" : "Roboto_500Medium" }}>
-                      {fmtLap(lap.lapTimeMs)}
-                      {isBest ? "  ★ Best" : ""}
-                    </Text>
-                    <Text style={{ fontVariant: ["tabular-nums"], width: 80, fontSize: 12, color: isP1 ? colors.primaryText : colors.mutedForeground, fontFamily: isP1 ? "Roboto_700Bold" : "Roboto_400Regular", textAlign: "right" }}>
-                      {gapDisplay}
-                    </Text>
-                  </View>
-                );
-              })}
-              <View style={{ height: 24 }} />
-            </>
-          )}
-        </ScrollView>
-      </View>
-    </View>
-  );
-}
 
 type LiveMotoView = "timing" | "analytics" | "fastest";
 
@@ -587,114 +408,6 @@ function LiveFastestLapsView({
   );
 }
 
-// ─── Leaderboard row ──────────────────────────────────────────────────────────
-
-const POS_FLASH_IN = { duration: 120 };
-const POS_FLASH_OUT = { duration: 220 };
-/** Rows slide to their new place between refreshes; instant with reduce motion. */
-const ROW_REORDER = LinearTransition.duration(280).easing(Easing.bezier(0.77, 0, 0.175, 1)).reduceMotion(ReduceMotion.System);
-
-/**
- * One leaderboard row. When the rider's position changes between refreshes the
- * row slides to its new place (layout transition on the UI thread) and the
- * position flashes green (gained) or red (lost) for ~600 ms. The flash is a
- * colour change, so it stays on with reduce motion; the slide does not.
- */
-const LeaderRow = React.memo(function LeaderRow({
-  entry, index, isLive, colors, onOpen, isOwnRider,
-}: {
-  entry: PublicLeaderEntry;
-  index: number;
-  isLive: boolean;
-  colors: ReturnType<typeof useColors>;
-  onOpen?: (entry: PublicLeaderEntry) => void;
-  isOwnRider: boolean;
-}) {
-  const isDNF = !!entry.dnf;
-  const isDNS = !!entry.dns;
-  const pos   = isDNS ? "DNS" : isDNF ? "DNF" : entry.position != null ? `P${entry.position}` : `${index + 1}`;
-  const isP1  = entry.position === 1 && !isDNF && !isDNS;
-  const posColor = isP1 ? "#f59e0b" : colors.mutedForeground;
-  const canTapLaps = !!entry.riderId && !isDNS && !!onOpen;
-
-  // Flash: 0 = none, 1 = full. `gained` picks the colour.
-  const flash = useSharedValue(0);
-  const gained = useSharedValue(1);
-  const prevPos = useRef(entry.position);
-  useEffect(() => {
-    const before = prevPos.current;
-    prevPos.current = entry.position;
-    if (!isLive || before == null || entry.position == null || before === entry.position) return;
-    const up = entry.position < before;
-    gained.set(up ? 1 : 0);
-    flash.set(withSequence(withTiming(1, POS_FLASH_IN), withDelay(260, withTiming(0, POS_FLASH_OUT))));
-    if (isOwnRider) haptics.light();
-  }, [entry.position, isLive, isOwnRider]);
-  const flashStyle = useAnimatedStyle(() => ({
-    backgroundColor: gained.get() === 1
-      ? `rgba(34,197,94,${0.32 * flash.get()})`
-      : `rgba(239,68,68,${0.32 * flash.get()})`,
-  }));
-
-  return (
-    <Animated.View layout={ROW_REORDER}>
-      <Pressable
-        onPress={canTapLaps ? () => onOpen!(entry) : undefined}
-        accessibilityRole={canTapLaps ? "button" : undefined}
-        accessibilityLabel={`${pos}, ${entry.riderName}${entry.gap && entry.gap !== "Leader" ? `, ${entry.gap}` : ""}`}
-        style={({ pressed }) => ({
-          flexDirection: "row", alignItems: "center", gap: 14,
-          paddingHorizontal: 20, paddingVertical: 11,
-          borderBottomWidth: 1, borderBottomColor: colors.border + "55",
-          backgroundColor: pressed && canTapLaps ? colors.muted : "transparent",
-        })}
-      >
-        <Animated.View style={[{ width: 44, alignItems: "center", borderRadius: 8, paddingVertical: 2 }, flashStyle]}>
-          <Text style={{ fontVariant: ["tabular-nums"], fontSize: 16, fontWeight: "800", color: posColor, fontFamily: "Roboto_700Bold" }}>{pos}</Text>
-          {isLive && !isDNS && !isDNF && entry.laps > 0 && (
-            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
-              {entry.laps}L
-            </Text>
-          )}
-        </Animated.View>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontVariant: ["tabular-nums"], fontSize: 14, fontWeight: "500", color: canTapLaps ? colors.primaryText : colors.foreground, fontFamily: "Roboto_500Medium" }}>
-            {entry.riderName}
-          </Text>
-          {entry.bibNumber && (
-            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 }}>
-              #{entry.bibNumber}
-            </Text>
-          )}
-        </View>
-        <View style={{ alignItems: "flex-end", gap: 2 }}>
-          {entry.totalTime && !isDNS && (
-            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 13, fontWeight: "600", color: colors.foreground, fontFamily: "Roboto_600SemiBold" }}>
-              {entry.totalTime}
-            </Text>
-          )}
-          {entry.gap === "Leader" && !isDNS && !isDNF && (
-            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, color: "#f59e0b", fontFamily: "Roboto_600SemiBold" }}>Leader</Text>
-          )}
-          {entry.gap && entry.gap !== "Leader" && !isDNS && !isDNF && (
-            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>{entry.gap}</Text>
-          )}
-          {canTapLaps && (
-            <Feather name="chevron-right" size={11} color={colors.mutedForeground + "80"} />
-          )}
-        </View>
-      </Pressable>
-    </Animated.View>
-  );
-});
-
-/** Stable key for a leaderboard row across refreshes (rows move; index keys would not). */
-function leaderKey(entry: PublicLeaderEntry, i: number): string {
-  if (entry.riderId != null) return `r${entry.riderId}`;
-  if (entry.bibNumber) return `b${entry.bibNumber}`;
-  return `n${entry.riderName}-${i}`;
-}
-
 function PublicMotoSheet({
   moto,
   onClose,
@@ -802,11 +515,7 @@ function PublicMotoSheet({
                 {moto.raceClass}
               </Text>
             )}
-            {status === "completed" && detail && (
-              <Text style={{ fontVariant: ["tabular-nums"], fontSize: 12, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.6, marginTop: 4, color: (detail as any).resultsOfficial ? colors.success : colors.warning }}>
-                {(detail as any).resultsOfficial ? "✓ Official results" : "Unofficial results"}
-              </Text>
-            )}
+            {status === "completed" && detail && <ResultsStatusLabel official={official} />}
           </View>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingTop: 2 }}>
             <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: isLive ? colors.primary : chip.color + "22" }}>
@@ -845,44 +554,7 @@ function PublicMotoSheet({
                   </Text>
                 )}
               </View>
-              {lineupRows.length === 0 ? (
-                <View style={{ paddingVertical: 36, alignItems: "center", gap: 8 }}>
-                  <Feather name="clock" size={28} color={colors.mutedForeground} />
-                  <Text style={{ fontVariant: ["tabular-nums"], fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>Gate draw not posted yet</Text>
-                </View>
-              ) : (
-                lineupRows.map((entry, i) => (
-                  <View
-                    key={i}
-                    style={{
-                      flexDirection: "row", alignItems: "center", gap: 14,
-                      paddingHorizontal: 20, paddingVertical: 11,
-                      borderBottomWidth: 1, borderBottomColor: colors.border + "55",
-                    }}
-                  >
-                    <View style={{
-                      width: 44, height: 44, borderRadius: 10,
-                      backgroundColor: colors.muted,
-                      alignItems: "center", justifyContent: "center",
-                    }}>
-                      <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase" }}>Gate</Text>
-                      <Text style={{ fontVariant: ["tabular-nums"], fontSize: 15, fontWeight: "800", color: colors.foreground, fontFamily: "Roboto_700Bold", lineHeight: 17 }}>
-                        #{entry.gate}
-                      </Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontVariant: ["tabular-nums"], fontSize: 14, fontWeight: "500", color: colors.foreground, fontFamily: "Roboto_500Medium" }}>
-                        {entry.riderName}
-                      </Text>
-                      {entry.bibNumber && (
-                        <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 }}>
-                          #{entry.bibNumber}
-                        </Text>
-                      )}
-                    </View>
-                  </View>
-                ))
-              )}
+              <LineupList rows={lineupRows} colors={colors} />
             </>
           )}
 
@@ -897,11 +569,6 @@ function PublicMotoSheet({
                   {/* Official or unofficial is stated under the title; this just names the list. */}
                   {isLive ? "Live Leaderboard" : "Finishing order"}
                 </Text>
-                {isLive && (
-                  <Text style={{ fontVariant: ["tabular-nums"], marginLeft: "auto", fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
-                    Updates every 5s
-                  </Text>
-                )}
               </View>
 
               {(!detail || detail.leaderboard.length === 0) ? (
@@ -916,17 +583,7 @@ function PublicMotoSheet({
               ) : isLive && liveView === "fastest" ? (
                 <LiveFastestLapsView analytics={detail.analytics} colors={colors} />
               ) : (
-                detail.leaderboard.map((entry, i) => (
-                  <LeaderRow
-                    key={leaderKey(entry, i)}
-                    entry={entry}
-                    index={i}
-                    isLive={isLive}
-                    colors={colors}
-                    onOpen={openLeader}
-                    isOwnRider={entry.riderId != null && ownRiderIds.has(entry.riderId)}
-                  />
-                ))
+                <LiveLeaderboard entries={detail.leaderboard} isLive={isLive} onOpen={openLeader} ownRiderIds={ownRiderIds} />
               )}
               {detail && (!isLive || liveView === "timing") ? <SectorsCard detail={detail} colors={colors} /> : null}
             </>

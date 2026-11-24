@@ -12,6 +12,8 @@
  * site's generic preview, never the rider's name or photo.
  */
 
+import { eventPageState, type EventPageInput, type EventPageState } from "@workspace/api-zod";
+
 export const SITE_NAME = "RM Roost";
 export const GENERIC_DESCRIPTION = "RM Roost — live RM TrackR & RFID race timing, series points, and public results.";
 export const GENERIC_IMAGE_PATH = "/brand/og-image.png";
@@ -38,28 +40,30 @@ export const PHASE_LABEL: Record<EventPhase, string> = {
   results: "Results",
 };
 
-const day = (v: string | null | undefined) => (v ? String(v).slice(0, 10) : null);
+/** The share card's phase for a page state (@workspace/api-zod eventPageState, the page's own rule). */
+export function phaseForPageState(state: EventPageState): EventPhase {
+  switch (state) {
+    case "live":
+    case "race_day": return "live";
+    case "registration_open": return "register";
+    case "registration_closed": return "closed";
+    case "upcoming": return "upcoming";
+    default: return "results";
+  }
+}
 
 /**
- * The event's phase from its settled status (eventStatus.settleStatus) and the
- * track's local date. Null for drafts, which have no public page.
+ * The event's phase from its settled status (eventStatus.settleStatus), the
+ * track's local date and (optionally) its motos. Null for drafts, which have
+ * no public page.
  */
 export function eventPhase(
-  e: { status: string; date: string; endDate?: string | null; registrationClose?: string | null },
+  e: Omit<EventPageInput, "date"> & { date: string },
   localToday: string,
   now = new Date(),
 ): EventPhase | null {
-  if (e.status === "draft") return null;
-  if (e.status === "completed" || e.status === "results_published") return "results";
-  const start = day(e.date);
-  const last = day(e.endDate) ?? start;
-  if (e.status === "race_day" || (start && last && start <= localToday && localToday <= last)) return "live";
-  if (last && last < localToday) return "results";
-  if (e.status === "registration_open") {
-    return e.registrationClose && now >= new Date(e.registrationClose) ? "closed" : "register";
-  }
-  if (e.status === "registration_closed") return "closed";
-  return "upcoming";
+  const state = eventPageState(e, localToday, now);
+  return state ? phaseForPageState(state) : null;
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -153,7 +157,7 @@ export function eventMeta(
       ? `Registration is open for ${name}.`
       : phase === "results" ? `Results from ${name}.` : `${PHASE_LABEL[phase]}: ${name}.`;
   } else {
-    title = phase === "results" ? `${name} Results` : name;
+    title = phase === "results" ? `${name} Results` : phase === "live" ? `Live now: ${name}` : name;
     lead = phase === "results" ? `Results from ${name}.`
       : phase === "live" ? `${name} is racing today. Follow live timing and results.`
       : phase === "register" ? `Registration is open for ${name}.`
@@ -166,6 +170,58 @@ export function eventMeta(
     image: `${origin}/api/public/og/event/${e.id}.png?v=${phase}`,
     imageAlt: cleanText(`${name}${when ? `, ${when}` : ""}${where ? `, ${where}` : ""} — ${PHASE_LABEL[phase]} on RM Roost`, 300),
     url: `${origin}${pagePath}`,
+    type: "website",
+  };
+}
+
+/** One rider's result at an event, for a per-rider share link. Only for public profiles. */
+export type ShareResult = {
+  riderId: number;
+  name: string;
+  number: string | null;
+  plateColor?: string | null;
+  raceClass: string | null;
+  /** Class overall position, else the best race finish; null when the rider only has DNF/DNS. */
+  position: number | null;
+  /** Set when position is null. */
+  status?: "dnf" | "dns" | null;
+  /** Every finished race of the rider's at this event is finalized. */
+  official: boolean;
+};
+
+/** "P1", or "DNF"/"DNS" when the rider has no finishing position. */
+export function resultLabel(r: Pick<ShareResult, "position" | "status">): string {
+  if (r.position != null && r.position > 0) return `P${r.position}`;
+  return r.status === "dns" ? "DNS" : "DNF";
+}
+
+/** The shared link for one rider's result: /results/:eventId?rider=:riderId. */
+export function riderResultPath(eventId: number, riderId: number): string {
+  return `/results/${eventId}?rider=${riderId}`;
+}
+
+/** Only call for a public profile (see the privacy note at the top). */
+export function riderResultMeta(e: ShareEvent, r: ShareResult, origin: string): ShareMeta {
+  const event = cleanText(e.name, 120) || "Race";
+  const name = cleanText(r.name, 80) || "Racer";
+  const cls = cleanText(r.raceClass, 40);
+  const label = resultLabel(r);
+  const when = formatEventDates(e.date, e.endDate);
+  const where = placeLine(e);
+  const title = [`${name} ${label}`, cls, event].filter(Boolean).join(" · ");
+  const lead = r.position != null && r.position > 0
+    ? `${name} finished ${label}${cls ? ` in ${cls}` : ""} at ${event}.`
+    : `${name} raced${cls ? ` ${cls}` : ""} at ${event}.`;
+  const description = cleanText(
+    `${lead}${r.official ? "" : " Unofficial results."}${[when, where].filter(Boolean).length ? ` ${[when, where].filter(Boolean).join(" · ")}.` : ""}`,
+    300,
+  );
+  return {
+    title: cleanText(title, 140),
+    description,
+    image: `${origin}/api/public/og/result/${e.id}/${r.riderId}.png?v=${label}-${r.official ? "o" : "u"}`,
+    imageAlt: cleanText(`${name}, ${label}${cls ? ` in ${cls}` : ""} at ${event}${when ? `, ${when}` : ""} — RM Roost`, 300),
+    url: `${origin}${riderResultPath(e.id, r.riderId)}`,
     type: "website",
   };
 }

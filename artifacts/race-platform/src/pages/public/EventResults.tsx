@@ -1,7 +1,9 @@
 import { eventTimingTags, timingTagsLabel } from "@/components/organizer/timingTags";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { OfficialResultsBadge } from "@/components/OfficialResultsBadge";
-import { useParams, Link } from "wouter";
+import { useParams, Link, useSearch } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import { eventPageState, eventToday, isLivePageState, type EventPageState } from "@workspace/api-zod";
 import {
   useGetEvent, useListResults, useListMotos, useGetEnduroPenaltySummary, RaceResult, Moto,
 } from "@workspace/api-client-react";
@@ -12,10 +14,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   Calendar, MapPin, Trophy, Flag, ChevronLeft, ChevronRight,
   Clock, Award, Radio, CheckCircle, AlertCircle, Activity,
-  ChevronDown, ChevronUp, Users, Timer, Zap, ZoomIn, X as XIcon,
+  ChevronDown, ChevronUp, Users, Timer, Zap, ZoomIn, X as XIcon, Share2,
 } from "lucide-react";
-import { format, parseISO } from "date-fns";
-import { formatEventDatesFull, isEventOnLocalDate } from "@/lib/eventDates";
+import { formatEventDatesFull } from "@/lib/eventDates";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -23,8 +24,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { LiveRaceViews, useLiveRaceStream } from "./LiveLeaderboard";
 import { SectorTimes, type SectorEntry } from "@/components/SectorTimes";
+import { useToast } from "@/hooks/use-toast";
+import { usePublicOrigin } from "@/lib/publicOrigin";
+import { riderFromSearch, riderResultUrl, shareLink } from "@/lib/shareLink";
+
+// Race day only: live timing, video and announcer download when the event is racing.
+const EventLiveSection = lazy(() => import("@/components/event-live/EventLiveSection"));
 import { EnduroOverallTable, useEnduroOverall, type EnduroOverallData } from "@/components/organizer/OverallStandings";
 import { UpcomingEventView, usePublicEventInfo } from "@/components/UpcomingEventView";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
@@ -139,14 +145,19 @@ function LapTimesModal({
 }
 
 // ─── ResultTable ──────────────────────────────────────────────────────────────
+/** Per-row share: only riders in `riderIds` (public profiles, from the server) get the action. */
+type RowShare = { riderIds: Set<number>; onShare: (result: RaceResult) => void; highlightRiderId: number | null };
+
 function ResultTable({
   results,
   onRiderClick,
   penaltyMap,
+  share,
 }: {
   results: RaceResult[];
   onRiderClick?: (result: RaceResult) => void;
   penaltyMap?: Record<number, { totalPenaltySeconds: number; disqualified: boolean }>;
+  share?: RowShare;
 }) {
   const clickable = !!onRiderClick;
   const hasPenalties = !!penaltyMap && Object.keys(penaltyMap).length > 0;
@@ -174,10 +185,16 @@ function ResultTable({
         <TableBody>
           {results.map(result => {
             const pen = penaltyMap?.[result.riderId];
+            const highlighted = share?.highlightRiderId === result.riderId;
+            const canShare = !!share?.riderIds.has(result.riderId);
             return (
               <TableRow
                 key={result.id}
-                className={`transition-colors ${clickable ? "cursor-pointer hover:bg-primary/5" : "hover:bg-muted/50"}`}
+                data-result-rider={result.riderId}
+                data-highlighted={highlighted || undefined}
+                className={`transition-colors ${
+                  highlighted ? "bg-amber-50 shadow-[inset_4px_0_0_#B30000] hover:bg-amber-100/70 dark:bg-amber-950/30" : clickable ? "cursor-pointer hover:bg-primary/5" : "hover:bg-muted/50"
+                } ${clickable ? "cursor-pointer" : ""}`}
                 onClick={() => onRiderClick?.(result)}
               >
                 <TableCell className="text-center font-heading font-bold text-xl">
@@ -198,9 +215,20 @@ function ResultTable({
                 </TableCell>
                 <TableCell className="font-bold text-lg">
                   <span className="flex items-center gap-2">
-                    {result.riderName}
+                    <span className="min-w-0">{result.riderName}</span>
                     {clickable && (
-                      <Timer size={13} className="text-muted-foreground/50 shrink-0" />
+                      <Timer size={13} className="text-muted-foreground/50 shrink-0" aria-hidden />
+                    )}
+                    {canShare && (
+                      <button
+                        type="button"
+                        onClick={e => { e.stopPropagation(); share!.onShare(result); }}
+                        aria-label={`Share ${result.riderName}'s result`}
+                        className="ml-auto inline-flex min-h-10 min-w-10 shrink-0 items-center justify-center gap-1.5 rounded-full border border-border bg-background px-2.5 text-xs font-heading font-bold uppercase tracking-wider text-foreground hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      >
+                        <Share2 size={14} aria-hidden />
+                        <span className="hidden sm:inline">Share</span>
+                      </button>
                     )}
                   </span>
                 </TableCell>
@@ -414,27 +442,39 @@ export default function EventResults() {
   const params = useParams();
   const eventId = parseInt(params.eventId || "0");
 
-  const isLiveDay = (date: string, endDate: string | null | undefined, status: string) =>
-    isEventOnLocalDate(date, endDate) || status === "race_day";
-
   const { data: event, isLoading: eventLoading } = useGetEvent(eventId, { query: { enabled: !!eventId } as any });
-
-  const liveMode = !!(event && isLiveDay(event.date, (event as any).endDate, event.status));
   const isEnduroEvent = (event as any)?.raceStyle === "enduro";
 
+  // Race day polls for new results and the running race; the page state is
+  // decided below, after the motos load, so the poll reads it from a ref.
+  const liveRef = useRef(false);
+  const livePoll = () => (liveRef.current ? 15_000 : false);
+
   const { data: allResults, isLoading: resultsLoading } = useListResults(eventId, {
-    query: {
-      enabled: !!eventId,
-      refetchInterval: liveMode ? 15_000 : false,
-    } as any,
+    query: { enabled: !!eventId, refetchInterval: livePoll } as any,
   });
 
   const { data: motos, isLoading: motosLoading } = useListMotos(eventId, {
-    query: {
-      enabled: !!eventId,
-      refetchInterval: liveMode ? 15_000 : false,
-    } as any,
+    query: { enabled: !!eventId, refetchInterval: livePoll } as any,
   });
+
+  // Practice isn't scored: it doesn't appear as results or count as racers.
+  const results = allResults?.filter(r => r.motoType !== "practice");
+
+  // What this page is right now (upcoming … live … official): the same rule as
+  // the server's link preview (@workspace/api-zod eventPageState).
+  const pageState: EventPageState | null = event
+    ? eventPageState({
+        status: event.status,
+        date: event.date,
+        endDate: (event as any).endDate ?? null,
+        registrationClose: (event as any).registrationClose ?? null,
+        motos: motos ?? [],
+        results: results ? { count: results.length, official: results.every(r => (r as any).official) } : null,
+      }, eventToday(event as any))
+    : null;
+  const liveMode = isLivePageState(pageState);
+  liveRef.current = liveMode;
 
   const { data: enduroOverall } = useEnduroOverall(eventId, isEnduroEvent, liveMode ? 15_000 : false);
 
@@ -471,25 +511,16 @@ export default function EventResults() {
     return () => clearInterval(id);
   }, [eventId]);
 
-  // Practice isn't scored: it doesn't appear as results or count as racers.
-  const results = allResults?.filter(r => r.motoType !== "practice");
   // A class's races, one table per race (by id: two races may share a name), in running order.
   const racesIn = (rows: RaceResult[]) => {
     const order = (id: number) => motos?.find(m => m.id === id)?.motoNumber ?? id;
     return Array.from(new Set(rows.map(r => r.motoId))).sort((a, b) => order(a) - order(b));
   };
-  // Enduro tests run for all classes at once ("All Classes"), so they belong to every class tab.
-  const motoForClass = (m: Moto, cls: string) => m.raceClass === cls || m.type === "enduro_test";
-
-  const activeMoto = motos?.find(m => m.status === "in_progress");
-  const liveRace = useLiveRaceStream(activeMoto?.id);
 
   if (event && !activeClass && event.raceClasses && event.raceClasses.length > 0) {
     setActiveClass(event.raceClasses[0]);
   }
 
-  const classResults = results?.filter(r => r.raceClass === activeClass) || [];
-  const motosByClass = racesIn(classResults);
 
   // Group motos by class for schedule view — exclude practice sessions
   const raceMotosList = (motos ?? []).filter(m => m.type !== "practice");
@@ -500,13 +531,63 @@ export default function EventResults() {
     return acc;
   }, {});
 
-  const activeClassMoto = motos?.find(m => m.status === "in_progress" && motoForClass(m, activeClass));
-
   // Before any results: the event's details and Register instead of empty result tabs.
-  const showUpcoming = !!event && !liveMode && !resultsLoading && (results ?? []).length === 0
-    && !["completed", "results_published"].includes(event.status);
+  const showUpcoming = !!event && !resultsLoading && (results ?? []).length === 0
+    && (pageState === "upcoming" || pageState === "registration_open" || pageState === "registration_closed");
   const { data: publicInfo } = usePublicEventInfo(showUpcoming ? eventId : 0);
-  useDocumentTitle(event?.name ?? null);
+
+  // ── Per-rider sharing (public profiles only; the server decides who) ──
+  const { toast } = useToast();
+  const origin = usePublicOrigin();
+  const hasResults = (results ?? []).length > 0;
+  const { data: shareInfo } = useQuery({
+    queryKey: ["share-riders", eventId],
+    enabled: eventId > 0 && hasResults,
+    staleTime: 60_000,
+    queryFn: async (): Promise<{ riderIds?: unknown }> => {
+      const r = await fetch(`/api/public/events/${eventId}/share-riders`);
+      return r.ok ? r.json() : { riderIds: [] };
+    },
+  });
+  const shareRiderIds = new Set<number>(
+    Array.isArray(shareInfo?.riderIds) ? (shareInfo!.riderIds as unknown[]).filter((n): n is number => typeof n === "number") : [],
+  );
+  const shareResult = async (r: RaceResult) => {
+    if (!event) return;
+    const url = riderResultUrl(origin, eventId, r.riderId);
+    const outcome = await shareLink({
+      title: `${r.riderName} · ${event.name}`,
+      text: `${r.riderName}'s result at ${event.name} on RM Roost`,
+      url,
+    });
+    if (outcome === "copied") toast({ title: "Link copied", description: `Paste it anywhere to share ${r.riderName}'s result.` });
+    // Nothing could copy it: show the link so it can be copied by hand.
+    else if (outcome === "failed") toast({ title: "Copy this link", description: url });
+  };
+
+  // ── ?rider= : open that rider's class and bring their row into view ──
+  const search = useSearch();
+  const focusRiderId = riderFromSearch(search);
+  const focusedRef = useRef<number | null>(null);
+  const focusResult = focusRiderId
+    ? [...(results ?? [])].filter(r => r.riderId === focusRiderId).sort((a, b) => (a.position ?? 9999) - (b.position ?? 9999))[0]
+    : undefined;
+  useEffect(() => {
+    if (!focusResult || focusedRef.current === focusRiderId) return;
+    if (focusResult.raceClass && focusResult.raceClass !== activeClass) { setActiveClass(focusResult.raceClass); return; }
+    focusedRef.current = focusRiderId;
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-result-rider="${focusRiderId}"]`)?.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
+    });
+  }, [focusResult, focusRiderId, activeClass]);
+  const rowShare: RowShare = { riderIds: shareRiderIds, onShare: shareResult, highlightRiderId: focusResult ? focusRiderId : null };
+  // Tab title: "Live now" on race day; a shared link to a public profile's result
+  // names the rider, like its link preview (private and under-18 riders don't).
+  const titledRider = focusResult && focusRiderId && shareRiderIds.has(focusRiderId) ? focusResult.riderName : null;
+  useDocumentTitle(event?.name
+    ? liveMode ? `Live now: ${event.name}` : titledRider ? `${titledRider} · ${event.name}` : event.name
+    : null);
 
   if (eventLoading || resultsLoading) {
     return <div className="container mx-auto px-4 py-8 h-screen flex items-center justify-center">Loading…</div>;
@@ -518,8 +599,8 @@ export default function EventResults() {
   return (
     <div className="bg-muted/30 min-h-[calc(100vh-64px)] pb-12">
 
-      {/* Watch Live banner — shown prominently at very top when streaming */}
-      {isStreaming && (
+      {/* Watch Live banner when streaming outside race day (on race day the video is in the live section) */}
+      {isStreaming && !liveMode && (
         <div className="bg-red-600 text-white py-3 px-4">
           <div className="container mx-auto flex items-center justify-between gap-4">
             <span className="flex items-center gap-2 font-heading font-bold uppercase tracking-wider text-sm">
@@ -557,10 +638,10 @@ export default function EventResults() {
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
                     </span>
-                    Race Day
+                    {pageState === "live" ? "Live now" : "Race Day"}
                   </Badge>
                 )}
-                {event.status === "completed" && (
+                {event.status === "completed" && !liveMode && (
                   <Badge variant="outline" className="bg-secondary/20 text-white border-secondary/50 font-heading uppercase tracking-wider px-3 py-1 text-sm flex items-center gap-1.5">
                     <Flag size={14} /> Event Complete
                   </Badge>
@@ -636,9 +717,9 @@ export default function EventResults() {
             </div>
 
             <div className="flex flex-col items-start md:items-end gap-3">
-              {!isStreaming && liveMode && (
-                <div className="text-sidebar-foreground/60 text-xs font-heading uppercase tracking-wider flex items-center gap-1.5">
-                  <Activity size={13} /> Live standings update every 15s
+              {liveMode && (
+                <div className="text-sidebar-foreground/60 text-xs font-heading uppercase tracking-wider hidden md:flex items-center gap-1.5">
+                  <Activity size={13} aria-hidden /> Results update every 15s
                 </div>
               )}
               {showUpcoming ? (
@@ -649,7 +730,7 @@ export default function EventResults() {
                   </div>
                 )
               ) : (
-                <div className="bg-sidebar-accent/50 rounded-lg p-4 border border-sidebar-border backdrop-blur-sm min-w-40 text-center">
+                <div className={`bg-sidebar-accent/50 rounded-lg p-4 border border-sidebar-border backdrop-blur-sm min-w-40 text-center ${liveMode ? "hidden md:block" : ""}`}>
                   <div className="text-sidebar-foreground/60 text-xs font-bold uppercase tracking-widest mb-1">Total Racers</div>
                   <div className="text-4xl font-heading font-bold text-white">
                     {new Set(results?.map(r => r.riderId)).size || 0}
@@ -662,263 +743,122 @@ export default function EventResults() {
       </div>
 
       <div className="container mx-auto px-4 -mt-4">
-        {liveMode ? (
-          /* LIVE MODE: schedule + standings tabs */
-          <Tabs defaultValue="standings" className="w-full">
-            <div className="bg-card rounded-t-lg border-x border-t p-2 overflow-x-auto hide-scrollbar">
-              <TabsList className="inline-flex h-auto w-auto p-1 bg-[#F2F2F2] rounded-full">
-                <TabsTrigger value="standings" className="font-heading uppercase text-base px-6 py-3 rounded-full data-[state=active]:bg-[#242424] data-[state=active]:text-white transition-all whitespace-nowrap">
-                  <Activity size={15} className="mr-2" /> Live Standings
-                </TabsTrigger>
-                <TabsTrigger value="schedule" className="font-heading uppercase text-base px-6 py-3 rounded-full data-[state=active]:bg-[#242424] data-[state=active]:text-white transition-all whitespace-nowrap">
-                  <Clock size={15} className="mr-2" /> Race Schedule
-                  {activeMoto && (
-                    <span className="ml-2 flex h-2 w-2 relative">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
-                    </span>
-                  )}
-                </TabsTrigger>
-              </TabsList>
+        {liveMode && (
+          /* RACE DAY: live timing, video, announcer and race order first, results so far below */
+          <>
+            <div className="mb-10">
+              <Suspense fallback={<div className="h-72 rounded-[14px] bg-sidebar animate-pulse motion-reduce:animate-none" aria-busy="true" aria-label="Loading live timing" />}>
+                <EventLiveSection eventId={eventId} motos={motos ?? []} isStreaming={isStreaming} />
+              </Suspense>
             </div>
-
-            {/* Live Standings tab */}
-            <TabsContent value="standings" className="m-0 bg-card border rounded-b-lg shadow-sm">
-              {activeMoto && (
-                <div className="h-[32rem] max-h-[70vh] overflow-hidden border-b bg-sidebar">
-                  <LiveRaceViews {...liveRace} />
-                </div>
-              )}
-              <div className="p-6 md:p-8">
-                {event.raceClasses && event.raceClasses.length > 0 ? (
-                  <>
-                    {/* Class selector */}
-                    <div className="flex flex-wrap gap-2 mb-6">
-                      {event.raceClasses.map(cls => (
-                        <button
-                          key={cls}
-                          onClick={() => setActiveClass(cls)}
-                          className={`px-4 py-2 rounded-md font-heading font-bold uppercase tracking-wider text-sm transition-all ${
-                            activeClass === cls
-                              ? "bg-primary text-primary-foreground shadow"
-                              : "bg-muted text-muted-foreground hover:text-foreground"
-                          }`}
-                        >
-                          {cls}
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-                      <h2 className="text-2xl font-heading font-bold uppercase flex items-center gap-3">
-                        <Trophy className="text-primary" /> {activeClass}
-                      </h2>
-                    </div>
-
-                    {isEnduroEvent && <EnduroOverallSection data={enduroOverall} raceClass={activeClass} />}
-                    {classResults.length === 0 ? (
-                      activeClassMoto ? (
-                        <div className="text-center py-16 bg-red-50/40 dark:bg-red-950/20 rounded-lg border border-red-300/40 border-dashed">
-                          <div className="flex items-center justify-center gap-2 mb-4">
-                            <span className="relative flex h-3 w-3">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
-                              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
-                            </span>
-                            <span className="text-red-500 font-heading font-bold uppercase tracking-wider text-sm">Moto In Progress</span>
-                          </div>
-                          <h3 className="text-xl font-heading font-bold mb-2">{activeClassMoto.name}</h3>
-                          <p className="text-muted-foreground">Standings will appear here as results are entered. Page refreshes automatically every 15s.</p>
-                        </div>
-                      ) : (
-                        <div className="text-center py-16 bg-muted/30 rounded-lg border border-dashed">
-                          <Activity className="mx-auto text-muted-foreground opacity-30 mb-4" size={48} />
-                          <h3 className="text-xl font-heading font-bold mb-2">Standing By</h3>
-                          <p className="text-muted-foreground">Standings will appear here once a moto is underway.</p>
-                        </div>
-                      )
-                    ) : (
-                      <div className="space-y-12">
-                        {motosByClass.length > 0 ? (
-                          motosByClass.map(motoId => {
-                            const motoResults = classResults
-                              .filter(r => r.motoId === motoId)
-                              .sort((a, b) => a.position - b.position);
-                            const matchingMoto = motos?.find(m => m.id === motoId);
-                            const motoName = matchingMoto?.name ?? motoResults[0]?.motoName ?? "Race";
-                            const isComplete = matchingMoto?.status === "completed";
-                            return (
-                              <div key={motoId} className="space-y-4">
-                                <div className="flex items-center gap-3">
-                                  <h3 className="text-xl font-heading font-bold uppercase px-2 py-1 bg-muted inline-block rounded">{motoName}</h3>
-                                  {isComplete && <OfficialResultsBadge official={motoResults.every(r => (r as any).official)} />}
-                                  {isComplete && (
-                                    <Badge className="bg-green-600/90 hover:bg-green-600/90 text-white border-0 font-heading uppercase tracking-wider px-3 py-1 text-xs flex items-center gap-1.5">
-                                      <CheckCircle size={13} /> Race Complete
-                                    </Badge>
-                                  )}
-                                </div>
-                                <ResultTable
-                                  results={motoResults}
-                                  onRiderClick={isComplete ? setSelectedResult : undefined}
-                                  penaltyMap={penaltyMap}
-                                />
-                              </div>
-                            );
-                          })
-                        ) : (
-                          <ResultTable results={classResults.sort((a, b) => a.position - b.position)} onRiderClick={setSelectedResult} penaltyMap={penaltyMap} />
-                        )}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="text-center py-16 text-muted-foreground">
-                    No race classes defined for this event yet.
-                  </div>
-                )}
-              </div>
-            </TabsContent>
-
-            {/* Schedule tab */}
-            <TabsContent value="schedule" className="m-0 bg-card border rounded-b-lg shadow-sm">
-              <div className="p-6 md:p-8">
-                <h2 className="text-2xl font-heading font-bold uppercase mb-6 flex items-center gap-3">
-                  <Clock className="text-primary" /> Race Schedule
-                </h2>
-
-                {motosLoading ? (
-                  <div className="space-y-3">
-                    {[...Array(4)].map((_, i) => <div key={i} className="h-14 bg-muted rounded-md animate-pulse" />)}
-                  </div>
-                ) : raceMotosList.length === 0 ? (
-                  <div className="text-center py-16 bg-muted/30 rounded-lg border border-dashed">
-                    <Clock className="mx-auto text-muted-foreground opacity-30 mb-4" size={48} />
-                    <h3 className="text-xl font-heading font-bold mb-2">Schedule Not Available</h3>
-                    <p className="text-muted-foreground">The moto schedule will appear here once lineups are generated.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-8">
-                    {Object.entries(motosByRaceClass).map(([cls, clsMotos]) => (
-                      <div key={cls}>
-                        <h3 className="text-base font-heading font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
-                          <Trophy size={15} /> {cls}
-                        </h3>
-                        <div className="space-y-2">
-                          {clsMotos
-                            .sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0))
-                            .map(moto => (
-                              <MotoScheduleRow
-                                key={moto.id}
-                                moto={moto}
-                                results={results}
-                                onRiderClick={setSelectedResult}
-                              />
-                            ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </TabsContent>
-          </Tabs>
-        ) : showUpcoming ? (
+            <h2 className="mb-4 flex items-center gap-3 text-2xl font-heading font-bold uppercase">
+              <Trophy className="text-primary" aria-hidden /> Results so far
+            </h2>
+          </>
+        )}
+        {showUpcoming ? (
           /* BEFORE RACE DAY: details, classes and fees, Register */
           <div className="pt-8">
             <UpcomingEventView eventId={eventId} motos={motos} classStartTimes={(event as any).classStartTimes} />
           </div>
-        ) : (
-          /* RESULTS MODE (completed / upcoming non-live) */
-          (event.raceClasses && event.raceClasses.length > 0) || raceMotosList.length > 0 ? (
-            // Radix builds the tab/panel ids from the value, so class names with spaces
-            // ("250 B") broke aria-controls. Tab values are index slugs instead.
-            <Tabs
-              value={activeClass === "__schedule__" ? activeClass : `class-${(event.raceClasses ?? []).indexOf(activeClass)}`}
-              onValueChange={v => setActiveClass(v.startsWith("class-") ? (event.raceClasses ?? [])[Number(v.slice(6))] ?? "" : v)}
-              className="w-full"
-            >
-              <div className="bg-card rounded-t-lg border-x border-t p-2 overflow-x-auto hide-scrollbar">
-                <TabsList className="inline-flex h-auto w-auto p-1 bg-[#F2F2F2] rounded-full">
-                  {(event.raceClasses ?? []).map((cls, i) => (
-                    <TabsTrigger
-                      key={cls}
-                      value={`class-${i}`}
-                      className="font-heading uppercase text-base px-6 py-3 rounded-full data-[state=active]:bg-[#242424] data-[state=active]:text-white transition-all whitespace-nowrap"
-                    >
-                      {cls}
-                    </TabsTrigger>
-                  ))}
-                  {raceMotosList.length > 0 && (
-                    <TabsTrigger
-                      value="__schedule__"
-                      className="font-heading uppercase text-base px-6 py-3 rounded-full data-[state=active]:bg-[#242424] data-[state=active]:text-white transition-all whitespace-nowrap"
-                    >
-                      <Clock size={14} className="mr-2" /> Race Schedule
-                    </TabsTrigger>
-                  )}
-                </TabsList>
-              </div>
+        ) : (event.raceClasses && event.raceClasses.length > 0) || (!liveMode && raceMotosList.length > 0) ? (
+          /* RESULTS: one tab per class (+ the schedule after race day; on race day it's in the live section).
+             Radix builds the tab/panel ids from the value, so class names with spaces
+             ("250 B") broke aria-controls. Tab values are index slugs instead. */
+          <Tabs
+            value={activeClass === "__schedule__" && !liveMode ? activeClass : `class-${(event.raceClasses ?? []).indexOf(activeClass)}`}
+            onValueChange={v => setActiveClass(v.startsWith("class-") ? (event.raceClasses ?? [])[Number(v.slice(6))] ?? "" : v)}
+            className="w-full"
+          >
+            <div className="bg-card rounded-t-lg border-x border-t p-2 overflow-x-auto hide-scrollbar">
+              <TabsList className="inline-flex h-auto w-auto p-1 bg-[#F2F2F2] rounded-full">
+                {(event.raceClasses ?? []).map((cls, i) => (
+                  <TabsTrigger
+                    key={cls}
+                    value={`class-${i}`}
+                    className="font-heading uppercase text-base px-6 py-3 rounded-full data-[state=active]:bg-[#242424] data-[state=active]:text-white transition-all whitespace-nowrap"
+                  >
+                    {cls}
+                  </TabsTrigger>
+                ))}
+                {!liveMode && raceMotosList.length > 0 && (
+                  <TabsTrigger
+                    value="__schedule__"
+                    className="font-heading uppercase text-base px-6 py-3 rounded-full data-[state=active]:bg-[#242424] data-[state=active]:text-white transition-all whitespace-nowrap"
+                  >
+                    <Clock size={14} className="mr-2" /> Race Schedule
+                  </TabsTrigger>
+                )}
+              </TabsList>
+            </div>
 
-              {/* One TabsContent per race class */}
-              {(event.raceClasses ?? []).map((cls, i) => {
-                const clsResults = results?.filter(r => r.raceClass === cls) || [];
-                const clsMotoIds = racesIn(clsResults);
-                return (
-                  <TabsContent key={cls} value={`class-${i}`} className="m-0 bg-card border rounded-b-lg shadow-sm">
-                    <div className="p-6 md:p-8">
-                      <div className="flex items-center justify-between mb-8">
-                        <h2 className="text-2xl font-heading font-bold uppercase flex items-center gap-3">
-                          <Trophy className="text-primary" /> {cls} Results
-                        </h2>
-                      </div>
-                      {isEnduroEvent && <EnduroOverallSection data={enduroOverall} raceClass={cls} />}
-                      {clsResults.length === 0 ? (
-                        <div className="text-center py-16 bg-muted/30 rounded-lg border border-dashed">
-                          <Flag className="mx-auto text-muted-foreground opacity-30 mb-4" size={48} />
-                          <h3 className="text-xl font-heading font-bold mb-2">No Results Available</h3>
-                          <p className="text-muted-foreground">Results for this class have not been published yet.</p>
-                        </div>
-                      ) : (
-                        <div className="space-y-12">
-                          {clsMotoIds.length > 0 ? (
-                            clsMotoIds.map(motoId => {
-                              const motoResults = clsResults
-                                .filter(r => r.motoId === motoId)
-                                .sort((a, b) => a.position - b.position);
-                              const motoName = motos?.find(m => m.id === motoId)?.name ?? motoResults[0]?.motoName ?? "Race";
-                              return (
-                                <div key={motoId} className="space-y-4">
-                                  <div className="flex items-center gap-3 flex-wrap">
-                                    <h3 className="text-xl font-heading font-bold uppercase px-2 py-1 bg-muted inline-block rounded">{motoName}</h3>
-                                    <OfficialResultsBadge official={motoResults.every(r => (r as any).official)} />
-                                  </div>
-                                  <ResultTable results={motoResults} onRiderClick={setSelectedResult} penaltyMap={penaltyMap} />
-                                </div>
-                              );
-                            })
-                          ) : (
-                            <ResultTable results={clsResults.sort((a, b) => a.position - b.position)} onRiderClick={setSelectedResult} penaltyMap={penaltyMap} />
-                          )}
-                        </div>
-                      )}
+            {/* One TabsContent per race class */}
+            {(event.raceClasses ?? []).map((cls, i) => {
+              const clsResults = results?.filter(r => r.raceClass === cls) || [];
+              const clsMotoIds = racesIn(clsResults);
+              return (
+                <TabsContent key={cls} value={`class-${i}`} className="m-0 bg-card border rounded-b-lg shadow-sm">
+                  <div className="p-4 sm:p-6 md:p-8">
+                    <div className="flex items-center justify-between mb-8">
+                      <h3 className="text-2xl font-heading font-bold uppercase flex items-center gap-3">
+                        <Trophy className="text-primary" aria-hidden /> {cls} Results
+                      </h3>
                     </div>
-                  </TabsContent>
-                );
-              })}
+                    {isEnduroEvent && <EnduroOverallSection data={enduroOverall} raceClass={cls} />}
+                    {clsResults.length === 0 ? (
+                      <div className="text-center py-16 bg-muted/30 rounded-lg border border-dashed">
+                        <Flag className="mx-auto text-muted-foreground opacity-30 mb-4" size={48} aria-hidden />
+                        <h4 className="text-xl font-heading font-bold mb-2">{liveMode ? "No finished races yet" : "No Results Available"}</h4>
+                        <p className="text-muted-foreground px-4">
+                          {liveMode ? "Each race's results show here as soon as it finishes." : "Results for this class have not been published yet."}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-12">
+                        {clsMotoIds.length > 0 ? (
+                          clsMotoIds.map(motoId => {
+                            const motoResults = clsResults
+                              .filter(r => r.motoId === motoId)
+                              .sort((a, b) => a.position - b.position);
+                            const motoName = motos?.find(m => m.id === motoId)?.name ?? motoResults[0]?.motoName ?? "Race";
+                            return (
+                              <div key={motoId} className="space-y-4">
+                                <div className="flex items-center gap-3 flex-wrap">
+                                  <h4 className="text-xl font-heading font-bold uppercase px-2 py-1 bg-muted inline-block rounded">{motoName}</h4>
+                                  <OfficialResultsBadge official={motoResults.every(r => (r as any).official)} />
+                                </div>
+                                <ResultTable results={motoResults} onRiderClick={setSelectedResult} penaltyMap={penaltyMap} share={rowShare} />
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <ResultTable results={clsResults.sort((a, b) => a.position - b.position)} onRiderClick={setSelectedResult} penaltyMap={penaltyMap} share={rowShare} />
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </TabsContent>
+              );
+            })}
 
-              {/* Race Schedule tab */}
-              {raceMotosList.length > 0 && (
-                <TabsContent value="__schedule__" className="m-0 bg-card border rounded-b-lg shadow-sm">
-                  <div className="p-6 md:p-8">
-                    <h2 className="text-2xl font-heading font-bold uppercase mb-6 flex items-center gap-3">
-                      <Clock className="text-primary" /> Race Schedule
-                    </h2>
+            {/* Race Schedule tab */}
+            {!liveMode && raceMotosList.length > 0 && (
+              <TabsContent value="__schedule__" className="m-0 bg-card border rounded-b-lg shadow-sm">
+                <div className="p-4 sm:p-6 md:p-8">
+                  <h3 className="text-2xl font-heading font-bold uppercase mb-6 flex items-center gap-3">
+                    <Clock className="text-primary" aria-hidden /> Race Schedule
+                  </h3>
+                  {motosLoading ? (
+                    <div className="space-y-3">
+                      {[...Array(4)].map((_, i) => <div key={i} className="h-14 bg-muted rounded-md animate-pulse" />)}
+                    </div>
+                  ) : (
                     <div className="space-y-8">
                       {Object.entries(motosByRaceClass).map(([cls, clsMotos]) => (
                         <div key={cls}>
-                          <h3 className="text-base font-heading font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
-                            <Trophy size={15} /> {cls}
-                          </h3>
+                          <h4 className="text-base font-heading font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
+                            <Trophy size={15} aria-hidden /> {cls}
+                          </h4>
                           <div className="space-y-2">
                             {clsMotos
                               .sort((a, b) => (a.motoNumber ?? 0) - (b.motoNumber ?? 0))
@@ -934,29 +874,29 @@ export default function EventResults() {
                         </div>
                       ))}
                     </div>
-                  </div>
-                </TabsContent>
+                  )}
+                </div>
+              </TabsContent>
+            )}
+          </Tabs>
+        ) : (
+          /* No classes or motos yet */
+          <Card>
+            <CardContent className="p-8 sm:p-12 text-center space-y-4">
+              <Calendar className="mx-auto text-primary/50" size={48} aria-hidden />
+              <h3 className="text-2xl font-heading font-bold uppercase">
+                {liveMode ? "Racing today" : event.status === "registration_open" ? "Registration Is Open" : "Event Coming Soon"}
+              </h3>
+              <p className="text-muted-foreground max-w-md mx-auto">
+                {liveMode ? "Each race's results show here as soon as it finishes." : "Race classes and results will appear here once the event is underway."}
+              </p>
+              {!liveMode && event.status === "registration_open" && (
+                <Link href={`/register/${eventId}`}>
+                  <Button className="font-heading uppercase tracking-wider mt-2">Register Now</Button>
+                </Link>
               )}
-            </Tabs>
-          ) : (
-            /* Upcoming event — no classes or motos yet */
-            <Card>
-              <CardContent className="p-12 text-center space-y-4">
-                <Calendar className="mx-auto text-primary/50" size={48} />
-                <h3 className="text-2xl font-heading font-bold uppercase">
-                  {event.status === "registration_open" ? "Registration Is Open" : "Event Coming Soon"}
-                </h3>
-                <p className="text-muted-foreground max-w-md mx-auto">
-                  Race classes and results will appear here once the event is underway.
-                </p>
-                {event.status === "registration_open" && (
-                  <Link href={`/register/${eventId}`}>
-                    <Button className="font-heading uppercase tracking-wider mt-2">Register Now</Button>
-                  </Link>
-                )}
-              </CardContent>
-            </Card>
-          )
+            </CardContent>
+          </Card>
         )}
       </div>
 

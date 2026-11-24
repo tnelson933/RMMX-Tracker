@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   cleanText, escapeHtml, eventMeta, eventPhase, formatEventDates, genericMeta, injectShareMeta, placeLine,
-  racerMeta, racerStatLine, siteOrigin,
+  racerMeta, racerStatLine, resultLabel, riderResultMeta, riderResultPath, siteOrigin,
 } from "./shareMeta";
-import { eventCardSvg, escapeXml, fitText, racerCardSvg, wrapLines } from "./shareCard";
+import { eventCardSvg, escapeXml, fitText, racerCardSvg, resultCardSvg, wrapLines } from "./shareCard";
 
 const INDEX = `<!DOCTYPE html>
 <html lang="en">
@@ -135,4 +135,51 @@ test("cards are 1200×630 SVG with escaped text", () => {
   assert.ok(racer.includes(">214<"));
   assert.ok(racer.includes("SAM RIDER"));
   assert.ok(racer.includes("PODIUMS"));
+});
+
+test("the event page in its live phase is titled Live now", () => {
+  assert.equal(eventMeta(event, "live", "results", ORIGIN, "/results/42").title, "Live now: Spring Classic MX");
+});
+
+test("event phase follows a running moto, like the page", () => {
+  const now = new Date("2026-06-01T12:00:00Z");
+  // A race running a day early still reads as live; a finished one doesn't.
+  assert.equal(eventPhase({ status: "registration_closed", date: "2026-06-13", motos: [{ status: "in_progress" }] }, "2026-06-01", now), "live");
+  assert.equal(eventPhase({ status: "registration_closed", date: "2026-06-13", motos: [{ status: "completed" }] }, "2026-06-01", now), "closed");
+});
+
+test("rider result meta: name, finish, class and event; unofficial until finalized", () => {
+  const r = { riderId: 9, name: "Ryder Nash", number: "214", raceClass: "250 B", position: 1, official: false };
+  const m = riderResultMeta({ ...event, name: "Fall Finale" }, r, ORIGIN);
+  assert.equal(m.title, "Ryder Nash P1 · 250 B · Fall Finale");
+  assert.match(m.description, /^Ryder Nash finished P1 in 250 B at Fall Finale\. Unofficial results\. Jun 13–14, 2026 · Pine Ridge Raceway, Boise, ID\.$/);
+  assert.equal(m.image, `${ORIGIN}/api/public/og/result/42/9.png?v=P1-u`);
+  assert.equal(m.url, `${ORIGIN}/results/42?rider=9`);
+  assert.equal(riderResultPath(42, 9), "/results/42?rider=9");
+  const official = riderResultMeta(event, { ...r, official: true }, ORIGIN);
+  assert.ok(!official.description.includes("Unofficial"));
+  assert.ok(official.image.endsWith("?v=P1-o"));
+  assert.equal(resultLabel({ position: null, status: "dns" }), "DNS");
+  assert.equal(resultLabel({ position: null }), "DNF");
+  const dnf = riderResultMeta(event, { ...r, position: null, status: "dnf" }, ORIGIN);
+  assert.equal(dnf.title, "Ryder Nash DNF · 250 B · Spring Classic MX");
+  assert.match(dnf.description, /^Ryder Nash raced 250 B at Spring Classic MX\./);
+});
+
+test("result card: plate, position, class, name and the unofficial badge", () => {
+  const input = {
+    name: "Ryder Nash", number: "214", plateColor: "yellow", label: "P1", raceClass: "250 B",
+    eventName: "Fall Finale & <Awards>", dates: "Sat, Jun 13, 2026", place: "Pine Ridge Raceway", official: false,
+  };
+  const svg = resultCardSvg(input, null);
+  assert.match(svg, /width="1200" height="630"/);
+  assert.ok(svg.includes(">214<"));
+  assert.ok(svg.includes(">P1<"));
+  assert.ok(svg.includes(">250 B<"));
+  assert.ok(svg.includes("RYDER NASH"));
+  assert.ok(svg.includes("Fall Finale &amp; &lt;Awards&gt;"));
+  assert.ok(svg.includes("UNOFFICIAL"));
+  assert.ok(!resultCardSvg({ ...input, official: true }, null).includes("UNOFFICIAL"));
+  // No number: no plate, text moves left.
+  assert.ok(!resultCardSvg({ ...input, number: null }, null).includes('rx="28"'));
 });

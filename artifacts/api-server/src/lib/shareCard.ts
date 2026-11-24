@@ -147,6 +147,13 @@ const PLATES: Record<string, [string, string]> = {
   orange: ["#F26B00", "#111111"],
 };
 
+/** The number plate on the left of the racer and result cards. */
+function plateSvg(number: string, plateBg: string, plateFg: string): string {
+  const size = number.length >= 3 ? 150 : 190;
+  return `<rect x="64" y="186" width="296" height="296" rx="28" fill="${plateBg}" stroke="#FFFFFF" stroke-opacity="${plateBg === "#111111" ? 0.35 : 0}" stroke-width="4"/>
+  <text x="212" y="${334 + size * 0.36}" text-anchor="middle" font-family="Barlow" font-weight="800" font-size="${size}" fill="${plateFg}">${escapeXml(number)}</text>`;
+}
+
 export type RacerCardInput = {
   name: string;
   number: string | null;
@@ -169,11 +176,7 @@ export function racerCardSvg(input: RacerCardInput, logoDataUri: string | null):
   const afterName = nameTop + (name.lines.length - 1) * lh;
   const cls = input.mainClass ? wrapLines(cleanText(input.mainClass, 40), 34, maxW, 1, false)[0] : null;
 
-  const plate = hasPlate ? (() => {
-    const size = number.length >= 3 ? 150 : 190;
-    return `<rect x="64" y="186" width="296" height="296" rx="28" fill="${plateBg}" stroke="#FFFFFF" stroke-opacity="${plateBg === "#111111" ? 0.35 : 0}" stroke-width="4"/>
-  <text x="212" y="${334 + size * 0.36}" text-anchor="middle" font-family="Barlow" font-weight="800" font-size="${size}" fill="${plateFg}">${escapeXml(number)}</text>`;
-  })() : "";
+  const plate = hasPlate ? plateSvg(number, plateBg, plateFg) : "";
 
   const stats: Array<[number, string]> = [
     [input.starts, input.starts === 1 ? "Start" : "Starts"],
@@ -197,3 +200,53 @@ export function racerCardSvg(input: RacerCardInput, logoDataUri: string | null):
   return frame(inner, logoDataUri);
 }
 
+
+export type ResultCardInput = {
+  name: string;
+  number: string | null;
+  plateColor: string | null;
+  /** "P1", "DNF" (shareMeta resultLabel). */
+  label: string;
+  raceClass: string | null;
+  eventName: string;
+  dates: string;
+  place: string;
+  official: boolean;
+};
+
+/** One rider's result at an event: plate, position + class, name, event, date and track. */
+export function resultCardSvg(input: ResultCardInput, logoDataUri: string | null): string {
+  const [plateBg, plateFg] = PLATES[(input.plateColor ?? "").toLowerCase()] ?? PLATES.white;
+  const number = cleanText(input.number, 4);
+  const hasPlate = !!number;
+  const textX = hasPlate ? 400 : 64;
+  const maxW = hasPlate ? 560 : TEXT_MAX_W;
+
+  const label = cleanText(input.label, 6).toUpperCase() || "DNF";
+  const posSize = 132;
+  const posW = textWidth(label, posSize, true) + 1.5 * label.length;
+  const cls = input.raceClass ? fitText(cleanText(input.raceClass, 40), [44, 38, 32, 28], Math.max(maxW - posW - 28, 160), 1, false) : null;
+  // A long name takes two lines at a smaller size rather than being cut.
+  const name = fitText(cleanText(input.name, 80).toUpperCase() || "RACER", [60, 54, 48, 42], maxW, 2, true);
+  const below = (name.lines.length - 1) * name.size;
+  const eventLine = wrapLines(cleanText(input.eventName, 120) || "Race", 34, maxW, 1, false)[0];
+  const details = [input.dates, input.place].map(v => cleanText(v, 90)).filter(Boolean).join(" · ");
+  const detailLine = details ? wrapLines(details, 26, maxW, 1, false)[0] : null;
+
+  const status = input.official
+    ? pill("Race result", textX, 112, false)
+    : `${pill("Race result", textX, 112, false)}
+  <rect x="${textX + 258}" y="112" width="196" height="52" rx="26" fill="none" stroke="#FFD27A" stroke-width="3"/>
+  <text x="${textX + 356}" y="147" text-anchor="middle" font-family="Barlow" font-weight="700" font-size="24" letter-spacing="1.5" fill="#FFD27A">UNOFFICIAL</text>`;
+
+  const inner = [
+    status,
+    hasPlate ? plateSvg(number, plateBg, plateFg) : "",
+    `<text x="${textX}" y="312" font-family="Barlow" font-weight="800" font-size="${posSize}" fill="#FFFFFF" letter-spacing="1.5">${escapeXml(label)}</text>`,
+    cls ? lines(cls.lines, Math.round(textX + posW + 28), 306, cls.size, cls.size, 700, LIGHT) : "",
+    lines(name.lines, textX, 392, name.size, name.size, 800, "#FFFFFF"),
+    lines([eventLine], textX, 448 + below, 34, 40, 600, LIGHT),
+    detailLine ? lines([detailLine], textX, 494 + below, 26, 32, 600, MUTED) : "",
+  ].join("\n  ");
+  return frame(inner, logoDataUri);
+}

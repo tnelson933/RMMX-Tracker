@@ -36,6 +36,7 @@ export const PUBLIC_RULES: PublicRule[] = [
   { pattern: /^\/auth(\/|$)/, reason: "login, setup, me" },
   { pattern: /^\/rider(\/|$)/, reason: "rider portal + mobile app (rider auth in handlers)" },
   { pattern: /^\/public\/og\/(event|racer)\/\d{1,9}\.png$/, methods: READ, reason: "link-preview share cards: events that aren't drafts or tests, public racer profiles only (private profiles 404)" },
+  { pattern: /^\/public\/og\/result\/\d{1,9}\/\d{1,9}\.png$/, methods: READ, reason: "per-rider result share cards: public profiles with a finished result at an event that isn't a draft or test (private/under-18 profiles 404)" },
   { pattern: /^\/public(\/|$)/, reason: "public website and registration" },
   { pattern: /^\/account-deletion-request$/, methods: ["POST"], reason: "public account deletion request" },
   { pattern: /^\/app-errors$/, methods: ["POST"], reason: "rider app JS error reports: allowlisted fields, size-capped, rate limited in handler, logged only" },

@@ -7,28 +7,39 @@
  *   description and picture. Everything else in the page is unchanged.
  * - GET /api/public/og/event/:id.png and /api/public/og/racer/:id.png: the
  *   1200×630 share-card pictures (lib/shareCard.ts), drawn with resvg.
+ * - Per-rider results: /results/:eventId?rider=:riderId previews that rider's
+ *   result with GET /api/public/og/result/:eventId/:riderId.png, and
+ *   GET /api/public/events/:eventId/share-riders lists the riders whose result
+ *   the event page offers to share.
+ *
+ * The event's state (upcoming … live … official) comes from
+ * @workspace/api-zod eventPageState, the same rule the event page uses.
  *
  * Privacy: a racer gets a preview and a card only when the profile is public
  * (lib/riderResume.ts effectiveVisibility; under-18s are private unless a
  * parent makes them public) and has results, the same rule as the public
  * /racer page. A private profile gets the site's generic preview: no name,
- * no photo. Drafts and test events get the generic preview too.
+ * no photo. Drafts and test events get the generic preview too. A per-rider
+ * link for a private or under-18 profile, an unknown rider or a rider without
+ * a finished result here gets the event's own preview, and no share action.
  */
 import { Router, type Request, type Response } from "express";
 import { readFile, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { db, eventsTable, clubsTable, motosTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
-import { eventToday } from "@workspace/api-zod";
+import { db, eventsTable, clubsTable, motosTable, raceResultsTable, ridersTable } from "@workspace/db";
+import { and, eq, ne } from "drizzle-orm";
+import { eventPageState, eventToday, type EventPageState } from "@workspace/api-zod";
 import { settleStatus } from "../lib/eventStatus";
 import { buildRacerProfile, loadProfileRider } from "../lib/racerProfileView";
+import { effectiveVisibility } from "../lib/riderResume";
+import { computeEventOverall } from "../lib/eventOverall";
 import {
-  eventMeta, eventPhase, formatEventDates, genericMeta, injectShareMeta, placeLine, racerMeta, siteOrigin,
-  type EventPage, type EventPhase, type ShareMeta,
+  eventMeta, formatEventDates, genericMeta, injectShareMeta, phaseForPageState, placeLine, racerMeta, resultLabel,
+  riderResultMeta, siteOrigin, type EventPage, type EventPhase, type ShareMeta, type ShareResult,
 } from "../lib/shareMeta";
-import { eventCardSvg, racerCardSvg, CARD_W } from "../lib/shareCard";
+import { eventCardSvg, racerCardSvg, resultCardSvg, CARD_W } from "../lib/shareCard";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -64,10 +75,21 @@ const validId = (raw: unknown) => {
 
 type LoadedEvent = {
   id: number; name: string; date: string; endDate: string | null; trackName: string | null;
-  location: string | null; state: string | null; clubName: string | null; phase: EventPhase;
+  location: string | null; state: string | null; clubName: string | null;
+  pageState: EventPageState; phase: EventPhase;
 };
 
-/** A publicly shareable event with its phase, or null (missing, draft or test event). */
+/** Finished (non-practice) results of an event, and whether every one is official, as the page counts them. */
+async function finishedResults(eventId: number) {
+  const rows = await db.select({ finalizedAt: motosTable.resultsFinalizedAt }).from(raceResultsTable)
+    .innerJoin(motosTable, eq(raceResultsTable.motoId, motosTable.id))
+    .where(and(eq(raceResultsTable.eventId, eventId), eq(motosTable.status, "completed"), ne(motosTable.type, "practice")));
+  return { count: rows.length, official: rows.every(r => r.finalizedAt != null) };
+}
+
+const todayUtc = () => new Date().toISOString().slice(0, 10);
+
+/** A publicly shareable event with its page state, or null (missing, draft or test event). */
 async function loadShareEvent(eventId: number): Promise<LoadedEvent | null> {
   const [e] = await db.select({
     id: eventsTable.id, name: eventsTable.name, date: eventsTable.date, endDate: eventsTable.endDate,
@@ -81,12 +103,75 @@ async function loadShareEvent(eventId: number): Promise<LoadedEvent | null> {
   if (!e || e.isTest || !e.date) return null;
   // The status it would have now (the page itself saves the change; a preview never writes).
   const status = settleStatus(e) ?? e.status;
-  const phase = eventPhase({ ...e, status }, eventToday(e));
-  if (!phase) return null;
+  const [motos, results] = await Promise.all([
+    db.select({ status: motosTable.status }).from(motosTable).where(eq(motosTable.eventId, eventId)),
+    finishedResults(eventId),
+  ]);
+  const pageState = eventPageState({ ...e, status, motos, results }, eventToday(e));
+  if (!pageState) return null;
   return {
     id: e.id, name: e.name, date: e.date, endDate: e.endDate ?? null, trackName: e.trackName ?? null,
-    location: e.location ?? null, state: e.state ?? null, clubName: e.clubName ?? null, phase,
+    location: e.location ?? null, state: e.state ?? null, clubName: e.clubName ?? null,
+    pageState, phase: phaseForPageState(pageState),
   };
+}
+
+/**
+ * One rider's result at a shareable event, or null: private or under-18
+ * profile (effectiveVisibility), unknown rider, or no finished race here.
+ * The headline is the class overall position, else the best race finish.
+ */
+async function loadShareResult(e: LoadedEvent, riderId: number): Promise<(ShareResult & { plateColor: string | null }) | null> {
+  const rider = await loadProfileRider(riderId);
+  if (!rider || effectiveVisibility(rider, todayUtc()) !== "public") return null;
+  const rows = await db.select({
+    raceClass: raceResultsTable.raceClass, position: raceResultsTable.position,
+    dnf: raceResultsTable.dnf, dns: raceResultsTable.dns, finalizedAt: motosTable.resultsFinalizedAt,
+  }).from(raceResultsTable)
+    .innerJoin(motosTable, eq(raceResultsTable.motoId, motosTable.id))
+    .where(and(
+      eq(raceResultsTable.eventId, e.id), eq(raceResultsTable.riderId, riderId),
+      eq(motosTable.status, "completed"), ne(motosTable.type, "practice"),
+    ));
+  if (rows.length === 0) return null;
+
+  let position: number | null = null;
+  let raceClass: string | null = null;
+  const overall = await computeEventOverall(e.id).catch(() => null);
+  for (const c of overall?.classes ?? []) {
+    const me = c.riders.find(r => r.riderId === riderId);
+    if (me && me.position > 0 && (position == null || me.position < position)) { position = me.position; raceClass = c.raceClass; }
+  }
+  if (position == null) {
+    for (const r of rows) {
+      if (r.dnf || r.dns || !(r.position > 0)) continue;
+      if (position == null || r.position < position) { position = r.position; raceClass = r.raceClass; }
+    }
+  }
+  return {
+    riderId,
+    name: `${rider.firstName} ${rider.lastName}`.trim(),
+    number: rider.bibNumber ?? null,
+    plateColor: rider.plateColor ?? null,
+    raceClass: raceClass ?? rows[0].raceClass ?? null,
+    position,
+    status: position == null ? (rows.every(r => r.dns) ? "dns" : "dnf") : null,
+    official: rows.every(r => r.finalizedAt != null),
+  };
+}
+
+/** Riders with a finished result at the event whose profiles are public (the event page's Share buttons). */
+async function shareableRiderIds(eventId: number): Promise<number[]> {
+  const e = await loadShareEvent(eventId);
+  if (!e) return [];
+  const rows = await db.selectDistinct({
+    id: ridersTable.id, dateOfBirth: ridersTable.dateOfBirth, profileVisibility: ridersTable.profileVisibility,
+  }).from(raceResultsTable)
+    .innerJoin(motosTable, eq(raceResultsTable.motoId, motosTable.id))
+    .innerJoin(ridersTable, eq(raceResultsTable.riderId, ridersTable.id))
+    .where(and(eq(raceResultsTable.eventId, eventId), eq(motosTable.status, "completed"), ne(motosTable.type, "practice")));
+  const t = todayUtc();
+  return rows.filter(r => effectiveVisibility(r, t) === "public").map(r => r.id).sort((a, b) => a - b);
 }
 
 /** A public profile's card details, or null for a private profile, one without results, or none. */
@@ -111,7 +196,7 @@ async function loadShareRacer(riderId: number) {
 
 const PAGE = /^\/(results|register|watch|live|racer)\/(\d{1,9})\/?$/;
 
-async function metaFor(pathname: string, origin: string): Promise<ShareMeta | null> {
+async function metaFor(pathname: string, origin: string, riderId: number | null = null): Promise<ShareMeta | null> {
   const m = PAGE.exec(pathname);
   if (!m) return null;
   const [, kind, rawId] = m;
@@ -130,7 +215,13 @@ async function metaFor(pathname: string, origin: string): Promise<ShareMeta | nu
     return e ? eventMeta(e, e.phase, "live", origin, pagePath, moto) : null;
   }
   const e = await loadShareEvent(id);
-  return e ? eventMeta(e, e.phase, kind as EventPage, origin, pagePath) : null;
+  if (!e) return null;
+  if (kind === "results" && riderId) {
+    // A private/minor or unknown rider falls back to the event's own preview.
+    const r = await loadShareResult(e, riderId);
+    if (r) return riderResultMeta(e, r, origin);
+  }
+  return eventMeta(e, e.phase, kind as EventPage, origin, pagePath);
 }
 
 let indexCache: { file: string; mtimeMs: number; checkedAt: number; html: string } | null = null;
@@ -158,14 +249,16 @@ export function sharePageHandler(indexFile: string) {
     res.setHeader("Cache-Control", "no-cache");
     try {
       const origin = siteOrigin(process.env.APP_URL);
-      const key = req.path.replace(/\/$/, "");
+      const pathname = req.path.replace(/\/$/, "");
+      const riderId = pathname.startsWith("/results/") ? validId(req.query.rider) : null;
+      const key = riderId ? `${pathname}?rider=${riderId}` : pathname;
       let meta = metaCache.get(key);
       if (meta === undefined) {
-        meta = await metaFor(key, origin);
+        meta = await metaFor(pathname, origin, riderId);
         metaCache.set(key, meta);
       }
       const html = await indexHtml(indexFile);
-      res.type("html").send(injectShareMeta(html, meta ?? genericMeta(origin, key)));
+      res.type("html").send(injectShareMeta(html, meta ?? genericMeta(origin, pathname)));
     } catch (err) {
       logger.warn({ err: (err as Error)?.message, route: "share-page" }, "share preview failed; serving the plain page");
       res.sendFile(indexFile);
@@ -250,6 +343,40 @@ router.get("/public/og/racer/:file", async (req, res) => {
     const r = await loadShareRacer(id);
     return r ? racerCardSvg(r, logo) : null;
   });
+});
+
+router.get("/public/og/result/:eventId/:file", async (req, res) => {
+  const eventId = validId(req.params.eventId);
+  const m = /^(\d{1,9})\.png$/.exec(String(req.params.file));
+  const riderId = m ? validId(m[1]) : null;
+  if (!eventId || !riderId) return res.status(404).json({ error: NO_CARD });
+  return sendCard(res, `result:${eventId}:${riderId}`, async logo => {
+    const e = await loadShareEvent(eventId);
+    const r = e ? await loadShareResult(e, riderId) : null;
+    if (!e || !r) return null;
+    return resultCardSvg({
+      name: r.name, number: r.number, plateColor: r.plateColor, label: resultLabel(r), raceClass: r.raceClass,
+      eventName: e.name, dates: formatEventDates(e.date, e.endDate), place: placeLine(e), official: r.official,
+    }, logo);
+  });
+});
+
+const ridersCache = new TtlCache<number[]>(60_000, 500);
+
+// GET /public/events/:eventId/share-riders — which result rows get a Share button:
+// riders with a finished result whose profiles are public, never private or
+// under-18 profiles. Empty for drafts, test events and unknown ids.
+router.get("/public/events/:eventId/share-riders", async (req, res) => {
+  const eventId = validId(req.params.eventId);
+  if (!eventId) return res.json({ riderIds: [] });
+  const key = String(eventId);
+  let riderIds = ridersCache.get(key);
+  if (!riderIds) {
+    riderIds = await shareableRiderIds(eventId);
+    ridersCache.set(key, riderIds);
+  }
+  res.setHeader("Cache-Control", "public, max-age=60");
+  return res.json({ riderIds });
 });
 
 export default router;

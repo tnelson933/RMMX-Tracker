@@ -155,7 +155,9 @@ async function isStreamingNow(eventId: number): Promise<boolean> {
 
 async function openRaceStart(router: ReturnType<typeof useRouter>, eventId: number, motoId: number): Promise<void> {
   if (await isStreamingNow(eventId)) {
-    router.push(`/live/${eventId}` as any);
+    // The native live screen: that race's timing, with the stream one tap away.
+    const pick = Number.isInteger(motoId) && motoId > 0 ? `?motoId=${motoId}` : "";
+    router.push(`/live/${eventId}${pick}` as any);
     return;
   }
   const moto = Number.isInteger(motoId) && motoId > 0 ? `&motoId=${motoId}` : "";
@@ -210,6 +212,7 @@ function RootLayoutNav() {
       <Stack.Screen name="event/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="live/index" options={{ headerShown: false }} />
       <Stack.Screen name="live/[eventId]" options={{ headerShown: false, animation: rise }} />
+      <Stack.Screen name="live/watch/[eventId]" options={{ headerShown: false, animation: rise }} />
       <Stack.Screen name="live/rider/[riderId]" options={{ headerShown: false, animation: rise }} />
       <Stack.Screen name="go-live/[riderId]" options={{ headerShown: false, animation: rise, gestureEnabled: false }} />
       <Stack.Screen name="register/[eventId]" options={{ headerShown: false, animation: rise }} />
