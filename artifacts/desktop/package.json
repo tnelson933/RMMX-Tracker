@@ -1,6 +1,6 @@
 {
   "name": "@workspace/desktop",
-  "version": "1.0.131",
+  "version": "1.0.132",
   "private": true,
   "description": "RM Roost \u2014 Electron desktop app",
   "main": "dist/main.js",
