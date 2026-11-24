@@ -27,14 +27,41 @@ import { AuthProvider, useRiderAuth } from "@/context/AuthContext";
 import { RockyChatProvider } from "@/context/RockyChatContext";
 import { ThemeProvider, useTheme } from "@/context/ThemeContext";
 import { StatusBar } from "react-native";
+import * as SystemUI from "expo-system-ui";
+import { useColors } from "@/hooks/useColors";
 import { openInApp } from "@/lib/inAppBrowser";
 import { initErrorReporting, reportError, setErrorReportRoute } from "@/lib/errorReport";
 import { routeFromSegments } from "@/lib/errorReportCore";
 
-/** Status bar icons follow the in-app Appearance setting. */
+/** Race-theme background, shown before the theme preference has loaded. */
+const LAUNCH_BACKGROUND = "#161616";
+
+/**
+ * Status bar icons and background follow the in-app Appearance setting. On
+ * Android builds that don't draw edge to edge the status bar has its own
+ * background (light by default, which hid the white icons), so it is painted
+ * with the screen background. The root view gets the same colour so nothing
+ * white shows between the launch screen and the first frame, or behind
+ * screen transitions.
+ */
 function ThemedStatusBar() {
   const { resolvedScheme } = useTheme();
-  return <StatusBar barStyle={resolvedScheme === "dark" ? "light-content" : "dark-content"} />;
+  const colors = useColors();
+  useEffect(() => {
+    SystemUI.setBackgroundColorAsync(colors.background).catch(() => {});
+  }, [colors.background]);
+  return (
+    <StatusBar
+      barStyle={resolvedScheme === "dark" ? "light-content" : "dark-content"}
+      backgroundColor={Platform.OS === "android" ? colors.background : undefined}
+    />
+  );
+}
+
+// Paint the root view dark before React renders anything (fonts and the theme
+// preference load first), so the launch screen hands off to dark, not white.
+if (Platform.OS !== "web") {
+  SystemUI.setBackgroundColorAsync(LAUNCH_BACKGROUND).catch(() => {});
 }
 
 // JS errors (uncaught, unhandled rejections) go to our API: lib/errorReport.ts.
@@ -139,6 +166,7 @@ const LAUNCH_SCREEN_MAX_MS = 3_000;
 
 function RootLayoutNav() {
   const { isAuthenticated, isLoading } = useRiderAuth();
+  const colors = useColors();
   const router = useRouter();
   const segments = useSegments();
   // Route template only ("/racer/[id]"), for error reports.
@@ -168,7 +196,7 @@ function RootLayoutNav() {
 
   return (
     <>
-    <Stack screenOptions={{ headerShown: false }}>
+    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false, animation: "fade" }} />
       <Stack.Screen name="mechanic" options={{ headerShown: false, animation: "slide_from_bottom" }} />
@@ -213,7 +241,7 @@ export default function RootLayout() {
     Barlow_800ExtraBold_Italic,
   });
 
-  if (!fontsLoaded && !fontError) return null;
+  if (!fontsLoaded && !fontError) return <View style={{ flex: 1, backgroundColor: LAUNCH_BACKGROUND }} />;
 
   return (
     <SafeAreaProvider>

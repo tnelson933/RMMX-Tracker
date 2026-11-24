@@ -122,10 +122,10 @@ export function SeasonView({
         <PhotoFade from={0.2} strength={0.9} />
         <View style={{ padding: 14, flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 8 }}>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 13, color: "#E6E6E6", fontFamily: fonts.display, textTransform: "uppercase", letterSpacing: 1.2 }} numberOfLines={1}>
+            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 13, color: "#E6E6E6", fontFamily: fonts.display, textTransform: "uppercase", letterSpacing: 1.2 }} numberOfLines={1}>
               {activeClass}{riders.length > 1 && activeRider ? `  ·  ${activeRider}` : ""}
             </Text>
-            <Text style={{ fontSize: 30, lineHeight: 32, color: "#FFFFFF", fontFamily: fonts.displayItalic, textTransform: "uppercase" }}>
+            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 30, lineHeight: 32, color: "#FFFFFF", fontFamily: fonts.displayItalic, textTransform: "uppercase" }}>
               {activeYear} season
             </Text>
           </View>
@@ -141,8 +141,8 @@ export function SeasonView({
           { v: String(totalPoints), l: "Points" },
         ].map(t => (
           <View key={t.l} style={{ flex: 1, backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.border, paddingVertical: 10, alignItems: "center" }}>
-            <Text style={{ fontSize: 26, color: colors.foreground, fontFamily: fonts.displayItalic }}>{t.v}</Text>
-            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: fonts.display, textTransform: "uppercase", letterSpacing: 1 }}>{t.l}</Text>
+            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 26, color: colors.foreground, fontFamily: fonts.displayItalic }}>{t.v}</Text>
+            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, color: colors.mutedForeground, fontFamily: fonts.display, textTransform: "uppercase", letterSpacing: 1 }}>{t.l}</Text>
           </View>
         ))}
       </View>
@@ -224,10 +224,10 @@ export function SeasonView({
                 borderTopWidth: i ? 1 : 0, borderTopColor: colors.border, opacity: pressed ? 0.7 : 1,
               })}
             >
-              <Text style={{ width: 28, fontSize: 14, color: colors.mutedForeground, fontFamily: fonts.display }}>{xs[i]}</Text>
-              <Text style={{ flex: 1, fontSize: 14, color: colors.foreground, fontFamily: fonts.medium }} numberOfLines={1}>{r.eventName}</Text>
+              <Text style={{ fontVariant: ["tabular-nums"], width: 28, fontSize: 14, color: colors.mutedForeground, fontFamily: fonts.display }}>{xs[i]}</Text>
+              <Text style={{ fontVariant: ["tabular-nums"], flex: 1, fontSize: 14, color: colors.foreground, fontFamily: fonts.medium }} numberOfLines={1}>{r.eventName}</Text>
               {ev?.bestPosition != null && <PositionBadge position={ev.bestPosition} size="sm" />}
-              <Text style={{ width: 52, textAlign: "right", fontSize: 13, color: colors.mutedForeground, fontFamily: fonts.medium }}>{r.points} pts</Text>
+              <Text style={{ fontVariant: ["tabular-nums"], width: 52, textAlign: "right", fontSize: 13, color: colors.mutedForeground, fontFamily: fonts.medium }}>{r.points} pts</Text>
               <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
             </Pressable>
           );

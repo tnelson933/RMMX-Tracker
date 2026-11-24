@@ -7,6 +7,7 @@ import { Link } from "wouter";
 import { Users } from "lucide-react";
 
 import { riderApi } from "@/lib/rider-api";
+import { dedupeFeedItems } from "@/lib/feed";
 import { EmptyCard, ResultCard, SectionHeader } from "./HomeCards";
 
 export function FollowingFeed() {
@@ -15,7 +16,8 @@ export function FollowingFeed() {
     queryFn: () => riderApi.feed(),
     staleTime: 60_000,
   });
-  const items = data ? data.items.filter(i => !i.isMine).slice(0, 8) : null;
+  // De-duplicate before dropping your own riders, so a followed copy of your own rider stays out too.
+  const items = data ? dedupeFeedItems(data.items).filter(i => !i.isMine).slice(0, 8) : null;
 
   return (
     <section>

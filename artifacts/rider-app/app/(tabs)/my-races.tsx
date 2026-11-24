@@ -1,3 +1,4 @@
+import { useBottomSpace } from "@/hooks/useBottomSpace";
 import { localDateString } from "@/lib/format";
 import { toStateCode } from "@/lib/usStates";
 import { Feather } from "@expo/vector-icons";
@@ -122,7 +123,7 @@ const FILTER_TABS: { key: FilterTab; label: string; icon: string }[] = [
 
 function chipFor(status: string): { label: string; color: string } {
   const map: Record<string, { label: string; color: string }> = {
-    in_progress: { label: "LIVE",     color: "#ef4444" },
+    in_progress: { label: "LIVE",     color: "#B30000" }, // drawn as a solid brand-red pill
     completed:   { label: "DONE",     color: "#22c55e" },
     scheduled:   { label: "UPCOMING", color: "#6b7280" },
   };
@@ -147,8 +148,8 @@ function ScheduleMotoCard({
   const isPrac = moto.type === "practice";
   const chip   = chipFor(moto.status);
 
-  const badgeBg = live ? "#ef444420" : mine ? colors.primary + "18" : colors.muted;
-  const badgeFg = live ? "#ef4444"   : mine ? colors.primary        : colors.mutedForeground;
+  const badgeBg = live ? colors.primaryTint : mine ? colors.primary + "18" : colors.muted;
+  const badgeFg = live ? colors.primaryText   : mine ? colors.primary        : colors.mutedForeground;
 
   const eligiblePracticeLaps = isPrac
     ? (moto.practiceLaps ?? []).filter(l =>
@@ -165,7 +166,7 @@ function ScheduleMotoCard({
       marginHorizontal: 16, marginBottom: 6, borderRadius: 10,
       backgroundColor: colors.card,
       borderWidth: live ? 1.5 : (mine ? 1.5 : 1),
-      borderColor: live ? "#ef4444" : (mine ? colors.primary : colors.border),
+      borderColor: live ? colors.primary : (mine ? colors.primary : colors.border),
       padding: 12,
       flexDirection: "row", alignItems: "center", gap: 10,
     }}>
@@ -185,7 +186,7 @@ function ScheduleMotoCard({
         {!isPrac && !isEnduro && moto.familyGates.length > 0 && (
           <View style={{ marginTop: 3, gap: 1 }}>
             {moto.familyGates.map(g => (
-              <Text key={g.gate} style={{ fontSize: 12, fontFamily: "Roboto_600SemiBold", color: live ? "#ef4444" : colors.primaryText }}>
+              <Text key={g.gate} style={{ fontSize: 12, fontFamily: "Roboto_600SemiBold", color: live ? colors.primaryText : colors.primaryText }}>
                 Gate #{g.gate}{moto.familyGates.length > 1 ? ` · ${g.riderName}` : ""}
               </Text>
             ))}
@@ -195,7 +196,7 @@ function ScheduleMotoCard({
           <Text style={{ fontSize: 12, color: colors.primaryText, fontFamily: "Roboto_500Medium", marginTop: 2 }}>Gate draw pending</Text>
         )}
         {mine && isEnduro && (
-          <Text style={{ fontSize: 12, fontFamily: "Roboto_600SemiBold", color: live ? "#ef4444" : colors.primaryText, marginTop: 2 }}>
+          <Text style={{ fontSize: 12, fontFamily: "Roboto_600SemiBold", color: live ? colors.primaryText : colors.primaryText, marginTop: 2 }}>
             ★ Your test
           </Text>
         )}
@@ -203,7 +204,7 @@ function ScheduleMotoCard({
           <View style={{ flexDirection: "row", gap: 10, marginTop: 3 }}>
             {myBestLap != null && (
               <Text style={{ fontSize: 12, fontFamily: "Roboto_500Medium", color: colors.mutedForeground }}>
-                Best: <Text style={{ color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>{fmtLap(myBestLap)}</Text>
+                Best: <Text style={{ fontVariant: ["tabular-nums"], color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>{fmtLap(myBestLap)}</Text>
               </Text>
             )}
             {myRank != null && (
@@ -217,9 +218,9 @@ function ScheduleMotoCard({
           <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 }}>{moto.scheduledTime}</Text>
         )}
       </View>
-      <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: chip.color + "22" }}>
-        <Text style={{ fontSize: 10, fontWeight: "700", fontFamily: "Roboto_700Bold", color: chip.color }}>
-          {live ? "🔴 " : ""}{chip.label}
+      <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: live ? colors.primary : chip.color + "22" }}>
+        <Text style={{ fontSize: 10, fontWeight: "700", fontFamily: "Roboto_700Bold", color: live ? colors.primaryForeground : chip.color }}>
+          {chip.label}
         </Text>
       </View>
     </View>
@@ -247,10 +248,10 @@ function RaceDaySection({ event, colors }: { event: ScheduleEvent; colors: Retur
 
   return (
     <>
-      <View style={{ marginHorizontal: 16, marginBottom: 8, borderRadius: 12, overflow: "hidden", borderWidth: 1.5, borderColor: "#ef444455", backgroundColor: colors.card }}>
-        <View style={{ padding: 14, backgroundColor: "#ef444412" }}>
+      <View style={{ marginHorizontal: 16, marginBottom: 8, borderRadius: 12, overflow: "hidden", borderWidth: 1.5, borderColor: colors.primary + "88", backgroundColor: colors.card }}>
+        <View style={{ padding: 14, backgroundColor: colors.primaryTint }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start", marginBottom: 8 }}>
-            <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: "#ef4444", flexDirection: "row", alignItems: "center", gap: 4 }}>
+            <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: colors.primary, flexDirection: "row", alignItems: "center", gap: 4 }}>
               <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: "#fff" }} />
               <Text style={{ fontSize: 10, fontWeight: "700", color: "#fff", fontFamily: "Roboto_700Bold", letterSpacing: 0.5 }}>RACE DAY</Text>
             </View>
@@ -275,9 +276,9 @@ function RaceDaySection({ event, colors }: { event: ScheduleEvent; colors: Retur
           </View>
         </View>
         {inProgress && (
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: "#ef444418", borderTopWidth: 1, borderTopColor: "#ef444433" }}>
-            <Feather name="radio" size={13} color="#ef4444" />
-            <Text style={{ fontSize: 12, fontWeight: "700", color: "#ef4444", fontFamily: "Roboto_700Bold", flex: 1 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: colors.primaryTint, borderTopWidth: 1, borderTopColor: colors.primary + "66" }}>
+            <Feather name="radio" size={13} color={colors.primaryText} />
+            <Text style={{ fontSize: 12, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold", flex: 1 }}>
               NOW: Race #{inProgress.motoNumber} · {inProgress.name}
             </Text>
           </View>
@@ -402,6 +403,7 @@ function HistoryCard({ event, colors, onPress }: { event: EventHistory; colors: 
 export default function MyRacesScreen() {
   const colors  = useColors();
   const insets  = useSafeAreaInsets();
+  const bottomSpace = useBottomSpace();
   const router  = useRouter();
   const { isAuthenticated, isLoading: authLoading, activeProfiles, riderFetch } = useRiderAuth();
 
@@ -605,7 +607,7 @@ export default function MyRacesScreen() {
     header:    { paddingTop: insets.top + 16, paddingHorizontal: 20, paddingBottom: 16, backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border },
     statsRow:  { flexDirection: "row", gap: 10, marginTop: 12 },
     filterBar: { flexDirection: "row", paddingHorizontal: 10, paddingVertical: 8, gap: 6, borderBottomWidth: 1, borderBottomColor: colors.border, backgroundColor: colors.card },
-    footer:    { height: insets.bottom + 170 },
+    footer:    { height: bottomSpace },
   });
 
   if (authLoading) {

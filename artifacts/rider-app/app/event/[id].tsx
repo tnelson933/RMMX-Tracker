@@ -273,11 +273,11 @@ export default function EventDetailScreen() {
     metaChipText: { fontSize: 12, color: colors.foreground, fontFamily: "Roboto_600SemiBold" },
     liveBadge: {
       flexDirection: "row", alignItems: "center", gap: 4,
-      backgroundColor: "#ef444420", paddingHorizontal: 10, paddingVertical: 4,
+      backgroundColor: colors.primary, paddingHorizontal: 10, paddingVertical: 4,
       borderRadius: 20, alignSelf: "flex-start", marginBottom: 8,
     },
-    liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#ef4444" },
-    liveText: { fontSize: 11, fontWeight: "700", color: "#ef4444", fontFamily: "Roboto_700Bold", letterSpacing: 0.5 },
+    liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primaryForeground },
+    liveText: { fontSize: 11, fontWeight: "700", color: colors.primaryForeground, fontFamily: "Roboto_700Bold", letterSpacing: 0.5 },
     openBadge: {
       alignSelf: "flex-start", backgroundColor: "#22c55e20",
       paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, marginBottom: 8,
@@ -293,11 +293,11 @@ export default function EventDetailScreen() {
     nowCard: {
       marginHorizontal: 16, marginTop: 16,
       borderRadius: 14, overflow: "hidden",
-      borderWidth: 1.5, borderColor: "#ef4444",
+      borderWidth: 1.5, borderColor: colors.primary,
     },
     nowHeader: {
       flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-      backgroundColor: "#ef4444", paddingHorizontal: 14, paddingVertical: 10,
+      backgroundColor: colors.primary, paddingHorizontal: 14, paddingVertical: 10,
     },
     nowHeaderLeft: { flexDirection: "row", alignItems: "center", gap: 6 },
     nowHeaderText: { fontSize: 11, fontWeight: "800", color: "#fff", fontFamily: "Roboto_700Bold", letterSpacing: 1 },
@@ -345,7 +345,7 @@ export default function EventDetailScreen() {
       flexDirection: "row", alignItems: "center", gap: 10,
     },
     motoRowMine: { borderColor: colors.primary, borderWidth: 1.5 },
-    motoRowLive: { borderColor: "#ef4444", borderWidth: 1.5 },
+    motoRowLive: { borderColor: colors.primary, borderWidth: 1.5 },
     raceNumBadge: {
       width: 44, height: 44, borderRadius: 10,
       alignItems: "center", justifyContent: "center",
@@ -412,7 +412,7 @@ export default function EventDetailScreen() {
 
   const chipFor = (status: string) => {
     const map: Record<string, { label: string; color: string }> = {
-      in_progress: { label: "LIVE",      color: "#ef4444" },
+      in_progress: { label: "LIVE",      color: colors.primary }, // drawn as a solid brand-red pill
       completed:   { label: "FINISHED",  color: "#22c55e" },
       scheduled:   { label: "UPCOMING",  color: "#6b7280" },
     };
@@ -463,7 +463,8 @@ export default function EventDetailScreen() {
             {isRaceDay && (
               <View style={s.liveBadge}>
                 <View style={s.liveDot} />
-                <Text style={s.liveText}>LIVE NOW</Text>
+                {/* "Live" only while a race is on track; otherwise it is just race day. */}
+                <Text style={s.liveText}>{inProgressMoto ? "LIVE NOW" : "RACE DAY"}</Text>
               </View>
             )}
             {isRegOpen && (
@@ -612,8 +613,8 @@ export default function EventDetailScreen() {
                   const live = moto.status === "in_progress";
                   const chip = chipFor(moto.status);
                   const gate = mine ? myGateIn(moto) : null;
-                  const badgeBg = live ? "#ef444420" : mine ? colors.primary + "18" : colors.muted;
-                  const badgeFg = live ? "#ef4444" : mine ? colors.primary : colors.mutedForeground;
+                  const badgeBg = live ? colors.primaryTint : mine ? colors.primary + "18" : colors.muted;
+                  const badgeFg = live ? colors.primaryText : mine ? colors.primary : colors.mutedForeground;
 
                   return (
                     <View key={moto.id} style={[s.motoRow, live && s.motoRowLive, !live && mine && s.motoRowMine]}>
@@ -634,7 +635,7 @@ export default function EventDetailScreen() {
                           </Text>
                         )}
                         {mine && event?.raceStyle !== "enduro" && gate != null && (
-                          <Text style={{ fontSize: 12, color: mine && !live ? colors.primaryText : "#ef4444", fontFamily: "Roboto_600SemiBold", marginTop: 3 }}>
+                          <Text style={{ fontSize: 12, color: mine && !live ? colors.primaryText : colors.primaryText, fontFamily: "Roboto_600SemiBold", marginTop: 3 }}>
                             Gate #{gate}
                           </Text>
                         )}
@@ -646,8 +647,8 @@ export default function EventDetailScreen() {
                       </View>
 
                       {/* Status chip */}
-                      <View style={[s.statusChip, { backgroundColor: chip.color + "22" }]}>
-                        <Text style={[s.statusChipText, { color: chip.color }]}>{chip.label}</Text>
+                      <View style={[s.statusChip, { backgroundColor: live ? colors.primary : chip.color + "22" }]}>
+                        <Text style={[s.statusChipText, { color: live ? colors.primaryForeground : chip.color }]}>{chip.label}</Text>
                       </View>
                     </View>
                   );
@@ -691,10 +692,10 @@ export default function EventDetailScreen() {
                   {(event.raceClasses ?? []).map(cls => {
                     const isRegistered = registeredClasses.has(cls);
                     return (
-                      <View key={cls} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: isRegistered ? "#ef444418" : colors.muted, borderWidth: isRegistered ? 1 : 0, borderColor: "#ef4444", marginRight: 6, marginBottom: 6 }}>
-                        <Text style={{ fontSize: 12, color: isRegistered ? "#ef4444" : colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>{cls}</Text>
+                      <View key={cls} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: isRegistered ? colors.primaryTint : colors.muted, borderWidth: isRegistered ? 1 : 0, borderColor: colors.primary, marginRight: 6, marginBottom: 6 }}>
+                        <Text style={{ fontSize: 12, color: isRegistered ? colors.primaryText : colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>{cls}</Text>
                         {isRegistered && (
-                          <Text style={{ fontSize: 10, fontWeight: "700", color: "#ef4444", fontFamily: "Roboto_700Bold", marginLeft: 5 }}>· Registered</Text>
+                          <Text style={{ fontSize: 10, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold", marginLeft: 5 }}>· Registered</Text>
                         )}
                       </View>
                     );
@@ -798,8 +799,8 @@ export default function EventDetailScreen() {
               </View>
             )}
             {changeClassError != null && (
-              <View style={{ marginBottom: 12, padding: 10, borderRadius: 8, backgroundColor: "#ef444418", borderWidth: 1, borderColor: "#ef444440" }}>
-                <Text style={{ fontSize: 13, color: "#ef4444", fontFamily: "Roboto_400Regular" }}>{changeClassError}</Text>
+              <View style={{ marginBottom: 12, padding: 10, borderRadius: 8, backgroundColor: colors.dangerTint, borderWidth: 1, borderColor: colors.destructive + "77" }}>
+                <Text style={{ fontSize: 13, color: colors.destructive, fontFamily: "Roboto_400Regular" }}>{changeClassError}</Text>
               </View>
             )}
             <Text style={{ fontSize: 14, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>

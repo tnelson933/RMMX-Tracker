@@ -84,6 +84,11 @@ export const eventsTable = pgTable("events", {
   statsEmailsSentAt: timestamp("stats_emails_sent_at", { withTimezone: true }),
   /** When the "finalize your results" reminder went to the organizers (once). */
   finalizeReminderSentAt: timestamp("finalize_reminder_sent_at", { withTimezone: true }),
+  /**
+   * Test event (deploy/migrations/0049-test-events.sql): kept off every public
+   * list and search; still opens by direct link and for its own club.
+   */
+  isTest: boolean("is_test").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   // deploy/migrations/0048-race-day-indexes.sql

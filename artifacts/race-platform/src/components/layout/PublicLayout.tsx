@@ -11,7 +11,7 @@ const BASE = import.meta.env.BASE_URL;
 const NAV = [
   { href: "/", label: "Home" },
   { href: "/results", label: "Results" },
-  { href: "/leaderboard", label: "Leaderboard" },
+  { href: "/leaderboard", label: "Series Standings" },
 ];
 
 // Header/footer follow the Rocky Mountain ATV/MC Design System (Header, Footer):
@@ -137,13 +137,13 @@ export function PublicLayout({ children }: { children: React.ReactNode }) {
 }
 
 const TRUST = [
-  { icon: Timer, text: "Live RFID & transponder timing" },
+  { icon: Timer, text: "Live RM TrackR & RFID timing" },
   { icon: Flag, text: "Official results, posted fast" },
   { icon: Trophy, text: "Series points, always current" },
 ];
 
 const COLUMNS: Array<[string, Array<[string, string]>]> = [
-  ["Race Info", [["Upcoming races", "/"], ["Results", "/results"], ["Series leaderboard", "/leaderboard"]]],
+  ["Race Info", [["Upcoming races", "/"], ["Results", "/results"], ["Series standings", "/leaderboard"]]],
   ["Riders", [["Rider login", "/rider/login"], ["Rider app", "/rider-app"]]],
   ["Clubs", [["Organizer login", "/login"]]],
   ["Policies", [["Privacy policy", "/privacy"], ["Terms and conditions", "/terms"], ["Delete my account", "/delete-account"]]],

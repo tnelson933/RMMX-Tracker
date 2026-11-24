@@ -176,11 +176,12 @@ router.get("/public/series/:seriesId", async (req, res) => {
         status: eventsTable.status,
         location: eventsTable.location,
         state: eventsTable.state,
+        isTest: eventsTable.isTest,
       }).from(eventsTable).where(inArray(eventsTable.id, eventIds))
     : [];
 
-  // Draft events aren't announced yet: keep them off the public page.
-  const eventMap = new Map(eventsData.filter(e => e.status !== "draft").map(e => [e.id, e]));
+  // Draft events aren't announced yet and test events never are: keep them off the public page.
+  const eventMap = new Map(eventsData.filter(e => e.status !== "draft" && !e.isTest).map(({ isTest: _t, ...e }) => [e.id, e]));
   const sortedEvents = eventIds.map(id => eventMap.get(id)).filter(Boolean);
 
   return res.json({

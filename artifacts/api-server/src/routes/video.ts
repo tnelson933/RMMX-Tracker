@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db, clubsTable } from "@workspace/db";
 import { eventsTable } from "@workspace/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   createBroadcastTicket,
   getLiveCameras,
@@ -30,7 +30,9 @@ router.get("/video/live-now", async (_req, res) => {
     id: eventsTable.id, name: eventsTable.name, date: eventsTable.date, state: eventsTable.state,
     location: eventsTable.location, trackName: eventsTable.trackName, imageUrl: eventsTable.imageUrl,
     clubName: clubsTable.name,
-  }).from(eventsTable).innerJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id)).where(inArray(eventsTable.id, ids));
+  }).from(eventsTable).innerJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
+    // A test event's stream still plays by direct link; it just isn't listed.
+    .where(and(inArray(eventsTable.id, ids), eq(eventsTable.isTest, false)));
   const events = rows.map(e => {
     const cams = getLiveCameras(e.id);
     return {

@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect } from "react";
+import { useRouteTitle } from "@/hooks/useDocumentTitle";
 import { Switch, Route, Router as WouterRouter, Redirect, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -469,6 +470,12 @@ function Router() {
   );
 }
 
+/** Default tab title for the current route (lib/documentTitle.ts). */
+function RouteTitle() {
+  useRouteTitle();
+  return null;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -481,6 +488,8 @@ function App() {
                 <OfflineBanner />
               </OptionalLazy>
               <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, "")}>
+                {/* Before the routes, so a page's own title (set in its effects) wins. */}
+                <RouteTitle />
                 <Router />
               </WouterRouter>
               <Toaster />

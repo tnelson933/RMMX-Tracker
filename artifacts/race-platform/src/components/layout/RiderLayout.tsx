@@ -23,8 +23,9 @@ export function RmCashWidget({ isAuthenticated }: { isAuthenticated: boolean }) 
     enabled: isAuthenticated,
     staleTime: 60_000,
   });
-  if (!isAuthenticated) return null;
-  const display = `$${(data?.balance ?? 0).toFixed(2)}`;
+  // No pill for an empty wallet (or before the balance loads); RM Cash stays under Profile.
+  if (!isAuthenticated || !data || !(data.balance > 0)) return null;
+  const display = `$${data.balance.toFixed(2)}`;
   return (
     <Link
       href="/rider/rm-cash"
@@ -217,7 +218,8 @@ export function RiderLayout({
         </div>
       </header>
 
-      <main className={`flex-1 w-full pb-[110px] md:pb-16 ${wide ? "" : "mx-auto max-w-6xl px-4"}`}>
+      {/* Bottom room for the tab bar and the floating Rocky button (84 + 60 px up on phones, 24 + 60 on desktop), so neither covers the last content. */}
+      <main className={`flex-1 w-full ${isAuthenticated && !hideRocky ? "pb-[168px] md:pb-28" : "pb-[110px] md:pb-16"} ${wide ? "" : "mx-auto max-w-6xl px-4"}`}>
         {showBack && (
           <div className={wide ? "mx-auto max-w-6xl px-4" : ""}>
             <Link href={backTo} className="inline-flex items-center gap-1 mt-4 text-[15px] font-medium text-[#A8A8A8] hover:text-white min-h-[44px]">

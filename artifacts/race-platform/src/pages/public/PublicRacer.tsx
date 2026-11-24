@@ -3,7 +3,7 @@
  * Only public profiles have one; private profiles (riders under 18 start
  * private) show a short "this profile is private" message instead.
  */
-import { useEffect } from "react";
+import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { Link, useRoute } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Lock } from "lucide-react";
@@ -18,12 +18,7 @@ export default function PublicRacer() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["public-racer", riderId], queryFn: () => riderApi.publicRacer(riderId), enabled: riderId > 0, retry: false,
   });
-  useEffect(() => {
-    if (!data) return;
-    const before = document.title;
-    document.title = `${data.name} · RM Roost racer profile`;
-    return () => { document.title = before; };
-  }, [data]);
+  useDocumentTitle(data?.name ?? null);
 
   return (
     <div className="bg-[#161616]">

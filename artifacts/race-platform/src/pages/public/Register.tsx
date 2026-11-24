@@ -21,6 +21,8 @@ import { Calendar, MapPin, Flag, CheckCircle2, AlertCircle, CreditCard, Loader2,
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { format, parseISO } from "date-fns";
 import { formatEventDatesFull } from "@/lib/eventDates";
+import { EventClubContact } from "@/components/EventClubContact";
+import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 
 import { PdfSignedViewer } from "@/components/PdfSignedViewer";
 import { responseErrorMessage } from "@/lib/friendlyErrors";
@@ -318,6 +320,10 @@ interface EventInfo {
   liabilityWaiverFields?: Array<{ id: string; type: string; page: number; x: number; y: number; width: number; height: number }> | null;
   clubName: string | null;
   clubLogoUrl: string | null;
+  /** The club's public contact from its profile (newer servers only). */
+  clubContactEmail?: string | null;
+  clubContactPhone?: string | null;
+  clubWebsite?: string | null;
   registrationOpen: string | null;
   registrationClose: string | null;
   timingTechnology: string;
@@ -426,6 +432,7 @@ export default function Register() {
 
   const [event, setEvent] = useState<EventInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  useDocumentTitle(event ? `Register: ${event.name}` : null);
   const [notFound, setNotFound] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState<SuccessData | null>(null);
@@ -1672,6 +1679,14 @@ export default function Register() {
               </p>
             </div>
 
+            {/* Who you're registering with and how to reach them */}
+            {(event.clubContactEmail || event.clubContactPhone || event.clubWebsite) && (
+              <div className="rounded-[14px] border-2 border-[#ECECEC] bg-[#FAFAFA] px-5 py-4">
+                <EventClubContact info={event} compact={!!event.clubLogoUrl} />
+                <p className="mt-3 text-[13px] text-[#555]">Questions about the event, classes or refunds? Contact the club directly.</p>
+              </div>
+            )}
+
             {paymentCancelled && (
               <div className="bg-amber-500/10 border border-amber-500/30 text-amber-700 rounded-md px-4 py-3 text-sm flex items-center gap-2">
                 <AlertCircle size={16} className="shrink-0" />
@@ -2862,6 +2877,29 @@ export default function Register() {
 
                 {/* Back / Next, kept in reach of the thumb on phones */}
                 <div className="sticky bottom-0 z-10 -mx-4 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-background/95 backdrop-blur border-t-2 border-[#ECECEC] space-y-3">
+                  {/* Running total from Classes on (the review step itemizes it). Same numbers as checkout. */}
+                  {step !== "review" && steps.includes("classes") && stepIndex >= steps.indexOf("classes") && (
+                    event.paymentEnabled && !!effectiveEntryFee ? (
+                      <div className="flex items-baseline justify-between gap-4" aria-live="polite">
+                        <span className="text-[15px] text-[#333]">
+                          Total so far
+                          {numSelectedClasses > 0 && (
+                            <span className="text-[#555]"> · {numSelectedClasses} {numSelectedClasses === 1 ? "class" : "classes"}{serviceFeeTotal > 0 ? ", incl. service fee" : ""}</span>
+                          )}
+                        </span>
+                        <span className="font-heading font-extrabold text-xl leading-none text-[#242424] tabular-nums">
+                          {numSelectedClasses === 0 ? "—" : totalDue === 0 ? "FREE" : `$${totalDue.toFixed(2)}`}
+                        </span>
+                      </div>
+                    ) : !event.paymentEnabled && !!effectiveEntryFee ? (
+                      <div className="flex items-baseline justify-between gap-4" aria-live="polite">
+                        <span className="text-[15px] text-[#333]">Fees so far, paid at the gate</span>
+                        <span className="font-heading font-extrabold text-xl leading-none text-[#242424] tabular-nums">
+                          {numSelectedClasses === 0 ? "—" : `$${(effectiveEntryFee * numSelectedClasses + selectedPurchasesTotal + rentalTotal + rfidStickerTotal).toFixed(2)}`}
+                        </span>
+                      </div>
+                    ) : null
+                  )}
                   {(stepError || (step === "review" && submitError)) && (
                     <div className="bg-destructive/10 border border-destructive/30 text-destructive rounded-md px-4 py-3 text-sm flex items-center gap-2">
                       <AlertCircle size={16} className="shrink-0" />

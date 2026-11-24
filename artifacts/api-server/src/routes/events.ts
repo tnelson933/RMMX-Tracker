@@ -121,6 +121,7 @@ router.get("/events", async (req, res) => {
     trackLng: eventsTable.trackLng,
     streetAddress: eventsTable.streetAddress,
     zip: eventsTable.zip,
+    isTest: eventsTable.isTest,
     createdAt: eventsTable.createdAt,
     clubName: clubsTable.name,
     clubLogoUrl: clubsTable.logoUrl,
@@ -136,7 +137,8 @@ router.get("/events", async (req, res) => {
     : await query.orderBy(eventsTable.date);
 
   const advanced = await advanceStatuses(events);
-  const visible = events.filter(e => (advanced.get(e.id) ?? e.status) !== "draft" || callerOwnsClub(res, e.clubId));
+  // Drafts and test events are the owning club's only; the public lists never show them.
+  const visible = events.filter(e => ((advanced.get(e.id) ?? e.status) !== "draft" && !e.isTest) || callerOwnsClub(res, e.clubId));
   const tagsByEvent = await eventsTimingTags(visible.map(e => e.id));
   return res.json(visible.map(e => ({
     ...e,
@@ -154,7 +156,7 @@ router.get("/events", async (req, res) => {
 router.post("/events", async (req, res) => {
   const invalid = validateEventInput(req.body ?? {});
   if (invalid) return res.status(400).json({ error: invalid });
-  const { name, date, state, location, trackName, raceClasses, raceClassLimits, raceClassSeriesMap, registrationOpen, registrationClose, paymentEnabled, requireAma, entryFee, earlyBirdFee, earlyBirdEndsAt, maxRiders, timingTechnology, transponderRentalEnabled, transponderRentalFee, rfidStickerFee, purchaseOptions, scoringTableId, endDate, requireWaiver, requireLiabilityWaiver, requireTransponder, groupRace, ridersPerGroup, raceStyle, quickCheckinEnabled, streetAddress, zip, requireClubId, noDuplicateBibs, raceClassDetails, contingencyBrands } = req.body;
+  const { name, date, state, location, trackName, raceClasses, raceClassLimits, raceClassSeriesMap, registrationOpen, registrationClose, paymentEnabled, requireAma, entryFee, earlyBirdFee, earlyBirdEndsAt, maxRiders, timingTechnology, transponderRentalEnabled, transponderRentalFee, rfidStickerFee, purchaseOptions, scoringTableId, endDate, requireWaiver, requireLiabilityWaiver, requireTransponder, groupRace, ridersPerGroup, raceStyle, quickCheckinEnabled, streetAddress, zip, requireClubId, noDuplicateBibs, raceClassDetails, contingencyBrands, isTest } = req.body;
   // Staff are always scoped to their own club; ignore any caller-supplied clubId.
   const staffCId = getStaffClubId(res);
   const clubId: number = staffCId ?? Number(req.body.clubId);
@@ -234,6 +236,7 @@ router.post("/events", async (req, res) => {
     amaEventId: amaEventId ?? null,
     endDate: cleanEndDate ?? null,
     quickCheckinEnabled: !!quickCheckinEnabled,
+    isTest: isTest === true,
     streetAddress: streetAddress || null,
     zip: zip || null,
     trackLat: trackCoords?.lat ?? null,
@@ -305,6 +308,7 @@ router.get("/events/:eventId", async (req, res) => {
     trackLng: eventsTable.trackLng,
     streetAddress: eventsTable.streetAddress,
     zip: eventsTable.zip,
+    isTest: eventsTable.isTest,
     createdAt: eventsTable.createdAt,
     clubName: clubsTable.name,
     clubLogoUrl: clubsTable.logoUrl,
@@ -402,10 +406,11 @@ router.patch("/events/:eventId", async (req, res) => {
   }
 
   const updates: Record<string, unknown> = {};
-  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "raceClassSeriesMap", "raceClassDetails", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "noDuplicateBibs", "requireClubId", "requireWaiver", "requireLiabilityWaiver", "requireTransponder", "groupRace", "ridersPerGroup", "earlyBirdEndsAt", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled", "purchaseOptions", "scoringTableId", "entryFeeCategoryId", "minLapMs", "amaEventId", "defaultGateConfigId", "endDate", "raceStyle", "enduroPenaltyConfig", "classOrder", "contingencyBrands", "quickCheckinEnabled", "streetAddress", "zip"];
+  const fields = ["name", "date", "state", "location", "trackName", "raceClasses", "raceClassLimits", "raceClassSeriesMap", "raceClassDetails", "registrationOpen", "registrationClose", "status", "paymentEnabled", "requireAma", "noDuplicateBibs", "requireClubId", "requireWaiver", "requireLiabilityWaiver", "requireTransponder", "groupRace", "ridersPerGroup", "earlyBirdEndsAt", "maxRiders", "imageUrl", "timingTechnology", "transponderRentalEnabled", "purchaseOptions", "scoringTableId", "entryFeeCategoryId", "minLapMs", "amaEventId", "defaultGateConfigId", "endDate", "raceStyle", "enduroPenaltyConfig", "classOrder", "contingencyBrands", "quickCheckinEnabled", "streetAddress", "zip", "isTest"];
   for (const f of fields) {
     if (req.body[f] !== undefined) updates[f] = req.body[f];
   }
+  if (updates.isTest !== undefined) updates.isTest = updates.isTest === true;
   if (updates.groupRace !== undefined) updates.groupRace = !!updates.groupRace;
   if (updates.ridersPerGroup !== undefined) updates.ridersPerGroup = normalizeRidersPerGroup(updates.ridersPerGroup);
   if (updates.groupRace === false) updates.ridersPerGroup = null;

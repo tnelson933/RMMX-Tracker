@@ -3,6 +3,7 @@
  * the system builds from published results, the number plate, and Follow.
  * Bio and home state only show on public profiles; riders under 18 start private.
  */
+import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { Link, useRoute } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Bike, Check, ChevronRight, Lock, Share2, Trophy } from "lucide-react";
@@ -34,6 +35,7 @@ export default function RacerProfile() {
   const riderId = parseInt(params?.riderId ?? "0", 10);
   const qc = useQueryClient();
   const { data, isLoading, error } = useQuery({ queryKey: ["racer", riderId], queryFn: () => riderApi.racer(riderId), enabled: !!riderId });
+  useDocumentTitle(data?.name ?? null);
 
   const toggle = useMutation({
     mutationFn: (follow: boolean) => (follow ? riderApi.follow(riderId) : riderApi.unfollow(riderId)),

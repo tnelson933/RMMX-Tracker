@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, type ReactNode } from "react";
+import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { OfficialResultsBadge } from "@/components/OfficialResultsBadge";
 import { useRoute, Link } from "wouter";
 import {
@@ -1082,6 +1083,7 @@ function LegacyLiveLeaderboard() {
 export default function LiveLeaderboard() {
   const [, params] = useRoute("/live/:motoId");
   const stream = useLiveRaceStream(params?.motoId);
+  useDocumentTitle(stream.data?.motoName ? `Live: ${stream.data.motoName}` : null);
   return (
     <main className="fixed inset-0 z-40 flex h-[100dvh] flex-col overflow-hidden bg-sidebar text-sidebar-foreground">
       <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3">

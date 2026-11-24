@@ -1,8 +1,14 @@
 import { format, parseISO } from "date-fns";
 
+/** True when there is an end date on a later day than the start (a real multi-day event). */
+function isMultiDay(date: string, endDate?: string | null): endDate is string {
+  return !!endDate && endDate.substring(0, 10) !== date.substring(0, 10);
+}
+
+/** "Nov 23, 2026", "Nov 23 – 24, 2026" or "Nov 30 – Dec 1, 2026". A same-day end date is one day. */
 export function formatEventDates(date: string, endDate?: string | null): string {
   const start = parseISO(date.substring(0, 10));
-  if (!endDate) {
+  if (!isMultiDay(date, endDate)) {
     return format(start, "MMM d, yyyy");
   }
   const end = parseISO(endDate.substring(0, 10));
@@ -15,9 +21,10 @@ export function formatEventDates(date: string, endDate?: string | null): string 
   return `${format(start, "MMM d, yyyy")} – ${format(end, "MMM d, yyyy")}`;
 }
 
+/** "Monday, November 23, 2026", or "November 23 – 24, 2026" for a multi-day event. */
 export function formatEventDatesFull(date: string, endDate?: string | null): string {
   const start = parseISO(date.substring(0, 10));
-  if (!endDate) {
+  if (!isMultiDay(date, endDate)) {
     return format(start, "EEEE, MMMM d, yyyy");
   }
   const end = parseISO(endDate.substring(0, 10));

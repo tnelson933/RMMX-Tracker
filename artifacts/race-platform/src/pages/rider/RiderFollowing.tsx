@@ -11,6 +11,7 @@ import { ChevronRight, Lock, Search } from "lucide-react";
 import { RiderLayout } from "@/components/layout/RiderLayout";
 import { PosBadge } from "@/components/rider/insights";
 import { riderApi, type SuggestedRider } from "@/lib/rider-api";
+import { dedupeFeedItems } from "@/lib/feed";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -22,7 +23,8 @@ const shortDate = (iso: string) => new Date(iso).toLocaleDateString("en-US", { m
 /** Latest results from riders you follow (and your own riders), for here and the portal home. */
 export function FollowingFeed({ limit }: { limit?: number }) {
   const { data } = useQuery({ queryKey: ["rider-feed"], queryFn: () => riderApi.feed() });
-  const items = (data?.items ?? []).filter(i => !i.isMine).slice(0, limit ?? 30);
+  // De-duplicate before dropping your own riders, so a followed copy of your own rider stays out too.
+  const items = dedupeFeedItems(data?.items ?? []).filter(i => !i.isMine).slice(0, limit ?? 30);
   if (items.length === 0) {
     return <p className="rounded-xl border border-[#3A3A3A] bg-[#242424] p-6 text-center text-sm text-[#A8A8A8]">Follow friends and rivals to see their results here.</p>;
   }

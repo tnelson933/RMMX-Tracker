@@ -558,6 +558,7 @@ export default function Dashboard() {
                   />
                 </div>
               </div>
+              <p className="-mt-2 text-xs text-muted-foreground">Contact email, phone and website are shown to riders on your event and registration pages.</p>
 
               <div className="space-y-2">
                 <Label htmlFor="website" className="font-heading uppercase tracking-wider text-xs">Website</Label>

@@ -1,6 +1,6 @@
 import React from "react";
 import { photoUri } from "@/components/RiderPhoto";
-import { View, Text, Image, StyleSheet, TouchableOpacity } from "react-native";
+import { View, Text, Image, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { useColors } from "@/hooks/useColors";
 import { useTheme } from "@/context/ThemeContext";
@@ -120,9 +120,8 @@ export function BrandBar() {
 
       <View style={styles.right}>
         <ProfileAvatars />
-        <TouchableOpacity onPress={() => router.push("/rm-cash")} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel="RM Cash balance">
-          <RmCashWidget />
-        </TouchableOpacity>
+        {/* Renders nothing until the rider has RM Cash */}
+        <RmCashWidget onPress={() => router.push("/rm-cash")} />
       </View>
     </View>
   );

@@ -3831,6 +3831,9 @@ components:
         zip:
           type: ["string", "null"]
           description: ZIP code of the track venue.
+        isTest:
+          type: boolean
+          description: Test event. Hidden from public lists and search (still opens by direct link and for its own club). Optional; older servers leave it out.
         createdAt:
           type: string
 
@@ -3973,10 +3976,16 @@ components:
         draft:
           type: boolean
           description: Save as a draft. date and state are then optional (date defaults to today, state to TBD); without it both are required.
+        isTest:
+          type: boolean
+          description: Test event, hidden from public lists and search.
 
     EventUpdate:
       type: object
       properties:
+        isTest:
+          type: boolean
+          description: Test event, hidden from public lists and search.
         name:
           type: string
         date:

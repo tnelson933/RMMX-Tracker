@@ -157,7 +157,7 @@ export function EventCard({
       style={({ pressed }) => ({
         marginHorizontal: 16, marginBottom: 10, borderRadius: 16, backgroundColor: colors.card,
         borderWidth: live || registered ? 1.5 : 1,
-        borderColor: live ? "#ef4444" : registered ? colors.primary : colors.border,
+        borderColor: live ? colors.primary : registered ? colors.primary : colors.border,
         padding: 12, flexDirection: "row", gap: 12, alignItems: "center", opacity: pressed ? 0.8 : 1,
       })}
     >
@@ -165,7 +165,7 @@ export function EventCard({
       <View style={{ flex: 1, gap: 5 }}>
         <View style={{ flexDirection: "row", gap: 5, flexWrap: "wrap" }}>
           {live && (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: "#ef4444" }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: colors.primary }}>
               <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: "#fff" }} />
               <Text style={{ fontSize: 9, color: "#fff", fontFamily: "Roboto_700Bold", letterSpacing: 0.8 }}>LIVE NOW</Text>
             </View>

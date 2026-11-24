@@ -143,5 +143,7 @@ export interface Event {
      * @nullable
      */
   zip?: string | null;
+  /** Test event. Hidden from public lists and search (still opens by direct link and for its own club). Optional; older servers leave it out. */
+  isTest?: boolean;
   createdAt?: string;
 }

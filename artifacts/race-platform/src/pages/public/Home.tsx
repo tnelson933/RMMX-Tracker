@@ -263,7 +263,7 @@ function PastCard({ result }: { result: RecentResultItem }) {
             <div className="flex items-center justify-between">
               <div className="font-bold text-base">{result.topRider}</div>
               <div className="text-primary font-heading font-bold flex items-center gap-1">
-                View Results <ChevronRight size={14} />
+                {result.official != null ? "View results" : "Details"} <ChevronRight size={14} />
               </div>
             </div>
           </div>

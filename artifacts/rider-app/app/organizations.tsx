@@ -1,3 +1,4 @@
+import { useBottomSpace } from "@/hooks/useBottomSpace";
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
@@ -30,6 +31,7 @@ interface Organization {
 export default function OrganizationsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const bottomSpace = useBottomSpace();
   const router = useRouter();
   const { riderFetch } = useRiderAuth();
 
@@ -140,7 +142,7 @@ export default function OrganizationsScreen() {
     content: {
       paddingHorizontal: 16,
       paddingTop: 16,
-      paddingBottom: insets.bottom + 32,
+      paddingBottom: bottomSpace,
       gap: 12,
     },
     description: {

@@ -1,3 +1,4 @@
+import { useBottomSpace } from "@/hooks/useBottomSpace";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { SessionLapChart, TrackProgressChart } from "@/components/PracticeCharts";
 import { fmtLapShort } from "@/lib/raceReport";
@@ -205,7 +206,7 @@ function LapTable({
   if (validLaps.length === 0) return (
     <View style={{ padding: 24, alignItems: "center", gap: 6 }}>
       <Feather name="clock" size={28} color={colors.mutedForeground} />
-      <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center" }}>No lap times recorded yet.</Text>
+      <Text style={{ fontVariant: ["tabular-nums"], fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center" }}>No lap times recorded yet.</Text>
     </View>
   );
   const eligibleLaps = validLaps.filter(l => isLapEligible(l.lapNumber, raceStyle));
@@ -215,9 +216,9 @@ function LapTable({
   return (
     <View style={{ borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, overflow: "hidden", backgroundColor: colors.card }}>
       <View style={{ flexDirection: "row", paddingHorizontal: 14, paddingVertical: 8, backgroundColor: colors.muted + "80", borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
-        <Text style={{ width: 36, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Lap</Text>
-        <Text style={{ flex: 1, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Time</Text>
-        <Text style={{ width: 70, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Gap</Text>
+        <Text style={{ fontVariant: ["tabular-nums"], width: 36, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Lap</Text>
+        <Text style={{ fontVariant: ["tabular-nums"], flex: 1, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Time</Text>
+        <Text style={{ fontVariant: ["tabular-nums"], width: 70, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Gap</Text>
       </View>
       {validLaps.map((lap, i) => {
         const isBest = isLapEligible(lap.lapNumber, raceStyle) && bestMs != null && lap.lapTimeMs === bestMs;
@@ -226,10 +227,10 @@ function LapTable({
           : "";
         return (
           <View key={i} style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: i < validLaps.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: colors.border, backgroundColor: isBest ? colors.primary + "10" : "transparent" }}>
-            <Text style={{ width: 36, fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>{lap.lapNumber}</Text>
-            <Text style={{ flex: 1, fontSize: 15, fontWeight: isBest ? "800" : "400", color: isBest ? colors.primaryText : colors.foreground, fontFamily: isBest ? "Roboto_700Bold" : "Roboto_400Regular" }}>{fmtLap(lap.lapTimeMs)}</Text>
+            <Text style={{ fontVariant: ["tabular-nums"], width: 36, fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>{lap.lapNumber}</Text>
+            <Text style={{ fontVariant: ["tabular-nums"], flex: 1, fontSize: 15, fontWeight: isBest ? "800" : "400", color: isBest ? colors.primaryText : colors.foreground, fontFamily: isBest ? "Roboto_700Bold" : "Roboto_400Regular" }}>{fmtLap(lap.lapTimeMs)}</Text>
             <View style={{ width: 70, alignItems: "flex-end", flexDirection: "row", justifyContent: "flex-end", gap: 4 }}>
-              {isBest ? (<><Feather name="zap" size={11} color={colors.primaryText} /><Text style={{ fontSize: 11, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>BEST</Text></>) : delta ? (<Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>{delta}</Text>) : null}
+              {isBest ? (<><Feather name="zap" size={11} color={colors.primaryText} /><Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>BEST</Text></>) : delta ? (<Text style={{ fontVariant: ["tabular-nums"], fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>{delta}</Text>) : null}
             </View>
           </View>
         );
@@ -246,21 +247,21 @@ function Leaderboard({ entries, colors }: { entries: LeaderboardEntry[]; colors:
     <View style={{ borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, overflow: "hidden", backgroundColor: colors.card }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: colors.muted + "80", borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border }}>
         <Feather name="list" size={12} color={colors.mutedForeground} />
-        <Text style={{ fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8, flex: 1 }}>Gate Pick Order</Text>
-        <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>Best Lap</Text>
+        <Text style={{ fontVariant: ["tabular-nums"], fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8, flex: 1 }}>Gate Pick Order</Text>
+        <Text style={{ fontVariant: ["tabular-nums"], fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>Best Lap</Text>
       </View>
       {entries.map((e, i) => (
         <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: i < entries.length - 1 ? StyleSheet.hairlineWidth : 0, borderBottomColor: colors.border, backgroundColor: e.isMe ? colors.primary + "0d" : "transparent" }}>
           <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: e.rank === 1 ? colors.primary : e.isMe ? colors.primary + "30" : colors.muted, alignItems: "center", justifyContent: "center" }}>
-            <Text style={{ fontSize: 12, fontWeight: "700", color: e.rank === 1 ? "#fff" : e.isMe ? colors.primaryText : colors.mutedForeground, fontFamily: "Roboto_700Bold" }}>{e.rank}</Text>
+            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 12, fontWeight: "700", color: e.rank === 1 ? "#fff" : e.isMe ? colors.primaryText : colors.mutedForeground, fontFamily: "Roboto_700Bold" }}>{e.rank}</Text>
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 14, fontWeight: e.isMe ? "700" : "400", color: colors.foreground, fontFamily: e.isMe ? "Roboto_700Bold" : "Roboto_400Regular" }}>{e.riderName}{e.isMe ? "  ★" : ""}</Text>
-            {e.bibNumber && <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>#{e.bibNumber}</Text>}
+            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 14, fontWeight: e.isMe ? "700" : "400", color: colors.foreground, fontFamily: e.isMe ? "Roboto_700Bold" : "Roboto_400Regular" }}>{e.riderName}{e.isMe ? "  ★" : ""}</Text>
+            {e.bibNumber && <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>#{e.bibNumber}</Text>}
           </View>
           <View style={{ alignItems: "flex-end", gap: 1 }}>
-            <Text style={{ fontSize: 14, fontWeight: "600", color: e.isMe ? colors.primaryText : colors.foreground, fontFamily: e.isMe ? "Roboto_700Bold" : "Roboto_500Medium" }}>{fmtLap(e.bestLapMs)}</Text>
-            <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>{e.lapCount} lap{e.lapCount !== 1 ? "s" : ""}</Text>
+            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 14, fontWeight: "600", color: e.isMe ? colors.primaryText : colors.foreground, fontFamily: e.isMe ? "Roboto_700Bold" : "Roboto_500Medium" }}>{fmtLap(e.bestLapMs)}</Text>
+            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>{e.lapCount} lap{e.lapCount !== 1 ? "s" : ""}</Text>
           </View>
         </View>
       ))}
@@ -494,9 +495,10 @@ function PlanScreen({ plan, workoutType, onReset, colors, insets }: {
   colors: ReturnType<typeof useColors>;
   insets: ReturnType<typeof useSafeAreaInsets>;
 }) {
+  const bottomSpace = useBottomSpace();
   const typeMeta = WORKOUT_TYPE_META[workoutType];
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: insets.bottom + 170 }}>
+    <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: bottomSpace }}>
       {/* Plan header */}
       <View style={{ borderRadius: 14, overflow: "hidden", borderWidth: 1.5, borderColor: colors.primary + "44" }}>
         <View style={{ padding: 16, backgroundColor: colors.primary + "12" }}>
@@ -672,6 +674,7 @@ function InputScreen({ onGenerate, colors, insets }: {
   colors: ReturnType<typeof useColors>;
   insets: ReturnType<typeof useSafeAreaInsets>;
 }) {
+  const bottomSpace = useBottomSpace();
   const [goal, setGoal]               = useState("");
   const [duration, setDuration]       = useState<number | null>(null);
   const [workoutType, setWorkoutType] = useState<WorkoutType | null>(null);
@@ -699,7 +702,7 @@ function InputScreen({ onGenerate, colors, insets }: {
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-      <ScrollView contentContainerStyle={{ padding: 20, gap: 24, paddingBottom: insets.bottom + 170 }}>
+      <ScrollView contentContainerStyle={{ padding: 20, gap: 24, paddingBottom: bottomSpace }}>
         {/* Hero */}
         <View style={{ alignItems: "center", gap: 8, paddingTop: 8 }}>
           <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: colors.primary + "20", alignItems: "center", justifyContent: "center" }}>
@@ -847,6 +850,7 @@ function InputScreen({ onGenerate, colors, insets }: {
 export default function TrainScreen() {
   const colors  = useColors();
   const insets  = useSafeAreaInsets();
+  const bottomSpace = useBottomSpace();
   const router  = useRouter();
   const { isAuthenticated, isLoading: authLoading, activeProfiles, riderFetch, account } = useRiderAuth();
 
@@ -1250,7 +1254,7 @@ export default function TrainScreen() {
     segBtn:    { flex: 1, paddingVertical: 9, borderRadius: 999, alignItems: "center" },
     pickerRow: { paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
     pickerLabel: { fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8, paddingHorizontal: 16, marginBottom: 6 },
-    footer:    { height: insets.bottom + 170 },
+    footer:    { height: bottomSpace },
   });
 
   if (authLoading) {
@@ -1281,16 +1285,16 @@ export default function TrainScreen() {
         <BrandBar />
         <Text style={{ fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Barlow_800ExtraBold", letterSpacing: 1, textTransform: "uppercase" }}>Train</Text>
 
-        {/* Segmented control: Track | Coach */}
+        {/* Segmented control: Laps (practice lap sessions) | Workouts (AI training plan) */}
         <View style={[styles.segControl, { marginTop: 14, marginHorizontal: 0 }]}>
           {(["track", "coach"] as TabMode[]).map(mode => {
             const active = tabMode === mode;
             return (
-              <Pressable key={mode} onPress={() => setTabMode(mode)} style={[styles.segBtn, { backgroundColor: active ? colors.primary : "transparent" }]}>
+              <Pressable key={mode} onPress={() => setTabMode(mode)} accessibilityRole="tab" accessibilityState={{ selected: active }} style={[styles.segBtn, { backgroundColor: active ? colors.primary : "transparent" }]}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
                   <Feather name={mode === "track" ? "activity" : "cpu"} size={13} color={active ? "#fff" : colors.mutedForeground} />
                   <Text style={{ fontSize: 13, fontWeight: "700", color: active ? "#fff" : colors.mutedForeground, fontFamily: "Roboto_700Bold" }}>
-                    {mode === "track" ? "Track" : "Train"}
+                    {mode === "track" ? "Laps" : "Workouts"}
                   </Text>
                 </View>
               </Pressable>
@@ -1313,7 +1317,7 @@ export default function TrainScreen() {
         <>
           <ScrollView
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
-            contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 0, gap: 16, paddingBottom: insets.bottom + 170 }}
+            contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 0, gap: 16, paddingBottom: bottomSpace }}
           >
             {/* Track, date and session pickers scroll with the content, leaving room for the charts. */}
             <View style={{ marginHorizontal: -16 }}>
@@ -1388,9 +1392,9 @@ export default function TrainScreen() {
                           )}
                           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
                             {currentSession.status === "in_progress" && (
-                              <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: "#ef444420" }}>
-                                <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: "#ef4444" }} />
-                                <Text style={{ fontSize: 10, fontWeight: "700", color: "#ef4444", fontFamily: "Roboto_700Bold" }}>LIVE</Text>
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20, backgroundColor: colors.primaryTint }}>
+                                <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: colors.primary }} />
+                                <Text style={{ fontSize: 10, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>LIVE</Text>
                               </View>
                             )}
                             {pbFlash && (
@@ -1407,7 +1411,7 @@ export default function TrainScreen() {
                           </View>
                         </View>
                         <View style={{ alignItems: "flex-end", gap: 2 }}>
-                          <Text style={{ fontSize: 24, fontWeight: "800", color: pbFlash ? "#ca8a04" : colors.primaryText, fontFamily: "Roboto_700Bold" }}>{fmtLap(displayBest)}</Text>
+                          <Text style={{ fontVariant: ["tabular-nums"], fontSize: 24, fontWeight: "800", color: pbFlash ? "#ca8a04" : colors.primaryText, fontFamily: "Roboto_700Bold" }}>{fmtLap(displayBest)}</Text>
                           <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_500Medium", textTransform: "uppercase", letterSpacing: 0.5 }}>Best Lap</Text>
                           <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>{lapCount} {lapCount === 1 ? "lap" : "laps"}</Text>
                         </View>
@@ -1452,7 +1456,7 @@ export default function TrainScreen() {
           )}
           {coachState === "error" && (
             <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 40, gap: 16 }}>
-              <Feather name="alert-circle" size={40} color="#ef4444" />
+              <Feather name="alert-circle" size={40} color={colors.destructive} />
               <Text style={{ fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold", textAlign: "center" }}>Couldn't Generate Plan</Text>
               <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center", lineHeight: 20 }}>{coachError}</Text>
               <Pressable onPress={() => setCoachState("input")} style={{ backgroundColor: colors.primary, paddingHorizontal: 28, paddingVertical: 12, borderRadius: 10 }}>

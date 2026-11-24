@@ -1,5 +1,5 @@
-/* Brand type (Rocky Mountain ATV/MC Design System): Barlow display, Roboto body. */
-@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@600;700;800&family=Roboto:wght@400;500;700&display=swap');
+/* Brand type (Rocky Mountain ATV/MC Design System): Barlow display, Roboto body.
+   Loaded with <link> in index.html (a CSS @import waits for this file first). */
 @import "tailwindcss";
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";

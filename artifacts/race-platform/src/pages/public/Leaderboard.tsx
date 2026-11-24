@@ -66,7 +66,7 @@ export default function Leaderboard() {
       <TitleBand
         containerClassName="max-w-6xl"
         eyebrow="Championship points"
-        title="Series Leaderboard"
+        title="Series Standings"
         subtitle="Championship standings from clubs across the platform."
       />
 

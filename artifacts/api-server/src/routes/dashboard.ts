@@ -4,7 +4,8 @@ import { computeEventOverall } from "../lib/eventOverall";
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { clubsTable, eventsTable, ridersTable, registrationsTable, checkinsTable, motosTable, raceResultsTable, eventPublicationTable, lapCrossingsTable, liabilityWaiverSignaturesTable } from "@workspace/db";
-import { eq, and, ne, count, countDistinct, sql, inArray, desc, asc, gt, lte } from "drizzle-orm";
+import { eq, and, or, ne, count, countDistinct, sql, inArray, desc, asc, gt, lte } from "drizzle-orm";
+import { eventHasActivity, listableFinishedEvent, notTestEvent } from "../lib/publicEvents";
 import { buildLeaderboard } from "./timing";
 import { parseLapMs } from "../lib/careerStats";
 import { addonCollected, eventAddonSales } from "../lib/addonPayments";
@@ -367,7 +368,7 @@ router.get("/public/states", async (req, res) => {
     state: sql<string>`trim(${eventsTable.state})`,
     count: count(),
   }).from(eventsTable)
-    .where(inArray(eventsTable.status, FINISHED_STATUSES))
+    .where(and(inArray(eventsTable.status, FINISHED_STATUSES), listableFinishedEvent))
     .groupBy(sql`trim(${eventsTable.state})`)
     .orderBy(sql`trim(${eventsTable.state})`);
 
@@ -395,6 +396,8 @@ router.get("/public/upcoming", async (req, res) => {
   }).from(eventsTable)
     .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
     .where(and(
+      // Test events stay off public lists (lib/publicEvents.ts).
+      notTestEvent,
       // Include draft events too so we can advance their status below; filter
       // them back out after advancement.
       sql`${eventsTable.status} not in ('completed', 'results_published')`,
@@ -436,7 +439,8 @@ router.get("/public/upcoming", async (req, res) => {
 
 router.get("/public/recent-results", async (req, res) => {
   const { state, limit = "10" } = req.query;
-  const baseCondition = inArray(eventsTable.status, FINISHED_STATUSES);
+  // No test events, and no finished event where nothing happened (lib/publicEvents.ts).
+  const baseCondition = and(inArray(eventsTable.status, FINISHED_STATUSES), listableFinishedEvent)!;
   const events = await db.select({
     id: eventsTable.id,
     name: eventsTable.name,
@@ -569,7 +573,11 @@ router.get("/public/events/browse", async (req, res) => {
     clubName: clubsTable.name,
   }).from(eventsTable)
     .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
-    .where(inArray(eventsTable.status, ["race_day", "completed"]))
+    // Live today, or finished with something to show; never test events (lib/publicEvents.ts).
+    .where(and(
+      notTestEvent,
+      or(eq(eventsTable.status, "race_day"), and(eq(eventsTable.status, "completed"), eventHasActivity)),
+    ))
     .orderBy(desc(eventsTable.date));
 
   const out = events

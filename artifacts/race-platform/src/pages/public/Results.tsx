@@ -204,7 +204,10 @@ export default function Results() {
 }
 
 function EventRow({ event, live = false, upcoming = false }: { event: ListEvent; live?: boolean; upcoming?: boolean }) {
-  const href = upcoming ? `/register/${event.id}` : `/results/${event.id}`;
+  // One event page for every state: before race day it shows the event details and Register.
+  const href = `/results/${event.id}`;
+  const multiDay = !!event.endDate && event.endDate.substring(0, 10) !== event.date.substring(0, 10);
+  const action = live ? "Follow live" : upcoming ? "View event" : event.official != null ? "View results" : "Details";
   return (
     <Link href={href}>
       <Card className="hover-elevate cursor-pointer hover:border-primary transition-all group overflow-hidden">
@@ -215,9 +218,9 @@ function EventRow({ event, live = false, upcoming = false }: { event: ListEvent;
               <span className="text-sm font-bold text-sidebar-foreground/70 uppercase tracking-widest mb-1">
                 {format(parseISO(event.date.substring(0, 10)), "MMM yyyy")}
               </span>
-              {event.endDate ? (
+              {multiDay ? (
                 <span className="text-3xl font-heading font-bold leading-none">
-                  {format(parseISO(event.date.substring(0, 10)), "d")}–{format(parseISO(event.endDate.substring(0, 10)), "d")}
+                  {format(parseISO(event.date.substring(0, 10)), "d")}–{format(parseISO(event.endDate!.substring(0, 10)), "d")}
                 </span>
               ) : (
                 <span className="text-5xl font-heading font-bold leading-none">
@@ -266,8 +269,9 @@ function EventRow({ event, live = false, upcoming = false }: { event: ListEvent;
             </div>
 
             <div className="sm:text-right shrink-0">
-              <Button variant="outline" className="border-2 border-[#8C8C8C] text-[#333] bg-white group-hover:bg-[#242424] group-hover:border-[#242424] group-hover:text-white transition-all">
-                {live ? "Follow live" : upcoming ? "Event details" : "View Results"} <ChevronRight size={18} className="ml-1" />
+              {/* Not a <button>: the whole card is already the link. */}
+              <Button asChild variant="outline" className="border-2 border-[#8C8C8C] text-[#333] bg-white group-hover:bg-[#242424] group-hover:border-[#242424] group-hover:text-white transition-all">
+                <span>{action} <ChevronRight size={18} className="ml-1" /></span>
               </Button>
             </div>
           </div>

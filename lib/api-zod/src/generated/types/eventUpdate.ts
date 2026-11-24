@@ -15,6 +15,8 @@ import type { EventUpdateTimingTechnology } from './eventUpdateTimingTechnology'
 import type { PurchaseOption } from './purchaseOption';
 
 export interface EventUpdate {
+  /** Test event, hidden from public lists and search. */
+  isTest?: boolean;
   name?: string;
   date?: string;
   state?: string;

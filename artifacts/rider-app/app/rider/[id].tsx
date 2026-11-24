@@ -1,3 +1,4 @@
+import { useBottomSpace } from "@/hooks/useBottomSpace";
 import { Feather } from "@expo/vector-icons";
 import { RacerProfileSettings } from "@/components/RacerProfileSettings";
 import { ProfileManagers } from "@/components/ProfileManagers";
@@ -343,6 +344,7 @@ export default function RiderDetailScreen() {
   const riderId = parseInt(id ?? "", 10);
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const bottomSpace = useBottomSpace();
   const colors = useColors();
   const { riderFetch, refreshProfiles } = useRiderAuth();
 
@@ -543,7 +545,7 @@ export default function RiderDetailScreen() {
     scrollContent: {
       paddingHorizontal: 16,
       paddingTop: 16,
-      paddingBottom: insets.bottom + 32,
+      paddingBottom: bottomSpace,
       gap: 16,
     },
     heroCard: {

@@ -468,6 +468,8 @@ export interface Event {
      * @nullable
      */
   zip?: string | null;
+  /** Test event. Hidden from public lists and search (still opens by direct link and for its own club). Optional; older servers leave it out. */
+  isTest?: boolean;
   createdAt?: string;
 }
 
@@ -603,6 +605,8 @@ export interface EventInput {
   contingencyBrands?: string[] | null;
   /** Save as a draft. date and state are then optional (date defaults to today, state to TBD); without it both are required. */
   draft?: boolean;
+  /** Test event, hidden from public lists and search. */
+  isTest?: boolean;
 }
 
 export type EventUpdateRaceClassLimits = {[key: string]: number | null};
@@ -655,6 +659,8 @@ export type EventUpdateQuickCheckinRequirements = {
 } | null | null;
 
 export interface EventUpdate {
+  /** Test event, hidden from public lists and search. */
+  isTest?: boolean;
   name?: string;
   date?: string;
   state?: string;

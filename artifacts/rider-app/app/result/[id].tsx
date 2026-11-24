@@ -255,26 +255,26 @@ export default function ResultDetailScreen() {
                     backgroundColor: colors.muted + "50",
                   }}>
                     <View style={{ width: 46, height: 46, borderRadius: 12, backgroundColor: colors.foreground, alignItems: "center", justifyContent: "center" }}>
-                      <Text style={{ fontSize: 10, fontWeight: "700", color: colors.background, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
+                      <Text style={{ fontVariant: ["tabular-nums"], fontSize: 10, fontWeight: "700", color: colors.background, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
                         {moto.motoType === "practice" ? "PRAC" : "RACE"}
                       </Text>
-                      <Text style={{ fontSize: 17, fontWeight: "800", color: colors.background, fontFamily: "Barlow_800ExtraBold_Italic", lineHeight: 19 }}>
+                      <Text style={{ fontVariant: ["tabular-nums"], fontSize: 17, fontWeight: "800", color: colors.background, fontFamily: "Barlow_800ExtraBold_Italic", lineHeight: 19 }}>
                         #{moto.motoNumber}
                       </Text>
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
+                      <Text style={{ fontVariant: ["tabular-nums"], fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
                         {moto.motoName}
                       </Text>
                       <View style={{ flexDirection: "row", gap: 10, marginTop: 2 }}>
                         {moto.totalTime ? (
-                          <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>{moto.totalTime}</Text>
+                          <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>{moto.totalTime}</Text>
                         ) : null}
                         {moto.points != null && moto.points > 0 ? (
-                          <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>{moto.points} pts</Text>
+                          <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>{moto.points} pts</Text>
                         ) : null}
                         {moto.official != null && moto.motoType !== "practice" ? (
-                          <Text style={{ fontSize: 12, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.6, color: moto.official ? "#15803d" : "#b45309" }}>
+                          <Text style={{ fontVariant: ["tabular-nums"], fontSize: 12, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.6, color: moto.official ? "#15803d" : "#b45309" }}>
                             {moto.official ? "✓ Official results" : "Unofficial results"}
                           </Text>
                         ) : null}
@@ -292,9 +292,9 @@ export default function ResultDetailScreen() {
                         backgroundColor: colors.muted + "40",
                         borderBottomWidth: 1, borderBottomColor: colors.border,
                       }}>
-                        <Text style={{ width: 36, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Lap</Text>
-                        <Text style={{ flex: 1, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Time</Text>
-                        <Text style={{ width: 68, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Gap</Text>
+                        <Text style={{ fontVariant: ["tabular-nums"], width: 36, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Lap</Text>
+                        <Text style={{ fontVariant: ["tabular-nums"], flex: 1, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Time</Text>
+                        <Text style={{ fontVariant: ["tabular-nums"], width: 68, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Gap</Text>
                       </View>
                       {moto.lapTimes.map((t, i) => {
                         const isFastest = i === fastestIdx;
@@ -310,7 +310,7 @@ export default function ResultDetailScreen() {
                               backgroundColor: isFastest ? primary + "0e" : "transparent",
                             }}
                           >
-                            <Text style={{ width: 36, fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>{i + 1}</Text>
+                            <Text style={{ fontVariant: ["tabular-nums"], width: 36, fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>{i + 1}</Text>
                             <Text style={{
                               flex: 1, fontSize: 15,
                               fontWeight: isFastest ? "800" : "400",
@@ -323,10 +323,10 @@ export default function ResultDetailScreen() {
                               {isFastest ? (
                                 <>
                                   <Feather name="zap" size={11} color={colors.primaryText} />
-                                  <Text style={{ fontSize: 10, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>BEST</Text>
+                                  <Text style={{ fontVariant: ["tabular-nums"], fontSize: 10, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>BEST</Text>
                                 </>
                               ) : delta ? (
-                                <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>{delta}</Text>
+                                <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>{delta}</Text>
                               ) : null}
                             </View>
                           </View>
@@ -335,7 +335,7 @@ export default function ResultDetailScreen() {
                     </View>
                   ) : (
                     <View style={{ padding: 14 }}>
-                      <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", fontStyle: "italic" }}>
+                      <Text style={{ fontVariant: ["tabular-nums"], fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", fontStyle: "italic" }}>
                         No lap times recorded
                       </Text>
                     </View>

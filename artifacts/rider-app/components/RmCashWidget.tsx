@@ -1,11 +1,16 @@
 import { Feather } from "@expo/vector-icons";
 import React, { useEffect, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 
-export function RmCashWidget() {
+/**
+ * RM Cash balance chip. Shown only once a rider actually has RM Cash: while
+ * monetization is off almost everyone is at $0.00, and a zero chip in every
+ * header is noise. Hidden while the balance is loading or unknown too.
+ */
+export function RmCashWidget({ onPress }: { onPress?: () => void } = {}) {
   const colors = useColors();
   const { isAuthenticated, riderFetch } = useRiderAuth();
   // null until the balance is known: a failed request must not read as "$0.00".
@@ -24,7 +29,10 @@ export function RmCashWidget() {
       .catch(() => {});
   }, [isAuthenticated, riderFetch]);
 
-  return (
+  if (balance == null || balance <= 0) return null;
+  const amount = `$${balance.toFixed(2)}`;
+
+  const pill = (
     <View
       style={[
         styles.pill,
@@ -36,9 +44,16 @@ export function RmCashWidget() {
         <Text style={[styles.label, { color: colors.mutedForeground }]}>
           RM CASH
         </Text>
-        <Text style={styles.amount}>{balance == null ? "$—" : `$${balance.toFixed(2)}`}</Text>
+        <Text style={[styles.amount, { fontVariant: ["tabular-nums"] }]}>{amount}</Text>
       </View>
     </View>
+  );
+  if (!onPress) return pill;
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={`RM Cash balance, ${amount}`}
+      style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
+      {pill}
+    </Pressable>
   );
 }
 

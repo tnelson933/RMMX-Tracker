@@ -1,3 +1,4 @@
+import { useBottomSpace } from "@/hooks/useBottomSpace";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -186,7 +187,7 @@ function HistoryRow({
       <View style={{ flexDirection: "row", marginBottom: 0 }}>
         <Pressable
           style={{
-            backgroundColor: "#3B82F6",
+            backgroundColor: "#525252", // neutral: not an off-palette blue
             justifyContent: "center",
             alignItems: "center",
             width: 72,
@@ -266,6 +267,7 @@ function HistoryRow({
 export default function MaintenanceHistoryScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const bottomSpace = useBottomSpace();
   const colors = useColors();
   const { riderId: riderIdParam } = useLocalSearchParams<{ riderId: string }>();
   const riderId = parseInt(riderIdParam ?? "", 10);
@@ -377,7 +379,7 @@ export default function MaintenanceHistoryScreen() {
       textAlign: "center", marginBottom: 2, opacity: 0.7,
     },
     scroll: { flex: 1 },
-    content: { padding: 16, gap: 10, paddingBottom: insets.bottom + 32 },
+    content: { padding: 16, gap: 10, paddingBottom: bottomSpace },
     emptyBox: {
       backgroundColor: colors.card, borderRadius: 14, padding: 40,
       alignItems: "center", gap: 12, borderWidth: 1, borderColor: colors.border,

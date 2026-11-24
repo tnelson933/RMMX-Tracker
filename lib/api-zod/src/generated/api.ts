@@ -535,6 +535,7 @@ export const ListEventsResponseItem = zod.object({
   "trackLng": zod.number().nullish().describe('Longitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.'),
   "streetAddress": zod.string().nullish().describe('Street address of the track venue.'),
   "zip": zod.string().nullish().describe('ZIP code of the track venue.'),
+  "isTest": zod.boolean().optional().describe('Test event. Hidden from public lists and search (still opens by direct link and for its own club). Optional; older servers leave it out.'),
   "createdAt": zod.string().optional()
 })
 export const ListEventsResponse = zod.array(ListEventsResponseItem)
@@ -602,7 +603,8 @@ export const CreateEventBody = zod.object({
   "rfidStickerFee": zod.number().optional(),
   "raceClassDetails": zod.record(zod.string(), zod.string()).optional().describe('Maps each race class name to a rules\/details paragraph shown to riders.'),
   "contingencyBrands": zod.array(zod.string()).nullish().describe('Brands selected for contingency sponsorships at this event.'),
-  "draft": zod.boolean().optional().describe('Save as a draft. date and state are then optional (date defaults to today, state to TBD); without it both are required.')
+  "draft": zod.boolean().optional().describe('Save as a draft. date and state are then optional (date defaults to today, state to TBD); without it both are required.'),
+  "isTest": zod.boolean().optional().describe('Test event, hidden from public lists and search.')
 })
 
 
@@ -695,6 +697,7 @@ export const GetEventResponse = zod.object({
   "trackLng": zod.number().nullish().describe('Longitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.'),
   "streetAddress": zod.string().nullish().describe('Street address of the track venue.'),
   "zip": zod.string().nullish().describe('ZIP code of the track venue.'),
+  "isTest": zod.boolean().optional().describe('Test event. Hidden from public lists and search (still opens by direct link and for its own club). Optional; older servers leave it out.'),
   "createdAt": zod.string().optional()
 })
 
@@ -709,6 +712,7 @@ export const UpdateEventParams = zod.object({
 export const updateEventBodyTimingTechnologyDefault = `rfid`;
 
 export const UpdateEventBody = zod.object({
+  "isTest": zod.boolean().optional().describe('Test event, hidden from public lists and search.'),
   "name": zod.string().optional(),
   "date": zod.string().optional(),
   "state": zod.string().optional(),
@@ -853,6 +857,7 @@ export const UpdateEventResponse = zod.object({
   "trackLng": zod.number().nullish().describe('Longitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.'),
   "streetAddress": zod.string().nullish().describe('Street address of the track venue.'),
   "zip": zod.string().nullish().describe('ZIP code of the track venue.'),
+  "isTest": zod.boolean().optional().describe('Test event. Hidden from public lists and search (still opens by direct link and for its own club). Optional; older servers leave it out.'),
   "createdAt": zod.string().optional()
 })
 
@@ -2744,6 +2749,7 @@ export const GetClubDashboardResponse = zod.object({
   "trackLng": zod.number().nullish().describe('Longitude of the track, auto-geocoded when quickCheckinEnabled is toggled on.'),
   "streetAddress": zod.string().nullish().describe('Street address of the track venue.'),
   "zip": zod.string().nullish().describe('ZIP code of the track venue.'),
+  "isTest": zod.boolean().optional().describe('Test event. Hidden from public lists and search (still opens by direct link and for its own club). Optional; older servers leave it out.'),
   "createdAt": zod.string().optional()
 })).optional(),
   "nextEventSnapshot": zod.union([zod.object({

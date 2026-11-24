@@ -845,7 +845,7 @@ export default function EventsList() {
       ["Race style", raceStyleLabel],
       ...(isSuperAdmin ? [["Club", clubs?.find(c => c.id === v.clubId)?.name ?? notSet()] as [string, ReactNode]] : []),
       ["Event name", v.name.trim() || notSet()],
-      ["Race date", raceDate ? (endDate ? `${raceDate} – ${endDate}` : raceDate) : notSet()],
+      ["Race date", raceDate ? (endDate && endDate !== raceDate ? `${raceDate} – ${endDate}` : raceDate) : notSet()],
       ["Track", v.trackName?.trim()
         ? <>{v.trackName.trim()}{(manualTrackAddress.trim() || manualTrackZip.trim()) && <span className="block text-muted-foreground">{[manualTrackAddress.trim(), manualTrackZip.trim()].filter(Boolean).join(", ")}</span>}</>
         : notSet()],
@@ -2338,6 +2338,11 @@ export default function EventsList() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
+                        {event.isTest && (
+                          <span title="Hidden from the public" className="bg-amber-500/15 text-amber-800 border border-amber-500/40 px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
+                            Test
+                          </span>
+                        )}
                         {(
                           <span className="bg-muted text-muted-foreground border border-border px-2 py-1 rounded text-xs font-bold uppercase tracking-wider">
                             {timingTagsLabel(eventTimingTags(event))}

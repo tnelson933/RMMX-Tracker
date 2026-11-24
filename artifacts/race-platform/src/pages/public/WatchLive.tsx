@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { useRoute, Link } from "wouter";
 import { Radio, WifiOff, ChevronLeft, ExternalLink, Volume2, VolumeX, Flag, CheckCircle2, Eye, Plus, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useListMotos, useListResults } from "@workspace/api-client-react";
+import { useGetEvent, useListMotos, useListResults } from "@workspace/api-client-react";
 import { SplitView360 } from "@/components/SplitView360Lazy";
 import { StackedSplitView } from "@/components/StackedSplitView";
 import {
@@ -124,6 +125,9 @@ export default function WatchLive() {
   const activeMotoIdRef = useRef<number | null>(null);
   const prevSseStatusRef = useRef<string | null>(null);
 
+  const { data: eventInfo } = useGetEvent(eventId, { query: { enabled: !!eventId, staleTime: 5 * 60_000 } as any });
+  useDocumentTitle(eventInfo?.name ? `Watch Live: ${eventInfo.name}` : null);
+
   // Live moto + results — poll every 5 s so moto start/complete is detected quickly
   const { data: motos } = useListMotos(eventId, {
     query: { enabled: !!eventId, refetchInterval: 5_000, refetchOnWindowFocus: false, staleTime: 3_000 } as any,
@@ -154,11 +158,10 @@ export default function WatchLive() {
 
   const motoTypeLabel = (t: string) =>
     t === "main" ? "Main Event" : t === "lcq" ? "LCQ" : t === "heat" ? "Heat" : "Practice";
+  // Neutral like the rider app's moto-type badges; red is kept for "live" only.
+  // White on the dark panel stays well above 4.5:1; the Main Event is the filled one.
   const motoTypeColor = (t: string) =>
-    t === "main" ? "bg-amber-500/20 text-amber-400" :
-    t === "lcq"  ? "bg-purple-500/20 text-purple-400" :
-    t === "heat" ? "bg-blue-500/20 text-blue-400" :
-                   "bg-white/10 text-white/60";
+    t === "main" ? "bg-white text-[#242424]" : "bg-white/10 text-white/85";
 
   const logEvent = (msg: string) => {
     lastErrRef.current = msg;

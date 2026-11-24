@@ -325,25 +325,25 @@ export function EventDetailScreen({
                   backgroundColor: colors.foreground,
                   alignItems: "center", justifyContent: "center",
                 }}>
-                  <Text style={{ fontSize: 10, fontWeight: "700", color: colors.background, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
+                  <Text style={{ fontVariant: ["tabular-nums"], fontSize: 10, fontWeight: "700", color: colors.background, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
                     {moto.motoType === "practice" ? "PRAC" : "RACE"}
                   </Text>
-                  <Text style={{ fontSize: 17, fontWeight: "800", color: colors.background, fontFamily: "Barlow_800ExtraBold_Italic", lineHeight: 19 }}>
+                  <Text style={{ fontVariant: ["tabular-nums"], fontSize: 17, fontWeight: "800", color: colors.background, fontFamily: "Barlow_800ExtraBold_Italic", lineHeight: 19 }}>
                     #{moto.motoNumber}
                   </Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
+                  <Text style={{ fontVariant: ["tabular-nums"], fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
                     {moto.motoName}
                   </Text>
                   <View style={{ flexDirection: "row", gap: 10, marginTop: 2 }}>
                     {moto.totalTime ? (
-                      <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
+                      <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
                         {moto.totalTime}
                       </Text>
                     ) : null}
                     {moto.points != null && moto.points > 0 ? (
-                      <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>
+                      <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>
                         {moto.points} pts
                       </Text>
                     ) : null}
@@ -358,9 +358,9 @@ export function EventDetailScreen({
                 <View>
                   {/* Column headers */}
                   <View style={{ flexDirection: "row", paddingHorizontal: 14, paddingVertical: 7, backgroundColor: colors.muted + "40", borderBottomWidth: 1, borderBottomColor: colors.border }}>
-                    <Text style={{ width: 36, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Lap</Text>
-                    <Text style={{ flex: 1, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Time</Text>
-                    <Text style={{ width: 68, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>{gapMode === "best" ? "vs Best" : gapMode === "leader" ? "Gap to Leader" : "Gap Ahead"}</Text>
+                    <Text style={{ fontVariant: ["tabular-nums"], width: 36, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Lap</Text>
+                    <Text style={{ fontVariant: ["tabular-nums"], flex: 1, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Time</Text>
+                    <Text style={{ fontVariant: ["tabular-nums"], width: 68, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>{gapMode === "best" ? "vs Best" : gapMode === "leader" ? "Gap to Leader" : "Gap Ahead"}</Text>
                   </View>
                   {moto.lapTimes.map((t, i) => {
                     const isFastest = i === fastestIdx;
@@ -395,22 +395,22 @@ export function EventDetailScreen({
                         }}
                       >
                         <View style={{ flexDirection: "row", alignItems: "center" }}>
-                        <Text style={{ width: 36, fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>
+                        <Text style={{ fontVariant: ["tabular-nums"], width: 36, fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>
                           {i + 1}
                         </Text>
-                        <Text style={{ flex: 1, fontSize: 15, fontWeight: isFastest ? "800" : "400", color: isFastest ? colors.primaryText : colors.foreground, fontFamily: isFastest ? "Roboto_700Bold" : "Roboto_400Regular" }}>
+                        <Text style={{ fontVariant: ["tabular-nums"], flex: 1, fontSize: 15, fontWeight: isFastest ? "800" : "400", color: isFastest ? colors.primaryText : colors.foreground, fontFamily: isFastest ? "Roboto_700Bold" : "Roboto_400Regular" }}>
                           {t}
                         </Text>
                         <View style={{ width: 68, alignItems: "flex-end", flexDirection: "row", justifyContent: "flex-end", gap: 3 }}>
                           {gapEl?.kind === "best" ? (
                             <>
                               <Feather name="zap" size={11} color={colors.primaryText} />
-                              <Text style={{ fontSize: 10, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>BEST</Text>
+                              <Text style={{ fontVariant: ["tabular-nums"], fontSize: 10, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>BEST</Text>
                             </>
                           ) : gapEl?.kind === "leader" ? (
-                            <Text style={{ fontSize: 10, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>LEADER</Text>
+                            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 10, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>LEADER</Text>
                           ) : gapEl?.kind === "text" ? (
-                            <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>{gapEl.text}</Text>
+                            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>{gapEl.text}</Text>
                           ) : null}
                         </View>
                         </View>
@@ -440,15 +440,15 @@ export function EventDetailScreen({
                       {moto.sectors.names.map((name, s) => (
                         <Text key={s} style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>S{s + 1}: {name}</Text>
                       ))}
-                      <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 }}>
-                        <Text style={{ color: SPLIT_FASTEST, fontFamily: "Roboto_700Bold" }}>Purple</Text> fastest in the race · <Text style={{ color: SPLIT_PERSONAL_BEST, fontFamily: "Roboto_700Bold" }}>Green</Text> your best
+                      <Text style={{ fontVariant: ["tabular-nums"], fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 }}>
+                        <Text style={{ fontVariant: ["tabular-nums"], color: SPLIT_FASTEST, fontFamily: "Roboto_700Bold" }}>Purple</Text> fastest in the race · <Text style={{ fontVariant: ["tabular-nums"], color: SPLIT_PERSONAL_BEST, fontFamily: "Roboto_700Bold" }}>Green</Text> your best
                       </Text>
                     </View>
                   )}
                 </View>
               ) : (
                 <View style={{ padding: 14 }}>
-                  <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", fontStyle: "italic" }}>
+                  <Text style={{ fontVariant: ["tabular-nums"], fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", fontStyle: "italic" }}>
                     No lap times recorded
                   </Text>
                 </View>
@@ -612,7 +612,7 @@ export function SeriesStandingsScreen({
         insets={insets}
         rightEl={
           <View style={{ paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, backgroundColor: colors.primary }}>
-            <Text style={{ fontSize: 14, fontWeight: "700", color: "#fff", fontFamily: "Roboto_700Bold" }}>
+            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 14, fontWeight: "700", color: "#fff", fontFamily: "Roboto_700Bold" }}>
               {ordinal(riderPosition)}
             </Text>
           </View>
@@ -629,11 +629,11 @@ export function SeriesStandingsScreen({
           {entry && (
             <View style={{ borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, padding: 14, marginBottom: 16, gap: 10 }}>
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
+                <Text style={{ fontVariant: ["tabular-nums"], fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
                   {entry.riderName ? `${entry.riderName} · ` : ""}Your stats
                 </Text>
                 {entry.official === false && (
-                  <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>Unofficial</Text>
+                  <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_500Medium" }}>Unofficial</Text>
                 )}
               </View>
               <View style={{ flexDirection: "row", flexWrap: "wrap", rowGap: 12 }}>
@@ -646,8 +646,8 @@ export function SeriesStandingsScreen({
                   { v: `${entry.roundsRaced ?? 0}/${entry.roundsRun ?? 0}`, l: "Rounds raced" },
                 ].map(t => (
                   <View key={t.l} style={{ width: "33.33%", alignItems: "center" }}>
-                    <Text style={{ fontSize: 20, color: colors.foreground, fontFamily: "Barlow_800ExtraBold_Italic" }} numberOfLines={1} adjustsFontSizeToFit>{t.v}</Text>
-                    <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>{t.l}</Text>
+                    <Text style={{ fontVariant: ["tabular-nums"], fontSize: 20, color: colors.foreground, fontFamily: "Barlow_800ExtraBold_Italic" }} numberOfLines={1} adjustsFontSizeToFit>{t.v}</Text>
+                    <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>{t.l}</Text>
                   </View>
                 ))}
               </View>
@@ -657,7 +657,7 @@ export function SeriesStandingsScreen({
           {/* Section header */}
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 }}>
             <Feather name="award" size={13} color={colors.primaryText} />
-            <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
+            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
               {riderClass} — Top 10
             </Text>
           </View>
@@ -666,14 +666,14 @@ export function SeriesStandingsScreen({
           <View style={{ borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card, overflow: "hidden" }}>
             {/* Column headers */}
             <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 8, backgroundColor: colors.muted + "50", borderBottomWidth: 1, borderBottomColor: colors.border }}>
-              <Text style={{ width: 34, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>#</Text>
-              <Text style={{ flex: 1, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Rider</Text>
-              <Text style={{ width: 52, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Pts</Text>
+              <Text style={{ fontVariant: ["tabular-nums"], width: 34, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>#</Text>
+              <Text style={{ fontVariant: ["tabular-nums"], flex: 1, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5 }}>Rider</Text>
+              <Text style={{ fontVariant: ["tabular-nums"], width: 52, fontSize: 12, fontWeight: "700", color: colors.mutedForeground, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.5, textAlign: "right" }}>Pts</Text>
             </View>
 
             {top10.length === 0 ? (
               <View style={{ padding: 20, alignItems: "center" }}>
-                <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", fontStyle: "italic" }}>No standings yet</Text>
+                <Text style={{ fontVariant: ["tabular-nums"], fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", fontStyle: "italic" }}>No standings yet</Text>
               </View>
             ) : (
               top10.map((row, idx) => {
@@ -699,14 +699,14 @@ export function SeriesStandingsScreen({
                       backgroundColor: isMe ? colors.primary : (row.position <= 3 ? primary + "18" : colors.muted),
                       alignItems: "center", justifyContent: "center", marginRight: 8,
                     }}>
-                      <Text style={{ fontSize: 12, fontWeight: "700", color: isMe ? "#fff" : (row.position <= 3 ? colors.primaryText : colors.mutedForeground), fontFamily: "Roboto_700Bold" }}>
+                      <Text style={{ fontVariant: ["tabular-nums"], fontSize: 12, fontWeight: "700", color: isMe ? "#fff" : (row.position <= 3 ? colors.primaryText : colors.mutedForeground), fontFamily: "Roboto_700Bold" }}>
                         {row.position}
                       </Text>
                     </View>
-                    <Text style={{ flex: 1, fontSize: 14, fontWeight: isMe ? "700" : "400", color: isMe ? colors.primaryText : colors.foreground, fontFamily: isMe ? "Roboto_700Bold" : "Roboto_400Regular" }}>
+                    <Text style={{ fontVariant: ["tabular-nums"], flex: 1, fontSize: 14, fontWeight: isMe ? "700" : "400", color: isMe ? colors.primaryText : colors.foreground, fontFamily: isMe ? "Roboto_700Bold" : "Roboto_400Regular" }}>
                       {row.riderName}
                     </Text>
-                    <Text style={{ width: 52, fontSize: 14, fontWeight: isMe ? "700" : "500", color: isMe ? colors.primaryText : colors.foreground, fontFamily: isMe ? "Roboto_700Bold" : "Roboto_500Medium", textAlign: "right" }}>
+                    <Text style={{ fontVariant: ["tabular-nums"], width: 52, fontSize: 14, fontWeight: isMe ? "700" : "500", color: isMe ? colors.primaryText : colors.foreground, fontFamily: isMe ? "Roboto_700Bold" : "Roboto_500Medium", textAlign: "right" }}>
                       {row.totalScore}
                     </Text>
                     <Feather name="chevron-right" size={14} color={colors.mutedForeground} style={{ marginLeft: 4 }} />
@@ -721,23 +721,23 @@ export function SeriesStandingsScreen({
             <>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 10 }}>
                 <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
-                <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>· · ·</Text>
+                <Text style={{ fontVariant: ["tabular-nums"], fontSize: 10, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>· · ·</Text>
                 <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
               </View>
               <View style={{ borderRadius: 12, borderWidth: 1.5, borderColor: colors.primary + "44", backgroundColor: colors.primary + "0c", overflow: "hidden" }}>
                 <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 13 }}>
                   <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center", marginRight: 8 }}>
-                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#fff", fontFamily: "Roboto_700Bold" }}>{myRowBelow.position}</Text>
+                    <Text style={{ fontVariant: ["tabular-nums"], fontSize: 12, fontWeight: "700", color: "#fff", fontFamily: "Roboto_700Bold" }}>{myRowBelow.position}</Text>
                   </View>
-                  <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>
+                  <Text style={{ fontVariant: ["tabular-nums"], flex: 1, fontSize: 14, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>
                     {myRowBelow.riderName}
                   </Text>
-                  <Text style={{ width: 52, fontSize: 14, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold", textAlign: "right" }}>
+                  <Text style={{ fontVariant: ["tabular-nums"], width: 52, fontSize: 14, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold", textAlign: "right" }}>
                     {myRowBelow.totalScore}
                   </Text>
                 </View>
                 <View style={{ paddingHorizontal: 14, paddingBottom: 10 }}>
-                  <Text style={{ fontSize: 11, color: colors.primaryText, fontFamily: "Roboto_500Medium" }}>
+                  <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, color: colors.primaryText, fontFamily: "Roboto_500Medium" }}>
                     Your position · {ordinal(riderPosition)} place
                   </Text>
                 </View>
@@ -811,25 +811,25 @@ export function PointsScreen({
           </View>
           {seriesList.length > 0 ? (
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textTransform: "uppercase", letterSpacing: 0.5 }}>
+              <Text style={{ fontVariant: ["tabular-nums"], fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textTransform: "uppercase", letterSpacing: 0.5 }}>
                 Your best series
               </Text>
-              <Text style={{ fontSize: 34, fontWeight: "800", color: colors.primaryText, fontFamily: "Roboto_700Bold", letterSpacing: -1, lineHeight: 40 }}>
+              <Text style={{ fontVariant: ["tabular-nums"], fontSize: 34, fontWeight: "800", color: colors.primaryText, fontFamily: "Roboto_700Bold", letterSpacing: -1, lineHeight: 40 }}>
                 {ordinal(seriesList[0].position)} · {seriesList[0].totalPoints} {seriesList[0].lowerIsBetter ? "score" : "pts"}
               </Text>
-              <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
+              <Text style={{ fontVariant: ["tabular-nums"], fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
                 {seriesList[0].seriesName} · {seriesList[0].raceClass}
               </Text>
             </View>
           ) : (
             <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textTransform: "uppercase", letterSpacing: 0.5 }}>
+              <Text style={{ fontVariant: ["tabular-nums"], fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textTransform: "uppercase", letterSpacing: 0.5 }}>
                 Points earned
               </Text>
-              <Text style={{ fontSize: 40, fontWeight: "800", color: colors.primaryText, fontFamily: "Roboto_700Bold", letterSpacing: -1, lineHeight: 46 }}>
+              <Text style={{ fontVariant: ["tabular-nums"], fontSize: 40, fontWeight: "800", color: colors.primaryText, fontFamily: "Roboto_700Bold", letterSpacing: -1, lineHeight: 46 }}>
                 {totalPoints}
               </Text>
-              <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
+              <Text style={{ fontVariant: ["tabular-nums"], fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
                 across {events.length} event{events.length !== 1 ? "s" : ""} · not in a series yet
               </Text>
             </View>
@@ -840,13 +840,13 @@ export function PointsScreen({
         {seriesLoading ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8 }}>
             <ActivityIndicator size="small" color={colors.primaryText} />
-            <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>Loading series…</Text>
+            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>Loading series…</Text>
           </View>
         ) : seriesList.length > 0 ? (
           <>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2 }}>
               <Feather name="trending-up" size={13} color={colors.primaryText} />
-              <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
+              <Text style={{ fontVariant: ["tabular-nums"], fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
                 Series Standings
               </Text>
             </View>
@@ -875,22 +875,22 @@ export function PointsScreen({
                     width: 52, height: 52, borderRadius: 26,
                     backgroundColor: colors.primary, alignItems: "center", justifyContent: "center",
                   }}>
-                    <Text style={{ fontSize: 22, fontWeight: "800", color: "#fff", fontFamily: "Roboto_700Bold", lineHeight: 24 }}>
+                    <Text style={{ fontVariant: ["tabular-nums"], fontSize: 22, fontWeight: "800", color: "#fff", fontFamily: "Roboto_700Bold", lineHeight: 24 }}>
                       {s.position}
                     </Text>
-                    <Text style={{ fontSize: 12, fontWeight: "700", color: "rgba(255,255,255,0.8)", fontFamily: "Barlow_700Bold", lineHeight: 12, textTransform: "uppercase", letterSpacing: 0.3 }}>
+                    <Text style={{ fontVariant: ["tabular-nums"], fontSize: 12, fontWeight: "700", color: "rgba(255,255,255,0.8)", fontFamily: "Barlow_700Bold", lineHeight: 12, textTransform: "uppercase", letterSpacing: 0.3 }}>
                       {ordinal(s.position)}
                     </Text>
                   </View>
                   <View style={{ flex: 1, gap: 4 }}>
-                    <Text style={{ fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
+                    <Text style={{ fontVariant: ["tabular-nums"], fontSize: 15, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
                       {s.seriesName}
                     </Text>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                       <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, backgroundColor: colors.primary + "18" }}>
-                        <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>{s.raceClass}</Text>
+                        <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>{s.raceClass}</Text>
                       </View>
-                      <Text style={{ fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
+                      <Text style={{ fontVariant: ["tabular-nums"], fontSize: 12, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
                         {s.ridersInClass ? `of ${s.ridersInClass} · ` : ""}{s.totalPoints} {s.lowerIsBetter ? "score" : "pts"}{riderIds.length > 1 && s.riderName ? ` · ${s.riderName}` : ""}
                       </Text>
                     </View>
@@ -905,7 +905,7 @@ export function PointsScreen({
         {eventsWithPoints.length > 0 && (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2 }}>
             <Feather name="flag" size={13} color={colors.primaryText} />
-            <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
+            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Barlow_700Bold", textTransform: "uppercase", letterSpacing: 0.8 }}>
               Event Breakdown
             </Text>
           </View>
@@ -913,7 +913,7 @@ export function PointsScreen({
 
         {eventsWithPoints.length === 0 && !seriesLoading && seriesList.length === 0 ? (
           <View style={{ paddingTop: 24, alignItems: "center", gap: 8 }}>
-            <Text style={{ fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center" }}>
+            <Text style={{ fontVariant: ["tabular-nums"], fontSize: 14, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", textAlign: "center" }}>
               No points recorded yet.
             </Text>
           </View>
@@ -931,15 +931,15 @@ export function PointsScreen({
                 backgroundColor: colors.muted + "50",
               }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
+                  <Text style={{ fontVariant: ["tabular-nums"], fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold" }}>
                     {ev.eventName}
                   </Text>
-                  <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 }}>
+                  <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 1 }}>
                     {[fmtDateShared(ev.eventDate), ev.raceClass].filter(Boolean).join("  ·  ")}
                   </Text>
                 </View>
                 <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: primary + "18" }}>
-                  <Text style={{ fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>
+                  <Text style={{ fontVariant: ["tabular-nums"], fontSize: 13, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>
                     {ev.totalPoints} pts
                   </Text>
                 </View>
@@ -956,13 +956,13 @@ export function PointsScreen({
                     borderBottomColor: colors.border,
                   }}>
                     <View style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: primary + "18", alignItems: "center", justifyContent: "center", marginRight: 10 }}>
-                      <Text style={{ fontSize: 11, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>#{m.motoNumber}</Text>
+                      <Text style={{ fontVariant: ["tabular-nums"], fontSize: 11, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>#{m.motoNumber}</Text>
                     </View>
-                    <Text style={{ flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Roboto_500Medium" }}>{m.motoName}</Text>
+                    <Text style={{ fontVariant: ["tabular-nums"], flex: 1, fontSize: 13, color: colors.foreground, fontFamily: "Roboto_500Medium" }}>{m.motoName}</Text>
                     {m.position != null && (
                       <View style={{ marginRight: 10 }}><PositionBadge position={m.position} size="sm" /></View>
                     )}
-                    <Text style={{ fontSize: 14, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>
+                    <Text style={{ fontVariant: ["tabular-nums"], fontSize: 14, fontWeight: "700", color: colors.primaryText, fontFamily: "Roboto_700Bold" }}>
                       +{m.points} pts
                     </Text>
                   </View>

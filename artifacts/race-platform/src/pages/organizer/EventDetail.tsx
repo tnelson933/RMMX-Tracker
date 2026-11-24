@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@/lib/zodResolver";
 import { z } from "zod";
@@ -119,6 +119,7 @@ const updateEventSchema = z.object({
   transponderRentalFee: z.string().optional(),
   rfidStickerFee: z.string().optional(),
   noDuplicateBibs: z.boolean().default(false),
+  isTest: z.boolean().default(false),
   requireClubId: z.boolean().default(false),
   requireWaiver: z.boolean().default(false),
   requireLiabilityWaiver: z.boolean().default(false),
@@ -418,6 +419,7 @@ export default function EventDetail() {
       transponderRentalFee: "",
       rfidStickerFee: "",
       noDuplicateBibs: false,
+      isTest: false,
       requireClubId: false,
       requireWaiver: false,
       requireLiabilityWaiver: false,
@@ -487,6 +489,7 @@ export default function EventDetail() {
       transponderRentalFee: (evt as any).transponderRentalFee != null ? String((evt as any).transponderRentalFee) : "",
       rfidStickerFee: (evt as any).rfidStickerFee != null ? String((evt as any).rfidStickerFee) : "",
       noDuplicateBibs: (evt as any).noDuplicateBibs ?? false,
+      isTest: evt.isTest ?? false,
       requireClubId: (evt as any).requireClubId ?? false,
       requireWaiver: (evt as any).requireWaiver ?? false,
       requireLiabilityWaiver: (evt as any).requireLiabilityWaiver ?? false,
@@ -602,6 +605,7 @@ export default function EventDetail() {
         paymentEnabled: data.paymentEnabled,
         requireAma: data.requireAma,
         noDuplicateBibs: data.noDuplicateBibs,
+        isTest: data.isTest,
         requireClubId: data.requireClubId,
         requireWaiver: data.requireWaiver,
         requireLiabilityWaiver: data.requireLiabilityWaiver,
@@ -885,6 +889,24 @@ export default function EventDetail() {
                         )}
                       />
                     </div>
+                    {/* Test event: off every public list and search; a direct link still opens it. */}
+                    <FormField
+                      control={form.control}
+                      name="isTest"
+                      render={({ field }) => (
+                        <FormItem className="flex items-start gap-2 space-y-0">
+                          <FormControl>
+                            <Checkbox checked={field.value} onCheckedChange={field.onChange} className="mt-0.5" />
+                          </FormControl>
+                          <div className="space-y-0.5">
+                            <FormLabel className="cursor-pointer font-normal">Test event (hidden from the public)</FormLabel>
+                            <FormDescription className="text-xs">
+                              Kept off the home page, results, upcoming lists, series pages and the rider app. Your club still sees and runs it, and its direct link still opens.
+                            </FormDescription>
+                          </div>
+                        </FormItem>
+                      )}
+                    />
                     {/* Multi-day toggle + end date */}
                     <FormField
                       control={form.control}

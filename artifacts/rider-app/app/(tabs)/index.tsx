@@ -1,3 +1,4 @@
+import { useBottomSpace } from "@/hooks/useBottomSpace";
 import { QuickCheckinCard } from "@/components/QuickCheckinCard";
 import { LiveNowBanner } from "@/components/LiveNowBanner";
 import { GoLiveButton } from "@/components/GoLiveButton";
@@ -122,6 +123,7 @@ function SectionHeader({ icon, title, colors }: { icon: string; title: string; c
 export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const bottomSpace = useBottomSpace();
   const router = useRouter();
   const { activeProfiles, profiles, riderFetch, refreshProfiles } = useRiderAuth();
 
@@ -428,7 +430,7 @@ export default function HomeScreen() {
         {hasProfile && <SuggestedRiders refreshKey={feedRefreshKey} onFollowed={() => setFeedRefreshKey(k => k + 1)} />}
 
         {/* Footer */}
-        <View style={{ height: insets.bottom + 170 }} />
+        <View style={{ height: bottomSpace }} />
       </ScrollView>
       <StatusBarBackdrop color={colors.card} />
     </View>

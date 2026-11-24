@@ -1,3 +1,4 @@
+import { useBottomSpace } from "@/hooks/useBottomSpace";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
@@ -34,6 +35,7 @@ const BIKE_BRANDS = [
 export default function NewRiderScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const bottomSpace = useBottomSpace();
   const colors = useColors();
   const { riderFetch, refreshProfiles } = useRiderAuth();
 
@@ -137,7 +139,7 @@ export default function NewRiderScreen() {
     scrollContent: {
       paddingHorizontal: 16,
       paddingTop: 16,
-      paddingBottom: insets.bottom + 32,
+      paddingBottom: bottomSpace,
       gap: 16,
     },
     section: {

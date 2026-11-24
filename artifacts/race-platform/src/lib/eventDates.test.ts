@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 // @ts-expect-error Node's type-stripping runner requires the explicit extension.
-import { isEventOnLocalDate, localDateString } from "./eventDates.ts";
+import { formatEventDates, formatEventDatesFull, isEventOnLocalDate, localDateString } from "./eventDates.ts";
 
 test("localDateString uses the local calendar date", () => {
   assert.equal(localDateString(new Date(2026, 9, 27, 23, 30)), "2026-10-27");
@@ -31,4 +31,17 @@ test("missing or inverted dates are handled", () => {
   assert.equal(isEventOnLocalDate(null, null, now), false);
   assert.equal(isEventOnLocalDate("", null, now), false);
   assert.equal(isEventOnLocalDate("2026-10-27", "2026-10-20", now), true);
+});
+
+test("a same-day end date formats as a single day, not 'November 23 – 23'", () => {
+  assert.equal(formatEventDatesFull("2026-11-23", "2026-11-23"), "Monday, November 23, 2026");
+  assert.equal(formatEventDatesFull("2026-11-23", "2026-11-23T00:00:00.000Z"), "Monday, November 23, 2026");
+  assert.equal(formatEventDates("2026-11-23", "2026-11-23"), "Nov 23, 2026");
+  assert.equal(formatEventDates("2026-11-23", null), "Nov 23, 2026");
+});
+
+test("multi-day ranges keep both days", () => {
+  assert.equal(formatEventDatesFull("2026-11-23", "2026-11-24"), "November 23 – 24, 2026");
+  assert.equal(formatEventDates("2026-11-30", "2026-12-01"), "Nov 30 – Dec 1, 2026");
+  assert.equal(formatEventDates("2026-12-31", "2027-01-01"), "Dec 31, 2026 – Jan 1, 2027");
 });

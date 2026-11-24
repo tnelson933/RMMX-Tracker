@@ -6,7 +6,7 @@ import { eventDateReached } from "../lib/eventStatus";
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { registrationsTable, ridersTable, checkinsTable, eventsTable, clubsTable, compCodesTable, rfidAssignmentsTable, clubSettingsTable, riderAccountsTable, riderPushTokensTable, raceResultsTable, liabilityWaiverSignaturesTable, rentalTranspondersTable } from "@workspace/db";
-import { eq, and, sql, desc, asc, ne, isNull, isNotNull, inArray, or, lt } from "drizzle-orm";
+import { eq, and, sql, desc, asc, ne, isNull, isNotNull, inArray, or, lt, count } from "drizzle-orm";
 import { getUncachableStripeClient } from "../stripeClient";
 import { sendPushNotifications } from "../lib/push";
 import { normalizeActiveTransponderIdentifier } from "../lib/riderTimingIdentity";
@@ -1502,12 +1502,24 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
     ridersPerGroup: eventsTable.ridersPerGroup,
     earlyBirdFee: eventsTable.earlyBirdFee,
     earlyBirdEndsAt: eventsTable.earlyBirdEndsAt,
+    endDate: eventsTable.endDate,
+    streetAddress: eventsTable.streetAddress,
+    zip: eventsTable.zip,
+    trackLat: eventsTable.trackLat,
+    trackLng: eventsTable.trackLng,
+    // The club's public contact (club profile), shown on the registration page and event page.
+    clubContactEmail: clubsTable.contactEmail,
+    clubContactPhone: clubsTable.contactPhone,
+    clubWebsite: clubsTable.website,
   }).from(eventsTable)
     .leftJoin(clubsTable, eq(eventsTable.clubId, clubsTable.id))
     .where(eq(eventsTable.id, eventId));
 
   if (!rows[0]) return res.status(404).json({ error: "This event couldn't be found. It may have been deleted. Go back to Events and open it again." });
   const e = rows[0];
+  // Class entries so far (a rider in two classes is two entries); void entries don't count.
+  const [{ entryCount }] = await db.select({ entryCount: count() }).from(registrationsTable)
+    .where(and(eq(registrationsTable.eventId, eventId), ne(registrationsTable.status, "void")));
 
   // Fetch club settings: waiver text + pdf + default class details
   const [settings] = await db.select({
@@ -1549,6 +1561,7 @@ router.get("/public/events/:eventId/register-info", async (req, res) => {
     earlyBirdActive,
     currentEntryFee,
     serviceFeeCents,
+    entryCount,
     // Which kinds of tag the event's readers use (RM TrackR, RFID or both).
     timingTags: await eventTimingTags(eventId),
     entryFee: e.entryFee ? Number(e.entryFee) : null,

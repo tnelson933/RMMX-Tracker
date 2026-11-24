@@ -96,6 +96,8 @@ Result publication is separate from the status: results of finished races are pu
 
 To delete an event: Overview tab → **Delete Event** (top right). An event with a finished race can't be deleted ("This event has a finished race, so it can't be deleted: its results are kept"): its results stay; to hide it from riders, move the Registration Opens date to the future. It's permanent: registrations, check-ins, motos and results go with it, and nothing is refunded (refund card payments in the club's Stripe dashboard first). An event with any signed liability waiver can't be deleted, because signed waivers are kept as legal records: set it to **Completed**, or set **Opens** to a future date so it's private.
 
+**Test events:** Edit → **Test event (hidden from the public)** (under Status) → **Save Changes**. A test event stays off every public list and search (home page, Results, upcoming races, series pages, the rider app's lists) but works normally for the club, and its direct link still opens. The Events list marks it **Test**. Untick it to make the event public. Finished events where nobody entered and nothing was raced are also left off the public results lists automatically.
+
 **Events list** tabs: **Upcoming** (only the next 10 not completed), **All**, **Draft**, **Reg Open**, **Race Day**, **Completed**. Can't find an event? Check **All** or **Draft**. In the desktop app, **Sync from Cloud** pulls the latest events.
 
 ---

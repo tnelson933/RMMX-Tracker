@@ -49,13 +49,17 @@ export function PositionBadge({
   return (
     <View style={{
       height: dims.h, minWidth: dims.h, paddingHorizontal: dims.px, borderRadius: 8,
-      backgroundColor: metal ?? colors.primary, flexDirection: "row", gap: 4,
+      // Podium (P1–P3) gets its metal; P4 and back are a neutral pill, so a
+      // normal finish never reads like an error in brand red.
+      backgroundColor: metal ?? colors.muted, flexDirection: "row", gap: 4,
       alignItems: "center", justifyContent: "center",
       transform: [{ skewX: "-8deg" }],
-      shadowColor: metal ?? colors.primary, shadowOpacity: metal ? 0.45 : 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 3,
+      ...(metal
+        ? { shadowColor: metal, shadowOpacity: 0.45, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 3 }
+        : { borderWidth: 1, borderColor: colors.border }),
     }}>
       {position === 1 && size !== "sm" && <Feather name="award" size={dims.fs - 2} color="#1A1300" />}
-      <Text style={{ fontSize: dims.fs, color: metal ? "#14110A" : "#fff", fontFamily: "Barlow_800ExtraBold_Italic", letterSpacing: 0.3 }}>
+      <Text style={{ fontSize: dims.fs, color: metal ? "#14110A" : colors.foreground, fontFamily: "Barlow_800ExtraBold_Italic", letterSpacing: 0.3, fontVariant: ["tabular-nums"] }}>
         P{position}
       </Text>
     </View>

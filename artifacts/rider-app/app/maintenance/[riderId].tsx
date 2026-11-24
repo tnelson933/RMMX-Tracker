@@ -1,3 +1,4 @@
+import { useBottomSpace } from "@/hooks/useBottomSpace";
 import { localDateString } from "@/lib/format";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -21,6 +22,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useRiderAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
+import { EmptyState } from "@/components/EmptyState";
 import { NETWORK_ERROR_MESSAGE } from "@/lib/friendlyErrors";
 import { goBack } from "@/lib/navigation";
 import { openInApp } from "@/lib/inAppBrowser";
@@ -87,6 +89,7 @@ function StatusBadge({ item }: { item: MaintenanceItem }) {
 export default function MaintenanceScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const bottomSpace = useBottomSpace();
   const colors = useColors();
   const { riderId: riderIdParam } = useLocalSearchParams<{ riderId: string }>();
   const riderId = parseInt(riderIdParam ?? "", 10);
@@ -253,12 +256,12 @@ export default function MaintenanceScreen() {
     },
     genBtn: {
       flexDirection: "row", alignItems: "center", gap: 6,
-      paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
+      paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999,
       backgroundColor: colors.primary,
     },
-    genBtnText: { fontSize: 12, color: "#fff", fontFamily: "Roboto_700Bold" },
+    genBtnText: { fontSize: 13, color: colors.primaryForeground, fontFamily: "Barlow_700Bold", letterSpacing: 0.6, textTransform: "uppercase" },
     scroll: { flex: 1 },
-    content: { padding: 16, gap: 12, paddingBottom: insets.bottom + 32 },
+    content: { padding: 16, gap: 12, paddingBottom: bottomSpace },
     summaryRow: { flexDirection: "row", gap: 10 },
     summaryBox: { flex: 1, borderRadius: 12, padding: 14, alignItems: "center", gap: 4, borderWidth: 1 },
     summaryNum: { fontSize: 24, fontWeight: "800", fontFamily: "Roboto_700Bold" },
@@ -350,9 +353,12 @@ export default function MaintenanceScreen() {
             <Feather name="clock" size={18} color={colors.foreground} />
           </Pressable>
           <Pressable
-            style={[s.genBtn, generating && { opacity: 0.6 }]}
+            style={({ pressed }) => [s.genBtn, { opacity: generating || !bikeStr ? 0.5 : pressed ? 0.85 : 1 }]}
             onPress={handleGenerate}
             disabled={generating || !bikeStr}
+            accessibilityRole="button"
+            accessibilityLabel={items.length > 0 ? "Refresh maintenance schedule" : "Generate a maintenance schedule"}
+            accessibilityState={{ disabled: generating || !bikeStr, busy: generating }}
           >
             {generating ? (
               <ActivityIndicator color="#fff" size="small" />
@@ -418,14 +424,25 @@ export default function MaintenanceScreen() {
 
           {/* Empty state */}
           {items.length === 0 && !loadError && (
-            <View style={s.emptyBox}>
-              <Feather name="tool" size={36} color={colors.mutedForeground + "50"} />
-              <Text style={s.emptyTitle}>No Maintenance Schedule</Text>
-              <Text style={s.emptyText}>
-                {bikeStr
-                  ? `Tap "AI Generate" to build a maintenance schedule for your ${bikeStr} using AI.`
-                  : "Add your bike make and model to your profile first, then generate a maintenance schedule."}
-              </Text>
+            // EmptyState's card variant brings its own side margin; the list already has it.
+            <View style={{ marginHorizontal: -16, marginBottom: -24 }}>
+              {bikeStr ? (
+                <EmptyState
+                  variant="card"
+                  icon="tool"
+                  title="No maintenance schedule"
+                  message={`Build a maintenance schedule for your ${bikeStr}.`}
+                  primary={{ label: generating ? "Generating…" : "Generate schedule", icon: "zap", onPress: () => { if (!generating) void handleGenerate(); } }}
+                />
+              ) : (
+                <EmptyState
+                  variant="card"
+                  icon="tool"
+                  title="No bike on file"
+                  message="Add your bike's make and model, then build a maintenance schedule for it."
+                  primary={{ label: "Add your bike", icon: "plus", onPress: () => router.push(`/rider/${riderId}` as any) }}
+                />
+              )}
             </View>
           )}
 

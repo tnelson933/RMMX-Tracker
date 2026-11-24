@@ -96,4 +96,6 @@ export interface EventInput {
   contingencyBrands?: string[] | null;
   /** Save as a draft. date and state are then optional (date defaults to today, state to TBD); without it both are required. */
   draft?: boolean;
+  /** Test event, hidden from public lists and search. */
+  isTest?: boolean;
 }

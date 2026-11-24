@@ -26,6 +26,8 @@ import {
 import { LiveRaceViews, useLiveRaceStream } from "./LiveLeaderboard";
 import { SectorTimes, type SectorEntry } from "@/components/SectorTimes";
 import { EnduroOverallTable, useEnduroOverall, type EnduroOverallData } from "@/components/organizer/OverallStandings";
+import { UpcomingEventView, usePublicEventInfo } from "@/components/UpcomingEventView";
+import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 
 /** Enduro event overall for one class: each test's time, penalties and total. */
 function EnduroOverallSection({ data, raceClass }: { data: EnduroOverallData | undefined; raceClass: string }) {
@@ -500,6 +502,12 @@ export default function EventResults() {
 
   const activeClassMoto = motos?.find(m => m.status === "in_progress" && motoForClass(m, activeClass));
 
+  // Before any results: the event's details and Register instead of empty result tabs.
+  const showUpcoming = !!event && !liveMode && !resultsLoading && (results ?? []).length === 0
+    && !["completed", "results_published"].includes(event.status);
+  const { data: publicInfo } = usePublicEventInfo(showUpcoming ? eventId : 0);
+  useDocumentTitle(event?.name ?? null);
+
   if (eventLoading || resultsLoading) {
     return <div className="container mx-auto px-4 py-8 h-screen flex items-center justify-center">Loading…</div>;
   }
@@ -633,12 +641,21 @@ export default function EventResults() {
                   <Activity size={13} /> Live standings update every 15s
                 </div>
               )}
-              <div className="bg-sidebar-accent/50 rounded-lg p-4 border border-sidebar-border backdrop-blur-sm min-w-40 text-center">
-                <div className="text-sidebar-foreground/60 text-xs font-bold uppercase tracking-widest mb-1">Total Racers</div>
-                <div className="text-4xl font-heading font-bold text-white">
-                  {new Set(results?.map(r => r.riderId)).size || 0}
+              {showUpcoming ? (
+                typeof publicInfo?.entryCount === "number" && publicInfo.entryCount > 0 && (
+                  <div className="bg-sidebar-accent/50 rounded-lg p-4 border border-sidebar-border min-w-40 text-center">
+                    <div className="text-white/70 text-xs font-bold uppercase tracking-widest mb-1">Entries</div>
+                    <div className="text-4xl font-heading font-bold text-white tabular-nums">{publicInfo.entryCount}</div>
+                  </div>
+                )
+              ) : (
+                <div className="bg-sidebar-accent/50 rounded-lg p-4 border border-sidebar-border backdrop-blur-sm min-w-40 text-center">
+                  <div className="text-sidebar-foreground/60 text-xs font-bold uppercase tracking-widest mb-1">Total Racers</div>
+                  <div className="text-4xl font-heading font-bold text-white">
+                    {new Set(results?.map(r => r.riderId)).size || 0}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>
@@ -805,6 +822,11 @@ export default function EventResults() {
               </div>
             </TabsContent>
           </Tabs>
+        ) : showUpcoming ? (
+          /* BEFORE RACE DAY: details, classes and fees, Register */
+          <div className="pt-8">
+            <UpcomingEventView eventId={eventId} motos={motos} classStartTimes={(event as any).classStartTimes} />
+          </div>
         ) : (
           /* RESULTS MODE (completed / upcoming non-live) */
           (event.raceClasses && event.raceClasses.length > 0) || raceMotosList.length > 0 ? (

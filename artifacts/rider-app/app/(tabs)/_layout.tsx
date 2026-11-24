@@ -63,6 +63,8 @@ function ClassicTabLayout() {
         tabBarActiveTintColor: colors.primaryText,
         tabBarInactiveTintColor: colors.mutedForeground,
         headerShown: false,
+        // Screen background behind every tab, so no light navigation default shows through.
+        sceneStyle: { backgroundColor: colors.background },
         tabBarLabelStyle: { fontFamily: "Barlow_700Bold", fontSize: 12, letterSpacing: 0.8, textTransform: "uppercase" },
         tabBarStyle: {
           position: "absolute",

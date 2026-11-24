@@ -47,7 +47,8 @@ export default function LivePlayerScreen() {
           <Text style={s.title} numberOfLines={1}>{event?.name ?? "Live stream"}</Text>
           {!!event && <Text style={s.subtitle} numberOfLines={1}>{event.clubName}</Text>}
         </View>
-        <View style={s.livePill}><View style={s.liveDot} /><Text style={s.liveText}>LIVE</Text></View>
+        {/* Only while the event is actually streaming (it's in the live-now list). */}
+        {!!event && <View style={s.livePill}><View style={s.liveDot} /><Text style={s.liveText}>LIVE</Text></View>}
       </View>
 
       {!Number.isFinite(eventId) || eventId <= 0 ? (

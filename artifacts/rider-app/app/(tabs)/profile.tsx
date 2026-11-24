@@ -1,3 +1,4 @@
+import { useBottomSpace } from "@/hooks/useBottomSpace";
 import { API_BASE_URL } from "@/lib/apiBase";
 import { StatusBarBackdrop } from "@/components/StatusBarBackdrop";
 import { Feather } from "@expo/vector-icons";
@@ -144,6 +145,7 @@ function ProfileList() {
   const { preference: themePref, setPreference: setThemePref } = useTheme();
   const insets = useSafeAreaInsets();
   const tabBarHeight = React.useContext(BottomTabBarHeightContext) ?? 0;
+  const bottomSpace = useBottomSpace();
   const router = useRouter();
   const {
     account, profiles, profilesStatus, activeProfiles, selectedProfileIds,
@@ -378,7 +380,7 @@ function ProfileList() {
       paddingHorizontal: 16, paddingTop: insets.top + 16, paddingBottom: 16,
       backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border,
     },
-    container: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: (tabBarHeight > 0 ? tabBarHeight : 49 + insets.bottom) + 96, gap: 14 },
+    container: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: Math.max(bottomSpace, (tabBarHeight > 0 ? tabBarHeight : 49 + insets.bottom) + 96), gap: 14 },
     pageTitle: { fontSize: 26, fontWeight: "800", color: colors.foreground, fontFamily: "Barlow_800ExtraBold", letterSpacing: 1, textTransform: "uppercase" },
     pageSubtitle: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular", marginTop: 2 },
     accountCard: {
