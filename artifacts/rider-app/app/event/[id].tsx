@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "@/lib/apiBase";
+import { BrandButton, BrandSheet, SheetActions } from "@/components/BrandSheet";
 import { useBottomSpace } from "@/hooks/useBottomSpace";
 import { Feather } from "@expo/vector-icons";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -790,12 +791,8 @@ export default function EventDetailScreen() {
       </ScrollView>
 
       {/* ── Change Class modal ── */}
-      <Modal visible={showChangeClassModal} transparent animationType="slide" onRequestClose={() => setShowChangeClassModal(false)}>
-        <Pressable style={s.modalOverlay} onPress={() => { if (!changeClassLoading) setShowChangeClassModal(false); }}>
-          <Pressable style={s.modalBox} onPress={() => {}}>
-            <Text style={{ fontSize: 18, fontWeight: "700", color: colors.foreground, fontFamily: "Roboto_700Bold", marginBottom: 4 }}>
-              Change Class
-            </Text>
+      <BrandSheet visible={showChangeClassModal} onClose={() => setShowChangeClassModal(false)} title="Change class" dismissable={!changeClassLoading}>
+          <ScrollView style={{ flexGrow: 0 }} keyboardShouldPersistTaps="handled">
             {changingReg && (
               <View style={{ marginBottom: 14 }}>
                 <Text style={{ fontSize: 13, color: colors.mutedForeground, fontFamily: "Roboto_400Regular" }}>
@@ -857,16 +854,11 @@ export default function EventDetailScreen() {
                 No other classes available at this event.
               </Text>
             )}
-            <Pressable
-              style={[s.mutedBtn, { marginTop: 4 }]}
-              disabled={changeClassLoading}
-              onPress={() => setShowChangeClassModal(false)}
-            >
-              <Text style={[s.btnText, { color: colors.mutedForeground }]}>Cancel</Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
+          </ScrollView>
+          <SheetActions>
+            <BrandButton variant="secondary" label="Cancel" disabled={changeClassLoading} onPress={() => setShowChangeClassModal(false)} />
+          </SheetActions>
+      </BrandSheet>
     </>
   );
 }

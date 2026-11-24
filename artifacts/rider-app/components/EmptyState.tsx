@@ -2,6 +2,8 @@ import { Feather } from "@expo/vector-icons";
 import React from "react";
 import { Pressable, Text, View } from "react-native";
 import { PressableScale } from "@/components/PressableScale";
+import { TopoTexture } from "@/components/StockBackdrop";
+import { useTheme } from "@/context/ThemeContext";
 import { useColors } from "@/hooks/useColors";
 
 type FeatherName = React.ComponentProps<typeof Feather>["name"];
@@ -29,6 +31,7 @@ export function EmptyState({
 }) {
   const colors = useColors();
   const card = variant === "card";
+  const dark = useTheme().resolvedScheme === "dark";
 
   // Compact: a single-row card for lists on busy screens (Home)
   if (variant === "compact") {
@@ -73,8 +76,9 @@ export function EmptyState({
     <View
       style={card
         ? { marginHorizontal: 16, marginBottom: 24, borderRadius: 18, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border, paddingVertical: 22, paddingHorizontal: 20, alignItems: "center", overflow: "hidden" }
-        : { alignItems: "center", paddingHorizontal: 32, paddingTop: 36, paddingBottom: 24 }}
+        : { alignItems: "center", paddingHorizontal: 32, paddingTop: 36, paddingBottom: 24, overflow: "hidden" }}
     >
+      <TopoTexture opacity={dark ? 0.35 : 0.06} />
       {/* Badge with speed stripes behind it */}
       <View style={{ width: 200, height: card ? 76 : 96, alignItems: "center", justifyContent: "center", marginBottom: 10 }}>
         <View pointerEvents="none" style={{ position: "absolute", left: 0, right: 0, top: card ? 20 : 30, transform: [{ rotate: "-14deg" }] }}>

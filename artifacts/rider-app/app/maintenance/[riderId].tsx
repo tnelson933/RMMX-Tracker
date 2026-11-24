@@ -1,4 +1,5 @@
 import { useBottomSpace } from "@/hooks/useBottomSpace";
+import { BrandButton, BrandSheet, SheetActions } from "@/components/BrandSheet";
 import { localDateString } from "@/lib/format";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -521,25 +522,7 @@ export default function MaintenanceScreen() {
       )}
 
       {/* Log Service bottom sheet */}
-      <Modal
-        visible={logSheetItem !== null}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setLogSheetItem(null)}
-      >
-        <KeyboardAvoidingView
-          style={s.modalOverlay}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-        >
-          <Pressable style={{ flex: 1 }} onPress={() => setLogSheetItem(null)} />
-          <View style={s.sheet}>
-            <View style={s.sheetHandle} />
-            <View style={{ gap: 4 }}>
-              <Text style={s.sheetTitle}>Log Service Today</Text>
-              {logSheetItem && (
-                <Text style={s.sheetItemName}>{logSheetItem.itemName}</Text>
-              )}
-            </View>
+      <BrandSheet visible={logSheetItem !== null} onClose={() => setLogSheetItem(null)} title="Log service today" subtitle={logSheetItem?.itemName} dismissable={!logSheetSaving}>
             <View style={{ gap: 6 }}>
               <Text style={s.notesLabel}>Notes (optional)</Text>
               <TextInput
@@ -553,25 +536,11 @@ export default function MaintenanceScreen() {
                 autoFocus
               />
             </View>
-            <View style={s.sheetBtns}>
-              <Pressable style={s.sheetCancel} onPress={() => setLogSheetItem(null)}>
-                <Text style={s.sheetCancelText}>Cancel</Text>
-              </Pressable>
-              <Pressable
-                style={[s.sheetSave, logSheetSaving && { opacity: 0.6 }]}
-                onPress={handleSaveLog}
-                disabled={logSheetSaving}
-              >
-                {logSheetSaving ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Text style={s.sheetSaveText}>Save</Text>
-                )}
-              </Pressable>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+            <SheetActions>
+              <BrandButton variant="secondary" label="Cancel" onPress={() => setLogSheetItem(null)} disabled={logSheetSaving} />
+              <BrandButton label="Save" onPress={handleSaveLog} loading={logSheetSaving} />
+            </SheetActions>
+      </BrandSheet>
     </View>
   );
 }

@@ -68,3 +68,21 @@ export function StockBackdrop({ photo = STOCK_PHOTOS.riderSand }: { photo?: Stoc
     </View>
   );
 }
+
+/**
+ * The brand's topographic-map texture (the website's hero background), laid
+ * behind a surface. Strong on dark surfaces; a faint trace on light ones, so
+ * text on top keeps its contrast.
+ */
+export function TopoTexture({ opacity }: { opacity: number }) {
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <Image
+        source={require("../assets/images/stock/topo.jpg")}
+        style={{ width: "100%", height: "100%", opacity }}
+        resizeMode="cover"
+        accessibilityIgnoresInvertColors
+      />
+    </View>
+  );
+}

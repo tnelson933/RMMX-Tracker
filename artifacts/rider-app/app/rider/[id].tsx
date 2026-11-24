@@ -1,4 +1,5 @@
 import { useBottomSpace } from "@/hooks/useBottomSpace";
+import { BrandSheet } from "@/components/BrandSheet";
 import { Feather } from "@expo/vector-icons";
 import { RacerProfileSettings } from "@/components/RacerProfileSettings";
 import { ProfileManagers } from "@/components/ProfileManagers";
@@ -207,15 +208,7 @@ function StatePickerField({
         <Text style={s.fieldEmpty}>Not set</Text>
       )}
 
-      <Modal visible={open} animationType="slide" transparent onRequestClose={() => setOpen(false)}>
-        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" }}>
-          <View style={{ backgroundColor: colors.card, borderTopLeftRadius: 16, borderTopRightRadius: 16, maxHeight: "75%", paddingBottom: 24 }}>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-              <Text style={{ fontSize: 16, fontWeight: "600", color: colors.foreground }}>Select State</Text>
-              <Pressable onPress={() => setOpen(false)} hitSlop={10} accessibilityRole="button" accessibilityLabel="Close">
-                <Feather name="x" size={20} color={colors.mutedForeground} />
-              </Pressable>
-            </View>
+      <BrandSheet visible={open} onClose={() => { setOpen(false); setQuery(""); }} title="Select state" maxHeight="80%" scrollable>
             <TextInput
               style={{ margin: 12, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background, color: colors.foreground, fontSize: 14 }}
               placeholder="Search state…"
@@ -245,9 +238,7 @@ function StatePickerField({
                 </Pressable>
               )}
             />
-          </View>
-        </View>
-      </Modal>
+      </BrandSheet>
     </>
   );
 }

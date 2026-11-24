@@ -1,4 +1,5 @@
 import { useBottomSpace } from "@/hooks/useBottomSpace";
+import { BrandButton, BrandSheet, SheetActions } from "@/components/BrandSheet";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -119,15 +120,7 @@ function EditModal({
   });
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={s.overlay}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
-        <Pressable style={{ flex: 1 }} onPress={onClose} />
-        <View style={s.sheet}>
-          <View style={s.handle} />
-          <Text style={s.title}>Edit Entry — {entry?.itemName}</Text>
+    <BrandSheet visible={visible} onClose={onClose} title="Edit entry" subtitle={entry?.itemName} dismissable={!saving}>
 
           <Text style={s.label}>SERVICE DATE (YYYY-MM-DD)</Text>
           <TextInput
@@ -151,21 +144,11 @@ function EditModal({
             maxLength={300}
           />
 
-          <View style={s.row}>
-            <Pressable style={s.cancelBtn} onPress={onClose}>
-              <Text style={s.cancelText}>Cancel</Text>
-            </Pressable>
-            <Pressable style={s.saveBtn} onPress={handleSave} disabled={saving}>
-              {saving ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={s.saveText}>Save</Text>
-              )}
-            </Pressable>
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+          <SheetActions>
+            <BrandButton variant="secondary" label="Cancel" onPress={onClose} disabled={saving} />
+            <BrandButton label="Save" onPress={handleSave} loading={saving} />
+          </SheetActions>
+    </BrandSheet>
   );
 }
 

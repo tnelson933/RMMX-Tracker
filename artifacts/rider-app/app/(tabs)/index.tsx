@@ -3,6 +3,8 @@ import { QuickCheckinCard } from "@/components/QuickCheckinCard";
 import { LiveNowBanner } from "@/components/LiveNowBanner";
 import { GoLiveButton } from "@/components/GoLiveButton";
 import { StatusBarBackdrop } from "@/components/StatusBarBackdrop";
+import { TopoTexture } from "@/components/StockBackdrop";
+import { useTheme } from "@/context/ThemeContext";
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -36,6 +38,9 @@ import { PositionBadge } from "@/components/RaceStats";
 import { displayDate, localDateString, placeLabel } from "@/lib/format";
 import { EventCard, ResultCard } from "@/components/RaceCards";
 import { HomeSkeleton } from "@/components/Skeleton";
+import { RaceDayCard } from "@/components/RaceDayCard";
+import { ResultMoment } from "@/components/ResultMoment";
+import type { RaceDayMoto } from "@/lib/raceDay";
 import { haptics } from "@/lib/haptics";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -68,6 +73,8 @@ interface UpcomingEvent {
   status: string;
   registrations: { raceClass: string | null }[];
   isRegistered?: boolean;
+  /** The event's races, with which of them the account's riders are in (race-day mode). */
+  motos?: RaceDayMoto[];
 }
 
 // ─── Upcoming event card ──────────────────────────────────────────────────────
@@ -128,6 +135,7 @@ export default function HomeScreen() {
   const { activeProfiles, profiles, riderFetch, refreshProfiles } = useRiderAuth();
 
   const primaryProfile = activeProfiles[0] ?? null;
+  const dark = useTheme().resolvedScheme === "dark";
 
   const [upcoming, setUpcoming] = useState<UpcomingEvent[]>([]);
   const [recentResults, setRecentResults] = useState<EventHistory[]>([]);
@@ -183,6 +191,7 @@ export default function HomeScreen() {
             status: e.status,
             registrations: (e.registrations ?? []).map((r: any) => ({ raceClass: r.raceClass })),
             isRegistered: true,
+            motos: e.motos ?? [],
           }));
         setUpcoming(evts);
       }
@@ -308,6 +317,11 @@ export default function HomeScreen() {
   const next = pickNextRace(upcoming, todayYmd);
   const laterRaces = upcoming.filter(e => e.eventId !== next?.eventId);
   const findRace = () => router.push("/(tabs)/my-races?filter=near_me" as any);
+  // Race-day mode: an event racing today with races the account's riders are in.
+  const racingEventIds = new Set(upcoming
+    .filter(e => e.status === "race_day" && (e.motos ?? []).some(m => m.isAnyFamilyMemberInMoto && m.type !== "practice" && m.status !== "completed"))
+    .map(e => e.eventId));
+  const raceDay = upcoming.find(e => e.status === "race_day" && (e.motos ?? []).some(m => m.isAnyFamilyMemberInMoto && m.type !== "practice")) ?? null;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -324,7 +338,9 @@ export default function HomeScreen() {
           borderBottomWidth: 1,
           borderBottomColor: colors.border,
           marginBottom: 20,
+          overflow: "hidden",
         }}>
+          <TopoTexture opacity={dark ? 0.45 : 0.07} />
           <BrandBar />
 
           {/* Greeting */}
@@ -343,6 +359,11 @@ export default function HomeScreen() {
 
         {/* ── Race-day Quick Check-In ── */}
         <QuickCheckinCard />
+
+        {/* ── Race-day mode: your race now, or your next race and gate ── */}
+        {raceDay && (
+          <RaceDayCard eventId={raceDay.eventId} eventName={raceDay.eventName} motos={raceDay.motos ?? []} multiRider={activeProfiles.length > 1} />
+        )}
 
         {/* ── Stream a race from this phone ── */}
         <GoLiveButton />
@@ -368,7 +389,7 @@ export default function HomeScreen() {
           loading && upcoming.length === 0 && recentResults.length === 0 ? (
             <HomeSkeleton />
           ) : (
-            <View style={{ marginTop: 4 }}>
+            raceDay && raceDay.eventId === next?.eventId ? null : <View style={{ marginTop: 4 }}>
               <NextRaceHero
                 race={next ? {
                   ...next,
@@ -427,6 +448,16 @@ export default function HomeScreen() {
         {/* ── Riders you follow ── */}
         {hasProfile && <FollowingFeed refreshKey={feedRefreshKey} />}
         {hasProfile && <SuggestedRiders refreshKey={feedRefreshKey} onFollowed={() => setFeedRefreshKey(k => k + 1)} />}
+
+        {/* ── A win, podium or best finish: celebrate once ── */}
+        {hasProfile && (
+          <ResultMoment
+            history={allHistory}
+            racingEventIds={racingEventIds}
+            nameFor={r => r.riderName ?? (primaryProfile ? `${primaryProfile.firstName} ${primaryProfile.lastName}` : "")}
+            coverFor={r => (activeProfiles.find(p => `${p.firstName} ${p.lastName}` === r.riderName) ?? primaryProfile)?.coverUrl}
+          />
+        )}
 
         {/* Footer */}
         <View style={{ height: bottomSpace }} />
